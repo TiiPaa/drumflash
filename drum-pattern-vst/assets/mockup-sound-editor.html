@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drum Flash - Mockup Sound Editor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    padding: 20px;
+  }
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+    background: #252525;
+    border-radius: 8px;
+    padding: 20px;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; }
+  .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 16px; }
+
+  /* Top controls */
+  .top-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  button {
+    background: #333;
+    color: #e0e0e0;
+    border: 1px solid #444;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  button:hover { background: #3a3a3a; }
+  button.primary { background: #2563eb; border-color: #2563eb; }
+  button.primary:hover { background: #3b82f6; }
+  button.active { background: #2563eb; border-color: #2563eb; }
+
+  /* Grid */
+  .grid-section { margin-bottom: 16px; }
+  .grid-header {
+    display: grid;
+    grid-template-columns: 60px 32px 32px 32px repeat(16, 28px);
+    gap: 4px;
+    margin-bottom: 4px;
+    font-size: 0.75rem;
+    color: #888;
+    text-align: center;
+  }
+  .grid-header .inst-label { text-align: left; padding-left: 4px; }
+  .grid-row {
+    display: grid;
+    grid-template-columns: 60px 32px 32px 32px repeat(16, 28px);
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .grid-row .inst-name {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #aaa;
+  }
+  .step {
+    height: 28px;
+    border-radius: 3px;
+    border: 1px solid #333;
+    background: #1e1e1e;
+    cursor: pointer;
+  }
+  .step.on { background: #2563eb; border-color: #3b82f6; }
+  .step.current { border-color: #facc15; }
+  .toggle-btn {
+    height: 28px;
+    border-radius: 3px;
+    border: 1px solid #333;
+    background: #2a2a2a;
+    color: #888;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .toggle-btn.on { background: #2563eb; color: white; border-color: #3b82f6; }
+
+  /* Sound panel */
+  .sound-panel {
+    background: #1e1e1e;
+    border-radius: 6px;
+    padding: 16px;
+    margin-top: 12px;
+  }
+  .sound-panel h2 {
+    font-size: 1rem;
+    margin-bottom: 12px;
+    color: #e0e0e0;
+  }
+  .instrument-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .instrument-tabs button {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+  }
+  .instrument-tabs button.selected {
+    background: #2563eb;
+    border-color: #2563eb;
+  }
+
+  .controls-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .control {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .control label {
+    font-size: 0.8rem;
+    color: #aaa;
+    display: flex;
+    justify-content: space-between;
+  }
+  .control label span.value { color: #e0e0e0; font-family: monospace; }
+  input[type=range] {
+    width: 100%;
+    accent-color: #2563eb;
+  }
+  .panel-footer {
+    margin-top: 16px;
+    display: flex;
+    gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Drum Flash</h1>
+  <div class="subtitle">Pattern editor - v0.1.0 - build 20260511-174434</div>
+
+  <div class="top-bar">
+    <button>Rock</button>
+    <button>Funk</button>
+    <button>Disco</button>
+    <button>Clear</button>
+    <button>Random</button>
+    <button>Export MIDI</button>
+    <button class="primary active">Sons</button>
+  </div>
+
+  <div class="grid-section">
+    <div class="grid-header">
+      <div class="inst-label"></div>
+      <div>M</div>
+      <div>S</div>
+      <div>T</div>
+      <div>1</div><div>2</div><div>3</div><div>4</div>
+      <div>5</div><div>6</div><div>7</div><div>8</div>
+      <div>9</div><div>10</div><div>11</div><div>12</div>
+      <div>13</div><div>14</div><div>15</div><div>16</div>
+    </div>
+    <div class="grid-row">
+      <div class="inst-name">BD</div>
+      <div class="toggle-btn">M</div>
+      <div class="toggle-btn">S</div>
+      <div class="toggle-btn">T</div>
+      <div class="step on"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      <div class="step on"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      <div class="step on"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      <div class="step on"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+    </div>
+    <div class="grid-row">
+      <div class="inst-name">SD</div>
+      <div class="toggle-btn">M</div>
+      <div class="toggle-btn">S</div>
+      <div class="toggle-btn">T</div>
+      <div class="step"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      <div class="step on"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      <div class="step"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+      <div class="step on"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+    </div>
+    <div class="grid-row">
+      <div class="inst-name">HH</div>
+      <div class="toggle-btn on">M</div>
+      <div class="toggle-btn">S</div>
+      <div class="toggle-btn">T</div>
+      <div class="step on"></div><div class="step on"></div><div class="step on"></div><div class="step on"></div>
+      <div class="step on"></div><div class="step on"></div><div class="step on"></div><div class="step on"></div>
+      <div class="step on"></div><div class="step on"></div><div class="step on"></div><div class="step on"></div>
+      <div class="step on"></div><div class="step on"></div><div class="step on"></div><div class="step on"></div>
+    </div>
+  </div>
+
+  <div class="sound-panel">
+    <h2>Configuration des Sons</h2>
+    <div class="instrument-tabs">
+      <button class="selected">BD</button>
+      <button>SD</button>
+      <button>HH</button>
+      <button>OH</button>
+      <button>T1</button>
+      <button>T2</button>
+      <button>T3</button>
+    </div>
+
+    <div class="controls-grid">
+      <div class="control">
+        <label>Fréquence <span class="value">60 Hz</span></label>
+        <input type="range" min="40" max="200" value="60">
+      </div>
+      <div class="control">
+        <label>Decay <span class="value">0.50 s</span></label>
+        <input type="range" min="0.1" max="1.0" step="0.01" value="0.5">
+      </div>
+      <div class="control">
+        <label>Volume <span class="value">0.8</span></label>
+        <input type="range" min="0.1" max="1.0" step="0.1" value="0.8">
+      </div>
+      <div class="control">
+        <label>Filtre <span class="value">100 Hz</span></label>
+        <input type="range" min="50" max="5000" value="100">
+      </div>
+    </div>
+
+    <div class="panel-footer">
+      <button class="primary">Test</button>
+      <button>Reset</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

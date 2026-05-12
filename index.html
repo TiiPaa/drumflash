@@ -1,0 +1,1887 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Générateur de Patterns de Boîte à Rythme</title>
+    <script
+      crossorigin
+      src="https://unpkg.com/react@18/umd/react.production.min.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
+    ></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      /* CSS Reset et Tailwind minimal */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        line-height: 1.5;
+        background: #111827;
+        color: #fff;
+        min-height: 100vh;
+      }
+      button {
+        cursor: pointer;
+        border: none;
+        outline: none;
+      }
+      input {
+        outline: none;
+      }
+
+      /* Classes utilitaires */
+      .p-6 {
+        padding: 1.5rem;
+      }
+      .p-4 {
+        padding: 1rem;
+      }
+      .p-3 {
+        padding: 0.75rem;
+      }
+      .p-2 {
+        padding: 0.5rem;
+      }
+      .p-1 {
+        padding: 0.25rem;
+      }
+      .px-6 {
+        padding: 0 1.5rem;
+      }
+      .px-4 {
+        padding: 0 1rem;
+      }
+      .px-3 {
+        padding: 0 0.75rem;
+      }
+      .px-2 {
+        padding: 0 0.5rem;
+      }
+      .py-3 {
+        padding: 0.75rem 0;
+      }
+      .py-2 {
+        padding: 0.5rem 0;
+      }
+      .py-1 {
+        padding: 0.25rem 0;
+      }
+      .m-0 {
+        margin: 0;
+      }
+      .mb-6 {
+        margin-bottom: 1.5rem;
+      }
+      .mb-4 {
+        margin-bottom: 1rem;
+      }
+      .mb-3 {
+        margin-bottom: 0.75rem;
+      }
+      .mb-2 {
+        margin-bottom: 0.5rem;
+      }
+      .mt-4 {
+        margin-top: 1rem;
+      }
+      .mt-3 {
+        margin-top: 0.75rem;
+      }
+      .mt-2 {
+        margin-top: 0.5rem;
+      }
+      .mr-4 {
+        margin-right: 1rem;
+      }
+      .mr-2 {
+        margin-right: 0.5rem;
+      }
+      .max-w-6xl {
+        max-width: 72rem;
+      }
+      .w-full {
+        width: 100%;
+      }
+      .w-32 {
+        width: 8rem;
+      }
+      .w-20 {
+        width: 5rem;
+      }
+      .w-12 {
+        width: 3rem;
+      }
+      .w-10 {
+        width: 2.5rem;
+      }
+      .w-6 {
+        width: 1.5rem;
+      }
+      .w-4 {
+        width: 1rem;
+      }
+      .w-2 {
+        width: 0.5rem;
+      }
+      .h-10 {
+        height: 2.5rem;
+      }
+      .h-6 {
+        height: 1.5rem;
+      }
+      .h-4 {
+        height: 1rem;
+      }
+      .h-2 {
+        height: 0.5rem;
+      }
+      .mx-auto {
+        margin: 0 auto;
+      }
+      .flex {
+        display: flex;
+      }
+      .inline-block {
+        display: inline-block;
+      }
+      .block {
+        display: block;
+      }
+      .grid {
+        display: grid;
+      }
+      .items-center {
+        align-items: center;
+      }
+      .justify-center {
+        justify-content: center;
+      }
+      .justify-between {
+        justify-content: space-between;
+      }
+      .flex-wrap {
+        flex-wrap: wrap;
+      }
+      .gap-4 {
+        gap: 1rem;
+      }
+      .gap-3 {
+        gap: 0.75rem;
+      }
+      .gap-2 {
+        gap: 0.5rem;
+      }
+      .gap-1 {
+        gap: 0.25rem;
+      }
+      .space-y-4 > * + * {
+        margin-top: 1rem;
+      }
+      .space-y-2 > * + * {
+        margin-top: 0.5rem;
+      }
+      .space-y-3 > * + * {
+        margin-top: 0.75rem;
+      }
+      .grid-cols-1 {
+        grid-template-columns: 1fr;
+      }
+      .grid-cols-2 {
+        grid-template-columns: 1fr 1fr;
+      }
+      .rounded-lg {
+        border-radius: 0.5rem;
+      }
+      .rounded {
+        border-radius: 0.25rem;
+      }
+      .rounded-full {
+        border-radius: 50%;
+      }
+      .border {
+        border: 1px solid;
+      }
+      .border-2 {
+        border: 2px solid;
+      }
+      .border-4 {
+        border: 4px solid;
+      }
+      .border-gray-600 {
+        border-color: #4b5563;
+      }
+      .border-blue-400 {
+        border-color: #60a5fa;
+      }
+      .border-red-600 {
+        border-color: #dc2626;
+      }
+      .border-white {
+        border-color: #fff;
+      }
+      .bg-gray-900 {
+        background: #111827;
+      }
+      .bg-gray-800 {
+        background: #1f2937;
+      }
+      .bg-gray-700 {
+        background: #374151;
+      }
+      .bg-gray-600 {
+        background: #4b5563;
+      }
+      .bg-green-600 {
+        background: #16a34a;
+      }
+      .bg-green-500 {
+        background: #22c55e;
+      }
+      .bg-red-600 {
+        background: #dc2626;
+      }
+      .bg-red-900 {
+        background: #7f1d1d;
+      }
+      .bg-blue-600 {
+        background: #2563eb;
+      }
+      .bg-blue-900 {
+        background: #1e3a8a;
+      }
+      .bg-indigo-600 {
+        background: #4f46e5;
+      }
+      .bg-purple-600 {
+        background: #9333ea;
+      }
+      .bg-yellow-600 {
+        background: #ca8a04;
+      }
+      .bg-emerald-600 {
+        background: #059669;
+      }
+      .bg-teal-600 {
+        background: #0d9488;
+      }
+      .bg-red-500 {
+        background: #ef4444;
+      }
+      .bg-blue-500 {
+        background: #3b82f6;
+      }
+      .bg-yellow-500 {
+        background: #eab308;
+      }
+      .bg-orange-500 {
+        background: #f97316;
+      }
+      .bg-green-700 {
+        background: #15803d;
+      }
+      .bg-gradient-to-r {
+        background: linear-gradient(
+          90deg,
+          var(--tw-gradient-from),
+          var(--tw-gradient-to)
+        );
+      }
+      .from-emerald-600 {
+        --tw-gradient-from: #059669;
+      }
+      .to-teal-600 {
+        --tw-gradient-to: #0d9488;
+      }
+      .from-pink-600 {
+        --tw-gradient-from: #db2777;
+      }
+      .to-purple-600 {
+        --tw-gradient-to: #9333ea;
+      }
+      .from-blue-600 {
+        --tw-gradient-from: #2563eb;
+      }
+      .to-cyan-600 {
+        --tw-gradient-to: #0891b2;
+      }
+      .from-orange-600 {
+        --tw-gradient-from: #ea580c;
+      }
+      .to-red-600 {
+        --tw-gradient-to: #dc2626;
+      }
+      .text-white {
+        color: #fff;
+      }
+      .text-gray-400 {
+        color: #9ca3af;
+      }
+      .text-gray-300 {
+        color: #d1d5db;
+      }
+      .text-gray-500 {
+        color: #6b7280;
+      }
+      .text-green-400 {
+        color: #4ade80;
+      }
+      .text-red-400 {
+        color: #f87171;
+      }
+      .text-red-300 {
+        color: #fca5a5;
+      }
+      .text-red-200 {
+        color: #fecaca;
+      }
+      .text-yellow-400 {
+        color: #facc15;
+      }
+      .text-emerald-400 {
+        color: #34d399;
+      }
+      .text-3xl {
+        font-size: 1.875rem;
+      }
+      .text-2xl {
+        font-size: 1.5rem;
+      }
+      .text-xl {
+        font-size: 1.25rem;
+      }
+      .text-lg {
+        font-size: 1.125rem;
+      }
+      .text-sm {
+        font-size: 0.875rem;
+      }
+      .text-xs {
+        font-size: 0.75rem;
+      }
+      .font-bold {
+        font-weight: 700;
+      }
+      .font-semibold {
+        font-weight: 600;
+      }
+      .font-medium {
+        font-weight: 500;
+      }
+      .font-black {
+        font-weight: 900;
+      }
+      .text-center {
+        text-align: center;
+      }
+      .text-left {
+        text-align: left;
+      }
+      .shadow-lg {
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      }
+      .shadow-2xl {
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      }
+      .ring-2 {
+        box-shadow: 0 0 0 2px var(--ring-color);
+      }
+      .ring-yellow-400 {
+        --ring-color: #facc15;
+      }
+      .ring-offset-2 {
+        box-shadow: 0 0 0 2px #1f2937, 0 0 0 4px var(--ring-color);
+      }
+      .transition-all {
+        transition: all 0.15s;
+      }
+      .transition-colors {
+        transition: color 0.15s, background-color 0.15s;
+      }
+      .duration-100 {
+        transition-duration: 0.1s;
+      }
+      .hover\:bg-green-700:hover {
+        background: #15803d;
+      }
+      .hover\:bg-red-700:hover {
+        background: #b91c1c;
+      }
+      .hover\:bg-gray-700:hover {
+        background: #374151;
+      }
+      .hover\:bg-gray-800:hover {
+        background: #1f2937;
+      }
+      .hover\:bg-gray-600:hover {
+        background: #4b5563;
+      }
+      .hover\:bg-indigo-700:hover {
+        background: #4338ca;
+      }
+      .hover\:bg-purple-700:hover {
+        background: #7e22ce;
+      }
+      .hover\:bg-yellow-700:hover {
+        background: #a16207;
+      }
+      .hover\:bg-blue-700:hover {
+        background: #1d4ed8;
+      }
+      .hover\:border-gray-500:hover {
+        border-color: #6b7280;
+      }
+      .disabled\:opacity-50:disabled {
+        opacity: 0.5;
+      }
+      .disabled\:cursor-not-allowed:disabled {
+        cursor: not-allowed;
+      }
+      .disabled\:bg-gray-600:disabled {
+        background: #4b5563;
+      }
+      .focus\:ring-green-500:focus {
+        --ring-color: #22c55e;
+      }
+      .focus\:ring-2:focus {
+        box-shadow: 0 0 0 2px var(--ring-color);
+      }
+      .focus\:ring-purple-500:focus {
+        --ring-color: #a855f7;
+      }
+      .opacity-50 {
+        opacity: 0.5;
+      }
+      .opacity-0 {
+        opacity: 0;
+      }
+      .cursor-pointer {
+        cursor: pointer;
+      }
+      .cursor-not-allowed {
+        cursor: not-allowed;
+      }
+      .overflow-x-auto {
+        overflow-x: auto;
+      }
+      @media (min-width: 1024px) {
+        .lg\:grid-cols-2 {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect, useRef } = React;
+
+      // Icons SVG
+      const PlayIcon = () =>
+        React.createElement(
+          "svg",
+          { width: 20, height: 20, viewBox: "0 0 24 24", fill: "currentColor" },
+          React.createElement("path", { d: "m3 22 18-10L3 2v20z" })
+        );
+      const PauseIcon = () =>
+        React.createElement(
+          "svg",
+          { width: 20, height: 20, viewBox: "0 0 24 24", fill: "currentColor" },
+          React.createElement("rect", { x: 6, y: 4, width: 4, height: 16 }),
+          React.createElement("rect", { x: 14, y: 4, width: 4, height: 16 })
+        );
+      const SquareIcon = () =>
+        React.createElement(
+          "svg",
+          { width: 20, height: 20, viewBox: "0 0 24 24", fill: "currentColor" },
+          React.createElement("rect", {
+            x: 3,
+            y: 3,
+            width: 18,
+            height: 18,
+            rx: 2,
+          })
+        );
+      const RotateCcwIcon = () =>
+        React.createElement(
+          "svg",
+          {
+            width: 20,
+            height: 20,
+            viewBox: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            strokeWidth: 2,
+          },
+          React.createElement("path", {
+            d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8",
+          }),
+          React.createElement("path", { d: "M3 3v5h5" })
+        );
+      const SettingsIcon = () =>
+        React.createElement(
+          "svg",
+          {
+            width: 20,
+            height: 20,
+            viewBox: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            strokeWidth: 2,
+          },
+          React.createElement("circle", { cx: 12, cy: 12, r: 3 }),
+          React.createElement("path", { d: "M12 1v6m0 6v6m11-7h-6m-6 0H1" })
+        );
+      const Volume2Icon = () =>
+        React.createElement(
+          "svg",
+          {
+            width: 16,
+            height: 16,
+            viewBox: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            strokeWidth: 2,
+          },
+          React.createElement("polygon", {
+            points: "11 5 6 9 2 9 2 15 6 15 11 19 11 5",
+          }),
+          React.createElement("path", { d: "M15.54 8.46a5 5 0 0 1 0 7.07" })
+        );
+      const VolumeXIcon = () =>
+        React.createElement(
+          "svg",
+          {
+            width: 16,
+            height: 16,
+            viewBox: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            strokeWidth: 2,
+          },
+          React.createElement("polygon", {
+            points: "11 5 6 9 2 9 2 15 6 15 11 19 11 5",
+          }),
+          React.createElement("line", { x1: 22, y1: 9, x2: 16, y2: 15 }),
+          React.createElement("line", { x1: 16, y1: 9, x2: 22, y2: 15 })
+        );
+      const DownloadIcon = () =>
+        React.createElement(
+          "svg",
+          {
+            width: 24,
+            height: 24,
+            viewBox: "0 0 24 24",
+            fill: "none",
+            stroke: "currentColor",
+            strokeWidth: 2,
+          },
+          React.createElement("path", {
+            d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4",
+          }),
+          React.createElement("polyline", { points: "7,10 12,15 17,10" }),
+          React.createElement("line", { x1: 12, y1: 15, x2: 12, y2: 3 })
+        );
+
+      const DrumPatternGenerator = () => {
+        const [isPlaying, setIsPlaying] = useState(false);
+        const [bpm, setBpm] = useState(120);
+        const [currentStep, setCurrentStep] = useState(0);
+        const [showSoundMenu, setShowSoundMenu] = useState(false);
+        const [randomBPM, setRandomBPM] = useState(false);
+        const [midiOutput, setMidiOutput] = useState(null);
+        const [midiOutputs, setMidiOutputs] = useState([]);
+        const [midiEnabled, setMidiEnabled] = useState(false);
+
+        const [patterns, setPatterns] = useState({
+          BD: Array(16).fill(false),
+          SD: Array(16).fill(false),
+          HH: Array(16).fill(false),
+          OH: Array(16).fill(false),
+          T1: Array(16).fill(false),
+          T2: Array(16).fill(false),
+          T3: Array(16).fill(false),
+        });
+
+        const [soundSettings, setSoundSettings] = useState({
+          BD: { frequency: 60, decay: 0.5, volume: 0.8, filter: 100 },
+          SD: { frequency: 200, decay: 0.2, volume: 0.6, filter: 1000 },
+          HH: { frequency: 8000, decay: 0.1, volume: 0.3, filter: 10000 },
+          OH: { frequency: 6000, decay: 0.3, volume: 0.4, filter: 8000 },
+          T1: { frequency: 300, decay: 0.3, volume: 0.5, filter: 2000 },
+          T2: { frequency: 200, decay: 0.4, volume: 0.5, filter: 1500 },
+          T3: { frequency: 120, decay: 0.5, volume: 0.5, filter: 1000 },
+        });
+
+        const [mutedInstruments, setMutedInstruments] = useState({
+          BD: false,
+          SD: false,
+          HH: false,
+          OH: false,
+          T1: false,
+          T2: false,
+          T3: false,
+        });
+
+        const intervalRef = useRef(null);
+        const audioContextRef = useRef(null);
+
+        useEffect(() => {
+          audioContextRef.current = new (window.AudioContext ||
+            window.webkitAudioContext)();
+
+          // Initialiser MIDI
+          if (navigator.requestMIDIAccess) {
+            navigator
+              .requestMIDIAccess({ sysex: false })
+              .then(onMIDISuccess)
+              .catch(onMIDIFailure);
+          } else {
+            setMidiOutputs([]);
+          }
+
+          return () => {
+            if (audioContextRef.current) {
+              audioContextRef.current.close();
+            }
+          };
+        }, []);
+
+        const onMIDISuccess = (midiAccess) => {
+          const outputs = [];
+          midiAccess.outputs.forEach((output, key) => {
+            outputs.push({
+              id: key,
+              name: output.name || `Port MIDI ${key}`,
+              output: output,
+              state: output.state,
+            });
+          });
+          setMidiOutputs(outputs);
+          if (outputs.length > 0) {
+            setMidiOutput(outputs[0].output);
+          }
+        };
+
+        const onMIDIFailure = (error) => {
+          const isPermissionError =
+            error.name === "SecurityError" ||
+            error.message.includes("permissions policy");
+          if (isPermissionError) {
+            setMidiOutputs("permission_error");
+          } else {
+            setMidiOutputs([]);
+          }
+        };
+
+        const sendMIDINote = (note, velocity = 100, duration = 100) => {
+          if (midiOutput && midiEnabled) {
+            midiOutput.send([0x99, note, velocity]);
+            setTimeout(() => {
+              midiOutput.send([0x89, note, 0]);
+            }, duration);
+          }
+        };
+
+        useEffect(() => {
+          if (isPlaying) {
+            const stepDuration = (60 / bpm / 4) * 1000;
+            intervalRef.current = setInterval(() => {
+              setCurrentStep((prev) => {
+                const nextStep = (prev + 1) % 16;
+                playStep(prev);
+                return nextStep;
+              });
+            }, stepDuration);
+          } else {
+            clearInterval(intervalRef.current);
+          }
+          return () => clearInterval(intervalRef.current);
+        }, [isPlaying, bpm, patterns, mutedInstruments]);
+
+        const createDrumSound = (type) => {
+          const ctx = audioContextRef.current;
+          if (!ctx) return;
+          const settings = soundSettings[type];
+
+          switch (type) {
+            case "BD":
+              {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+
+                const now = ctx.currentTime;
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(settings.frequency, now);
+                osc.frequency.exponentialRampToValueAtTime(
+                  settings.frequency * 0.1,
+                  now + 0.1
+                );
+
+                filter.type = "lowpass";
+                filter.frequency.setValueAtTime(settings.filter, now);
+
+                gain.gain.setValueAtTime(settings.volume, now);
+                gain.gain.exponentialRampToValueAtTime(
+                  0.01,
+                  now + settings.decay
+                );
+
+                osc.start(now);
+                osc.stop(now + settings.decay);
+              }
+              break;
+            case "SD":
+              {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+
+                const now = ctx.currentTime;
+                osc.type = "triangle";
+                osc.frequency.setValueAtTime(settings.frequency, now);
+
+                filter.type = "highpass";
+                filter.frequency.setValueAtTime(settings.filter, now);
+
+                gain.gain.setValueAtTime(settings.volume, now);
+                gain.gain.exponentialRampToValueAtTime(
+                  0.01,
+                  now + settings.decay
+                );
+
+                osc.start(now);
+                osc.stop(now + settings.decay);
+              }
+              break;
+            case "HH":
+              {
+                const bufferSize = ctx.sampleRate * settings.decay;
+                const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+
+                for (let i = 0; i < bufferSize; i++) {
+                  data[i] =
+                    (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 4);
+                }
+
+                const noise = ctx.createBufferSource();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+
+                noise.buffer = buffer;
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+
+                const now = ctx.currentTime;
+                filter.type = "highpass";
+                filter.frequency.setValueAtTime(settings.filter, now);
+
+                gain.gain.setValueAtTime(settings.volume, now);
+                gain.gain.exponentialRampToValueAtTime(
+                  0.01,
+                  now + settings.decay
+                );
+
+                noise.start(now);
+              }
+              break;
+            case "OH":
+              {
+                const bufferSize = ctx.sampleRate * settings.decay;
+                const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+
+                for (let i = 0; i < bufferSize; i++) {
+                  data[i] =
+                    (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 1.5);
+                }
+
+                const noise = ctx.createBufferSource();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+
+                noise.buffer = buffer;
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+
+                const now = ctx.currentTime;
+                filter.type = "bandpass";
+                filter.frequency.setValueAtTime(settings.filter, now);
+
+                gain.gain.setValueAtTime(settings.volume, now);
+                gain.gain.exponentialRampToValueAtTime(
+                  0.01,
+                  now + settings.decay
+                );
+
+                noise.start(now);
+              }
+              break;
+            default:
+              {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+
+                const now = ctx.currentTime;
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(settings.frequency, now);
+                osc.frequency.exponentialRampToValueAtTime(
+                  settings.frequency * 0.3,
+                  now + 0.1
+                );
+
+                filter.type = "bandpass";
+                filter.frequency.setValueAtTime(settings.filter, now);
+
+                gain.gain.setValueAtTime(settings.volume, now);
+                gain.gain.exponentialRampToValueAtTime(
+                  0.01,
+                  now + settings.decay
+                );
+
+                osc.start(now);
+                osc.stop(now + settings.decay);
+              }
+              break;
+          }
+        };
+
+        const playStep = (step) => {
+          const drumMIDIMap = {
+            BD: 36,
+            SD: 38,
+            HH: 42,
+            OH: 46,
+            T1: 50,
+            T2: 47,
+            T3: 43,
+          };
+
+          Object.keys(patterns).forEach((drum) => {
+            if (patterns[drum][step] && !mutedInstruments[drum]) {
+              createDrumSound(drum);
+              if (midiEnabled && midiOutput) {
+                const midiNote = drumMIDIMap[drum];
+                sendMIDINote(midiNote, 100, 100);
+              }
+            }
+          });
+        };
+
+        const toggleStep = (drum, step) => {
+          setPatterns((prev) => ({
+            ...prev,
+            [drum]: prev[drum].map((active, index) =>
+              index === step ? !active : active
+            ),
+          }));
+        };
+
+        const toggleMute = (drum) => {
+          setMutedInstruments((prev) => ({
+            ...prev,
+            [drum]: !prev[drum],
+          }));
+        };
+
+        const clearPattern = () => {
+          setPatterns((prev) =>
+            Object.keys(prev).reduce(
+              (acc, drum) => ({
+                ...acc,
+                [drum]: Array(16).fill(false),
+              }),
+              {}
+            )
+          );
+        };
+
+        const generateRandomPattern = () => {
+          setPatterns((prev) =>
+            Object.keys(prev).reduce(
+              (acc, drum) => ({
+                ...acc,
+                [drum]: Array(16)
+                  .fill(false)
+                  .map(() => Math.random() < 0.3),
+              }),
+              {}
+            )
+          );
+
+          if (randomBPM) {
+            const randomBPMValue =
+              Math.floor(Math.random() * (180 - 60 + 1)) + 60;
+            setBpm(randomBPMValue);
+          }
+        };
+
+        const exportToMIDI = () => {
+          const drumMIDIMap = {
+            BD: 36,
+            SD: 38,
+            HH: 42,
+            OH: 46,
+            T1: 50,
+            T2: 47,
+            T3: 43,
+          };
+          const ticksPerQuarter = 480;
+          const ticksPerStep = ticksPerQuarter / 4;
+
+          const header = new Uint8Array([
+            0x4d, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00,
+            0x01, 0x01, 0xe0,
+          ]);
+
+          const events = [];
+          const microsecondsPerQuarter = Math.round(60000000 / bpm);
+          events.push({
+            deltaTime: 0,
+            data: [
+              0xff,
+              0x51,
+              0x03,
+              (microsecondsPerQuarter >> 16) & 0xff,
+              (microsecondsPerQuarter >> 8) & 0xff,
+              microsecondsPerQuarter & 0xff,
+            ],
+          });
+
+          Object.keys(patterns).forEach((drum) => {
+            const midiNote = drumMIDIMap[drum];
+            patterns[drum].forEach((active, step) => {
+              if (active) {
+                const tickTime = step * ticksPerStep;
+                events.push({
+                  deltaTime: tickTime,
+                  data: [0x99, midiNote, 100],
+                });
+                events.push({
+                  deltaTime: tickTime + 10,
+                  data: [0x89, midiNote, 0],
+                });
+              }
+            });
+          });
+
+          events.sort((a, b) => a.deltaTime - b.deltaTime);
+          let lastTime = 0;
+          events.forEach((event) => {
+            const currentTime = event.deltaTime;
+            event.deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+          });
+
+          events.push({ deltaTime: 0, data: [0xff, 0x2f, 0x00] });
+
+          const encodeVariableLength = (value) => {
+            if (value < 128) return [value];
+            const bytes = [];
+            let temp = value;
+            while (temp > 0) {
+              bytes.unshift((temp & 0x7f) | (bytes.length > 0 ? 0x80 : 0));
+              temp >>= 7;
+            }
+            return bytes;
+          };
+
+          let trackData = [];
+          events.forEach((event) => {
+            trackData.push(...encodeVariableLength(event.deltaTime));
+            trackData.push(...event.data);
+          });
+
+          const trackHeader = new Uint8Array([
+            0x4d,
+            0x54,
+            0x72,
+            0x6b,
+            (trackData.length >> 24) & 0xff,
+            (trackData.length >> 16) & 0xff,
+            (trackData.length >> 8) & 0xff,
+            trackData.length & 0xff,
+          ]);
+
+          const midiFile = new Uint8Array(
+            header.length + trackHeader.length + trackData.length
+          );
+          midiFile.set(header, 0);
+          midiFile.set(trackHeader, header.length);
+          midiFile.set(trackData, header.length + trackHeader.length);
+
+          const blob = new Blob([midiFile], { type: "audio/midi" });
+          const url = URL.createObjectURL(blob);
+
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `drum_pattern_${bpm}bpm.mid`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        };
+
+        const updateSoundSetting = (drum, parameter, value) => {
+          setSoundSettings((prev) => ({
+            ...prev,
+            [drum]: { ...prev[drum], [parameter]: parseFloat(value) },
+          }));
+        };
+
+        const testSound = (drum) => {
+          if (!mutedInstruments[drum]) {
+            createDrumSound(drum);
+            if (midiEnabled && midiOutput) {
+              const drumMIDIMap = {
+                BD: 36,
+                SD: 38,
+                HH: 42,
+                OH: 46,
+                T1: 50,
+                T2: 47,
+                T3: 43,
+              };
+              const midiNote = drumMIDIMap[drum];
+              sendMIDINote(midiNote, 100, 200);
+            }
+          }
+        };
+
+        const presetPatterns = {
+          "Rock Basique": {
+            BD: [
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+            ],
+            SD: [
+              false,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+            ],
+            HH: [
+              true,
+              false,
+              true,
+              false,
+              true,
+              false,
+              true,
+              false,
+              true,
+              false,
+              true,
+              false,
+              true,
+              false,
+              true,
+              false,
+            ],
+            OH: Array(16).fill(false),
+            T1: Array(16).fill(false),
+            T2: Array(16).fill(false),
+            T3: Array(16).fill(false),
+          },
+          "Funk Groove": {
+            BD: [
+              true,
+              false,
+              false,
+              true,
+              false,
+              false,
+              true,
+              false,
+              false,
+              true,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+            ],
+            SD: [
+              false,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+            ],
+            HH: [
+              true,
+              true,
+              false,
+              true,
+              true,
+              true,
+              false,
+              true,
+              true,
+              true,
+              false,
+              true,
+              true,
+              true,
+              false,
+              true,
+            ],
+            OH: [
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+            ],
+            T1: Array(16).fill(false),
+            T2: Array(16).fill(false),
+            T3: Array(16).fill(false),
+          },
+          "Disco Beat": {
+            BD: [
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+            ],
+            SD: [
+              false,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+            ],
+            HH: [
+              true,
+              true,
+              true,
+              true,
+              false,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              false,
+              true,
+              true,
+              true,
+            ],
+            OH: Array(16).fill(false),
+            T1: Array(16).fill(false),
+            T2: Array(16).fill(false),
+            T3: Array(16).fill(false),
+          },
+        };
+
+        const loadPreset = (presetName) => {
+          setPatterns(presetPatterns[presetName]);
+        };
+
+        const drumLabels = {
+          BD: "Grosse Caisse",
+          SD: "Caisse Claire",
+          HH: "Charleston F.",
+          OH: "Charleston O.",
+          T1: "Tom Aigu",
+          T2: "Tom Medium",
+          T3: "Tom Grave",
+        };
+
+        const drumColors = {
+          BD: "bg-red-500",
+          SD: "bg-blue-500",
+          HH: "bg-yellow-500",
+          OH: "bg-orange-500",
+          T1: "bg-green-500",
+          T2: "bg-green-600",
+          T3: "bg-green-700",
+        };
+
+        return React.createElement(
+          "div",
+          {
+            className:
+              "p-6 max-w-6xl mx-auto bg-gray-900 text-white rounded-lg",
+          },
+          React.createElement(
+            "h1",
+            { className: "text-3xl font-bold mb-6 text-center" },
+            "Générateur de Patterns de Boîte à Rythme"
+          ),
+
+          // Contrôles principaux
+          React.createElement(
+            "div",
+            { className: "flex flex-wrap gap-4 mb-4 justify-center" },
+            React.createElement(
+              "button",
+              {
+                onClick: () => setIsPlaying(!isPlaying),
+                className:
+                  "flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg",
+              },
+              isPlaying
+                ? React.createElement(PauseIcon)
+                : React.createElement(PlayIcon),
+              isPlaying ? "Pause" : "Play"
+            ),
+
+            React.createElement(
+              "button",
+              {
+                onClick: () => setIsPlaying(false),
+                className:
+                  "flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg",
+              },
+              React.createElement(SquareIcon),
+              "Stop"
+            ),
+
+            React.createElement(
+              "button",
+              {
+                onClick: clearPattern,
+                className:
+                  "flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg",
+              },
+              React.createElement(RotateCcwIcon),
+              "Effacer"
+            ),
+
+            React.createElement(
+              "button",
+              {
+                onClick: () => setShowSoundMenu(!showSoundMenu),
+                className:
+                  "flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg",
+              },
+              React.createElement(SettingsIcon),
+              "Sons"
+            ),
+
+            React.createElement(
+              "button",
+              {
+                onClick: generateRandomPattern,
+                className:
+                  "px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg",
+              },
+              "Aléatoire"
+            ),
+
+            React.createElement(
+              "div",
+              { className: "flex items-center gap-2" },
+              React.createElement("label", null, "BPM:"),
+              React.createElement("input", {
+                type: "range",
+                min: "60",
+                max: "180",
+                value: bpm,
+                onChange: (e) => setBpm(parseInt(e.target.value)),
+                className: "w-20",
+              }),
+              React.createElement(
+                "span",
+                { className: "w-12 text-center" },
+                bpm
+              )
+            )
+          ),
+
+          // Section MIDI
+          React.createElement(
+            "div",
+            {
+              className:
+                "mb-6 bg-blue-900 border-2 border-blue-400 p-4 rounded-lg",
+            },
+            React.createElement(
+              "h2",
+              { className: "text-xl font-bold mb-4 text-white text-center" },
+              "🎹 SORTIE MIDI EN TEMPS RÉEL"
+            ),
+
+            React.createElement(
+              "div",
+              { className: "text-center mb-4" },
+              React.createElement(
+                "label",
+                {
+                  className:
+                    "flex items-center justify-center gap-3 cursor-pointer",
+                },
+                React.createElement("input", {
+                  type: "checkbox",
+                  checked: midiEnabled,
+                  onChange: (e) => setMidiEnabled(e.target.checked),
+                  className: "w-6 h-6",
+                }),
+                React.createElement(
+                  "span",
+                  { className: "text-white text-lg font-bold" },
+                  "Activer sortie MIDI"
+                )
+              )
+            ),
+
+            midiEnabled &&
+              React.createElement(
+                "div",
+                { className: "bg-gray-800 p-4 rounded-lg" },
+                midiOutputs === "permission_error"
+                  ? React.createElement(
+                      "div",
+                      {
+                        className:
+                          "bg-red-900 border border-red-600 p-4 rounded-lg text-center",
+                      },
+                      React.createElement(
+                        "h4",
+                        { className: "text-red-300 font-bold mb-2" },
+                        "🚫 MIDI Bloqué"
+                      ),
+                      React.createElement(
+                        "p",
+                        { className: "text-red-200 text-sm" },
+                        "L'accès MIDI peut être bloqué. Copiez ce fichier sur votre serveur pour activer MIDI !"
+                      )
+                    )
+                  : Array.isArray(midiOutputs) && midiOutputs.length > 0
+                  ? React.createElement(
+                      "div",
+                      null,
+                      React.createElement(
+                        "p",
+                        { className: "text-white text-center mb-3" },
+                        "Périphériques détectés : ",
+                        React.createElement(
+                          "span",
+                          { className: "text-yellow-400 font-bold" },
+                          midiOutputs.length
+                        )
+                      ),
+                      React.createElement(
+                        "select",
+                        {
+                          value: midiOutput?.id || "",
+                          onChange: (e) => {
+                            const selectedOutput = midiOutputs.find(
+                              (output) => output.output.id === e.target.value
+                            );
+                            setMidiOutput(
+                              selectedOutput ? selectedOutput.output : null
+                            );
+                          },
+                          className:
+                            "w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded text-white text-center",
+                        },
+                        React.createElement(
+                          "option",
+                          { value: "" },
+                          "-- Choisir un port MIDI --"
+                        ),
+                        midiOutputs.map((output) =>
+                          React.createElement(
+                            "option",
+                            { key: output.id, value: output.output.id },
+                            `${output.name} ${
+                              output.state === "connected" ? "✅" : "⚠️"
+                            }`
+                          )
+                        )
+                      ),
+                      midiOutput &&
+                        React.createElement(
+                          "div",
+                          { className: "mt-3 text-center" },
+                          React.createElement(
+                            "div",
+                            {
+                              className:
+                                "inline-block bg-green-600 text-white px-4 py-2 rounded-lg font-medium",
+                            },
+                            `✅ Connecté à : ${midiOutput.name}`
+                          )
+                        )
+                    )
+                  : React.createElement(
+                      "div",
+                      { className: "text-center text-yellow-400" },
+                      React.createElement(
+                        "p",
+                        null,
+                        "⚠️ Recherche de périphériques MIDI..."
+                      )
+                    )
+              )
+          ),
+
+          // Export MIDI
+          React.createElement(
+            "div",
+            { className: "mb-6 flex justify-center" },
+            React.createElement(
+              "div",
+              {
+                className:
+                  "bg-gradient-to-r from-emerald-600 to-teal-600 p-1 rounded-lg",
+              },
+              React.createElement(
+                "div",
+                {
+                  onClick: exportToMIDI,
+                  className:
+                    "flex items-center gap-3 px-6 py-3 bg-gray-900 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors",
+                },
+                React.createElement(DownloadIcon, {
+                  className: "text-emerald-400",
+                }),
+                React.createElement(
+                  "div",
+                  { className: "text-left" },
+                  React.createElement(
+                    "div",
+                    { className: "text-white font-semibold" },
+                    "Export MIDI"
+                  ),
+                  React.createElement(
+                    "div",
+                    { className: "text-gray-400 text-sm" },
+                    `Télécharger le pattern (${bpm} BPM)`
+                  )
+                )
+              )
+            )
+          ),
+
+          // Options
+          React.createElement(
+            "div",
+            { className: "mb-4 bg-gray-800 p-3 rounded-lg" },
+            React.createElement(
+              "h3",
+              { className: "text-sm font-semibold mb-2 text-gray-300" },
+              "Options de génération :"
+            ),
+            React.createElement(
+              "div",
+              { className: "flex justify-center" },
+              React.createElement(
+                "label",
+                {
+                  className:
+                    "flex items-center gap-2 text-sm text-gray-300 cursor-pointer",
+                },
+                React.createElement("input", {
+                  type: "checkbox",
+                  checked: randomBPM,
+                  onChange: (e) => setRandomBPM(e.target.checked),
+                  className: "w-4 h-4",
+                }),
+                "BPM aléatoire (60-180)"
+              )
+            )
+          ),
+
+          // Menu sons
+          showSoundMenu &&
+            React.createElement(
+              "div",
+              { className: "mb-6 bg-gray-800 p-4 rounded-lg" },
+              React.createElement(
+                "h3",
+                { className: "text-lg font-semibold mb-4" },
+                "Configuration des Sons"
+              ),
+              React.createElement(
+                "div",
+                { className: "grid grid-cols-1 lg:grid-cols-2 gap-4" },
+                Object.keys(soundSettings).map((drum) =>
+                  React.createElement(
+                    "div",
+                    { key: drum, className: "bg-gray-700 p-3 rounded" },
+                    React.createElement(
+                      "div",
+                      { className: "flex items-center justify-between mb-3" },
+                      React.createElement(
+                        "div",
+                        { className: "flex items-center gap-2" },
+                        React.createElement("div", {
+                          className: `w-4 h-4 rounded ${drumColors[drum]}`,
+                        }),
+                        React.createElement(
+                          "span",
+                          { className: "font-medium" },
+                          drumLabels[drum]
+                        )
+                      ),
+                      React.createElement(
+                        "button",
+                        {
+                          onClick: () => testSound(drum),
+                          className:
+                            "flex items-center gap-1 px-2 py-1 bg-green-600 hover:bg-green-700 rounded text-xs",
+                        },
+                        React.createElement(Volume2Icon),
+                        "Test"
+                      )
+                    ),
+                    React.createElement(
+                      "div",
+                      { className: "space-y-2" },
+                      React.createElement(
+                        "div",
+                        { className: "flex items-center justify-between" },
+                        React.createElement(
+                          "label",
+                          { className: "text-xs text-gray-300" },
+                          "Fréquence"
+                        ),
+                        React.createElement(
+                          "span",
+                          { className: "text-xs text-gray-400" },
+                          `${soundSettings[drum].frequency}Hz`
+                        )
+                      ),
+                      React.createElement("input", {
+                        type: "range",
+                        min:
+                          drum === "BD" || drum.startsWith("T")
+                            ? "50"
+                            : drum === "SD"
+                            ? "100"
+                            : "1000",
+                        max:
+                          drum === "BD"
+                            ? "200"
+                            : drum === "SD"
+                            ? "500"
+                            : drum.startsWith("T")
+                            ? "800"
+                            : "12000",
+                        step: "10",
+                        value: soundSettings[drum].frequency,
+                        onChange: (e) =>
+                          updateSoundSetting(drum, "frequency", e.target.value),
+                        className: "w-full",
+                      }),
+                      React.createElement(
+                        "div",
+                        { className: "flex items-center justify-between" },
+                        React.createElement(
+                          "label",
+                          { className: "text-xs text-gray-300" },
+                          "Volume"
+                        ),
+                        React.createElement(
+                          "span",
+                          { className: "text-xs text-gray-400" },
+                          soundSettings[drum].volume.toFixed(1)
+                        )
+                      ),
+                      React.createElement("input", {
+                        type: "range",
+                        min: "0.1",
+                        max: "1",
+                        step: "0.1",
+                        value: soundSettings[drum].volume,
+                        onChange: (e) =>
+                          updateSoundSetting(drum, "volume", e.target.value),
+                        className: "w-full",
+                      })
+                    )
+                  )
+                )
+              )
+            ),
+
+          // Presets
+          React.createElement(
+            "div",
+            { className: "mb-6" },
+            React.createElement(
+              "h3",
+              { className: "text-lg font-semibold mb-2" },
+              "Presets:"
+            ),
+            React.createElement(
+              "div",
+              { className: "flex flex-wrap gap-2" },
+              Object.keys(presetPatterns).map((preset) =>
+                React.createElement(
+                  "button",
+                  {
+                    key: preset,
+                    onClick: () => loadPreset(preset),
+                    className:
+                      "px-3 py-1 bg-indigo-600 hover:bg-indigo-700 rounded text-sm",
+                  },
+                  preset
+                )
+              )
+            )
+          ),
+
+          // Pattern Grid
+          React.createElement(
+            "div",
+            { className: "bg-gray-800 p-4 rounded-lg overflow-x-auto" },
+            React.createElement(
+              "div",
+              { className: "flex items-center mb-4" },
+              React.createElement(
+                "div",
+                { className: "w-32 text-sm font-medium text-gray-400 mr-4" },
+                "Instrument"
+              ),
+              React.createElement(
+                "div",
+                { className: "flex gap-2" },
+                Array.from({ length: 16 }, (_, i) =>
+                  React.createElement(
+                    "div",
+                    {
+                      key: i,
+                      className: "w-10 text-center text-xs text-gray-400",
+                    },
+                    i + 1
+                  )
+                )
+              )
+            ),
+
+            Object.keys(patterns).map((drum) =>
+              React.createElement(
+                "div",
+                { key: drum, className: "flex items-center mb-3" },
+                React.createElement(
+                  "div",
+                  {
+                    className:
+                      "w-32 text-sm font-medium mr-4 flex items-center",
+                  },
+                  React.createElement("div", {
+                    className: `w-4 h-4 rounded ${drumColors[drum]} mr-2 ${
+                      mutedInstruments[drum] ? "opacity-50" : ""
+                    }`,
+                  }),
+                  React.createElement(
+                    "span",
+                    { className: mutedInstruments[drum] ? "opacity-50" : "" },
+                    drumLabels[drum]
+                  )
+                ),
+                React.createElement(
+                  "button",
+                  {
+                    onClick: () => toggleMute(drum),
+                    className: `mr-2 p-1 rounded ${
+                      mutedInstruments[drum]
+                        ? "bg-red-600 hover:bg-red-700"
+                        : "bg-gray-600 hover:bg-gray-700"
+                    }`,
+                    title: mutedInstruments[drum] ? "Unmute" : "Mute",
+                  },
+                  mutedInstruments[drum]
+                    ? React.createElement(VolumeXIcon)
+                    : React.createElement(Volume2Icon)
+                ),
+                React.createElement(
+                  "div",
+                  { className: "flex gap-2" },
+                  patterns[drum].map((active, step) =>
+                    React.createElement(
+                      "button",
+                      {
+                        key: step,
+                        onClick: () => toggleStep(drum, step),
+                        className: `w-10 h-10 rounded border-2 transition-all ${
+                          active
+                            ? `${drumColors[drum]} border-white shadow-lg ${
+                                mutedInstruments[drum] ? "opacity-50" : ""
+                              }`
+                            : "bg-gray-700 border-gray-600 hover:border-gray-500 hover:bg-gray-600"
+                        } ${
+                          currentStep === step && isPlaying
+                            ? "ring-2 ring-yellow-400"
+                            : ""
+                        }`,
+                      },
+                      active &&
+                        React.createElement(
+                          "div",
+                          {
+                            className:
+                              "w-full h-full flex items-center justify-center",
+                          },
+                          React.createElement("div", {
+                            className: "w-2 h-2 bg-white rounded-full",
+                          })
+                        )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+
+          // Indicateur de lecture
+          React.createElement(
+            "div",
+            { className: "mt-4 text-center" },
+            React.createElement(
+              "div",
+              { className: "text-sm text-gray-400" },
+              `Step: ${currentStep + 1} / 16`
+            ),
+            React.createElement(
+              "div",
+              { className: "w-full bg-gray-700 rounded-full h-2 mt-2" },
+              React.createElement("div", {
+                className:
+                  "bg-green-500 h-2 rounded-full transition-all duration-100",
+                style: { width: `${((currentStep + 1) / 16) * 100}%` },
+              })
+            )
+          ),
+
+          // Instructions
+          React.createElement(
+            "div",
+            { className: "mt-6 text-sm text-gray-400" },
+            React.createElement(
+              "p",
+              null,
+              React.createElement("strong", null, "Instructions:")
+            ),
+            React.createElement(
+              "p",
+              null,
+              "• Cliquez sur les cases pour activer/désactiver les sons"
+            ),
+            React.createElement(
+              "p",
+              null,
+              "• MIDI fonctionne maintenant sur votre serveur !"
+            ),
+            React.createElement(
+              "p",
+              null,
+              "• Utilisez les presets pour commencer rapidement"
+            ),
+            React.createElement(
+              "p",
+              null,
+              "• BD = Grosse Caisse, SD = Caisse Claire, HH/OH = Charleston, T1/T2/T3 = Toms"
+            )
+          )
+        );
+      };
+
+      ReactDOM.render(
+        React.createElement(DrumPatternGenerator),
+        document.getElementById("root")
+      );
+    </script>
+  </body>
+</html>

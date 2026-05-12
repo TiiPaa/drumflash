@@ -1,0 +1,19 @@
+# Rust
+target/
+Cargo.lock
+
+# Build artifacts
+drum-pattern-vst/build/
+*.dll
+*.exe
+
+# IDE / temp
+.codex-tmp/
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
