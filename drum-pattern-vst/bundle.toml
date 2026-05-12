@@ -1,0 +1,12 @@
+name = "Drum Flash"
+version = "0.1.0"
+
+[bundle]
+identifier = "com.drumflash.vst"
+copyright = "Copyright (c) 2024"
+category = "Instrument"
+short_description = "16-step drum sequencer plugin"
+long_description = """
+A VST3 plugin drum sequencer with real-time drum synthesis.
+Features 7 drum voices, 16-step patterns, multi-output audio, and DAW synchronization.
+"""

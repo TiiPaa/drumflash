@@ -1,0 +1,38 @@
+# Only the public project belongs at the repository root.
+/*
+!/.gitignore
+!/.github/
+!/drum-pattern-vst/
+!/tools/
+!/README.md
+!/RELEASE-NOTES.md
+!/LICENSE
+!/THIRD-PARTY.txt
+!/THIRD-PARTY-LICENSES.txt
+
+# Rust and build artifacts
+target/
+**/vendor/**/Cargo.lock
+*.pdb
+*.zip
+*.dll
+*.exe
+/drum-pattern-vst/build/
+
+# Local design reference, not part of the plugin
+/drum-pattern-vst/assets/mockup-sound-editor.html
+
+# IDE, temporary files and backups
+.*-tmp/
+.vscode/
+.idea/
+*.swp
+*~
+backups/
+*.backup.*
+remaining_content.txt
+tail_content.txt
+
+# OS
+.DS_Store
+Thumbs.db
