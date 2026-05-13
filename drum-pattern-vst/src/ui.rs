@@ -19,16 +19,18 @@ use crate::{
     midi_export,
     sequencer::{Pattern, SharedPattern},
     sound_settings::SoundSettingsState,
+    synthesis::{self, DrumVoice},
     DrumFlashParams, BUILD_ID,
 };
 
-const INSTRUMENT_LABELS: [&str; 7] = ["BD", "SD", "HH", "OH", "T1", "T2", "T3"];
+const INSTRUMENT_LABELS: [&str; DrumVoice::COUNT] = ["BD", "SD", "HH", "OH", "T1", "T2", "T3", "CL", "RD", "CY"];
 
 pub fn create_editor(
     params: Arc<DrumFlashParams>,
     current_step: Arc<AtomicU32>,
+    current_steps: Arc<[AtomicU32; DrumVoice::COUNT]>,
     pattern: Arc<SharedPattern>,
-    voice_test_triggers: Arc<[AtomicBool; 7]>,
+    voice_test_triggers: Arc<[AtomicBool; DrumVoice::COUNT]>,
     sound_settings_state: Arc<SoundSettingsState>,
 ) -> Option<Box<dyn Editor>> {
     let params_for_ui = params.clone();
@@ -36,6 +38,7 @@ pub fn create_editor(
     let pattern_for_ui = pattern.clone();
     let voice_test_triggers_for_ui = voice_test_triggers.clone();
     let sound_settings_for_ui = sound_settings_state.clone();
+    let current_steps_for_ui = current_steps.clone();
 
     create_egui_editor(
         params.editor_state.clone(),
@@ -69,8 +72,14 @@ pub fn create_editor(
 
                             ui.label("Fallback BPM");
                             ui.add(widgets::ParamSlider::for_param(&params_for_ui.bpm, setter));
+                            ui.horizontal(|ui| {
+                                ui.label("Swing");
+                                ui.add(widgets::ParamSlider::for_param(&params_for_ui.swing, setter).with_width(100.0));
+                                enum_combo(ui, setter, &params_for_ui.groove_type, "Groove");
+                                bool_checkbox(ui, setter, &params_for_ui.hihat_chokes_oh, "Choke");
+                            });
 
-                            ui.label("Sorties: Main Mix + Kick, Snare, Hi-Hat, Open HH, Tom 1, Tom 2, Tom 3");
+                            ui.label("Sorties: Main Mix + Kick, Snare, Hi-Hat, Open HH, Tom 1, Tom 2, Tom 3, Clap, Ride, Cymbal");
 
                             ui.separator();
                             ui.horizontal(|ui| {
@@ -108,12 +117,9 @@ pub fn create_editor(
                             ui.separator();
                             ui.label(egui::RichText::new("Pattern Generator").strong());
                             ui.horizontal(|ui| {
-                                ui.label("Type");
-                                ui.add(widgets::ParamSlider::for_param(&params_for_ui.generator_type, setter).with_width(100.0));
-                                ui.label("Style A");
-                                ui.add(widgets::ParamSlider::for_param(&params_for_ui.style_primary, setter).with_width(80.0));
-                                ui.label("Style B");
-                                ui.add(widgets::ParamSlider::for_param(&params_for_ui.style_secondary, setter).with_width(80.0));
+                                enum_combo(ui, setter, &params_for_ui.generator_type, "Type");
+                                enum_combo(ui, setter, &params_for_ui.style_primary, "Style A");
+                                enum_combo(ui, setter, &params_for_ui.style_secondary, "Style B");
                             });
                             ui.horizontal(|ui| {
                                 ui.label("Mix");
@@ -179,8 +185,8 @@ pub fn create_editor(
                                         }
                                         for step in 0..16 {
                                             let active = pattern_for_ui.is_active(step, instrument);
-                                            let is_current = current_step.load(Ordering::Relaxed)
-                                                as usize
+                                            let is_current = current_steps_for_ui[instrument]
+                                                .load(Ordering::Relaxed) as usize
                                                 == step;
                                             let button =
                                                 egui::Button::new(if active { "X" } else { "." })
@@ -207,8 +213,73 @@ pub fn create_editor(
 
                             if *show_sound_panel {
                                 ui.separator();
-                                draw_sound_panel(ui, &sound_settings_for_ui, selected_instrument);
+                                draw_sound_panel(ui, &sound_settings_for_ui, selected_instrument, &params_for_ui, setter);
                             }
+
+                            ui.separator();
+                            ui.label(egui::RichText::new("Track Groove").strong());
+                            egui::Grid::new("track-groove-grid")
+                                .spacing(Vec2::new(4.0, 4.0))
+                                .show(ui, |ui| {
+                                    ui.label("");
+                                    ui.label("Hum");
+                                    ui.label("Push");
+                                    ui.label("Len");
+                                    ui.end_row();
+
+                                    let hums = [
+                                        &params_for_ui.humanize_kick,
+                                        &params_for_ui.humanize_snare,
+                                        &params_for_ui.humanize_hihat,
+                                        &params_for_ui.humanize_open_hh,
+                                        &params_for_ui.humanize_tom1,
+                                        &params_for_ui.humanize_tom2,
+                                        &params_for_ui.humanize_tom3,
+                                        &params_for_ui.humanize_clap,
+                                        &params_for_ui.humanize_ride,
+                                        &params_for_ui.humanize_cymbal,
+                                    ];
+                                    let pushes = [
+                                        &params_for_ui.push_kick,
+                                        &params_for_ui.push_snare,
+                                        &params_for_ui.push_hihat,
+                                        &params_for_ui.push_open_hh,
+                                        &params_for_ui.push_tom1,
+                                        &params_for_ui.push_tom2,
+                                        &params_for_ui.push_tom3,
+                                        &params_for_ui.push_clap,
+                                        &params_for_ui.push_ride,
+                                        &params_for_ui.push_cymbal,
+                                    ];
+                                    let lengths = [
+                                        &params_for_ui.length_kick,
+                                        &params_for_ui.length_snare,
+                                        &params_for_ui.length_hihat,
+                                        &params_for_ui.length_open_hh,
+                                        &params_for_ui.length_tom1,
+                                        &params_for_ui.length_tom2,
+                                        &params_for_ui.length_tom3,
+                                        &params_for_ui.length_clap,
+                                        &params_for_ui.length_ride,
+                                        &params_for_ui.length_cymbal,
+                                    ];
+
+                                    for (i, label) in INSTRUMENT_LABELS.iter().enumerate() {
+                                        ui.monospace(*label);
+                                        ui.add(widgets::ParamSlider::for_param(hums[i], setter).with_width(50.0));
+                                        ui.add(widgets::ParamSlider::for_param(pushes[i], setter).with_width(60.0));
+                                        ui.add(widgets::ParamSlider::for_param(lengths[i], setter).with_width(40.0));
+                                        ui.end_row();
+                                    }
+                                });
+
+                            ui.separator();
+                            ui.horizontal(|ui| {
+                                ui.label("Kick Click");
+                                ui.add(widgets::ParamSlider::for_param(&params_for_ui.kick_click, setter).with_width(80.0));
+                                ui.label("Tom Stick");
+                                ui.add(widgets::ParamSlider::for_param(&params_for_ui.tom_stick, setter).with_width(80.0));
+                            });
 
                             ui.separator();
                             ui.label("La grille edite le pattern joue en temps reel.");
@@ -225,7 +296,7 @@ fn load_pattern_for_ui(pattern_for_ui: &SharedPattern, pattern: &Pattern) {
 
 fn toggle_step_for_ui(pattern_for_ui: &SharedPattern, step: usize, instrument: usize) {
     let current_mask = pattern_for_ui.load_step_mask(step);
-    let bit = 1u8 << instrument;
+    let bit = 1u16 << instrument;
     let next_mask = current_mask ^ bit;
     pattern_for_ui.set_step_mask(step, next_mask);
 }
@@ -235,7 +306,7 @@ struct MixerRow<'a> {
     solo: &'a BoolParam,
 }
 
-fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; 7] {
+fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; DrumVoice::COUNT] {
     [
         MixerRow {
             mute: &params.mute_kick,
@@ -265,7 +336,73 @@ fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; 7] {
             mute: &params.mute_tom3,
             solo: &params.solo_tom3,
         },
+        MixerRow {
+            mute: &params.mute_clap,
+            solo: &params.solo_clap,
+        },
+        MixerRow {
+            mute: &params.mute_ride,
+            solo: &params.solo_ride,
+        },
+        MixerRow {
+            mute: &params.mute_cymbal,
+            solo: &params.solo_cymbal,
+        },
     ]
+}
+
+fn bool_checkbox(ui: &mut egui::Ui, setter: &ParamSetter, param: &BoolParam, label: &str) {
+    let mut value = param.value();
+    if ui.checkbox(&mut value, label).changed() {
+        setter.begin_set_parameter(param);
+        setter.set_parameter(param, value);
+        setter.end_set_parameter(param);
+    }
+}
+
+fn enum_combo<E: nih_plug::prelude::Enum + PartialEq + 'static>(
+    ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    param: &EnumParam<E>,
+    label: &str,
+) {
+    let current = param.value();
+    let current_idx = current.to_index();
+    let variants = E::variants();
+    egui::ComboBox::from_label(label)
+        .selected_text(variants[current_idx])
+        .show_ui(ui, |ui| {
+            for (i, name) in variants.iter().enumerate() {
+                let selected = i == current_idx;
+                if ui.selectable_label(selected, *name).clicked() && !selected {
+                    setter.begin_set_parameter(param);
+                    setter.set_parameter(param, E::from_index(i));
+                    setter.end_set_parameter(param);
+                }
+            }
+        });
+}
+
+fn algo_combo(
+    ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    param: &IntParam,
+    algo_names: &[&str],
+) {
+    let current = param.value() as usize;
+    let current_clamped = current.min(algo_names.len().saturating_sub(1));
+    egui::ComboBox::from_label("")
+        .selected_text(*algo_names.get(current_clamped).unwrap_or(&"?"))
+        .show_ui(ui, |ui| {
+            for (i, name) in algo_names.iter().enumerate() {
+                let selected = i == current_clamped;
+                if ui.selectable_label(selected, *name).clicked() && !selected {
+                    setter.begin_set_parameter(param);
+                    setter.set_parameter(param, i as i32);
+                    setter.end_set_parameter(param);
+                }
+            }
+        });
 }
 
 fn draw_bool_toggle(
@@ -318,6 +455,8 @@ fn draw_sound_panel(
     ui: &mut egui::Ui,
     sound_settings: &SoundSettingsState,
     selected_instrument: &mut usize,
+    params: &DrumFlashParams,
+    setter: &ParamSetter,
 ) {
     ui.label(egui::RichText::new("Configuration des Sons").strong());
     ui.horizontal(|ui| {
@@ -375,6 +514,50 @@ fn draw_sound_panel(
             changed = true;
         }
     });
+
+    // Algorithm selector
+    let voice = DrumVoice::from_index(*selected_instrument).unwrap();
+    let algos = synthesis::algos_for(voice);
+    if algos.len() > 1 {
+        let algo_param = match *selected_instrument {
+            0 => &params.algo_kick,
+            1 => &params.algo_snare,
+            2 => &params.algo_hihat,
+            3 => &params.algo_open_hh,
+            4 => &params.algo_tom1,
+            5 => &params.algo_tom2,
+            6 => &params.algo_tom3,
+            7 => &params.algo_clap,
+            8 => &params.algo_ride,
+            9 => &params.algo_cymbal,
+            _ => &params.algo_kick,
+        };
+        ui.horizontal(|ui| {
+            ui.label("Algorithm");
+            let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
+            algo_combo(ui, setter, algo_param, &algo_names);
+        });
+    }
+
+    // Per-instrument special parameters
+    if *selected_instrument == 0 {
+        ui.horizontal(|ui| {
+            ui.label("Click Level");
+            ui.add(widgets::ParamSlider::for_param(&params.kick_click, setter).with_width(120.0));
+        });
+    }
+    if *selected_instrument == 1 {
+        ui.horizontal(|ui| {
+            ui.label("Snap");
+            ui.add(widgets::ParamSlider::for_param(&params.snare_snap, setter).with_width(120.0));
+        });
+    }
+    if *selected_instrument == 4 || *selected_instrument == 5 || *selected_instrument == 6 {
+        ui.horizontal(|ui| {
+            ui.label("Stick Attack");
+            ui.add(widgets::ParamSlider::for_param(&params.tom_stick, setter).with_width(120.0));
+        });
+    }
 
     if changed {
         sound_settings.bump_version();

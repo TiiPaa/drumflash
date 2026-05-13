@@ -10,6 +10,7 @@ use std::sync::{
 };
 
 mod generator;
+mod groove;
 mod midi_export;
 mod sequencer;
 mod sound_settings;
@@ -27,9 +28,9 @@ pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
     None => "dev",
 };
 const OUTPUT_PORT_NAMES: [&str; DrumVoice::COUNT] = [
-    "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3",
+    "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal",
 ];
-const MIDI_NOTE_MAP: [u8; DrumVoice::COUNT] = [36, 38, 42, 46, 50, 47, 43];
+const MIDI_NOTE_MAP: [u8; DrumVoice::COUNT] = [36, 38, 42, 46, 50, 47, 43, 39, 51, 49];
 const STEP_COUNT: usize = 16;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v1";
@@ -40,11 +41,14 @@ pub struct DrumFlashVst {
     synthesizer: DrumSynthesizer,
     sample_rate: f32,
     current_step: Arc<AtomicU32>,
+    current_steps: Arc<[AtomicU32; DrumVoice::COUNT]>,
     pattern: Arc<SharedPattern>,
-    last_step_masks: [u8; STEP_COUNT],
+    last_step_masks: [u16; STEP_COUNT],
     voice_test_triggers: Arc<[AtomicBool; DrumVoice::COUNT]>,
     sound_settings_state: Arc<SoundSettingsState>,
     last_sound_settings_version: u64,
+    /// Last host beat position, used to detect seeks.
+    last_host_pos: Option<f64>,
 }
 
 #[derive(Params)]
@@ -63,6 +67,82 @@ pub struct DrumFlashParams {
 
     #[id = "bpm"]
     pub bpm: FloatParam,
+
+    #[id = "swing"]
+    pub swing: FloatParam,
+
+    #[id = "groove_type"]
+    pub groove_type: EnumParam<groove::GrooveType>,
+
+    // Per-track groove parameters (3 × 7 instruments)
+    #[id = "hu_kick"]
+    pub humanize_kick: FloatParam,
+    #[id = "hu_snare"]
+    pub humanize_snare: FloatParam,
+    #[id = "hu_hihat"]
+    pub humanize_hihat: FloatParam,
+    #[id = "hu_ohh"]
+    pub humanize_open_hh: FloatParam,
+    #[id = "hu_t1"]
+    pub humanize_tom1: FloatParam,
+    #[id = "hu_t2"]
+    pub humanize_tom2: FloatParam,
+    #[id = "hu_t3"]
+    pub humanize_tom3: FloatParam,
+    #[id = "hu_clap"]
+    pub humanize_clap: FloatParam,
+    #[id = "hu_ride"]
+    pub humanize_ride: FloatParam,
+    #[id = "hu_cymbal"]
+    pub humanize_cymbal: FloatParam,
+
+    #[id = "pp_kick"]
+    pub push_kick: FloatParam,
+    #[id = "pp_snare"]
+    pub push_snare: FloatParam,
+    #[id = "pp_hihat"]
+    pub push_hihat: FloatParam,
+    #[id = "pp_ohh"]
+    pub push_open_hh: FloatParam,
+    #[id = "pp_t1"]
+    pub push_tom1: FloatParam,
+    #[id = "pp_t2"]
+    pub push_tom2: FloatParam,
+    #[id = "pp_t3"]
+    pub push_tom3: FloatParam,
+    #[id = "pp_clap"]
+    pub push_clap: FloatParam,
+    #[id = "pp_ride"]
+    pub push_ride: FloatParam,
+    #[id = "pp_cymbal"]
+    pub push_cymbal: FloatParam,
+
+    #[id = "pl_kick"]
+    pub length_kick: IntParam,
+    #[id = "pl_snare"]
+    pub length_snare: IntParam,
+    #[id = "pl_hihat"]
+    pub length_hihat: IntParam,
+    #[id = "pl_ohh"]
+    pub length_open_hh: IntParam,
+    #[id = "pl_t1"]
+    pub length_tom1: IntParam,
+    #[id = "pl_t2"]
+    pub length_tom2: IntParam,
+    #[id = "pl_t3"]
+    pub length_tom3: IntParam,
+    #[id = "pl_clap"]
+    pub length_clap: IntParam,
+    #[id = "pl_ride"]
+    pub length_ride: IntParam,
+    #[id = "pl_cymbal"]
+    pub length_cymbal: IntParam,
+
+    #[id = "kick_click"]
+    pub kick_click: FloatParam,
+
+    #[id = "tom_stick"]
+    pub tom_stick: FloatParam,
 
     #[id = "mute_kick"]
     pub mute_kick: BoolParam,
@@ -84,6 +164,12 @@ pub struct DrumFlashParams {
 
     #[id = "mute_tom3"]
     pub mute_tom3: BoolParam,
+    #[id = "mute_clap"]
+    pub mute_clap: BoolParam,
+    #[id = "mute_ride"]
+    pub mute_ride: BoolParam,
+    #[id = "mute_cymbal"]
+    pub mute_cymbal: BoolParam,
 
     #[id = "solo_kick"]
     pub solo_kick: BoolParam,
@@ -105,6 +191,12 @@ pub struct DrumFlashParams {
 
     #[id = "solo_tom3"]
     pub solo_tom3: BoolParam,
+    #[id = "solo_clap"]
+    pub solo_clap: BoolParam,
+    #[id = "solo_ride"]
+    pub solo_ride: BoolParam,
+    #[id = "solo_cymbal"]
+    pub solo_cymbal: BoolParam,
 
     #[id = "gen_type"]
     pub generator_type: EnumParam<GeneratorType>,
@@ -123,6 +215,36 @@ pub struct DrumFlashParams {
 
     #[id = "gen_var"]
     pub gen_variation: FloatParam,
+
+    // Synthesis algorithms per instrument (0 = default)
+    #[id = "algo_kick"]
+    pub algo_kick: IntParam,
+    #[id = "algo_snare"]
+    pub algo_snare: IntParam,
+    #[id = "algo_hihat"]
+    pub algo_hihat: IntParam,
+    #[id = "algo_open_hh"]
+    pub algo_open_hh: IntParam,
+    #[id = "algo_tom1"]
+    pub algo_tom1: IntParam,
+    #[id = "algo_tom2"]
+    pub algo_tom2: IntParam,
+    #[id = "algo_tom3"]
+    pub algo_tom3: IntParam,
+    #[id = "algo_clap"]
+    pub algo_clap: IntParam,
+    #[id = "algo_ride"]
+    pub algo_ride: IntParam,
+    #[id = "algo_cymbal"]
+    pub algo_cymbal: IntParam,
+
+    // Special parameters per instrument
+    #[id = "snare_snap"]
+    pub snare_snap: FloatParam,
+
+    // Hi-hat chokes open hi-hat when triggered
+    #[id = "hihat_chokes_oh"]
+    pub hihat_chokes_oh: BoolParam,
 }
 
 impl Default for DrumFlashParams {
@@ -155,6 +277,97 @@ impl Default for DrumFlashParams {
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
+            swing: FloatParam::new(
+                "Swing",
+                0.0,
+                FloatRange::Linear { min: -0.5, max: 0.5 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_unit(" %")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            groove_type: EnumParam::new("Groove", groove::GrooveType::Swing16),
+
+            // Humanize per track (0 = none, 1 = max)
+            humanize_kick: FloatParam::new("Humanize Kick", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_snare: FloatParam::new("Humanize Snare", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_hihat: FloatParam::new("Humanize Hi-Hat", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_open_hh: FloatParam::new("Humanize Open HH", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_tom1: FloatParam::new("Humanize Tom 1", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_tom2: FloatParam::new("Humanize Tom 2", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_tom3: FloatParam::new("Humanize Tom 3", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_clap: FloatParam::new("Humanize Clap", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_ride: FloatParam::new("Humanize Ride", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_cymbal: FloatParam::new("Humanize Cymbal", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            // Push/pull per track (-50 ms = early, +50 ms = late)
+            push_kick: FloatParam::new("Push/Pull Kick", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_snare: FloatParam::new("Push/Pull Snare", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_hihat: FloatParam::new("Push/Pull Hi-Hat", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_open_hh: FloatParam::new("Push/Pull Open HH", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_tom1: FloatParam::new("Push/Pull Tom 1", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_tom2: FloatParam::new("Push/Pull Tom 2", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_tom3: FloatParam::new("Push/Pull Tom 3", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_clap: FloatParam::new("Push/Pull Clap", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_ride: FloatParam::new("Push/Pull Ride", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+            push_cymbal: FloatParam::new("Push/Pull Cymbal", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
+
+            // Pattern length per track (1-16 steps)
+            length_kick: IntParam::new("Length Kick", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_snare: IntParam::new("Length Snare", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_hihat: IntParam::new("Length Hi-Hat", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_open_hh: IntParam::new("Length Open HH", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_tom1: IntParam::new("Length Tom 1", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_tom2: IntParam::new("Length Tom 2", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_tom3: IntParam::new("Length Tom 3", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_clap: IntParam::new("Length Clap", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_ride: IntParam::new("Length Ride", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_cymbal: IntParam::new("Length Cymbal", 16, IntRange::Linear { min: 1, max: 16 }),
+
+            kick_click: FloatParam::new(
+                "Kick Click",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            tom_stick: FloatParam::new(
+                "Tom Stick Attack",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
             mute_kick: BoolParam::new("Mute Kick", false),
             mute_snare: BoolParam::new("Mute Snare", false),
             mute_hihat: BoolParam::new("Mute Hi-Hat", false),
@@ -162,6 +375,9 @@ impl Default for DrumFlashParams {
             mute_tom1: BoolParam::new("Mute Tom 1", false),
             mute_tom2: BoolParam::new("Mute Tom 2", false),
             mute_tom3: BoolParam::new("Mute Tom 3", false),
+            mute_clap: BoolParam::new("Mute Clap", false),
+            mute_ride: BoolParam::new("Mute Ride", false),
+            mute_cymbal: BoolParam::new("Mute Cymbal", false),
             solo_kick: BoolParam::new("Solo Kick", false),
             solo_snare: BoolParam::new("Solo Snare", false),
             solo_hihat: BoolParam::new("Solo Hi-Hat", false),
@@ -169,6 +385,9 @@ impl Default for DrumFlashParams {
             solo_tom1: BoolParam::new("Solo Tom 1", false),
             solo_tom2: BoolParam::new("Solo Tom 2", false),
             solo_tom3: BoolParam::new("Solo Tom 3", false),
+            solo_clap: BoolParam::new("Solo Clap", false),
+            solo_ride: BoolParam::new("Solo Ride", false),
+            solo_cymbal: BoolParam::new("Solo Cymbal", false),
 
             generator_type: EnumParam::new("Generator", GeneratorType::Probabilistic),
             style_primary: EnumParam::new("Style A", Style::Rock),
@@ -188,6 +407,26 @@ impl Default for DrumFlashParams {
                 0.3,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             ),
+
+            algo_kick: IntParam::new("Kick Algo", 0, IntRange::Linear { min: 0, max: 2 }),
+            algo_snare: IntParam::new("Snare Algo", 0, IntRange::Linear { min: 0, max: 2 }),
+            algo_hihat: IntParam::new("HiHat Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_open_hh: IntParam::new("Open HH Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_tom1: IntParam::new("Tom1 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_tom2: IntParam::new("Tom2 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_tom3: IntParam::new("Tom3 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_clap: IntParam::new("Clap Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_ride: IntParam::new("Ride Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_cymbal: IntParam::new("Cymbal Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+
+            snare_snap: FloatParam::new(
+                "Snare Snap",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            hihat_chokes_oh: BoolParam::new("HiHat Chokes OpenHH", true),
         }
     }
 }
@@ -206,10 +445,12 @@ impl Default for DrumFlashVst {
             synthesizer: DrumSynthesizer::new(),
             sample_rate: 44100.0,
             current_step: Arc::new(AtomicU32::new(0)),
+            current_steps: Arc::new(std::array::from_fn(|_| AtomicU32::new(0))),
             last_step_masks: default_masks,
             voice_test_triggers: voice_test_triggers.clone(),
             sound_settings_state: sound_settings_state.clone(),
             last_sound_settings_version: 0,
+            last_host_pos: None,
         };
         plugin.sequencer.play();
         plugin
@@ -236,7 +477,7 @@ impl Plugin for DrumFlashVst {
         aux_input_ports: &[],
         aux_output_ports: &[new_nonzero_u32(2); DrumVoice::COUNT],
         names: PortNames {
-            layout: Some("Stereo mix + 7 stereo drum outs"),
+            layout: Some("Stereo mix + 10 stereo drum outs"),
             main_input: None,
             main_output: Some("Main Mix"),
             aux_inputs: &[],
@@ -260,6 +501,7 @@ impl Plugin for DrumFlashVst {
         ui::create_editor(
             self.params.clone(),
             self.current_step.clone(),
+            self.current_steps.clone(),
             self.pattern.clone(),
             self.voice_test_triggers.clone(),
             self.sound_settings_state.clone(),
@@ -278,6 +520,9 @@ impl Plugin for DrumFlashVst {
         self.remember_current_pattern();
         self.sequencer.play();
         self.current_step.store(0, Ordering::Relaxed);
+        for s in self.current_steps.iter() {
+            s.store(0, Ordering::Relaxed);
+        }
 
         nih_log!(
             "Drum Flash initialized at {} Hz",
@@ -290,6 +535,9 @@ impl Plugin for DrumFlashVst {
         self.sequencer.stop();
         self.synthesizer.reset();
         self.current_step.store(0, Ordering::Relaxed);
+        for s in self.current_steps.iter() {
+            s.store(0, Ordering::Relaxed);
+        }
     }
 
     fn process(
@@ -310,15 +558,27 @@ impl Plugin for DrumFlashVst {
             if transport.playing != self.sequencer.is_playing() {
                 if transport.playing {
                     self.sequencer.play();
+                    // Sync on play start
+                    if let Some(position_beats) = transport.pos_beats() {
+                        self.sequencer.sync_to_host(position_beats, bpm, sample_rate);
+                        self.last_host_pos = Some(position_beats);
+                    }
                 } else {
                     self.sequencer.stop();
+                    self.last_host_pos = None;
                 }
-            }
-
-            if transport.playing {
+            } else if transport.playing {
+                // Detect significant host seeks (>0.2 beats) and resync
                 if let Some(position_beats) = transport.pos_beats() {
-                    self.sequencer
-                        .sync_to_host(position_beats, bpm, sample_rate);
+                    let host_pos_mod = position_beats.rem_euclid(4.0);
+                    let seq_pos_mod = self.sequencer.beat_position().rem_euclid(4.0);
+                    let diff = (host_pos_mod - seq_pos_mod).abs();
+                    // Use shortest distance on the 4-beat circle
+                    let diff = diff.min(4.0 - diff);
+                    if diff > 0.2 {
+                        self.sequencer.sync_to_host(position_beats, bpm, sample_rate);
+                    }
+                    self.last_host_pos = Some(position_beats);
                 }
             }
         } else if !self.sequencer.is_playing() {
@@ -333,6 +593,9 @@ impl Plugin for DrumFlashVst {
             self.params.mute_tom1.value(),
             self.params.mute_tom2.value(),
             self.params.mute_tom3.value(),
+            self.params.mute_clap.value(),
+            self.params.mute_ride.value(),
+            self.params.mute_cymbal.value(),
         ];
         let solo_states = [
             self.params.solo_kick.value(),
@@ -342,6 +605,9 @@ impl Plugin for DrumFlashVst {
             self.params.solo_tom1.value(),
             self.params.solo_tom2.value(),
             self.params.solo_tom3.value(),
+            self.params.solo_clap.value(),
+            self.params.solo_ride.value(),
+            self.params.solo_cymbal.value(),
         ];
         let any_solo_active = solo_states.iter().copied().any(|solo| solo);
         let effective_mutes = std::array::from_fn(|index| {
@@ -360,12 +626,82 @@ impl Plugin for DrumFlashVst {
             }
         }
 
-        for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
-            let triggers = self.sequencer.process_sample(bpm, sample_rate);
+        // Update per-track groove parameters once per buffer
+        self.sequencer.set_track_params(
+            [
+                self.params.length_kick.value() as usize,
+                self.params.length_snare.value() as usize,
+                self.params.length_hihat.value() as usize,
+                self.params.length_open_hh.value() as usize,
+                self.params.length_tom1.value() as usize,
+                self.params.length_tom2.value() as usize,
+                self.params.length_tom3.value() as usize,
+                self.params.length_clap.value() as usize,
+                self.params.length_ride.value() as usize,
+                self.params.length_cymbal.value() as usize,
+            ],
+            [
+                self.params.push_kick.value(),
+                self.params.push_snare.value(),
+                self.params.push_hihat.value(),
+                self.params.push_open_hh.value(),
+                self.params.push_tom1.value(),
+                self.params.push_tom2.value(),
+                self.params.push_tom3.value(),
+                self.params.push_clap.value(),
+                self.params.push_ride.value(),
+                self.params.push_cymbal.value(),
+            ],
+            [
+                self.params.humanize_kick.value(),
+                self.params.humanize_snare.value(),
+                self.params.humanize_hihat.value(),
+                self.params.humanize_open_hh.value(),
+                self.params.humanize_tom1.value(),
+                self.params.humanize_tom2.value(),
+                self.params.humanize_tom3.value(),
+                self.params.humanize_clap.value(),
+                self.params.humanize_ride.value(),
+                self.params.humanize_cymbal.value(),
+            ],
+        );
 
-            for (voice_idx, should_trigger) in triggers.iter().enumerate() {
+        self.synthesizer.set_special_param(0, 0, self.params.kick_click.value());
+        for idx in [4, 5, 6] {
+            self.synthesizer.set_special_param(idx, 0, self.params.tom_stick.value());
+        }
+
+        // Propagate special parameters
+        self.synthesizer.set_special_param(1, 0, self.params.snare_snap.value());
+
+        // Hi-hat chokes open hi-hat
+        let hihat_chokes_oh = self.params.hihat_chokes_oh.value();
+
+        // Propagate synthesis algorithms
+        self.synthesizer.set_algo(0, self.params.algo_kick.value() as u8);
+        self.synthesizer.set_algo(1, self.params.algo_snare.value() as u8);
+        self.synthesizer.set_algo(2, self.params.algo_hihat.value() as u8);
+        self.synthesizer.set_algo(3, self.params.algo_open_hh.value() as u8);
+        self.synthesizer.set_algo(4, self.params.algo_tom1.value() as u8);
+        self.synthesizer.set_algo(5, self.params.algo_tom2.value() as u8);
+        self.synthesizer.set_algo(6, self.params.algo_tom3.value() as u8);
+        self.synthesizer.set_algo(7, self.params.algo_clap.value() as u8);
+        self.synthesizer.set_algo(8, self.params.algo_ride.value() as u8);
+        self.synthesizer.set_algo(9, self.params.algo_cymbal.value() as u8);
+
+        for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
+            let swing = self.params.swing.value();
+            let groove_type = self.params.groove_type.value();
+            let triggers = self.sequencer.process_sample(bpm, sample_rate, swing, groove_type);
+
+            for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
                 if *should_trigger {
-                    self.synthesizer.trigger(voice_idx);
+                    self.synthesizer.trigger(voice_idx, *velocity);
+
+                    // Hi-hat chokes open hi-hat
+                    if hihat_chokes_oh && voice_idx == 2 {
+                        self.synthesizer.reset_voice(3);
+                    }
 
                     let note = MIDI_NOTE_MAP[voice_idx];
                     context.send_event(NoteEvent::NoteOn {
@@ -373,7 +709,7 @@ impl Plugin for DrumFlashVst {
                         voice_id: None,
                         channel: 9,
                         note,
-                        velocity: 0.8,
+                        velocity: *velocity,
                     });
                     context.send_event(NoteEvent::NoteOff {
                         timing: (sample_idx + 1) as u32,
@@ -387,7 +723,7 @@ impl Plugin for DrumFlashVst {
 
             for (voice_idx, trigger) in self.voice_test_triggers.iter().enumerate() {
                 if trigger.swap(false, Ordering::Relaxed) {
-                    self.synthesizer.trigger(voice_idx);
+                    self.synthesizer.trigger(voice_idx, 0.8);
                 }
             }
 
@@ -403,6 +739,8 @@ impl Plugin for DrumFlashVst {
                             decay,
                             volume: vol,
                             filter_freq: filt,
+                            algo: 0,
+                            special: [0.0; 8],
                         },
                     );
                 }
@@ -432,6 +770,9 @@ impl Plugin for DrumFlashVst {
 
         self.current_step
             .store(self.sequencer.current_step() as u32, Ordering::Relaxed);
+        for (i, step) in self.sequencer.current_steps().iter().enumerate() {
+            self.current_steps[i].store(*step as u32, Ordering::Relaxed);
+        }
 
         ProcessStatus::Normal
     }
@@ -477,14 +818,14 @@ mod tests {
         let shared_pattern = pattern_state.shared();
 
         shared_pattern.set_step_mask(0, 0);
-        shared_pattern.set_step_mask(1, 0b0111_1111);
+        shared_pattern.set_step_mask(1, 0x3ff);
 
         pattern_state.map(|masks| {
             assert_eq!(masks[0], 0);
-            assert_eq!(masks[1], 0b0111_1111);
+            assert_eq!(masks[1], 0x3ff);
         });
 
-        let restored_masks = [3u8; STEP_COUNT];
+        let restored_masks = [3u16; STEP_COUNT];
         pattern_state.set(restored_masks);
 
         assert_eq!(shared_pattern.load_step_mask(0), 3);
@@ -495,7 +836,7 @@ mod tests {
     fn legacy_step_params_migrate_to_persistent_pattern_field() {
         let mut params = BTreeMap::new();
         params.insert("st01".to_string(), ParamValue::I32(0));
-        params.insert("st02".to_string(), ParamValue::I32(0b0111_1111));
+        params.insert("st02".to_string(), ParamValue::I32(0x7f));
 
         let mut state = PluginState {
             version: "0.1.0".to_string(),
@@ -509,11 +850,11 @@ mod tests {
             .fields
             .get(PATTERN_STATE_FIELD)
             .expect("legacy pattern field should be created");
-        let masks: [u8; STEP_COUNT] =
+        let masks: [u16; STEP_COUNT] =
             deserialize_field(serialized_pattern).expect("pattern field should deserialize");
 
         assert_eq!(masks[0], 0);
-        assert_eq!(masks[1], 0b0111_1111);
+        assert_eq!(masks[1], 0x7f);
         assert_eq!(masks[2], 0);
     }
 }

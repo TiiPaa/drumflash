@@ -50,6 +50,9 @@ fn euclidean_params(density: f32) -> [(usize, usize); INSTRUMENT_COUNT] {
         ((d * 3.0).round() as usize, STEP_COUNT),
         ((d * 3.0).round() as usize, STEP_COUNT),
         ((d * 2.0).round() as usize, STEP_COUNT),
+        ((d * 2.0).round() as usize, STEP_COUNT), // Clap
+        ((4.0 + d * 8.0).round() as usize, STEP_COUNT), // Ride
+        ((d * 2.0).round() as usize, STEP_COUNT), // Cymbal
     ]
 }
 

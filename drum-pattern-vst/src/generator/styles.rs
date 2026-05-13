@@ -144,6 +144,27 @@ impl MusicalTemplate {
                     candidate_prob: 0.1,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                 },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (90.0, 140.0),
         }
@@ -193,6 +214,27 @@ impl MusicalTemplate {
                     candidates: &[14, 15],
                     candidate_prob: 0.15,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (90.0, 130.0),
@@ -244,6 +286,27 @@ impl MusicalTemplate {
                     candidate_prob: 0.1,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                 },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (120.0, 140.0),
         }
@@ -293,6 +356,27 @@ impl MusicalTemplate {
                     candidates: &[14, 15],
                     candidate_prob: 0.1,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (80.0, 100.0),
@@ -344,6 +428,27 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                 },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 160.0),
         }
@@ -393,6 +498,27 @@ impl MusicalTemplate {
                     candidates: &[14, 15],
                     candidate_prob: 0.2,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (140.0, 200.0),
@@ -444,6 +570,27 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                 },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 140.0),
         }
@@ -493,6 +640,27 @@ impl MusicalTemplate {
                     candidates: &[14, 15],
                     candidate_prob: 0.1,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (110.0, 130.0),
@@ -544,6 +712,27 @@ impl MusicalTemplate {
                     candidate_prob: 0.1,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                 },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (130.0, 160.0),
         }
@@ -593,6 +782,27 @@ impl MusicalTemplate {
                     candidates: &[14, 15],
                     candidate_prob: 0.1,
                     exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                // Clap
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Ride
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Cymbal
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (70.0, 90.0),

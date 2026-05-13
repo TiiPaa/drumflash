@@ -37,7 +37,7 @@ impl InstrumentSettingsState {
 }
 
 pub struct SoundSettingsState {
-    pub instruments: [InstrumentSettingsState; 7],
+    pub instruments: [InstrumentSettingsState; 10],
     pub version: AtomicU64,
 }
 
@@ -45,12 +45,15 @@ impl SoundSettingsState {
     pub fn new() -> Arc<Self> {
         let defaults = [
             (60.0, 0.5, 0.8, 100.0),     // Kick
-            (200.0, 0.2, 0.6, 1000.0),   // Snare
-            (8000.0, 0.1, 0.3, 10000.0), // HiHat
-            (6000.0, 0.3, 0.4, 8000.0),  // Open HH
+            (200.0, 0.47, 0.6, 1000.0),  // Snare
+            (8000.0, 0.36, 0.3, 10000.0), // HiHat
+            (6000.0, 0.66, 0.4, 8000.0),  // Open HH
             (300.0, 0.3, 0.5, 2000.0),   // Tom1
             (200.0, 0.4, 0.5, 1500.0),   // Tom2
             (120.0, 0.5, 0.5, 1000.0),   // Tom3
+            (1200.0, 0.15, 0.7, 2500.0), // Clap
+            (8000.0, 1.2, 0.35, 10000.0), // Ride
+            (6000.0, 2.0, 0.4, 8000.0),  // Cymbal
         ];
 
         Arc::new(Self {
@@ -66,8 +69,8 @@ impl SoundSettingsState {
         self.version.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn read_all(&self) -> [f32; 28] {
-        let mut result = [0.0f32; 28];
+    pub fn read_all(&self) -> Vec<f32> {
+        let mut result = vec![0.0f32; 40];
         for (i, inst) in self.instruments.iter().enumerate() {
             let (f, d, v, fl) = inst.load();
             result[i * 4] = f;
@@ -78,13 +81,13 @@ impl SoundSettingsState {
         result
     }
 
-    pub fn write_all(&self, values: &[f32; 28]) {
+    pub fn write_all(&self, values: &[f32]) {
         for (i, inst) in self.instruments.iter().enumerate() {
             inst.store(
-                values[i * 4],
-                values[i * 4 + 1],
-                values[i * 4 + 2],
-                values[i * 4 + 3],
+                values.get(i * 4).copied().unwrap_or(0.0),
+                values.get(i * 4 + 1).copied().unwrap_or(0.0),
+                values.get(i * 4 + 2).copied().unwrap_or(0.0),
+                values.get(i * 4 + 3).copied().unwrap_or(0.0),
             );
         }
         self.bump_version();
@@ -104,14 +107,14 @@ impl PersistentSoundSettings {
     }
 }
 
-impl<'a> PersistentField<'a, [f32; 28]> for PersistentSoundSettings {
-    fn set(&self, new_value: [f32; 28]) {
+impl<'a> PersistentField<'a, Vec<f32>> for PersistentSoundSettings {
+    fn set(&self, new_value: Vec<f32>) {
         self.state.write_all(&new_value);
     }
 
     fn map<F, R>(&self, f: F) -> R
     where
-        F: Fn(&[f32; 28]) -> R,
+        F: Fn(&Vec<f32>) -> R,
     {
         let values = self.state.read_all();
         f(&values)

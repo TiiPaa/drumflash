@@ -1,133 +1,141 @@
-//! Tom synthesizer.
+//! Tom synthesizer — refactored with shared DSP primitives.
 //!
-//! A tom is closer to the kick family than to the snare, but with a gentler pitch sweep
-//! and a more sustained body.
+//! Architecture:
+//! - Sine oscillator + 2nd harmonic overtone (×0.22)
+//! - Exponential pitch sweep to 55 % of fundamental
+//! - One-pole lowpass filter
+//! - Exponential amplitude envelope
+//! - Optional stick attack (short noise burst) for realism
 
-use super::{Voice, VoiceSettings};
+use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
 
 pub struct TomVoice {
     settings: VoiceSettings,
     sample_rate: f32,
-    phase: f32,
-    phase_increment: f32,
-    current_frequency: f32,
-    filter_state: f32,
-    filter_alpha: f32,
-    amplitude: f32,
-    envelope_value: f32,
+
+    osc: dsp::SineOsc,
+    pitch_env: dsp::PitchEnvelope,
+    filter: dsp::OnePoleFilter,
+    amp_env: dsp::ExpDecayEnvelope,
+    stick_attack: dsp::ClickGenerator,
+
     active: bool,
-    samples_elapsed: usize,
 }
 
 impl TomVoice {
     pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
-        let filter_alpha = Self::calculate_filter_alpha(sample_rate, settings.filter_freq);
-        Self {
+        let sweep_time = 0.14f32.min(settings.decay);
+        let mut osc = dsp::SineOsc::new(sample_rate);
+        osc.set_freq(settings.frequency);
+
+        let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
+        filter.set_cutoff(settings.filter_freq, sample_rate);
+
+        let mut voice = Self {
             settings,
             sample_rate,
-            phase: 0.0,
-            phase_increment: settings.frequency / sample_rate,
-            current_frequency: settings.frequency,
-            filter_state: 0.0,
-            filter_alpha,
-            amplitude: settings.volume,
-            envelope_value: 1.0,
+            osc,
+            pitch_env: dsp::PitchEnvelope::new(sample_rate, 1.0, 0.55, sweep_time),
+            filter,
+            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 4.2, settings.decay),
+            stick_attack: dsp::ClickGenerator::new(sample_rate, 8.0, 0.5, 0.6),
             active: false,
-            samples_elapsed: 0,
-        }
+        };
+        voice.update_derived_params();
+        voice
     }
 
-    fn calculate_filter_alpha(sample_rate: f32, filter_freq: f32) -> f32 {
-        let rc = 1.0 / (2.0 * std::f32::consts::PI * filter_freq.max(1.0));
-        let dt = 1.0 / sample_rate;
-        dt / (rc + dt)
-    }
-
-    fn calculate_pitch_envelope(&self, time: f32) -> f32 {
+    fn update_derived_params(&mut self) {
+        self.osc.set_freq(self.settings.frequency);
+        self.filter.set_cutoff(self.settings.filter_freq, self.sample_rate);
+        self.amp_env.set_decay(self.settings.decay);
         let sweep_time = 0.14f32.min(self.settings.decay);
-        if time >= sweep_time {
-            self.settings.frequency * 0.55
-        } else {
-            let t = time / sweep_time.max(0.001);
-            let start = self.settings.frequency;
-            let end = self.settings.frequency * 0.55;
-            start * (end / start).powf(t)
-        }
+        self.pitch_env = dsp::PitchEnvelope::new(self.sample_rate, 1.0, 0.55, sweep_time);
     }
 
-    fn calculate_amplitude_envelope(&self, time: f32) -> f32 {
-        if time >= self.settings.decay {
-            0.01
-        } else {
-            let decay_factor = (-4.2 * time / self.settings.decay).exp();
-            decay_factor.max(0.01)
-        }
+    fn stick_amount(&self) -> f32 {
+        self.settings.special[0]
     }
 }
 
 impl Voice for TomVoice {
     fn trigger(&mut self) {
         self.active = true;
-        self.samples_elapsed = 0;
-        self.phase = 0.0;
-        self.current_frequency = self.settings.frequency;
-        self.filter_state = 0.0;
-        self.envelope_value = 1.0;
+        self.osc.reset();
+        self.filter.reset();
+        self.pitch_env.trigger();
+        self.amp_env.trigger();
+        if self.stick_amount() > 0.0 {
+            self.stick_attack.trigger();
+        }
     }
 
     fn process_sample(&mut self) -> f32 {
-        if !self.active {
-            return 0.0;
+        let mut tone = 0.0f32;
+
+        if self.active {
+            // Pitch sweep
+            let pitch_ratio = self.pitch_env.next();
+            self.osc.set_freq(self.settings.frequency * pitch_ratio);
+
+            // Fundamental + 2nd harmonic overtone
+            let fundamental = self.osc.next();
+            let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
+            let body = fundamental + overtone;
+
+            // Filter
+            let filtered = self.filter.process(body);
+
+            // Amplitude envelope
+            let env = self.amp_env.next();
+            if env <= 0.0 {
+                self.active = false;
+            } else {
+                tone = filtered * env * self.settings.volume;
+            }
         }
 
-        let time = self.samples_elapsed as f32 / self.sample_rate;
-        self.current_frequency = self.calculate_pitch_envelope(time);
-        self.phase_increment = self.current_frequency / self.sample_rate;
+        // Stick attack — allowed to ring out even if body finished
+        let attack = if self.stick_amount() > 0.0 && self.stick_attack.is_active() {
+            self.stick_attack.next() * self.stick_amount()
+        } else {
+            0.0
+        };
 
-        let fundamental = (self.phase * 2.0 * std::f32::consts::PI).sin();
-        let overtone = ((self.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
-        let body = fundamental + overtone;
-
-        // Apply lowpass filter
-        let filtered = self.filter_alpha * body + (1.0 - self.filter_alpha) * self.filter_state;
-        self.filter_state = filtered;
-
-        self.phase += self.phase_increment;
-        if self.phase >= 1.0 {
-            self.phase -= 1.0;
-        }
-
-        self.envelope_value = self.calculate_amplitude_envelope(time);
-        let output = filtered * self.envelope_value * self.amplitude;
-
-        if self.envelope_value <= 0.01 && time >= self.settings.decay {
-            self.active = false;
-            return 0.0;
-        }
-
-        self.samples_elapsed += 1;
-        output
+        tone + attack
     }
 
     fn is_active(&self) -> bool {
-        self.active
+        self.active || self.stick_attack.is_active()
     }
 
     fn reset(&mut self) {
         self.active = false;
-        self.samples_elapsed = 0;
-        self.phase = 0.0;
-        self.filter_state = 0.0;
-        self.envelope_value = 1.0;
+        self.amp_env.reset();
+        self.stick_attack.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
-        self.amplitude = settings.volume;
-        self.filter_alpha = Self::calculate_filter_alpha(self.sample_rate, settings.filter_freq);
-        if !self.active {
-            self.current_frequency = settings.frequency;
-            self.phase_increment = settings.frequency / self.sample_rate;
+        self.update_derived_params();
+    }
+
+    fn set_algo(&mut self, algo: u8) {
+        self.settings.algo = algo;
+        self.update_derived_params();
+    }
+
+    fn set_special_param(&mut self, index: usize, value: f32) {
+        if index < self.settings.special.len() {
+            self.settings.special[index] = value;
         }
+    }
+
+    fn supported_algos(&self) -> &'static [AlgoDef] {
+        special_params::TOM_ALGOS
+    }
+
+    fn special_params(&self) -> &'static [SpecialParamDef] {
+        special_params::TOM_SPECIALS
     }
 }
