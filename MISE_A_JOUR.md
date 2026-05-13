@@ -1,3 +1,57 @@
+# Mise a jour - 2026-05-13
+
+## Etat de fin de session
+
+Le plugin VST3 Rust est installe avec le build:
+
+```text
+20260513-202946
+```
+
+Le numero de build est affiche dans l'interface du plugin pour verifier que Studio One charge bien le binaire attendu.
+
+## Nouveautes de la session
+
+### Synthese modulaire
+- Architecture `Voice` modulaire avec `set_algo()` et `set_special_param()`.
+- Kick: 3 algorithmes (Sine, Square, FM) + click transient controle par slider.
+- Snare: 3 algorithmes (Synth, Noise, Layered) + parametre `snap` (osc/noise ratio).
+- Nouvelles voix: Clap, Ride, Cymbal (synthese dediee via `dsp.rs`).
+- Registre des algos et special params dans `special_params.rs`.
+
+### Sequencer avance
+- Moteur de groove: Straight, Swing 16th, Shuffle, MPC Style.
+- Push/pull par instrument (-50ms a +50ms).
+- Humanize par instrument (intensite aleatoire de velocite).
+- Generateurs de pattern: Euclidean, Markov, Probabilistic.
+- Export MIDI vers `Documents/Drum Flash/exports/`.
+
+### UI amelioree
+- BoolParam -> checkbox (`hihat_chokes_oh`).
+- EnumParam -> combobox (`groove_type`, `generator_type`, `style_primary/secondary`).
+- IntParam algo -> combobox avec noms (`Sine`, `Square`, `FM`...).
+- Panneau de synthese par instrument avec frequence, decay, volume, filter, algo, special params.
+
+### Corrections
+- Defaults de decay: Snare 0.47, HiHat 0.36, Open HH 0.66.
+- Hi-Hat Choke: option pour couper Open HH quand Closed HH trigger.
+- Step skips rares: `sync_to_host` ne se declenche plus qu'au play start ou en cas de seek > 0.2 beat.
+
+## Commande de build recommandee
+
+```powershell
+cd "E:\Dev\Projets\Drum Flash\drum-pattern-vst"
+.\build.ps1 -Install
+```
+
+## Build installe courant
+
+- Build UI: `20260513-202946`
+- VST3 class ID: `DrumFlashPlugin1`
+- Binaire installe: `C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3\Contents\x86_64-win\drum-pattern-vst.vst3`
+
+---
+
 # Mise a jour - 2026-05-11
 
 ## Etat de fin de session
