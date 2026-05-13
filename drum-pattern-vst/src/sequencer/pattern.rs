@@ -3,11 +3,11 @@
 use nih_plug::params::persist::PersistentField;
 use std::array;
 use std::sync::{
-    atomic::{AtomicU8, Ordering},
+    atomic::{AtomicU16, Ordering},
     Arc,
 };
 
-pub const INSTRUMENT_COUNT: usize = 7;
+pub const INSTRUMENT_COUNT: usize = 10;
 pub const STEP_COUNT: usize = 16;
 
 /// A single step in a pattern containing trigger states for all instruments.
@@ -28,8 +28,8 @@ impl Step {
         Self::new()
     }
 
-    pub fn bitmask(&self) -> u8 {
-        let mut bits = 0u8;
+    pub fn bitmask(&self) -> u16 {
+        let mut bits = 0u16;
         for (instrument, active) in self.instruments.iter().copied().enumerate() {
             if active {
                 bits |= 1 << instrument;
@@ -158,7 +158,7 @@ impl Pattern {
         &self.steps[index % STEP_COUNT]
     }
 
-    pub fn step_masks(&self) -> [u8; STEP_COUNT] {
+    pub fn step_masks(&self) -> [u16; STEP_COUNT] {
         array::from_fn(|step| self.get_step(step).bitmask())
     }
 
@@ -214,7 +214,7 @@ impl Pattern {
 
 /// Lock-free pattern storage shared between the audio thread and the UI.
 pub struct SharedPattern {
-    steps: [AtomicU8; STEP_COUNT],
+    steps: [AtomicU16; STEP_COUNT],
 }
 
 #[derive(Clone)]
@@ -237,17 +237,17 @@ impl PersistentPattern {
 impl SharedPattern {
     pub fn new(pattern: &Pattern) -> Arc<Self> {
         let shared = Arc::new(Self {
-            steps: array::from_fn(|step| AtomicU8::new(pattern.get_step(step).bitmask())),
+            steps: array::from_fn(|step| AtomicU16::new(pattern.get_step(step).bitmask())),
         });
         shared
     }
 
-    pub fn load_step_mask(&self, step: usize) -> u8 {
+    pub fn load_step_mask(&self, step: usize) -> u16 {
         self.steps[step % STEP_COUNT].load(Ordering::Relaxed)
     }
 
-    pub fn set_step_mask(&self, step: usize, mask: u8) {
-        self.steps[step % STEP_COUNT].store(mask & 0x7f, Ordering::Relaxed);
+    pub fn set_step_mask(&self, step: usize, mask: u16) {
+        self.steps[step % STEP_COUNT].store(mask & 0x3ff, Ordering::Relaxed);
     }
 
     pub fn is_active(&self, step: usize, instrument: usize) -> bool {
@@ -259,25 +259,25 @@ impl SharedPattern {
         (mask & (1 << instrument)) != 0
     }
 
-    pub fn load_step_masks(&self, masks: &[u8; STEP_COUNT]) {
+    pub fn load_step_masks(&self, masks: &[u16; STEP_COUNT]) {
         for (step, mask) in masks.iter().copied().enumerate() {
             self.set_step_mask(step, mask);
         }
     }
 
-    pub fn step_masks(&self) -> [u8; STEP_COUNT] {
+    pub fn step_masks(&self) -> [u16; STEP_COUNT] {
         array::from_fn(|step| self.load_step_mask(step))
     }
 }
 
-impl<'a> PersistentField<'a, [u8; STEP_COUNT]> for PersistentPattern {
-    fn set(&self, new_value: [u8; STEP_COUNT]) {
+impl<'a> PersistentField<'a, [u16; STEP_COUNT]> for PersistentPattern {
+    fn set(&self, new_value: [u16; STEP_COUNT]) {
         self.shared.load_step_masks(&new_value);
     }
 
     fn map<F, R>(&self, f: F) -> R
     where
-        F: Fn(&[u8; STEP_COUNT]) -> R,
+        F: Fn(&[u16; STEP_COUNT]) -> R,
     {
         let masks = self.shared.step_masks();
         f(&masks)

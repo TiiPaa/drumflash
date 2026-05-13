@@ -1,10 +1,13 @@
 #![allow(dead_code)]
 
+#[path = "../groove.rs"]
+mod groove;
 #[path = "../sequencer/mod.rs"]
 mod sequencer;
 #[path = "../synthesis/mod.rs"]
 mod synthesis;
 
+use groove::GrooveType;
 use sequencer::Sequencer;
 use sequencer::{Pattern, SharedPattern};
 use synthesis::DrumSynthesizer;
@@ -35,11 +38,11 @@ fn main() {
 
     for i in 0..(total_samples / 512) {
         for sample in output_buffer.iter_mut() {
-            let triggers = sequencer.process_sample(bpm, sample_rate);
+            let triggers = sequencer.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
 
-            for (voice_idx, should_trigger) in triggers.iter().enumerate() {
+            for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
                 if *should_trigger {
-                    synthesizer.trigger(voice_idx);
+                    synthesizer.trigger(voice_idx, *velocity);
                 }
             }
 
