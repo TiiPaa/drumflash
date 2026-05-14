@@ -185,6 +185,12 @@ pub struct ExpDecayEnvelope {
     /// Target the attack ramp climbs to (1.0 by default, smaller for stages
     /// triggered via `trigger_at_peak`).
     attack_peak: f32,
+    /// Hold time in seconds. After the attack ramp completes, the envelope
+    /// stays at `attack_peak` for this many seconds before decay starts.
+    /// 0 = no hold (AD shape); > 0 = AHD shape.
+    hold_time: f32,
+    /// Remaining hold time in seconds. While > 0 the envelope stays at peak.
+    hold_remaining: f32,
 }
 
 impl ExpDecayEnvelope {
@@ -200,6 +206,8 @@ impl ExpDecayEnvelope {
             attack_remaining: 0.0,
             attack_start_value: 0.0,
             attack_peak: 1.0,
+            hold_time: 0.0,
+            hold_remaining: 0.0,
         };
         env.recompute_coeff();
         env
@@ -215,6 +223,12 @@ impl ExpDecayEnvelope {
     pub fn with_attack_ms(mut self, ms: f32) -> Self {
         self.attack_time = ms.max(0.0) / 1000.0;
         self
+    }
+
+    /// Set the hold time in seconds. After the attack ramp completes, the
+    /// envelope stays at its peak for `hold_seconds` before the decay starts.
+    pub fn set_hold(&mut self, hold_seconds: f32) {
+        self.hold_time = hold_seconds.max(0.0);
     }
 
     pub fn trigger(&mut self) {
@@ -233,6 +247,9 @@ impl ExpDecayEnvelope {
     pub fn trigger_at_peak(&mut self, peak: f32) {
         let peak = peak.max(0.0);
         self.attack_peak = peak;
+        // Reset hold counter — fires after the attack ramp completes (or
+        // immediately if no attack ramp is configured).
+        self.hold_remaining = self.hold_time;
         if self.value >= peak {
             self.attack_remaining = 0.0;
             return;
@@ -263,12 +280,13 @@ impl ExpDecayEnvelope {
 
     #[inline]
     pub fn next(&mut self) -> f32 {
+        let dt = 1.0 / self.sample_rate;
+
         if self.attack_remaining > 0.0 {
             // Decrement first so the first sample after trigger() is one ramp step
             // in, not the start point itself. That way `env.next()` is always
             // strictly > 0 (assuming attack_start_value < 1) and reaches exactly 1.0
             // at the final attack sample.
-            let dt = 1.0 / self.sample_rate;
             self.attack_remaining -= dt;
             if self.attack_remaining <= 0.0 {
                 self.attack_remaining = 0.0;
@@ -278,6 +296,13 @@ impl ExpDecayEnvelope {
             let t = 1.0 - (self.attack_remaining / self.attack_time);
             self.value =
                 self.attack_start_value + (self.attack_peak - self.attack_start_value) * t;
+            return self.value;
+        }
+
+        if self.hold_remaining > 0.0 {
+            // Hold phase: value stays at the attack peak until the hold time
+            // elapses. Once it does, the recursive decay below takes over.
+            self.hold_remaining -= dt;
             return self.value;
         }
 
@@ -291,13 +316,14 @@ impl ExpDecayEnvelope {
     }
 
     pub fn is_active(&self) -> bool {
-        self.attack_remaining > 0.0 || self.value > self.threshold
+        self.attack_remaining > 0.0 || self.hold_remaining > 0.0 || self.value > self.threshold
     }
 
     pub fn reset(&mut self) {
         self.value = 0.0;
         self.attack_remaining = 0.0;
         self.attack_start_value = 0.0;
+        self.hold_remaining = 0.0;
     }
 
     pub fn set_decay(&mut self, decay_time: f32) {
@@ -410,6 +436,13 @@ impl DecayReleaseEnvelope {
 
     pub fn set_release_curve(&mut self, curve: f32) {
         self.release.set_curve(curve);
+    }
+
+    /// Set the hold time (seconds) on the decay stage only — the release stage
+    /// has no hold semantics. The envelope output stays at peak for
+    /// `hold_seconds` after the attack ramp before the decay starts.
+    pub fn set_hold(&mut self, hold_seconds: f32) {
+        self.decay.set_hold(hold_seconds);
     }
 
     #[allow(dead_code)]
