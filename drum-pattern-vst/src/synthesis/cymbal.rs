@@ -33,7 +33,8 @@ impl CymbalVoice {
             sample_rate,
             noise: dsp::WhiteNoise::new(0xDEAD_BEEF),
             filter,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 2.8, settings.decay),
+            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 2.8, settings.decay)
+                .with_attack_ms(2.0),
             fm_phase: 0.0,
             fm_increment: 15.0 / sample_rate, // 15 Hz modulation
             active: false,

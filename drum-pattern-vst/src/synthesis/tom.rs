@@ -37,7 +37,8 @@ impl TomVoice {
             osc,
             pitch_env: dsp::PitchEnvelope::new(sample_rate, 1.0, 0.55, sweep_time),
             filter,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 4.2, settings.decay),
+            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 4.2, settings.decay)
+                .with_attack_ms(1.5),
             stick_attack: dsp::ClickGenerator::new(sample_rate, 8.0, 0.5, 0.6),
             active: false,
         };
@@ -61,8 +62,9 @@ impl TomVoice {
 impl Voice for TomVoice {
     fn trigger(&mut self) {
         self.active = true;
-        self.osc.reset();
-        self.filter.reset();
+        // Analog-style retrigger: keep oscillator phase and filter state intact.
+        // See kick.rs for the rationale — tonal voices click hard on a phase reset
+        // when retriggered during a ringing tail.
         self.pitch_env.trigger();
         self.amp_env.trigger();
         if self.stick_amount() > 0.0 {
