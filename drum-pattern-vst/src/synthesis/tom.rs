@@ -16,7 +16,7 @@ pub struct TomVoice {
     osc: dsp::SineOsc,
     pitch_env: dsp::PitchEnvelope,
     filter: dsp::OnePoleFilter,
-    amp_env: dsp::ExpDecayEnvelope,
+    amp_env: dsp::DecayReleaseEnvelope,
     stick_attack: dsp::ClickGenerator,
 
     active: bool,
@@ -37,8 +37,14 @@ impl TomVoice {
             osc,
             pitch_env: dsp::PitchEnvelope::new(sample_rate, 1.0, 0.55, sweep_time),
             filter,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 4.2, settings.decay)
-                .with_attack_ms(1.5),
+            amp_env: dsp::DecayReleaseEnvelope::new(
+                sample_rate,
+                settings.decay_curve,
+                settings.decay,
+                settings.release_curve,
+                settings.release,
+            )
+            .with_attack_ms(1.5),
             stick_attack: dsp::ClickGenerator::new(sample_rate, 8.0, 0.5, 0.6),
             active: false,
         };
@@ -50,6 +56,9 @@ impl TomVoice {
         self.osc.set_freq(self.settings.frequency);
         self.filter.set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
+        self.amp_env.set_release(self.settings.release);
+        self.amp_env.set_decay_curve(self.settings.decay_curve);
+        self.amp_env.set_release_curve(self.settings.release_curve);
         let sweep_time = 0.14f32.min(self.settings.decay);
         self.pitch_env = dsp::PitchEnvelope::new(self.sample_rate, 1.0, 0.55, sweep_time);
     }

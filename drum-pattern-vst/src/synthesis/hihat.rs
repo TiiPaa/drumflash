@@ -21,8 +21,8 @@ pub struct HiHatVoice {
     // Highpass filter
     filter: dsp::OnePoleFilter,
 
-    // Envelope
-    envelope: dsp::ExpDecayEnvelope,
+    // Bi-stage amplitude envelope (decay + release).
+    envelope: dsp::DecayReleaseEnvelope,
 
     // Active state
     active: bool,
@@ -33,10 +33,12 @@ impl HiHatVoice {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
 
-        let envelope = dsp::ExpDecayEnvelope::new(
+        let envelope = dsp::DecayReleaseEnvelope::new(
             sample_rate,
-            8.0 / settings.decay.max(0.001),
+            settings.decay_curve,
             settings.decay,
+            settings.release_curve,
+            settings.release,
         )
         .with_attack_ms(HIHAT_ATTACK_MS);
 
@@ -54,8 +56,10 @@ impl HiHatVoice {
 impl Voice for HiHatVoice {
     fn trigger(&mut self) {
         self.active = true;
-        self.noise.reseed(54321);
-        self.filter.reset();
+        // Keep noise generator and filter state continuous across triggers,
+        // matching analog drum machine behaviour where the noise source is a
+        // free-running zener and the filter is a passive component. The
+        // envelope's attack ramp masks any residual transient.
         self.envelope.trigger();
     }
 
@@ -94,10 +98,12 @@ impl Voice for HiHatVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
         self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
-        self.envelope = dsp::ExpDecayEnvelope::new(
+        self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
-            8.0 / settings.decay.max(0.001),
+            settings.decay_curve,
             settings.decay,
+            settings.release_curve,
+            settings.release,
         )
         .with_attack_ms(HIHAT_ATTACK_MS);
     }
@@ -147,6 +153,9 @@ mod tests {
             decay: 0.05, // 50ms
             volume: 1.0,
             filter_freq: 10000.0,
+            release: 0.0, // disable release so the decay test is meaningful
+            decay_curve: 8.0,
+            release_curve: 3.0,
             algo: 0,
             special: [0.0; 8],
         };

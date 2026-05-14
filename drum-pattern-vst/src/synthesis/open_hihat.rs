@@ -12,7 +12,7 @@ pub struct OpenHiHatVoice {
     sample_rate: f32,
     noise: dsp::WhiteNoise,
     filter: dsp::OnePoleFilter,
-    envelope: dsp::ExpDecayEnvelope,
+    envelope: dsp::DecayReleaseEnvelope,
     active: bool,
     samples_elapsed: usize,
 }
@@ -22,10 +22,12 @@ impl OpenHiHatVoice {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
 
-        let envelope = dsp::ExpDecayEnvelope::new(
+        let envelope = dsp::DecayReleaseEnvelope::new(
             sample_rate,
-            5.5 / settings.decay.max(0.001),
+            settings.decay_curve,
             settings.decay,
+            settings.release_curve,
+            settings.release,
         )
         .with_attack_ms(OPEN_HIHAT_ATTACK_MS);
 
@@ -45,8 +47,7 @@ impl Voice for OpenHiHatVoice {
     fn trigger(&mut self) {
         self.active = true;
         self.samples_elapsed = 0;
-        self.noise.reseed(24680);
-        self.filter.reset();
+        // Keep noise generator and filter state continuous across triggers.
         self.envelope.trigger();
     }
 
@@ -85,10 +86,12 @@ impl Voice for OpenHiHatVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
         self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
-        self.envelope = dsp::ExpDecayEnvelope::new(
+        self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
-            5.5 / settings.decay.max(0.001),
+            settings.decay_curve,
             settings.decay,
+            settings.release_curve,
+            settings.release,
         )
         .with_attack_ms(OPEN_HIHAT_ATTACK_MS);
     }

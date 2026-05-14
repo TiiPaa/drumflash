@@ -2,37 +2,71 @@ use nih_plug::params::persist::PersistentField;
 use std::sync::atomic::{AtomicU64, AtomicU32, Ordering};
 use std::sync::Arc;
 
+/// Per-voice persistent sound settings. The amplitude envelope is bi-stage
+/// (decay + release), each stage having an independent time and curve.
 pub struct InstrumentSettingsState {
     pub frequency: AtomicU32,
     pub decay: AtomicU32,
     pub volume: AtomicU32,
     pub filter_freq: AtomicU32,
+    pub release: AtomicU32,
+    pub decay_curve: AtomicU32,
+    pub release_curve: AtomicU32,
 }
 
+/// Number of f32 values serialized per instrument in the persisted state.
+pub const FIELDS_PER_INSTRUMENT: usize = 7;
+
 impl InstrumentSettingsState {
-    pub fn new(frequency: f32, decay: f32, volume: f32, filter_freq: f32) -> Self {
+    pub fn new(
+        frequency: f32,
+        decay: f32,
+        volume: f32,
+        filter_freq: f32,
+        release: f32,
+        decay_curve: f32,
+        release_curve: f32,
+    ) -> Self {
         Self {
             frequency: AtomicU32::new(frequency.to_bits()),
             decay: AtomicU32::new(decay.to_bits()),
             volume: AtomicU32::new(volume.to_bits()),
             filter_freq: AtomicU32::new(filter_freq.to_bits()),
+            release: AtomicU32::new(release.to_bits()),
+            decay_curve: AtomicU32::new(decay_curve.to_bits()),
+            release_curve: AtomicU32::new(release_curve.to_bits()),
         }
     }
 
-    pub fn load(&self) -> (f32, f32, f32, f32) {
+    pub fn load(&self) -> (f32, f32, f32, f32, f32, f32, f32) {
         (
             f32::from_bits(self.frequency.load(Ordering::Relaxed)),
             f32::from_bits(self.decay.load(Ordering::Relaxed)),
             f32::from_bits(self.volume.load(Ordering::Relaxed)),
             f32::from_bits(self.filter_freq.load(Ordering::Relaxed)),
+            f32::from_bits(self.release.load(Ordering::Relaxed)),
+            f32::from_bits(self.decay_curve.load(Ordering::Relaxed)),
+            f32::from_bits(self.release_curve.load(Ordering::Relaxed)),
         )
     }
 
-    pub fn store(&self, frequency: f32, decay: f32, volume: f32, filter_freq: f32) {
+    pub fn store(
+        &self,
+        frequency: f32,
+        decay: f32,
+        volume: f32,
+        filter_freq: f32,
+        release: f32,
+        decay_curve: f32,
+        release_curve: f32,
+    ) {
         self.frequency.store(frequency.to_bits(), Ordering::Relaxed);
         self.decay.store(decay.to_bits(), Ordering::Relaxed);
         self.volume.store(volume.to_bits(), Ordering::Relaxed);
         self.filter_freq.store(filter_freq.to_bits(), Ordering::Relaxed);
+        self.release.store(release.to_bits(), Ordering::Relaxed);
+        self.decay_curve.store(decay_curve.to_bits(), Ordering::Relaxed);
+        self.release_curve.store(release_curve.to_bits(), Ordering::Relaxed);
     }
 }
 
@@ -43,23 +77,24 @@ pub struct SoundSettingsState {
 
 impl SoundSettingsState {
     pub fn new() -> Arc<Self> {
+        // (frequency, decay, volume, filter_freq, release, decay_curve, release_curve)
         let defaults = [
-            (60.0, 0.5, 0.8, 100.0),     // Kick
-            (200.0, 0.47, 0.6, 1000.0),  // Snare
-            (8000.0, 0.36, 0.3, 10000.0), // HiHat
-            (6000.0, 0.66, 0.4, 8000.0),  // Open HH
-            (300.0, 0.3, 0.5, 2000.0),   // Tom1
-            (200.0, 0.4, 0.5, 1500.0),   // Tom2
-            (120.0, 0.5, 0.5, 1000.0),   // Tom3
-            (1200.0, 0.15, 0.7, 2500.0), // Clap
-            (8000.0, 1.2, 0.35, 10000.0), // Ride
-            (6000.0, 2.0, 0.4, 8000.0),  // Cymbal
+            (60.0,   0.5,  0.8,  100.0,   0.5, 5.0, 3.0),  // Kick
+            (200.0,  0.47, 0.6,  1000.0,  0.2, 5.0, 3.0),  // Snare
+            (8000.0, 0.36, 0.3,  10000.0, 0.0, 8.0, 3.0),  // HiHat
+            (6000.0, 0.66, 0.4,  8000.0,  0.4, 5.5, 3.0),  // Open HH
+            (300.0,  0.3,  0.5,  2000.0,  0.3, 4.2, 3.0),  // Tom1
+            (200.0,  0.4,  0.5,  1500.0,  0.4, 4.2, 3.0),  // Tom2
+            (120.0,  0.5,  0.5,  1000.0,  0.5, 4.2, 3.0),  // Tom3
+            (1200.0, 0.15, 0.7,  2500.0,  0.0, 6.0, 3.0),  // Clap
+            (8000.0, 1.2,  0.35, 10000.0, 1.5, 3.5, 3.0),  // Ride
+            (6000.0, 2.0,  0.4,  8000.0,  2.5, 2.8, 3.0),  // Cymbal
         ];
 
         Arc::new(Self {
             instruments: std::array::from_fn(|i| {
-                let (f, d, v, fl) = defaults[i];
-                InstrumentSettingsState::new(f, d, v, fl)
+                let (f, d, v, fl, r, dc, rc) = defaults[i];
+                InstrumentSettingsState::new(f, d, v, fl, r, dc, rc)
             }),
             version: AtomicU64::new(0),
         })
@@ -70,24 +105,32 @@ impl SoundSettingsState {
     }
 
     pub fn read_all(&self) -> Vec<f32> {
-        let mut result = vec![0.0f32; 40];
+        let mut result = vec![0.0f32; self.instruments.len() * FIELDS_PER_INSTRUMENT];
         for (i, inst) in self.instruments.iter().enumerate() {
-            let (f, d, v, fl) = inst.load();
-            result[i * 4] = f;
-            result[i * 4 + 1] = d;
-            result[i * 4 + 2] = v;
-            result[i * 4 + 3] = fl;
+            let (f, d, v, fl, r, dc, rc) = inst.load();
+            let base = i * FIELDS_PER_INSTRUMENT;
+            result[base] = f;
+            result[base + 1] = d;
+            result[base + 2] = v;
+            result[base + 3] = fl;
+            result[base + 4] = r;
+            result[base + 5] = dc;
+            result[base + 6] = rc;
         }
         result
     }
 
     pub fn write_all(&self, values: &[f32]) {
         for (i, inst) in self.instruments.iter().enumerate() {
+            let base = i * FIELDS_PER_INSTRUMENT;
             inst.store(
-                values.get(i * 4).copied().unwrap_or(0.0),
-                values.get(i * 4 + 1).copied().unwrap_or(0.0),
-                values.get(i * 4 + 2).copied().unwrap_or(0.0),
-                values.get(i * 4 + 3).copied().unwrap_or(0.0),
+                values.get(base).copied().unwrap_or(0.0),
+                values.get(base + 1).copied().unwrap_or(0.0),
+                values.get(base + 2).copied().unwrap_or(0.0),
+                values.get(base + 3).copied().unwrap_or(0.0),
+                values.get(base + 4).copied().unwrap_or(0.0),
+                values.get(base + 5).copied().unwrap_or(0.0),
+                values.get(base + 6).copied().unwrap_or(0.0),
             );
         }
         self.bump_version();
