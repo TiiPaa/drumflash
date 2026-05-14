@@ -36,7 +36,8 @@ impl ClapVoice {
             noise: dsp::WhiteNoise::new(0xBADC0FFE),
             filter_hp,
             filter_lp,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 6.0, settings.decay),
+            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 6.0, settings.decay)
+                .with_attack_ms(1.5),
             burst_count: 0,
             burst_interval_samples: (0.004 * sample_rate) as usize, // 4 ms between slaps
             samples_since_trigger: 0,

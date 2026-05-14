@@ -7,6 +7,9 @@
 
 use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
 
+/// Anti-click attack ramp (mimics analog VCA RC charge time).
+const HIHAT_ATTACK_MS: f32 = 1.0;
+
 /// Hi-Hat voice using filtered white noise
 pub struct HiHatVoice {
     settings: VoiceSettings,
@@ -34,7 +37,8 @@ impl HiHatVoice {
             sample_rate,
             8.0 / settings.decay.max(0.001),
             settings.decay,
-        );
+        )
+        .with_attack_ms(HIHAT_ATTACK_MS);
 
         Self {
             settings,
@@ -94,7 +98,8 @@ impl Voice for HiHatVoice {
             self.sample_rate,
             8.0 / settings.decay.max(0.001),
             settings.decay,
-        );
+        )
+        .with_attack_ms(HIHAT_ATTACK_MS);
     }
 
     fn set_algo(&mut self, algo: u8) {

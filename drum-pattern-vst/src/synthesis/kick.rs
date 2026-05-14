@@ -50,7 +50,8 @@ impl KickVoice {
             fm_mod,
             pitch_env: dsp::PitchEnvelope::new(sample_rate, 1.0, 0.3, 0.12),
             filter,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 5.0, settings.decay),
+            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 5.0, settings.decay)
+                .with_attack_ms(1.5),
             click: dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0),
             active: false,
         };
@@ -82,11 +83,12 @@ impl KickVoice {
 impl Voice for KickVoice {
     fn trigger(&mut self) {
         self.active = true;
-        self.osc_sine.reset();
-        self.osc_square.reset();
-        self.fm_carrier.reset();
-        self.fm_mod.reset();
-        self.filter.reset();
+        // Analog-style retrigger: oscillator phase and filter state keep their value.
+        // Resetting them while a tail is still ringing forces the body output from
+        // (filter(sin(phase_n)) * env) to 0 in one sample, which clicks audibly on a
+        // tonal voice. The pitch sweep still restarts via pitch_env.trigger() since it
+        // only changes set_freq, not the phase itself — matching how a TR-808/909 kick
+        // resonator gets re-pinged without resetting its internal state.
         self.pitch_env.trigger();
         self.amp_env.trigger();
         if self.click_amount() > 0.0 {
@@ -217,6 +219,40 @@ mod tests {
         // First sample: body starts at sin(0)=0, filter is reset, click is OFF
         let first = kick.process_sample().abs();
         assert!(first < 0.0001, "Click should be silent at amount=0: {}", first);
+    }
+
+    #[test]
+    fn test_kick_no_body_click_on_retrigger_during_tail() {
+        // Tonal voices used to reset oscillator phase and filter state on trigger,
+        // which produces an audible click when retriggered during a ringing tail.
+        // The body output should now stay continuous through a retrigger (click
+        // transient excluded — that one is intentionally sharp).
+        let mut settings = VoiceSettings::kick();
+        settings.special[0] = 0.0; // disable click transient — isolate body behavior
+        let mut kick = KickVoice::new(44100.0, settings);
+
+        kick.trigger();
+        // Let it ring partway through its decay.
+        let mut last = 0.0;
+        for _ in 0..4000 {
+            last = kick.process_sample();
+        }
+        assert!(
+            last.abs() > 1e-4,
+            "Tail must still be audible for the test to be meaningful: {}",
+            last
+        );
+
+        kick.trigger();
+        let first = kick.process_sample();
+        let step = (first - last).abs();
+        assert!(
+            step < 0.05,
+            "Body discontinuity at retrigger too large: last={}, first={}, step={}",
+            last,
+            first,
+            step
+        );
     }
 
     #[test]

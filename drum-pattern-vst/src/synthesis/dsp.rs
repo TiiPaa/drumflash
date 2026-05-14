@@ -98,6 +98,14 @@ pub struct ExpDecayEnvelope {
     threshold: f32,
     /// Accumulated time in seconds.
     time: f32,
+    /// Anti-click attack ramp duration in seconds. Mimics the RC charge time of an
+    /// analog VCA so retriggering during a ringing tail interpolates from the current
+    /// value to 1.0 instead of jumping.
+    attack_time: f32,
+    /// Remaining attack ramp time in seconds. While > 0 the envelope is in attack phase.
+    attack_remaining: f32,
+    /// Envelope value captured at the moment of trigger; ramp start point.
+    attack_start_value: f32,
 }
 
 impl ExpDecayEnvelope {
@@ -109,17 +117,55 @@ impl ExpDecayEnvelope {
             sample_rate,
             threshold: 0.001,
             time: 0.0,
+            attack_time: 0.0,
+            attack_remaining: 0.0,
+            attack_start_value: 0.0,
         }
     }
 
+    /// Configure a short attack ramp (in milliseconds) applied on every trigger.
+    /// Set to 0 to keep the original instantaneous jump behavior.
+    pub fn with_attack_ms(mut self, ms: f32) -> Self {
+        self.attack_time = ms.max(0.0) / 1000.0;
+        self
+    }
+
     pub fn trigger(&mut self) {
-        self.value = 1.0;
-        self.time = 0.0;
+        if self.attack_time > 0.0 {
+            // Retrigger while still ringing: ramp from current value up to 1.0 over
+            // attack_time. From cold (value=0) this is just a 0→1 attack.
+            self.attack_start_value = self.value;
+            self.attack_remaining = self.attack_time;
+            // Decay timer is held at 0 during the attack phase; restarted once attack ends.
+            self.time = 0.0;
+        } else {
+            self.value = 1.0;
+            self.time = 0.0;
+        }
     }
 
     #[inline]
     pub fn next(&mut self) -> f32 {
-        self.time += 1.0 / self.sample_rate;
+        let dt = 1.0 / self.sample_rate;
+
+        if self.attack_remaining > 0.0 {
+            // Decrement first so the first sample after trigger() is one ramp step in,
+            // not the start point itself. That way `env.next()` is always strictly > 0
+            // (assuming attack_start_value < 1) and reaches exactly 1.0 at the final
+            // attack sample.
+            self.attack_remaining -= dt;
+            if self.attack_remaining <= 0.0 {
+                self.attack_remaining = 0.0;
+                self.value = 1.0;
+                self.time = 0.0;
+                return self.value;
+            }
+            let t = 1.0 - (self.attack_remaining / self.attack_time);
+            self.value = self.attack_start_value + (1.0 - self.attack_start_value) * t;
+            return self.value;
+        }
+
+        self.time += dt;
         if self.time >= self.decay_time && self.value <= self.threshold {
             0.0
         } else {
@@ -133,12 +179,16 @@ impl ExpDecayEnvelope {
     }
 
     pub fn is_active(&self) -> bool {
-        self.value > self.threshold || self.time < self.decay_time
+        self.attack_remaining > 0.0
+            || self.value > self.threshold
+            || self.time < self.decay_time
     }
 
     pub fn reset(&mut self) {
         self.value = 0.0;
         self.time = 0.0;
+        self.attack_remaining = 0.0;
+        self.attack_start_value = 0.0;
     }
 
     pub fn set_decay(&mut self, decay_time: f32) {
@@ -361,5 +411,81 @@ impl TriangleOsc {
 
     pub fn reset(&mut self) {
         self.phase = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exp_decay_without_attack_jumps_to_one_on_trigger() {
+        let mut env = ExpDecayEnvelope::new(44100.0, 5.0, 0.5);
+        env.trigger();
+        let first = env.next();
+        assert!(
+            first > 0.99,
+            "Without attack ramp, first sample must be ~1.0: {}",
+            first
+        );
+    }
+
+    #[test]
+    fn exp_decay_attack_ramp_avoids_jump_on_retrigger_during_tail() {
+        let mut env = ExpDecayEnvelope::new(44100.0, 5.0, 0.5).with_attack_ms(1.5);
+        env.trigger();
+        // Drain the attack ramp.
+        for _ in 0..100 {
+            env.next();
+        }
+        // Decay to mid-range so retrigger sees a ringing tail.
+        let mut tail = 0.0;
+        for _ in 0..2000 {
+            tail = env.next();
+        }
+        assert!(
+            tail > 0.1 && tail < 0.9,
+            "Tail must be mid-range for the test to be meaningful: {}",
+            tail
+        );
+
+        env.trigger();
+        let first = env.next();
+        let step = (first - tail).abs();
+        assert!(
+            step < 0.05,
+            "Retrigger discontinuity too large: tail={}, first={}, step={}",
+            tail,
+            first,
+            step
+        );
+    }
+
+    #[test]
+    fn exp_decay_attack_ramp_reaches_one_then_decays() {
+        let sample_rate = 44100.0;
+        let attack_ms = 1.5_f32;
+        let mut env = ExpDecayEnvelope::new(sample_rate, 5.0, 0.5).with_attack_ms(attack_ms);
+        env.trigger();
+
+        let attack_samples = (attack_ms / 1000.0 * sample_rate).ceil() as usize;
+        let mut last = 0.0;
+        for _ in 0..attack_samples {
+            last = env.next();
+        }
+        assert!(
+            last >= 0.99,
+            "Envelope must reach 1.0 by end of attack: {}",
+            last
+        );
+
+        // Next sample should start the decay (< 1.0 strictly or stay at peak).
+        let after_attack = env.next();
+        assert!(
+            after_attack <= last + 1e-3,
+            "Decay should start after attack: last={}, next={}",
+            last,
+            after_attack
+        );
     }
 }
