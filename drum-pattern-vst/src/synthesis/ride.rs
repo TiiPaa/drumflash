@@ -16,7 +16,7 @@ pub struct RideVoice {
     osc2: dsp::SineOsc,
     osc3: dsp::SineOsc,
     filter: dsp::OnePoleFilter,
-    amp_env: dsp::ExpDecayEnvelope,
+    amp_env: dsp::DecayReleaseEnvelope,
 
     active: bool,
 }
@@ -43,8 +43,14 @@ impl RideVoice {
             osc2,
             osc3,
             filter,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 3.5, settings.decay)
-                .with_attack_ms(2.0),
+            amp_env: dsp::DecayReleaseEnvelope::new(
+                sample_rate,
+                settings.decay_curve,
+                settings.decay,
+                settings.release_curve,
+                settings.release,
+            )
+            .with_attack_ms(2.0),
             active: false,
         }
     }
@@ -52,6 +58,9 @@ impl RideVoice {
     fn update_derived_params(&mut self) {
         self.filter.set_cutoff(self.settings.filter_freq.max(6000.0), self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
+        self.amp_env.set_release(self.settings.release);
+        self.amp_env.set_decay_curve(self.settings.decay_curve);
+        self.amp_env.set_release_curve(self.settings.release_curve);
         let base_freq = self.settings.frequency.max(200.0);
         self.osc1.set_freq(base_freq * 1.0);
         self.osc2.set_freq(base_freq * 1.71);
@@ -62,11 +71,10 @@ impl RideVoice {
 impl Voice for RideVoice {
     fn trigger(&mut self) {
         self.active = true;
-        self.osc1.reset();
-        self.osc2.reset();
-        self.osc3.reset();
+        // Keep oscillator phases and filter state continuous across triggers —
+        // critical here because three tonal sines collapsing to phase 0
+        // simultaneously is the worst case for retrigger clicks.
         self.amp_env.trigger();
-        self.filter.reset();
     }
 
     fn process_sample(&mut self) -> f32 {

@@ -731,7 +731,8 @@ impl Plugin for DrumFlashVst {
             if current_version != self.last_sound_settings_version {
                 self.last_sound_settings_version = current_version;
                 for (i, inst) in self.sound_settings_state.instruments.iter().enumerate() {
-                    let (freq, decay, vol, filt) = inst.load();
+                    let (freq, decay, vol, filt, release, decay_curve, release_curve) =
+                        inst.load();
                     self.synthesizer.set_voice_settings(
                         synthesis::DrumVoice::from_index(i).unwrap(),
                         synthesis::VoiceSettings {
@@ -739,6 +740,9 @@ impl Plugin for DrumFlashVst {
                             decay,
                             volume: vol,
                             filter_freq: filt,
+                            release,
+                            decay_curve,
+                            release_curve,
                             algo: 0,
                             special: [0.0; 8],
                         },

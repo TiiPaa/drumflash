@@ -25,8 +25,8 @@ pub struct SnareVoice {
     // Highpass filter
     filter: dsp::OnePoleFilter,
 
-    // Envelope
-    envelope: dsp::ExpDecayEnvelope,
+    // Bi-stage amplitude envelope (decay + release).
+    envelope: dsp::DecayReleaseEnvelope,
 
     // Active state
     active: bool,
@@ -40,10 +40,12 @@ impl SnareVoice {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
 
-        let envelope = dsp::ExpDecayEnvelope::new(
+        let envelope = dsp::DecayReleaseEnvelope::new(
             sample_rate,
-            5.0 / settings.decay.max(0.001),
+            settings.decay_curve,
             settings.decay,
+            settings.release_curve,
+            settings.release,
         )
         .with_attack_ms(SNARE_ATTACK_MS);
 
@@ -62,9 +64,8 @@ impl SnareVoice {
 impl Voice for SnareVoice {
     fn trigger(&mut self) {
         self.active = true;
-        self.osc.reset();
-        self.noise.reseed(12345);
-        self.filter.reset();
+        // Keep oscillator phase, noise generator and filter state continuous
+        // across triggers — see kick.rs for the rationale.
         self.envelope.trigger();
     }
 
@@ -128,10 +129,12 @@ impl Voice for SnareVoice {
         self.settings = settings;
         self.osc.set_freq(settings.frequency);
         self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
-        self.envelope = dsp::ExpDecayEnvelope::new(
+        self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
-            5.0 / settings.decay.max(0.001),
+            settings.decay_curve,
             settings.decay,
+            settings.release_curve,
+            settings.release,
         )
         .with_attack_ms(SNARE_ATTACK_MS);
     }

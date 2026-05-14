@@ -14,7 +14,7 @@ pub struct CymbalVoice {
 
     noise: dsp::WhiteNoise,
     filter: dsp::OnePoleFilter,
-    amp_env: dsp::ExpDecayEnvelope,
+    amp_env: dsp::DecayReleaseEnvelope,
 
     // FM shimmer state
     fm_phase: f32,
@@ -33,8 +33,14 @@ impl CymbalVoice {
             sample_rate,
             noise: dsp::WhiteNoise::new(0xDEAD_BEEF),
             filter,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 2.8, settings.decay)
-                .with_attack_ms(2.0),
+            amp_env: dsp::DecayReleaseEnvelope::new(
+                sample_rate,
+                settings.decay_curve,
+                settings.decay,
+                settings.release_curve,
+                settings.release,
+            )
+            .with_attack_ms(2.0),
             fm_phase: 0.0,
             fm_increment: 15.0 / sample_rate, // 15 Hz modulation
             active: false,
@@ -44,15 +50,17 @@ impl CymbalVoice {
     fn update_derived_params(&mut self) {
         self.filter.set_cutoff(self.settings.filter_freq.max(4000.0), self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
+        self.amp_env.set_release(self.settings.release);
+        self.amp_env.set_decay_curve(self.settings.decay_curve);
+        self.amp_env.set_release_curve(self.settings.release_curve);
     }
 }
 
 impl Voice for CymbalVoice {
     fn trigger(&mut self) {
         self.active = true;
+        // Keep filter state and FM LFO phase continuous across triggers.
         self.amp_env.trigger();
-        self.filter.reset();
-        self.fm_phase = 0.0;
     }
 
     fn process_sample(&mut self) -> f32 {

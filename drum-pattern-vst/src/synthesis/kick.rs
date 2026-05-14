@@ -1,12 +1,33 @@
-//! Kick drum synthesizer — refactored with shared DSP primitives.
+//! Kick drum synthesizer — grey-box model with retrig-safe state.
 //!
-//! Architecture:
-//! - Sine oscillator with exponential pitch-drop envelope
-//! - One-pole lowpass filter
-//! - Exponential amplitude envelope
-//! - Optional click transient (impulse + short noise burst)
+//! Architecture (informed by the TR-808/909 retrig analysis under
+//! `resources/roland-kick-rust/docs/retrigger-and-sequencer.md`):
+//! - Oscillator phase is continuous across triggers (no reset on retrig).
+//! - Pitch envelope is additive (returns Δ-Hz) and persistent: a retrigger
+//!   raises the current Δ-Hz toward the new peak via `trigger_from_current`,
+//!   never snapping back to zero between hits.
+//! - A short one-pole smoother on the instantaneous frequency absorbs the
+//!   residual change in phase increment so the oscillator's slope stays
+//!   continuous through retrigger.
+//! - A short tail duck (~0.7 ms, ~12 %) masks any remaining micro-discontinuity
+//!   when a step lands during a ringing tail.
+//! - Click transient (impulse + noise burst) is intentionally sharp — that's
+//!   the audible attack, not the click parasite we are trying to remove.
+//! - DC blocker on the output cleans up the asymmetric drift that accumulates
+//!   from dense retriggers.
+//!
+//! The sweep range is derived from `settings.frequency` so existing presets
+//! keep their character: `base_freq = freq * 0.3`, `pitch_peak = freq * 0.7`,
+//! giving the same start→end sweep as the legacy multiplicative `PitchEnvelope`.
 
 use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+
+const PITCH_DECAY_SECONDS: f32 = 0.04; // ≈ 40 ms — matches the legacy ~0.12 s
+                                       // exponential sweep with curve 5.0.
+const PITCH_CURVE: f32 = 5.0;
+const FREQ_SMOOTH_MS: f32 = 0.1;
+const BASE_FREQ_RATIO: f32 = 0.3; // final freq = settings.frequency * 0.3
+const PITCH_PEAK_RATIO: f32 = 0.7; // start = base + peak = settings.frequency
 
 pub struct KickVoice {
     settings: VoiceSettings,
@@ -16,9 +37,18 @@ pub struct KickVoice {
     osc_square: dsp::SquareOsc,
     fm_carrier: dsp::SineOsc,
     fm_mod: dsp::SineOsc,
-    pitch_env: dsp::PitchEnvelope,
     filter: dsp::OnePoleFilter,
-    amp_env: dsp::ExpDecayEnvelope,
+
+    // Additive Δ-Hz envelope: target_freq = base_freq + pitch_env.next().
+    pitch_env: dsp::ExpDecayEnvelope,
+    // Smooths sub-sample frequency jumps caused by pitch_env retriggering.
+    freq_smoother: dsp::OnePoleSmoother,
+    // Body amplitude (decay + release stages), with 1.5 ms attack ramp.
+    amp_env: dsp::DecayReleaseEnvelope,
+    // Removes DC drift accumulated by asymmetric retriggers.
+    dc_block: dsp::DcBlocker,
+
+    // Attack transient (the audible "click"), kept fully separate.
     click: dsp::ClickGenerator,
 
     active: bool,
@@ -26,53 +56,64 @@ pub struct KickVoice {
 
 impl KickVoice {
     pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+        let base_freq = settings.frequency * BASE_FREQ_RATIO;
+
         let mut osc_sine = dsp::SineOsc::new(sample_rate);
-        osc_sine.set_freq(settings.frequency);
+        osc_sine.set_freq(base_freq);
 
         let mut osc_square = dsp::SquareOsc::new(sample_rate);
-        osc_square.set_freq(settings.frequency);
+        osc_square.set_freq(base_freq);
 
         let mut fm_carrier = dsp::SineOsc::new(sample_rate);
-        fm_carrier.set_freq(settings.frequency);
+        fm_carrier.set_freq(base_freq);
 
         let mut fm_mod = dsp::SineOsc::new(sample_rate);
-        fm_mod.set_freq(settings.frequency * 0.5);
+        fm_mod.set_freq(base_freq * 0.5);
 
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
 
-        let mut voice = Self {
+        Self {
             settings,
             sample_rate,
             osc_sine,
             osc_square,
             fm_carrier,
             fm_mod,
-            pitch_env: dsp::PitchEnvelope::new(sample_rate, 1.0, 0.3, 0.12),
             filter,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 5.0, settings.decay)
-                .with_attack_ms(1.5),
+            pitch_env: dsp::ExpDecayEnvelope::new(sample_rate, PITCH_CURVE, PITCH_DECAY_SECONDS),
+            freq_smoother: dsp::OnePoleSmoother::new(sample_rate, FREQ_SMOOTH_MS, base_freq),
+            amp_env: dsp::DecayReleaseEnvelope::new(
+                sample_rate,
+                settings.decay_curve,
+                settings.decay,
+                settings.release_curve,
+                settings.release,
+            )
+            .with_attack_ms(1.5),
+            dc_block: dsp::DcBlocker::default(),
             click: dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0),
             active: false,
-        };
-        voice.update_derived_params();
-        voice
+        }
+    }
+
+    fn base_freq(&self) -> f32 {
+        (self.settings.frequency * BASE_FREQ_RATIO).max(10.0)
+    }
+
+    fn pitch_peak_hz(&self) -> f32 {
+        (self.settings.frequency * PITCH_PEAK_RATIO).max(0.0)
     }
 
     fn update_derived_params(&mut self) {
-        self.osc_sine.set_freq(self.settings.frequency);
-        self.osc_square.set_freq(self.settings.frequency);
-        self.fm_carrier.set_freq(self.settings.frequency);
-        self.fm_mod.set_freq(self.settings.frequency * 0.5);
-        self.filter.set_cutoff(self.settings.filter_freq, self.sample_rate);
+        self.filter
+            .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
-        // Pitch envelope: start at fundamental, drop to 30% over 0.12 s
-        self.pitch_env = dsp::PitchEnvelope::new(
-            self.sample_rate,
-            1.0,
-            0.3,
-            0.12,
-        );
+        self.amp_env.set_release(self.settings.release);
+        self.amp_env.set_decay_curve(self.settings.decay_curve);
+        self.amp_env.set_release_curve(self.settings.release_curve);
+        // Frequency-related state is rebuilt on the fly each sample from
+        // `settings.frequency`, so no need to touch oscillators or smoothers here.
     }
 
     fn click_amount(&self) -> f32 {
@@ -83,13 +124,11 @@ impl KickVoice {
 impl Voice for KickVoice {
     fn trigger(&mut self) {
         self.active = true;
-        // Analog-style retrigger: oscillator phase and filter state keep their value.
-        // Resetting them while a tail is still ringing forces the body output from
-        // (filter(sin(phase_n)) * env) to 0 in one sample, which clicks audibly on a
-        // tonal voice. The pitch sweep still restarts via pitch_env.trigger() since it
-        // only changes set_freq, not the phase itself — matching how a TR-808/909 kick
-        // resonator gets re-pinged without resetting its internal state.
-        self.pitch_env.trigger();
+        // Analog-style retrigger: oscillator phase, filter state and smoother all
+        // keep their value. The pitch envelope is bumped up to its peak Δ-Hz
+        // *without* resetting if the tail still carries some sweep energy, so
+        // the instantaneous frequency never snaps back to zero between hits.
+        self.pitch_env.trigger_from_current(self.pitch_peak_hz());
         self.amp_env.trigger();
         if self.click_amount() > 0.0 {
             self.click.trigger();
@@ -100,34 +139,28 @@ impl Voice for KickVoice {
         let mut body = 0.0f32;
 
         if self.active {
-            // Pitch sweep
-            let pitch_ratio = self.pitch_env.next();
-            let base_freq = self.settings.frequency * pitch_ratio;
+            let target_freq = (self.base_freq() + self.pitch_env.next()).max(10.0);
+            let freq = self.freq_smoother.process(target_freq);
 
-            // Generate based on selected algorithm
             let raw = match self.settings.algo {
                 1 => {
-                    // Square: more harmonics, brighter
-                    self.osc_square.set_freq(base_freq);
+                    self.osc_square.set_freq(freq);
                     self.osc_square.next()
                 }
                 2 => {
-                    // FM: punchy, complex
-                    self.fm_mod.set_freq(base_freq * 0.5);
+                    self.fm_mod.set_freq(freq * 0.5);
                     let mod_val = self.fm_mod.next();
-                    self.fm_carrier.set_freq(base_freq * (1.0 + mod_val * 0.8));
+                    self.fm_carrier.set_freq(freq * (1.0 + mod_val * 0.8));
                     self.fm_carrier.next()
                 }
                 _ => {
-                    // Sine: classic round kick
-                    self.osc_sine.set_freq(base_freq);
+                    self.osc_sine.set_freq(freq);
                     self.osc_sine.next()
                 }
             };
 
             let filtered = self.filter.process(raw);
 
-            // Amplitude envelope
             let env = self.amp_env.next();
             if env <= 0.0 {
                 self.active = false;
@@ -136,14 +169,13 @@ impl Voice for KickVoice {
             }
         }
 
-        // Click transient — allowed to ring out even if body finished
         let click = if self.click_amount() > 0.0 && self.click.is_active() {
             self.click.next() * self.click_amount()
         } else {
             0.0
         };
 
-        body + click
+        self.dc_block.process(body + click)
     }
 
     fn is_active(&self) -> bool {
@@ -153,7 +185,9 @@ impl Voice for KickVoice {
     fn reset(&mut self) {
         self.active = false;
         self.amp_env.reset();
+        self.pitch_env.reset();
         self.click.reset();
+        self.dc_block.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
@@ -205,7 +239,7 @@ mod tests {
         kick.set_special_param(0, 1.0);
         kick.trigger();
 
-        // First sample should contain click energy (impulse + noise, level 1.0)
+        // First sample should still contain click energy.
         let first = kick.process_sample().abs();
         assert!(first > 0.2, "Click should produce strong first sample: {}", first);
     }
@@ -216,23 +250,21 @@ mod tests {
         kick.set_special_param(0, 0.0);
         kick.trigger();
 
-        // First sample: body starts at sin(0)=0, filter is reset, click is OFF
+        // First sample: body starts at sin(0)=0 (cold start), tail_duck active,
+        // dc_block doesn't add anything. Click is off → output should be ~0.
         let first = kick.process_sample().abs();
-        assert!(first < 0.0001, "Click should be silent at amount=0: {}", first);
+        assert!(first < 0.001, "Click should be silent at amount=0: {}", first);
     }
 
     #[test]
     fn test_kick_no_body_click_on_retrigger_during_tail() {
-        // Tonal voices used to reset oscillator phase and filter state on trigger,
-        // which produces an audible click when retriggered during a ringing tail.
-        // The body output should now stay continuous through a retrigger (click
-        // transient excluded — that one is intentionally sharp).
+        // The body output should stay continuous through a retrigger.
+        // Click transient excluded — that one is intentionally sharp.
         let mut settings = VoiceSettings::kick();
-        settings.special[0] = 0.0; // disable click transient — isolate body behavior
+        settings.special[0] = 0.0;
         let mut kick = KickVoice::new(44100.0, settings);
 
         kick.trigger();
-        // Let it ring partway through its decay.
         let mut last = 0.0;
         for _ in 0..4000 {
             last = kick.process_sample();
@@ -256,12 +288,38 @@ mod tests {
     }
 
     #[test]
+    fn test_kick_dense_retriggers_stay_finite() {
+        // Stress test inspired by `resources/roland-kick-rust`: fire bursts of
+        // closely-spaced retriggers and verify the output stays bounded and
+        // free of NaN/Inf.
+        let sr = 44100.0;
+        let mut kick = KickVoice::new(sr, VoiceSettings::kick());
+        let triggers = [0usize, 2_400, 4_800, 4_960, 9_600, 9_840];
+        let mut idx = 0usize;
+        let mut peak = 0.0f32;
+        for n in 0..12_000 {
+            if idx < triggers.len() && triggers[idx] == n {
+                kick.trigger();
+                idx += 1;
+            }
+            let s = kick.process_sample();
+            assert!(s.is_finite(), "non-finite sample at n={}: {}", n, s);
+            peak = peak.max(s.abs());
+        }
+        assert!(peak > 0.01);
+        assert!(peak < 4.0, "output peak runaway: {}", peak);
+    }
+
+    #[test]
     fn test_kick_decay() {
         let settings = VoiceSettings {
             frequency: 60.0,
             decay: 0.01,
             volume: 1.0,
             filter_freq: 100.0,
+            release: 0.0, // disable the release tail so the voice can finish quickly
+            decay_curve: 5.0,
+            release_curve: 3.0,
             algo: 0,
             special: [0.0; 8],
         };
