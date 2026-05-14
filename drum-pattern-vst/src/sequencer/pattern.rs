@@ -7,7 +7,7 @@ use std::sync::{
     Arc,
 };
 
-pub const INSTRUMENT_COUNT: usize = 10;
+pub const INSTRUMENT_COUNT: usize = 11;
 pub const STEP_COUNT: usize = 16;
 
 /// A single step in a pattern containing trigger states for all instruments.
@@ -247,7 +247,13 @@ impl SharedPattern {
     }
 
     pub fn set_step_mask(&self, step: usize, mask: u16) {
-        self.steps[step % STEP_COUNT].store(mask & 0x3ff, Ordering::Relaxed);
+        // Mask bits to the number of instruments. Each bit position
+        // corresponds to a voice index in `DrumVoice`. Wider masks lose any
+        // active bits for voices beyond INSTRUMENT_COUNT, which is why
+        // adding an 11th voice required widening this from 0x3ff (10 bits) to
+        // accommodate the new bit 10 (Snare 606).
+        let valid_bits = (1u16 << INSTRUMENT_COUNT).wrapping_sub(1);
+        self.steps[step % STEP_COUNT].store(mask & valid_bits, Ordering::Relaxed);
     }
 
     pub fn is_active(&self, step: usize, instrument: usize) -> bool {

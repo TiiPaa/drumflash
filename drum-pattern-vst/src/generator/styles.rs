@@ -165,6 +165,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.05,
                     exclusions: &[],
                 },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (90.0, 140.0),
         }
@@ -234,6 +241,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[0, 14, 15],
                     candidate_prob: 0.1,
+                    exclusions: &[],
+                },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
                     exclusions: &[],
                 },
             ],
@@ -307,6 +321,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.05,
                     exclusions: &[],
                 },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (120.0, 140.0),
         }
@@ -376,6 +397,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[0, 14, 15],
                     candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
                     exclusions: &[],
                 },
             ],
@@ -449,6 +477,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.1,
                     exclusions: &[],
                 },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 160.0),
         }
@@ -518,6 +553,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[0, 14, 15],
                     candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
                     exclusions: &[],
                 },
             ],
@@ -591,6 +633,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.1,
                     exclusions: &[],
                 },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 140.0),
         }
@@ -660,6 +709,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[0, 14, 15],
                     candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
                     exclusions: &[],
                 },
             ],
@@ -733,6 +789,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.05,
                     exclusions: &[],
                 },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (130.0, 160.0),
         }
@@ -802,6 +865,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[0, 14, 15],
                     candidate_prob: 0.05,
+                    exclusions: &[],
+                },
+                // Snare 606 (no auto-generation — user-only)
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
                     exclusions: &[],
                 },
             ],

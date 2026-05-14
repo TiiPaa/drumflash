@@ -64,6 +64,36 @@ pub const SNARE_ALGOS: &[AlgoDef] = &[
     AlgoDef { index: 2, name: "Layered" },
 ];
 
+// ── Snare 606 ───────────────────────────────────────────────────────────────
+
+pub const SNARE606_ALGOS: &[AlgoDef] = &[
+    AlgoDef { index: 0, name: "Standard" },
+];
+
+pub const SNARE606_SPECIALS: &[SpecialParamDef] = &[
+    SpecialParamDef {
+        index: 0,
+        name: "Resonance",
+        default: 4.5,
+        min: 0.5,
+        max: 12.0,
+    },
+    SpecialParamDef {
+        index: 1,
+        name: "Tone",
+        default: 0.55,
+        min: 0.0,
+        max: 1.0,
+    },
+    SpecialParamDef {
+        index: 2,
+        name: "Snap",
+        default: 0.3,
+        min: 0.0,
+        max: 1.0,
+    },
+];
+
 pub const SNARE_SPECIALS: &[SpecialParamDef] = &[
     SpecialParamDef {
         index: 0,
@@ -190,6 +220,7 @@ pub fn algos_for(voice: DrumVoice) -> &'static [AlgoDef] {
         DrumVoice::Clap => CLAP_ALGOS,
         DrumVoice::Ride => RIDE_ALGOS,
         DrumVoice::Cymbal => CYMBAL_ALGOS,
+        DrumVoice::Snare606 => SNARE606_ALGOS,
     }
 }
 
@@ -206,5 +237,6 @@ pub fn specials_for(voice: DrumVoice) -> &'static [SpecialParamDef] {
         DrumVoice::Clap => CLAP_SPECIALS,
         DrumVoice::Ride => RIDE_SPECIALS,
         DrumVoice::Cymbal => CYMBAL_SPECIALS,
+        DrumVoice::Snare606 => SNARE606_SPECIALS,
     }
 }
