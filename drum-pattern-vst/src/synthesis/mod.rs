@@ -9,6 +9,7 @@ mod kick;
 mod open_hihat;
 mod ride;
 mod snare;
+mod snare606;
 mod tom;
 
 pub use special_params::{AlgoDef, SpecialParamDef, algos_for, specials_for};
@@ -20,6 +21,7 @@ pub use kick::KickVoice;
 pub use open_hihat::OpenHiHatVoice;
 pub use ride::RideVoice;
 pub use snare::SnareVoice;
+pub use snare606::Snare606Voice;
 pub use tom::TomVoice;
 
 /// Drum voice types matching the original web app
@@ -36,11 +38,12 @@ pub enum DrumVoice {
     Clap = 7,
     Ride = 8,
     Cymbal = 9,
+    Snare606 = 10,
 }
 
 #[allow(dead_code)]
 impl DrumVoice {
-    pub const COUNT: usize = 10;
+    pub const COUNT: usize = 11;
 
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
@@ -54,6 +57,7 @@ impl DrumVoice {
             7 => Some(Self::Clap),
             8 => Some(Self::Ride),
             9 => Some(Self::Cymbal),
+            10 => Some(Self::Snare606),
             _ => None,
         }
     }
@@ -70,6 +74,7 @@ impl DrumVoice {
             DrumVoice::Clap => 39,
             DrumVoice::Ride => 51,
             DrumVoice::Cymbal => 49,
+            DrumVoice::Snare606 => 40,
         }
     }
 
@@ -85,6 +90,7 @@ impl DrumVoice {
             DrumVoice::Clap => "Clap",
             DrumVoice::Ride => "Ride",
             DrumVoice::Cymbal => "Cymbal",
+            DrumVoice::Snare606 => "Snare 606",
         }
     }
 }
@@ -269,6 +275,23 @@ impl VoiceSettings {
             special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
     }
+
+    pub fn snare606() -> Self {
+        Self {
+            frequency: 220.0,
+            decay: 0.08,
+            volume: 0.7,
+            filter_freq: 3000.0,
+            release: 0.15,
+            decay_curve: 5.0,
+            release_curve: 3.0,
+            algo: 0,
+            // special[0] = Resonance (Q)
+            // special[1] = Tone (body vs wires balance)
+            // special[2] = Snap (crispness of wires layer)
+            special: [4.5, 0.55, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0],
+        }
+    }
 }
 
 pub trait Voice: Send + Sync {
@@ -301,6 +324,7 @@ pub enum DrumVoiceKind {
     Clap(ClapVoice),
     Ride(RideVoice),
     Cymbal(CymbalVoice),
+    Snare606(Snare606Voice),
 }
 
 impl Voice for DrumVoiceKind {
@@ -314,6 +338,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.trigger(),
             DrumVoiceKind::Ride(v) => v.trigger(),
             DrumVoiceKind::Cymbal(v) => v.trigger(),
+            DrumVoiceKind::Snare606(v) => v.trigger(),
         }
     }
 
@@ -327,6 +352,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.process_sample(),
             DrumVoiceKind::Ride(v) => v.process_sample(),
             DrumVoiceKind::Cymbal(v) => v.process_sample(),
+            DrumVoiceKind::Snare606(v) => v.process_sample(),
         }
     }
 
@@ -340,6 +366,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.is_active(),
             DrumVoiceKind::Ride(v) => v.is_active(),
             DrumVoiceKind::Cymbal(v) => v.is_active(),
+            DrumVoiceKind::Snare606(v) => v.is_active(),
         }
     }
 
@@ -353,6 +380,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.reset(),
             DrumVoiceKind::Ride(v) => v.reset(),
             DrumVoiceKind::Cymbal(v) => v.reset(),
+            DrumVoiceKind::Snare606(v) => v.reset(),
         }
     }
 
@@ -366,6 +394,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.set_settings(settings),
             DrumVoiceKind::Ride(v) => v.set_settings(settings),
             DrumVoiceKind::Cymbal(v) => v.set_settings(settings),
+            DrumVoiceKind::Snare606(v) => v.set_settings(settings),
         }
     }
 
@@ -379,6 +408,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.set_algo(algo),
             DrumVoiceKind::Ride(v) => v.set_algo(algo),
             DrumVoiceKind::Cymbal(v) => v.set_algo(algo),
+            DrumVoiceKind::Snare606(v) => v.set_algo(algo),
         }
     }
 
@@ -392,6 +422,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.set_special_param(index, value),
             DrumVoiceKind::Ride(v) => v.set_special_param(index, value),
             DrumVoiceKind::Cymbal(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Snare606(v) => v.set_special_param(index, value),
         }
     }
 
@@ -405,6 +436,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.supported_algos(),
             DrumVoiceKind::Ride(v) => v.supported_algos(),
             DrumVoiceKind::Cymbal(v) => v.supported_algos(),
+            DrumVoiceKind::Snare606(v) => v.supported_algos(),
         }
     }
 
@@ -418,6 +450,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Clap(v) => v.special_params(),
             DrumVoiceKind::Ride(v) => v.special_params(),
             DrumVoiceKind::Cymbal(v) => v.special_params(),
+            DrumVoiceKind::Snare606(v) => v.special_params(),
         }
     }
 }
@@ -452,7 +485,7 @@ impl DrumSynthesizer {
             *smoother = dsp::OnePoleSmoother::new(sample_rate, VELOCITY_SMOOTH_MS, 1.0);
         }
 
-        // Create all 10 voices with dedicated models.
+        // Create all 11 voices with dedicated models.
         self.voices.push(DrumVoiceKind::Kick(KickVoice::new(
             sample_rate,
             VoiceSettings::kick(),
@@ -492,6 +525,10 @@ impl DrumSynthesizer {
         self.voices.push(DrumVoiceKind::Cymbal(CymbalVoice::new(
             sample_rate,
             VoiceSettings::cymbal(),
+        )));
+        self.voices.push(DrumVoiceKind::Snare606(Snare606Voice::new(
+            sample_rate,
+            VoiceSettings::snare606(),
         )));
     }
 
