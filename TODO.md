@@ -15,7 +15,7 @@
 
 ## Tests & Validation
 
-- [ ] [10] Tester le plugin dans au moins un autre DAW (Reaper recommande)
+- [ ] [10] **REPRENDRE ICI** — Tester le plugin dans au moins un autre DAW (Reaper recommande)
 - [x] [10a] Corriger les defaults de decay (snare 0.47, hihat 0.36, open_hh 0.66)
 - [x] [10b] Ajouter option Hi-Hat Choke (cut Open HH quand Closed HH trigger)
 - [x] [10c] Corriger les step skips rares (sync_to_host moins agressif)
@@ -50,6 +50,9 @@
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
 - [ ] [28] Drag & drop MIDI directement vers le DAW
 - [ ] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
+- [ ] [39] Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`). Permet labels, ranges et défauts spécifiques par voix.
+- [ ] [40] Filter envelope (cutoff modulé par AD/ADSR) — utile sur snare, clap, ride, cymbal
+- [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
 
 ## Dette technique & Documentation
 
@@ -58,7 +61,7 @@
 - [ ] [32] Synchroniser `BACKLOG_VST.md` avec le code reel (items P2 marques comme "hors V1")
 - [ ] [33] Reduire les warnings Rust inutiles
 - [ ] [34] Garder les fichiers de sauvegarde hors de `src/`
-- [ ] [34a] Corriger le click de retrigger kick (2 steps BD proches)
+- [x] [34a] Corriger le click de retrigger kick (2 steps BD proches)
 - [ ] [34b] Nettoyer le code mort dans `special_params.rs` (dead_code warnings)
 
 ## Bugs a corriger
@@ -67,6 +70,9 @@
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
 - [ ] [38] Ecart entre documentation et code reel a surveiller
+- [x] [42] Crash a l'instanciation avec 11e voix (cause: `IntRange { min:0, max:0 }` → div par zéro nih-plug)
+- [x] [43] Index out of bounds dans UI (`hums`/`pushes`/`lengths` taille 10 vs INSTRUMENT_LABELS taille 11)
+- [x] [44] Step mask hardcode `0x3ff` (10 bits) — extensible via `INSTRUMENT_COUNT`
 
 ## Tests avances (Post-V1)
 

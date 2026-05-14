@@ -33,9 +33,9 @@ There is no lint config beyond `cargo`’s default warnings.
 
 The plugin is a single `nih-plug` VST3 with an internal step sequencer, modular drum synthesis, and an `egui` UI. Layers:
 
-- `src/lib.rs` — plugin entry: declares `DrumFlashParams` (every persisted/automatable param), `AUDIO_IO_LAYOUTS` (Main Mix + 10 stereo aux outs per `DrumVoice`), wires `transport` → `Sequencer::sync_to_host` (detects seeks via 4-beat-circle diff), and runs the sample loop that calls `Sequencer::process_sample` → `DrumSynthesizer::trigger` → mixes into main + aux buffers and emits `NoteOn/NoteOff` on MIDI channel 10 (index 9).
-- `src/sequencer/` — `Sequencer` holds one master `beat_position` (0..4 = 1 bar = 16 steps). Per-track state (`TrackState`) supplies `track_length`, `push_pull_ms`, `humanize_amount`. Humanize affects **velocity only**, not timing (avoids double triggers). Groove/swing is applied to the master grid (`src/groove.rs`). `SharedPattern` is the lock-free `Arc<…>` grid mutated by the UI and read by the audio thread.
-- `src/synthesis/` — one DSP file per voice (`kick.rs`, `snare.rs`, `hihat.rs`, `open_hihat.rs`, `tom.rs`, `clap.rs`, `ride.rs`, `cymbal.rs`) plus `dsp.rs` primitives. `special_params.rs` and `algos_for/specials_for` describe per-voice algorithm variants exposed to the UI; `DrumVoice::COUNT = 10`. Voice settings come from `SoundSettingsState` (versioned, polled per sample-block in `process()`).
+- `src/lib.rs` — plugin entry: declares `DrumFlashParams` (every persisted/automatable param), `AUDIO_IO_LAYOUTS` (Main Mix + `AUX_OUT_COUNT = 10` stereo aux outs — frozen at 10 to keep Studio One session compatibility, even though `DrumVoice::COUNT = 11`. The 11th voice "Snare 606" is mixed in the Main Mix only.). Wires `transport` → `Sequencer::sync_to_host` (detects seeks via 4-beat-circle diff), and runs the sample loop that calls `Sequencer::process_sample` → `DrumSynthesizer::trigger` → mixes into main + aux buffers and emits `NoteOn/NoteOff` on MIDI channel 10 (index 9).
+- `src/sequencer/` — `Sequencer` holds one master `beat_position` (0..4 = 1 bar = 16 steps). Per-track state (`TrackState`) supplies `track_length`, `push_pull_ms`, `humanize_amount`. Humanize affects **velocity only**, not timing (avoids double triggers). Groove/swing is applied to the master grid (`src/groove.rs`). `SharedPattern` is the lock-free `Arc<…>` grid mutated by the UI and read by the audio thread. Step bitmask uses 11 bits (one per voice), masked at write time via `INSTRUMENT_COUNT` — adding a 12th voice requires no change to the bit-packing.
+- `src/synthesis/` — one DSP file per voice (`kick.rs`, `snare.rs`, `hihat.rs`, `open_hihat.rs`, `tom.rs`, `clap.rs`, `ride.rs`, `cymbal.rs`, `snare606.rs`) plus `dsp.rs` primitives. `special_params.rs` and `algos_for/specials_for` describe per-voice algorithm variants exposed to the UI; `DrumVoice::COUNT = 11`. Voice settings come from `SoundSettingsState` (versioned, polled per sample-block in `process()`). The amplitude envelope (`DecayReleaseEnvelope`) is bi-stage with `max(decay, release)` crossover; snare/HH/OH/Snare 606 also use a Hold phase between attack and decay.
 - `src/generator/` — four pattern generators (`probabilistic`, `markov`, `euclidean`, `classic`) driven by `Style` + density/variation params. Output writes back into `SharedPattern`.
 - `src/ui.rs` + `src/ui/` — `egui` editor.
 - `src/midi_export.rs`, `src/sound_settings.rs`, `src/groove.rs` — auxiliary modules referenced from `lib.rs`.
@@ -50,6 +50,20 @@ The plugin is a single `nih-plug` VST3 with an internal step sequencer, modular 
 - ignores non-activated outputs during buffer validation
 - links event/MIDI input to main audio out via `getRoutingInfo()`
 - saves/restores plugin state on the `IEditController` side in addition to `IComponent`
+
+### Anti-click conventions (audio thread invariants)
+
+- `trigger()` of any voice **must not** reset oscillator phase, filter state or
+  reseed the noise generator — analog-style continuity preserves smoothness on
+  retriggers during a ringing tail. See `src/synthesis/kick.rs` and friends.
+- `DecayReleaseEnvelope::trigger_at_peak(peak)` ramps from the current value
+  to `peak` (or skips ramp if already above peak). Direct `value = 1.0` jumps
+  on retrigger cause audible clicks.
+- Frequency / cutoff changes go through `OnePoleSmoother` to absorb sub-sample
+  discontinuities — see kick's `freq_smoother` and the velocity smoothers in
+  `DrumSynthesizer::process_voice_samples`.
+- `DcBlocker` on voices with asymmetric retriggers (kick) catches the DC drift
+  that builds up over dense patterns.
 
 ### Pattern persistence + legacy migration
 
