@@ -23,7 +23,7 @@ use crate::{
     DrumFlashParams, BUILD_ID,
 };
 
-const INSTRUMENT_LABELS: [&str; DrumVoice::COUNT] = ["BD", "SD", "HH", "OH", "T1", "T2", "T3", "CL", "RD", "CY"];
+const INSTRUMENT_LABELS: [&str; DrumVoice::COUNT] = ["BD", "SD", "HH", "OH", "T1", "T2", "T3", "CL", "RD", "CY", "S6"];
 
 pub fn create_editor(
     params: Arc<DrumFlashParams>,
@@ -238,6 +238,7 @@ pub fn create_editor(
                                         &params_for_ui.humanize_clap,
                                         &params_for_ui.humanize_ride,
                                         &params_for_ui.humanize_cymbal,
+                                        &params_for_ui.humanize_snare606,
                                     ];
                                     let pushes = [
                                         &params_for_ui.push_kick,
@@ -250,6 +251,7 @@ pub fn create_editor(
                                         &params_for_ui.push_clap,
                                         &params_for_ui.push_ride,
                                         &params_for_ui.push_cymbal,
+                                        &params_for_ui.push_snare606,
                                     ];
                                     let lengths = [
                                         &params_for_ui.length_kick,
@@ -262,6 +264,7 @@ pub fn create_editor(
                                         &params_for_ui.length_clap,
                                         &params_for_ui.length_ride,
                                         &params_for_ui.length_cymbal,
+                                        &params_for_ui.length_snare606,
                                     ];
 
                                     for (i, label) in INSTRUMENT_LABELS.iter().enumerate() {
@@ -347,6 +350,10 @@ fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; DrumVoice::COUNT] {
         MixerRow {
             mute: &params.mute_cymbal,
             solo: &params.solo_cymbal,
+        },
+        MixerRow {
+            mute: &params.mute_snare606,
+            solo: &params.solo_snare606,
         },
     ]
 }
@@ -564,6 +571,7 @@ fn draw_sound_panel(
             7 => &params.algo_clap,
             8 => &params.algo_ride,
             9 => &params.algo_cymbal,
+            10 => &params.algo_snare606,
             _ => &params.algo_kick,
         };
         ui.horizontal(|ui| {
@@ -596,6 +604,20 @@ fn draw_sound_panel(
         ui.horizontal(|ui| {
             ui.label("Echo");
             ui.add(widgets::ParamSlider::for_param(&params.clap_echo, setter).with_width(120.0));
+        });
+    }
+    if *selected_instrument == 10 {
+        ui.horizontal(|ui| {
+            ui.label("Resonance");
+            ui.add(widgets::ParamSlider::for_param(&params.snare606_resonance, setter).with_width(120.0));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Tone");
+            ui.add(widgets::ParamSlider::for_param(&params.snare606_tone, setter).with_width(120.0));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Snap");
+            ui.add(widgets::ParamSlider::for_param(&params.snare606_snap, setter).with_width(120.0));
         });
     }
 

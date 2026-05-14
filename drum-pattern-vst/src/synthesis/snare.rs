@@ -1,10 +1,12 @@
 //! Snare drum synthesizer
 //!
-//! Implementation matches the original Web Audio API:
-//! - Triangle oscillator for the "body"
-//! - White noise for the "snare" sound
-//! - Highpass filter
-//! - Exponential amplitude envelope
+//! Three algorithms:
+//! - 0 Synth: triangle osc + noise (original Web Audio model)
+//! - 1 Noise: pure white noise
+//! - 2 Layered: fundamental + 2nd harmonic + noise
+//!
+//! For the analog TR-606 bridged-T snare model, see the separate
+//! `Snare606Voice` (voice index 10).
 
 use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
 
@@ -75,10 +77,14 @@ impl Voice for SnareVoice {
         }
 
         let snap = self.settings.special[0];
-        let mixed = match self.settings.algo {
+        let env = self.envelope.next();
+
+        let output = match self.settings.algo {
             1 => {
                 // Noise: pure white noise, no oscillator
-                self.noise.next() * 0.5
+                let mixed = self.noise.next() * 0.5;
+                let filtered = self.filter.process(mixed);
+                filtered * env * self.settings.volume
             }
             2 => {
                 // Layered: fundamental + overtone + noise
@@ -86,7 +92,8 @@ impl Voice for SnareVoice {
                 let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.3;
                 let osc = (fundamental + overtone) * snap * 0.5;
                 let noise = self.noise.next() * (1.0 - snap) * 0.5;
-                osc + noise
+                let filtered = self.filter.process(osc + noise);
+                filtered * env * self.settings.volume
             }
             _ => {
                 // Synth: triangle osc + noise (ratio controlled by snap)
@@ -94,16 +101,10 @@ impl Voice for SnareVoice {
                 let noise_gain = (1.0 - snap) * 0.5;
                 let osc = self.osc.next() * osc_gain;
                 let noise = self.noise.next() * noise_gain;
-                osc + noise
+                let filtered = self.filter.process(osc + noise);
+                filtered * env * self.settings.volume
             }
         };
-
-        // Apply highpass filter
-        let filtered = self.filter.process(mixed);
-
-        // Apply amplitude envelope
-        let env = self.envelope.next();
-        let output = filtered * env * self.settings.volume;
 
         // Stop when envelope is too low
         if !self.envelope.is_active() {

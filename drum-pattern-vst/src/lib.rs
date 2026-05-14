@@ -27,10 +27,16 @@ pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
     Some(build_id) => build_id,
     None => "dev",
 };
-const OUTPUT_PORT_NAMES: [&str; DrumVoice::COUNT] = [
+/// Number of dedicated stereo aux outputs. Frozen at 10 to match every saved
+/// DAW session: changing the VST3 bus layout (e.g. exposing the 11th voice on
+/// a new aux out) crashes Studio One when reopening projects that were saved
+/// with the previous layout. The 11th voice (Snare 606) is still audible in
+/// the Main Mix; it just doesn't get its own dedicated aux bus.
+const AUX_OUT_COUNT: usize = 10;
+const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
     "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal",
 ];
-const MIDI_NOTE_MAP: [u8; DrumVoice::COUNT] = [36, 38, 42, 46, 50, 47, 43, 39, 51, 49];
+const MIDI_NOTE_MAP: [u8; DrumVoice::COUNT] = [36, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40];
 const STEP_COUNT: usize = 16;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v1";
@@ -95,6 +101,8 @@ pub struct DrumFlashParams {
     pub humanize_ride: FloatParam,
     #[id = "hu_cymbal"]
     pub humanize_cymbal: FloatParam,
+    #[id = "hu_snare606"]
+    pub humanize_snare606: FloatParam,
 
     #[id = "pp_kick"]
     pub push_kick: FloatParam,
@@ -116,6 +124,8 @@ pub struct DrumFlashParams {
     pub push_ride: FloatParam,
     #[id = "pp_cymbal"]
     pub push_cymbal: FloatParam,
+    #[id = "pp_snare606"]
+    pub push_snare606: FloatParam,
 
     #[id = "pl_kick"]
     pub length_kick: IntParam,
@@ -137,6 +147,8 @@ pub struct DrumFlashParams {
     pub length_ride: IntParam,
     #[id = "pl_cymbal"]
     pub length_cymbal: IntParam,
+    #[id = "pl_snare606"]
+    pub length_snare606: IntParam,
 
     #[id = "kick_click"]
     pub kick_click: FloatParam,
@@ -170,6 +182,8 @@ pub struct DrumFlashParams {
     pub mute_ride: BoolParam,
     #[id = "mute_cymbal"]
     pub mute_cymbal: BoolParam,
+    #[id = "mute_snare606"]
+    pub mute_snare606: BoolParam,
 
     #[id = "solo_kick"]
     pub solo_kick: BoolParam,
@@ -197,6 +211,8 @@ pub struct DrumFlashParams {
     pub solo_ride: BoolParam,
     #[id = "solo_cymbal"]
     pub solo_cymbal: BoolParam,
+    #[id = "solo_snare606"]
+    pub solo_snare606: BoolParam,
 
     #[id = "gen_type"]
     pub generator_type: EnumParam<GeneratorType>,
@@ -237,6 +253,8 @@ pub struct DrumFlashParams {
     pub algo_ride: IntParam,
     #[id = "algo_cymbal"]
     pub algo_cymbal: IntParam,
+    #[id = "algo_snare606"]
+    pub algo_snare606: IntParam,
 
     // Special parameters per instrument
     #[id = "snare_snap"]
@@ -250,6 +268,14 @@ pub struct DrumFlashParams {
     // 0 = collapse to a single burst, 1 = default 12 ms spread, 2 = wider.
     #[id = "clap_echo"]
     pub clap_echo: FloatParam,
+
+    // Snare 606 specials: bridged-T resonator fine-tuning.
+    #[id = "sn606_res"]
+    pub snare606_resonance: FloatParam,
+    #[id = "sn606_tone"]
+    pub snare606_tone: FloatParam,
+    #[id = "sn606_snap"]
+    pub snare606_snap: FloatParam,
 }
 
 impl Default for DrumFlashParams {
@@ -314,6 +340,8 @@ impl Default for DrumFlashParams {
                 .with_smoother(SmoothingStyle::Linear(10.0)),
             humanize_cymbal: FloatParam::new("Humanize Cymbal", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_snare606: FloatParam::new("Humanize Snare 606", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
 
             // Push/pull per track (-50 ms = early, +50 ms = late)
             push_kick: FloatParam::new("Push/Pull Kick", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
@@ -346,6 +374,9 @@ impl Default for DrumFlashParams {
             push_cymbal: FloatParam::new("Push/Pull Cymbal", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
                 .with_smoother(SmoothingStyle::Linear(10.0))
                 .with_unit(" ms"),
+            push_snare606: FloatParam::new("Push/Pull Snare 606", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
 
             // Pattern length per track (1-16 steps)
             length_kick: IntParam::new("Length Kick", 16, IntRange::Linear { min: 1, max: 16 }),
@@ -358,6 +389,7 @@ impl Default for DrumFlashParams {
             length_clap: IntParam::new("Length Clap", 16, IntRange::Linear { min: 1, max: 16 }),
             length_ride: IntParam::new("Length Ride", 16, IntRange::Linear { min: 1, max: 16 }),
             length_cymbal: IntParam::new("Length Cymbal", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_snare606: IntParam::new("Length Snare 606", 16, IntRange::Linear { min: 1, max: 16 }),
 
             kick_click: FloatParam::new(
                 "Kick Click",
@@ -383,6 +415,7 @@ impl Default for DrumFlashParams {
             mute_clap: BoolParam::new("Mute Clap", false),
             mute_ride: BoolParam::new("Mute Ride", false),
             mute_cymbal: BoolParam::new("Mute Cymbal", false),
+            mute_snare606: BoolParam::new("Mute Snare 606", false),
             solo_kick: BoolParam::new("Solo Kick", false),
             solo_snare: BoolParam::new("Solo Snare", false),
             solo_hihat: BoolParam::new("Solo Hi-Hat", false),
@@ -393,6 +426,7 @@ impl Default for DrumFlashParams {
             solo_clap: BoolParam::new("Solo Clap", false),
             solo_ride: BoolParam::new("Solo Ride", false),
             solo_cymbal: BoolParam::new("Solo Cymbal", false),
+            solo_snare606: BoolParam::new("Solo Snare 606", false),
 
             generator_type: EnumParam::new("Generator", GeneratorType::Probabilistic),
             style_primary: EnumParam::new("Style A", Style::Rock),
@@ -423,6 +457,10 @@ impl Default for DrumFlashParams {
             algo_clap: IntParam::new("Clap Algo", 0, IntRange::Linear { min: 0, max: 1 }),
             algo_ride: IntParam::new("Ride Algo", 0, IntRange::Linear { min: 0, max: 1 }),
             algo_cymbal: IntParam::new("Cymbal Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            // max=1 (not 0) even though there is only one algo today — nih-plug normalizes
+            // params as (value - min) / (max - min), which divides by zero when min==max
+            // and crashes the host at instantiation.
+            algo_snare606: IntParam::new("Snare 606 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
 
             snare_snap: FloatParam::new(
                 "Snare Snap",
@@ -437,6 +475,25 @@ impl Default for DrumFlashParams {
                 "Clap Echo",
                 1.0,
                 FloatRange::Linear { min: 0.0, max: 3.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            snare606_resonance: FloatParam::new(
+                "Snare 606 Resonance",
+                4.5,
+                FloatRange::Linear { min: 0.5, max: 12.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare606_tone: FloatParam::new(
+                "Snare 606 Tone",
+                0.55,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare606_snap: FloatParam::new(
+                "Snare 606 Snap",
+                0.3,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
         }
@@ -487,7 +544,7 @@ impl Plugin for DrumFlashVst {
         main_input_channels: None,
         main_output_channels: NonZeroU32::new(2),
         aux_input_ports: &[],
-        aux_output_ports: &[new_nonzero_u32(2); DrumVoice::COUNT],
+        aux_output_ports: &[new_nonzero_u32(2); AUX_OUT_COUNT],
         names: PortNames {
             layout: Some("Stereo mix + 10 stereo drum outs"),
             main_input: None,
@@ -608,6 +665,7 @@ impl Plugin for DrumFlashVst {
             self.params.mute_clap.value(),
             self.params.mute_ride.value(),
             self.params.mute_cymbal.value(),
+            self.params.mute_snare606.value(),
         ];
         let solo_states = [
             self.params.solo_kick.value(),
@@ -620,6 +678,7 @@ impl Plugin for DrumFlashVst {
             self.params.solo_clap.value(),
             self.params.solo_ride.value(),
             self.params.solo_cymbal.value(),
+            self.params.solo_snare606.value(),
         ];
         let any_solo_active = solo_states.iter().copied().any(|solo| solo);
         let effective_mutes = std::array::from_fn(|index| {
@@ -651,6 +710,7 @@ impl Plugin for DrumFlashVst {
                 self.params.length_clap.value() as usize,
                 self.params.length_ride.value() as usize,
                 self.params.length_cymbal.value() as usize,
+                self.params.length_snare606.value() as usize,
             ],
             [
                 self.params.push_kick.value(),
@@ -663,6 +723,7 @@ impl Plugin for DrumFlashVst {
                 self.params.push_clap.value(),
                 self.params.push_ride.value(),
                 self.params.push_cymbal.value(),
+                self.params.push_snare606.value(),
             ],
             [
                 self.params.humanize_kick.value(),
@@ -675,6 +736,7 @@ impl Plugin for DrumFlashVst {
                 self.params.humanize_clap.value(),
                 self.params.humanize_ride.value(),
                 self.params.humanize_cymbal.value(),
+                self.params.humanize_snare606.value(),
             ],
         );
 
@@ -686,6 +748,12 @@ impl Plugin for DrumFlashVst {
         // Propagate special parameters
         self.synthesizer.set_special_param(1, 0, self.params.snare_snap.value());
         self.synthesizer.set_special_param(7, 0, self.params.clap_echo.value());
+        self.synthesizer
+            .set_special_param(10, 0, self.params.snare606_resonance.value());
+        self.synthesizer
+            .set_special_param(10, 1, self.params.snare606_tone.value());
+        self.synthesizer
+            .set_special_param(10, 2, self.params.snare606_snap.value());
 
         // Hi-hat chokes open hi-hat
         let hihat_chokes_oh = self.params.hihat_chokes_oh.value();
@@ -701,6 +769,7 @@ impl Plugin for DrumFlashVst {
         self.synthesizer.set_algo(7, self.params.algo_clap.value() as u8);
         self.synthesizer.set_algo(8, self.params.algo_ride.value() as u8);
         self.synthesizer.set_algo(9, self.params.algo_cymbal.value() as u8);
+        self.synthesizer.set_algo(10, self.params.algo_snare606.value() as u8);
 
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
             let swing = self.params.swing.value();
