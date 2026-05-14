@@ -22,7 +22,7 @@ impl OpenHiHatVoice {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
 
-        let envelope = dsp::DecayReleaseEnvelope::new(
+        let mut envelope = dsp::DecayReleaseEnvelope::new(
             sample_rate,
             settings.decay_curve,
             settings.decay,
@@ -30,6 +30,7 @@ impl OpenHiHatVoice {
             settings.release,
         )
         .with_attack_ms(OPEN_HIHAT_ATTACK_MS);
+        envelope.set_hold(settings.hold);
 
         Self {
             settings,
@@ -94,6 +95,7 @@ impl Voice for OpenHiHatVoice {
             settings.release,
         )
         .with_attack_ms(OPEN_HIHAT_ATTACK_MS);
+        self.envelope.set_hold(settings.hold);
     }
 
     fn set_algo(&mut self, algo: u8) {

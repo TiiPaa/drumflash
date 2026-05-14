@@ -475,8 +475,16 @@ fn draw_sound_panel(
     });
 
     let inst = &sound_settings.instruments[*selected_instrument];
-    let (mut freq, mut decay, mut vol, mut filt, mut release, mut decay_curve, mut release_curve) =
-        inst.load();
+    let (
+        mut freq,
+        mut decay,
+        mut vol,
+        mut filt,
+        mut release,
+        mut decay_curve,
+        mut release_curve,
+        mut hold,
+    ) = inst.load();
     let mut changed = false;
 
     ui.horizontal(|ui| {
@@ -511,6 +519,23 @@ fn draw_sound_panel(
             changed = true;
         }
     });
+
+    // Hold: short sustain plateau between attack and decay. Only meaningful
+    // on voices that route their amp envelope through DecayReleaseEnvelope's
+    // hold-aware decay stage — i.e. Snare, Hi-Hat, Open HH and Snare 606.
+    let hold_capable = matches!(*selected_instrument, 1 | 2 | 3 | 10);
+    if hold_capable {
+        ui.horizontal(|ui| {
+            ui.label("Hold");
+            if ui
+                .add(egui::Slider::new(&mut hold, 0.0..=0.5).suffix(" s"))
+                .changed()
+            {
+                inst.hold.store(hold.to_bits(), Ordering::Relaxed);
+                changed = true;
+            }
+        });
+    }
 
     ui.horizontal(|ui| {
         ui.label("Release");

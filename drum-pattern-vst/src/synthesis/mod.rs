@@ -113,6 +113,10 @@ pub struct VoiceSettings {
     /// Steepness of the release stage (typical range 2..10). Lower values give
     /// a long flat tail, higher values a quick falloff.
     pub release_curve: f32,
+    /// Hold time in seconds. After the attack ramp the envelope stays at its
+    /// peak for `hold` seconds before the decay starts. Used by snare and
+    /// hi-hat voices to add a short sustain phase. 0 = no hold.
+    pub hold: f32,
     /// Synthesis algorithm index (interpreted per instrument).
     pub algo: u8,
     /// Special parameters, indexed per instrument convention.
@@ -129,6 +133,7 @@ impl Default for VoiceSettings {
             release: 0.0,
             decay_curve: 5.0,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.0; 8],
         }
@@ -145,6 +150,7 @@ impl VoiceSettings {
             release: 0.5,
             decay_curve: 5.0,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -159,6 +165,7 @@ impl VoiceSettings {
             release: 0.2,
             decay_curve: 5.0,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -173,6 +180,7 @@ impl VoiceSettings {
             release: 0.0,
             decay_curve: 8.0,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -187,6 +195,7 @@ impl VoiceSettings {
             release: 0.4,
             decay_curve: 5.5,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -201,6 +210,7 @@ impl VoiceSettings {
             release: 0.3,
             decay_curve: 4.2,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -215,6 +225,7 @@ impl VoiceSettings {
             release: 0.4,
             decay_curve: 4.2,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -229,6 +240,7 @@ impl VoiceSettings {
             release: 0.5,
             decay_curve: 4.2,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -243,6 +255,7 @@ impl VoiceSettings {
             release: 0.12,
             decay_curve: 6.0,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -257,6 +270,7 @@ impl VoiceSettings {
             release: 1.5,
             decay_curve: 3.5,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -271,6 +285,7 @@ impl VoiceSettings {
             release: 2.5,
             decay_curve: 2.8,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -285,6 +300,7 @@ impl VoiceSettings {
             release: 0.15,
             decay_curve: 5.0,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             // special[0] = Resonance (Q)
             // special[1] = Tone (body vs wires balance)

@@ -46,7 +46,7 @@ impl Snare606Voice {
         let q = settings.special[0].clamp(0.5, 12.0);
         resonator.set_bandpass(settings.frequency.max(80.0), q, sample_rate);
 
-        let envelope = dsp::DecayReleaseEnvelope::new(
+        let mut envelope = dsp::DecayReleaseEnvelope::new(
             sample_rate,
             settings.decay_curve,
             settings.decay,
@@ -54,6 +54,7 @@ impl Snare606Voice {
             settings.release,
         )
         .with_attack_ms(ATTACK_MS);
+        envelope.set_hold(settings.hold);
 
         Self {
             settings,
@@ -160,6 +161,7 @@ impl Voice for Snare606Voice {
             settings.release,
         )
         .with_attack_ms(ATTACK_MS);
+        self.envelope.set_hold(settings.hold);
     }
 
     fn set_algo(&mut self, algo: u8) {
