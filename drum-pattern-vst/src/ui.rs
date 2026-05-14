@@ -592,6 +592,12 @@ fn draw_sound_panel(
             ui.add(widgets::ParamSlider::for_param(&params.tom_stick, setter).with_width(120.0));
         });
     }
+    if *selected_instrument == 7 {
+        ui.horizontal(|ui| {
+            ui.label("Echo");
+            ui.add(widgets::ParamSlider::for_param(&params.clap_echo, setter).with_width(120.0));
+        });
+    }
 
     if changed {
         sound_settings.bump_version();

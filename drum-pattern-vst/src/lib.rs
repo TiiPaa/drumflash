@@ -245,6 +245,11 @@ pub struct DrumFlashParams {
     // Hi-hat chokes open hi-hat when triggered
     #[id = "hihat_chokes_oh"]
     pub hihat_chokes_oh: BoolParam,
+
+    // Clap echo: scales burst spacing and tone diffusion between the 4 bursts.
+    // 0 = collapse to a single burst, 1 = default 12 ms spread, 2 = wider.
+    #[id = "clap_echo"]
+    pub clap_echo: FloatParam,
 }
 
 impl Default for DrumFlashParams {
@@ -427,6 +432,13 @@ impl Default for DrumFlashParams {
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
             hihat_chokes_oh: BoolParam::new("HiHat Chokes OpenHH", true),
+
+            clap_echo: FloatParam::new(
+                "Clap Echo",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 3.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
         }
     }
 }
@@ -673,6 +685,7 @@ impl Plugin for DrumFlashVst {
 
         // Propagate special parameters
         self.synthesizer.set_special_param(1, 0, self.params.snare_snap.value());
+        self.synthesizer.set_special_param(7, 0, self.params.clap_echo.value());
 
         // Hi-hat chokes open hi-hat
         let hihat_chokes_oh = self.params.hihat_chokes_oh.value();

@@ -231,10 +231,10 @@ impl VoiceSettings {
     pub fn clap() -> Self {
         Self {
             frequency: 1200.0,
-            decay: 0.15,
+            decay: 0.03,
             volume: 0.7,
-            filter_freq: 2500.0,
-            release: 0.0,
+            filter_freq: 1000.0,
+            release: 0.12,
             decay_curve: 6.0,
             release_curve: 3.0,
             algo: 0,
