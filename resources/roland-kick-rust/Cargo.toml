@@ -1,0 +1,17 @@
+[package]
+name = "roland-kick-rust"
+version = "0.1.0"
+edition = "2021"
+authors = ["Nicolas Mi", "Oracle"]
+description = "Rust sandbox for modelling Roland-style TR-606 / TR-808 / TR-909 kick drums"
+license = "MIT"
+
+[lib]
+name = "roland_kick_rust"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
