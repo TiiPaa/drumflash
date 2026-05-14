@@ -43,7 +43,8 @@ impl RideVoice {
             osc2,
             osc3,
             filter,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 3.5, settings.decay),
+            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 3.5, settings.decay)
+                .with_attack_ms(2.0),
             active: false,
         }
     }

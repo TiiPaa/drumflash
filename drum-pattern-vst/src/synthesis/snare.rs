@@ -8,6 +8,9 @@
 
 use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
 
+/// Anti-click attack ramp (mimics analog VCA RC charge time).
+const SNARE_ATTACK_MS: f32 = 1.5;
+
 /// Snare drum voice using triangle oscillator + noise
 pub struct SnareVoice {
     settings: VoiceSettings,
@@ -41,7 +44,8 @@ impl SnareVoice {
             sample_rate,
             5.0 / settings.decay.max(0.001),
             settings.decay,
-        );
+        )
+        .with_attack_ms(SNARE_ATTACK_MS);
 
         Self {
             settings,
@@ -128,7 +132,8 @@ impl Voice for SnareVoice {
             self.sample_rate,
             5.0 / settings.decay.max(0.001),
             settings.decay,
-        );
+        )
+        .with_attack_ms(SNARE_ATTACK_MS);
     }
 
     fn set_algo(&mut self, algo: u8) {
