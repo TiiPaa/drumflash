@@ -320,6 +320,7 @@ mod tests {
             release: 0.0, // disable the release tail so the voice can finish quickly
             decay_curve: 5.0,
             release_curve: 3.0,
+            hold: 0.0,
             algo: 0,
             special: [0.0; 8],
         };
