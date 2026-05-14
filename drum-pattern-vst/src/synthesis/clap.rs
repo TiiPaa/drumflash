@@ -14,7 +14,7 @@ pub struct ClapVoice {
     noise: dsp::WhiteNoise,
     filter_hp: dsp::OnePoleFilter,
     filter_lp: dsp::OnePoleFilter,
-    amp_env: dsp::ExpDecayEnvelope,
+    amp_env: dsp::DecayReleaseEnvelope,
 
     burst_count: usize,
     burst_interval_samples: usize,
@@ -36,8 +36,14 @@ impl ClapVoice {
             noise: dsp::WhiteNoise::new(0xBADC0FFE),
             filter_hp,
             filter_lp,
-            amp_env: dsp::ExpDecayEnvelope::new(sample_rate, 6.0, settings.decay)
-                .with_attack_ms(1.5),
+            amp_env: dsp::DecayReleaseEnvelope::new(
+                sample_rate,
+                settings.decay_curve,
+                settings.decay,
+                settings.release_curve,
+                settings.release,
+            )
+            .with_attack_ms(1.5),
             burst_count: 0,
             burst_interval_samples: (0.004 * sample_rate) as usize, // 4 ms between slaps
             samples_since_trigger: 0,
@@ -48,6 +54,9 @@ impl ClapVoice {
     fn update_derived_params(&mut self) {
         self.filter_hp.set_cutoff(self.settings.filter_freq.max(800.0), self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
+        self.amp_env.set_release(self.settings.release);
+        self.amp_env.set_decay_curve(self.settings.decay_curve);
+        self.amp_env.set_release_curve(self.settings.release_curve);
     }
 }
 
@@ -56,9 +65,8 @@ impl Voice for ClapVoice {
         self.active = true;
         self.burst_count = 0;
         self.samples_since_trigger = 0;
+        // Keep filters and noise generator continuous across triggers.
         self.amp_env.trigger();
-        self.filter_hp.reset();
-        self.filter_lp.reset();
     }
 
     fn process_sample(&mut self) -> f32 {

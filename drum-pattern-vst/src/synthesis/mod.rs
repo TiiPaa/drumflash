@@ -95,6 +95,18 @@ pub struct VoiceSettings {
     pub decay: f32,
     pub volume: f32,
     pub filter_freq: f32,
+    /// Slow release tail length in seconds. The amplitude envelope is bi-stage:
+    /// `amp = max(decay_env, release_env)`. The decay_env starts at 1.0 and drops
+    /// fast with `decay`; the release_env starts at a fixed shelf (~30 % of peak)
+    /// and decays slowly with `release`, taking over once the decay phase falls
+    /// below the shelf. Set `release` to 0 to get a single-stage decay.
+    pub release: f32,
+    /// Steepness of the decay stage (typical range 2..10). Low values give a
+    /// near-linear early fall, high values a steep punchy drop.
+    pub decay_curve: f32,
+    /// Steepness of the release stage (typical range 2..10). Lower values give
+    /// a long flat tail, higher values a quick falloff.
+    pub release_curve: f32,
     /// Synthesis algorithm index (interpreted per instrument).
     pub algo: u8,
     /// Special parameters, indexed per instrument convention.
@@ -108,6 +120,9 @@ impl Default for VoiceSettings {
             decay: 0.5,
             volume: 0.8,
             filter_freq: 100.0,
+            release: 0.0,
+            decay_curve: 5.0,
+            release_curve: 3.0,
             algo: 0,
             special: [0.0; 8],
         }
@@ -121,6 +136,9 @@ impl VoiceSettings {
             decay: 0.5,
             volume: 0.8,
             filter_freq: 100.0,
+            release: 0.5,
+            decay_curve: 5.0,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -132,6 +150,9 @@ impl VoiceSettings {
             decay: 0.47,
             volume: 0.6,
             filter_freq: 1000.0,
+            release: 0.2,
+            decay_curve: 5.0,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -143,6 +164,9 @@ impl VoiceSettings {
             decay: 0.36,
             volume: 0.3,
             filter_freq: 10000.0,
+            release: 0.0,
+            decay_curve: 8.0,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -154,6 +178,9 @@ impl VoiceSettings {
             decay: 0.66,
             volume: 0.4,
             filter_freq: 8000.0,
+            release: 0.4,
+            decay_curve: 5.5,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -165,6 +192,9 @@ impl VoiceSettings {
             decay: 0.3,
             volume: 0.5,
             filter_freq: 2000.0,
+            release: 0.3,
+            decay_curve: 4.2,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -176,6 +206,9 @@ impl VoiceSettings {
             decay: 0.4,
             volume: 0.5,
             filter_freq: 1500.0,
+            release: 0.4,
+            decay_curve: 4.2,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -187,6 +220,9 @@ impl VoiceSettings {
             decay: 0.5,
             volume: 0.5,
             filter_freq: 1000.0,
+            release: 0.5,
+            decay_curve: 4.2,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -198,6 +234,9 @@ impl VoiceSettings {
             decay: 0.15,
             volume: 0.7,
             filter_freq: 2500.0,
+            release: 0.0,
+            decay_curve: 6.0,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -209,6 +248,9 @@ impl VoiceSettings {
             decay: 1.2,
             volume: 0.35,
             filter_freq: 10000.0,
+            release: 1.5,
+            decay_curve: 3.5,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -220,6 +262,9 @@ impl VoiceSettings {
             decay: 2.0,
             volume: 0.4,
             filter_freq: 8000.0,
+            release: 2.5,
+            decay_curve: 2.8,
+            release_curve: 3.0,
             algo: 0,
             special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -381,7 +426,12 @@ pub struct DrumSynthesizer {
     voices: Vec<DrumVoiceKind>,
     sample_rate: f32,
     velocities: [f32; DrumVoice::COUNT],
+    /// One-pole smoothers on each voice's velocity, absorbing gain jumps when
+    /// retriggering a voice while its tail is still ringing.
+    velocity_smoothers: [dsp::OnePoleSmoother; DrumVoice::COUNT],
 }
+
+const VELOCITY_SMOOTH_MS: f32 = 1.5;
 
 impl DrumSynthesizer {
     pub fn new() -> Self {
@@ -389,12 +439,18 @@ impl DrumSynthesizer {
             voices: Vec::with_capacity(DrumVoice::COUNT),
             sample_rate: 44100.0,
             velocities: [1.0; DrumVoice::COUNT],
+            velocity_smoothers: std::array::from_fn(|_| {
+                dsp::OnePoleSmoother::new(44100.0, VELOCITY_SMOOTH_MS, 1.0)
+            }),
         }
     }
 
     pub fn initialize(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.voices.clear();
+        for smoother in self.velocity_smoothers.iter_mut() {
+            *smoother = dsp::OnePoleSmoother::new(sample_rate, VELOCITY_SMOOTH_MS, 1.0);
+        }
 
         // Create all 10 voices with dedicated models.
         self.voices.push(DrumVoiceKind::Kick(KickVoice::new(
@@ -457,7 +513,8 @@ impl DrumSynthesizer {
 
     pub fn process_voice_samples(&mut self, outputs: &mut [f32; DrumVoice::COUNT]) {
         for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
-            *output = voice.process_sample() * self.velocities[i];
+            let vel = self.velocity_smoothers[i].process(self.velocities[i]);
+            *output = voice.process_sample() * vel;
         }
     }
 

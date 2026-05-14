@@ -87,40 +87,56 @@ impl OnePoleFilter {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ExpDecayEnvelope {
+    /// Current envelope value. Free to exceed 1.0 when driven by
+    /// `trigger_from_current(peak)` with a physical unit (delta-Hz, gain reduction).
     value: f32,
-    /// Decay time constant multiplier. Higher = steeper fall.
-    curve: f32,
-    /// Target decay time in seconds.
-    decay_time: f32,
-    /// Sample rate.
+    /// Per-sample decay coefficient: `value(n+1) = value(n) * coeff`.
+    /// Equivalent to `exp(-curve * t / decay_time)` but evaluated recursively, so
+    /// no `exp()` is called on the audio thread.
+    coeff: f32,
+    /// Sample rate, kept for `set_decay` and to derive the attack ramp duration.
     sample_rate: f32,
-    /// Threshold below which the voice is considered silent.
+    /// Decay time constant: `t` such that `value(t) ≈ exp(-curve)`.
+    decay_time: f32,
+    /// Steepness multiplier. Higher = faster fall (same semantics as before).
+    curve: f32,
+    /// Threshold below which the value is snapped to 0 (silence detection).
     threshold: f32,
-    /// Accumulated time in seconds.
-    time: f32,
     /// Anti-click attack ramp duration in seconds. Mimics the RC charge time of an
-    /// analog VCA so retriggering during a ringing tail interpolates from the current
-    /// value to 1.0 instead of jumping.
+    /// analog VCA so retriggering during a ringing tail interpolates from the
+    /// current value to the target peak instead of jumping.
     attack_time: f32,
-    /// Remaining attack ramp time in seconds. While > 0 the envelope is in attack phase.
+    /// Remaining attack ramp time in seconds. While > 0 the envelope is in
+    /// attack phase.
     attack_remaining: f32,
     /// Envelope value captured at the moment of trigger; ramp start point.
     attack_start_value: f32,
+    /// Target the attack ramp climbs to (1.0 by default, smaller for stages
+    /// triggered via `trigger_at_peak`).
+    attack_peak: f32,
 }
 
 impl ExpDecayEnvelope {
     pub fn new(sample_rate: f32, curve: f32, decay_time: f32) -> Self {
-        Self {
+        let mut env = Self {
             value: 0.0,
-            curve,
-            decay_time,
+            coeff: 1.0,
             sample_rate,
+            decay_time: decay_time.max(0.001),
+            curve,
             threshold: 0.001,
-            time: 0.0,
             attack_time: 0.0,
             attack_remaining: 0.0,
             attack_start_value: 0.0,
-        }
+            attack_peak: 1.0,
+        };
+        env.recompute_coeff();
+        env
+    }
+
+    fn recompute_coeff(&mut self) {
+        let dt = 1.0 / self.sample_rate;
+        self.coeff = (-self.curve * dt / self.decay_time).exp();
     }
 
     /// Configure a short attack ramp (in milliseconds) applied on every trigger.
@@ -131,68 +147,203 @@ impl ExpDecayEnvelope {
     }
 
     pub fn trigger(&mut self) {
+        self.trigger_at_peak(1.0);
+    }
+
+    /// Trigger the envelope toward a custom peak instead of the default 1.0.
+    /// Respects the attack ramp configured via `with_attack_ms`. Used by the
+    /// release stage of `DecayReleaseEnvelope` so its shelf level rises
+    /// gradually instead of jumping in one sample (which was the source of an
+    /// audible click at every retrigger).
+    ///
+    /// If the current value is already at or above `peak`, no ramp is fired —
+    /// the natural decay carries the envelope back. This preserves persistent
+    /// retrigger behaviour for tails that are still louder than the new peak.
+    pub fn trigger_at_peak(&mut self, peak: f32) {
+        let peak = peak.max(0.0);
+        self.attack_peak = peak;
+        if self.value >= peak {
+            self.attack_remaining = 0.0;
+            return;
+        }
         if self.attack_time > 0.0 {
-            // Retrigger while still ringing: ramp from current value up to 1.0 over
-            // attack_time. From cold (value=0) this is just a 0→1 attack.
             self.attack_start_value = self.value;
             self.attack_remaining = self.attack_time;
-            // Decay timer is held at 0 during the attack phase; restarted once attack ends.
-            self.time = 0.0;
         } else {
-            self.value = 1.0;
-            self.time = 0.0;
+            self.value = peak;
         }
+    }
+
+    /// Analog-style persistent retrigger: bump the envelope to `peak` only if it
+    /// is currently below that value, otherwise keep the existing tail. Bypasses
+    /// the attack ramp — intended for usages where the value carries a physical
+    /// quantity (delta-Hz for a pitch sweep) rather than an amplitude.
+    pub fn trigger_from_current(&mut self, peak: f32) {
+        let peak = peak.max(0.0);
+        self.value = self.value.max(peak);
+        self.attack_remaining = 0.0;
+    }
+
+    /// Returns the envelope's current value without ticking the decay. Useful for
+    /// chaining envelopes that need to observe each other's state at trigger time.
+    pub fn current(&self) -> f32 {
+        self.value
     }
 
     #[inline]
     pub fn next(&mut self) -> f32 {
-        let dt = 1.0 / self.sample_rate;
-
         if self.attack_remaining > 0.0 {
-            // Decrement first so the first sample after trigger() is one ramp step in,
-            // not the start point itself. That way `env.next()` is always strictly > 0
-            // (assuming attack_start_value < 1) and reaches exactly 1.0 at the final
-            // attack sample.
+            // Decrement first so the first sample after trigger() is one ramp step
+            // in, not the start point itself. That way `env.next()` is always
+            // strictly > 0 (assuming attack_start_value < 1) and reaches exactly 1.0
+            // at the final attack sample.
+            let dt = 1.0 / self.sample_rate;
             self.attack_remaining -= dt;
             if self.attack_remaining <= 0.0 {
                 self.attack_remaining = 0.0;
-                self.value = 1.0;
-                self.time = 0.0;
+                self.value = self.attack_peak;
                 return self.value;
             }
             let t = 1.0 - (self.attack_remaining / self.attack_time);
-            self.value = self.attack_start_value + (1.0 - self.attack_start_value) * t;
+            self.value =
+                self.attack_start_value + (self.attack_peak - self.attack_start_value) * t;
             return self.value;
         }
 
-        self.time += dt;
-        if self.time >= self.decay_time && self.value <= self.threshold {
-            0.0
-        } else {
-            // Exponential decay: value = exp(-curve * time / decay_time)
-            self.value = (-self.curve * self.time / self.decay_time).exp();
-            if self.value < self.threshold {
-                self.value = 0.0;
-            }
-            self.value
+        // Recursive exponential decay — no per-sample exp() call.
+        let out = self.value;
+        self.value *= self.coeff;
+        if self.value < self.threshold {
+            self.value = 0.0;
         }
+        out
     }
 
     pub fn is_active(&self) -> bool {
-        self.attack_remaining > 0.0
-            || self.value > self.threshold
-            || self.time < self.decay_time
+        self.attack_remaining > 0.0 || self.value > self.threshold
     }
 
     pub fn reset(&mut self) {
         self.value = 0.0;
-        self.time = 0.0;
         self.attack_remaining = 0.0;
         self.attack_start_value = 0.0;
     }
 
     pub fn set_decay(&mut self, decay_time: f32) {
         self.decay_time = decay_time.max(0.001);
+        self.recompute_coeff();
+    }
+
+    pub fn set_curve(&mut self, curve: f32) {
+        self.curve = curve.max(0.1);
+        self.recompute_coeff();
+    }
+}
+
+// ── Decay+Release Envelope ──────────────────────────────────────────────────
+
+/// Two-stage amplitude envelope: a fast `decay` falling from 1.0 with steep
+/// curve, and a slow `release` plateauing at a fixed shelf (~30 % of peak) then
+/// dropping to 0 with a long time constant.
+///
+/// The output is `max(decay.next(), release.next())` so the two stages cross
+/// over smoothly: the decay dominates the punch, then the release takes over
+/// once the decay falls below the shelf. No amplitude boost at trigger time —
+/// peak is always 1.0.
+///
+/// Both internal envelopes are persistent on retrigger
+/// (`trigger_from_current`), which preserves continuity when a step lands
+/// during a ringing tail.
+#[derive(Clone, Copy, Debug)]
+pub struct DecayReleaseEnvelope {
+    decay: ExpDecayEnvelope,
+    release: ExpDecayEnvelope,
+    /// Shelf level the release envelope plateaus at (and decays from).
+    /// 0.3 = release takes over once the decay has fallen to 30 % of peak.
+    release_shelf: f32,
+}
+
+impl DecayReleaseEnvelope {
+    /// Minimum release time. A value of 0 from the UI is clamped to this so
+    /// the recursive coefficient stays well-defined; the resulting tail is
+    /// only a handful of samples, perceptually equivalent to "no release".
+    pub const MIN_RELEASE_SECONDS: f32 = 0.001;
+    /// Default shelf level — tuned so 808-style sub tails sound natural.
+    pub const DEFAULT_RELEASE_SHELF: f32 = 0.3;
+
+    pub fn new(
+        sample_rate: f32,
+        decay_curve: f32,
+        decay_time: f32,
+        release_curve: f32,
+        release_time: f32,
+    ) -> Self {
+        Self {
+            decay: ExpDecayEnvelope::new(sample_rate, decay_curve, decay_time),
+            release: ExpDecayEnvelope::new(
+                sample_rate,
+                release_curve,
+                release_time.max(Self::MIN_RELEASE_SECONDS),
+            ),
+            release_shelf: Self::DEFAULT_RELEASE_SHELF,
+        }
+    }
+
+    pub fn with_attack_ms(mut self, ms: f32) -> Self {
+        // Apply the same attack ramp to both stages so the release shelf rises
+        // smoothly toward its target instead of jumping in one sample — that
+        // jump (0 → 0.3 at every trigger) was creating an audible click on
+        // cold starts independent of any tail ringing.
+        self.decay = self.decay.with_attack_ms(ms);
+        self.release = self.release.with_attack_ms(ms);
+        self
+    }
+
+    pub fn trigger(&mut self) {
+        self.decay.trigger();
+        // Release stage ramps from its current value up to the shelf level
+        // through the attack ramp. If a tail is already ringing above the
+        // shelf, trigger_at_peak keeps it (attack_start_value = current value)
+        // and the ramp will pull it back toward the shelf.
+        self.release.trigger_at_peak(self.release_shelf);
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> f32 {
+        let d = self.decay.next();
+        let r = self.release.next();
+        if d > r { d } else { r }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.decay.is_active() || self.release.is_active()
+    }
+
+    pub fn reset(&mut self) {
+        self.decay.reset();
+        self.release.reset();
+    }
+
+    pub fn set_decay(&mut self, decay_time: f32) {
+        self.decay.set_decay(decay_time);
+    }
+
+    pub fn set_release(&mut self, release_time: f32) {
+        self.release
+            .set_decay(release_time.max(Self::MIN_RELEASE_SECONDS));
+    }
+
+    pub fn set_decay_curve(&mut self, curve: f32) {
+        self.decay.set_curve(curve);
+    }
+
+    pub fn set_release_curve(&mut self, curve: f32) {
+        self.release.set_curve(curve);
+    }
+
+    #[allow(dead_code)]
+    pub fn current(&self) -> f32 {
+        self.decay.current().max(self.release.current())
     }
 }
 
@@ -263,6 +414,9 @@ pub struct ClickGenerator {
     noise_mix: f32,
     level: f32,
     triggered: bool,
+    /// Samples elapsed since the most recent trigger. Drives the single-sample
+    /// impulse at the start of the click.
+    samples_since_trigger: u32,
 }
 
 impl ClickGenerator {
@@ -274,6 +428,7 @@ impl ClickGenerator {
             noise_mix: noise_mix.clamp(0.0, 1.0),
             level: level.clamp(0.0, 2.0),
             triggered: false,
+            samples_since_trigger: 0,
         }
     }
 
@@ -281,6 +436,7 @@ impl ClickGenerator {
         self.triggered = true;
         self.envelope.trigger();
         self.noise.reseed(0x1234_5678);
+        self.samples_since_trigger = 0;
     }
 
     #[inline]
@@ -289,11 +445,8 @@ impl ClickGenerator {
             return 0.0;
         }
         let env = self.envelope.next();
-        let impulse = if self.envelope.time <= 1.0 / self.envelope.sample_rate {
-            1.0
-        } else {
-            0.0
-        };
+        let impulse = if self.samples_since_trigger == 0 { 1.0 } else { 0.0 };
+        self.samples_since_trigger = self.samples_since_trigger.saturating_add(1);
         let noise = self.noise.next();
         let sample = impulse * (1.0 - self.noise_mix) + noise * self.noise_mix;
         sample * env * self.level
@@ -306,6 +459,7 @@ impl ClickGenerator {
     pub fn reset(&mut self) {
         self.triggered = false;
         self.envelope.reset();
+        self.samples_since_trigger = 0;
     }
 }
 
@@ -411,6 +565,82 @@ impl TriangleOsc {
 
     pub fn reset(&mut self) {
         self.phase = 0.0;
+    }
+}
+
+// ── One-Pole Smoother ───────────────────────────────────────────────────────
+
+/// First-order smoother for continuous control values (frequency, gain).
+/// Internally tracks a target the output is converging towards over `time_ms`.
+/// Used in the kick voice to absorb pitch-envelope discontinuities at retrigger
+/// time so the oscillator's instantaneous frequency never jumps in one sample.
+#[derive(Clone, Copy, Debug)]
+pub struct OnePoleSmoother {
+    current: f32,
+    coeff: f32,
+}
+
+impl OnePoleSmoother {
+    pub fn new(sample_rate: f32, time_ms: f32, initial: f32) -> Self {
+        let mut smoother = Self {
+            current: initial,
+            coeff: 0.0,
+        };
+        smoother.set_time_ms(sample_rate, time_ms);
+        smoother
+    }
+
+    pub fn set_time_ms(&mut self, sample_rate: f32, time_ms: f32) {
+        let time_seconds = (time_ms.max(0.01)) * 0.001;
+        self.coeff = (-1.0 / (sample_rate * time_seconds)).exp();
+    }
+
+    #[allow(dead_code)]
+    pub fn reset(&mut self, value: f32) {
+        self.current = value;
+    }
+
+    #[inline]
+    pub fn process(&mut self, target: f32) -> f32 {
+        self.current = target + self.coeff * (self.current - target);
+        self.current
+    }
+}
+
+// ── DC Blocker ──────────────────────────────────────────────────────────────
+
+/// One-pole DC blocker: y[n] = x[n] - x[n-1] + r * y[n-1].
+/// Removes the slow DC drift that accumulates from asymmetric retriggers and
+/// soft-clipping, without colouring the audio band.
+#[derive(Clone, Copy, Debug)]
+pub struct DcBlocker {
+    r: f32,
+    x1: f32,
+    y1: f32,
+}
+
+impl Default for DcBlocker {
+    fn default() -> Self {
+        Self {
+            r: 0.995,
+            x1: 0.0,
+            y1: 0.0,
+        }
+    }
+}
+
+impl DcBlocker {
+    #[inline]
+    pub fn process(&mut self, x: f32) -> f32 {
+        let y = x - self.x1 + self.r * self.y1;
+        self.x1 = x;
+        self.y1 = y;
+        y
+    }
+
+    pub fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.y1 = 0.0;
     }
 }
 

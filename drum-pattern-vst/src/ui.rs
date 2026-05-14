@@ -468,7 +468,8 @@ fn draw_sound_panel(
     });
 
     let inst = &sound_settings.instruments[*selected_instrument];
-    let (mut freq, mut decay, mut vol, mut filt) = inst.load();
+    let (mut freq, mut decay, mut vol, mut filt, mut release, mut decay_curve, mut release_curve) =
+        inst.load();
     let mut changed = false;
 
     ui.horizontal(|ui| {
@@ -485,10 +486,43 @@ fn draw_sound_panel(
     ui.horizontal(|ui| {
         ui.label("Decay");
         if ui
-            .add(egui::Slider::new(&mut decay, 0.01..=1.0))
+            .add(egui::Slider::new(&mut decay, 0.01..=0.5))
             .changed()
         {
             inst.decay.store(decay.to_bits(), Ordering::Relaxed);
+            changed = true;
+        }
+    });
+
+    ui.horizontal(|ui| {
+        ui.label("Decay Curve");
+        if ui
+            .add(egui::Slider::new(&mut decay_curve, 2.0..=10.0))
+            .changed()
+        {
+            inst.decay_curve.store(decay_curve.to_bits(), Ordering::Relaxed);
+            changed = true;
+        }
+    });
+
+    ui.horizontal(|ui| {
+        ui.label("Release");
+        if ui
+            .add(egui::Slider::new(&mut release, 0.0..=5.0))
+            .changed()
+        {
+            inst.release.store(release.to_bits(), Ordering::Relaxed);
+            changed = true;
+        }
+    });
+
+    ui.horizontal(|ui| {
+        ui.label("Release Curve");
+        if ui
+            .add(egui::Slider::new(&mut release_curve, 2.0..=10.0))
+            .changed()
+        {
+            inst.release_curve.store(release_curve.to_bits(), Ordering::Relaxed);
             changed = true;
         }
     });
