@@ -28,13 +28,9 @@ pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
     None => "dev",
 };
 /// Number of dedicated stereo aux outputs. Frozen at 10 to match every saved
-/// DAW session: changing the VST3 bus layout (e.g. exposing the 11th voice on
-/// a new aux out) crashes Studio One when reopening projects that were saved
-/// with the previous layout. The 11th voice (Snare 606) is still audible in
-/// the Main Mix; it just doesn't get its own dedicated aux bus.
-const AUX_OUT_COUNT: usize = 10;
+const AUX_OUT_COUNT: usize = 11;
 const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
-    "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal",
+    "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal", "Snare 606",
 ];
 const MIDI_NOTE_MAP: [u8; DrumVoice::COUNT] = [36, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40];
 const STEP_COUNT: usize = 16;
@@ -630,6 +626,11 @@ impl Plugin for DrumFlashVst {
                     // Sync on play start
                     if let Some(position_beats) = transport.pos_beats() {
                         self.sequencer.sync_to_host(position_beats, bpm, sample_rate);
+                        // If starting near beat 0, force step 0 trigger.
+                        // sync_to_host overwrites previous_step, which would swallow the first step.
+                        if position_beats.rem_euclid(4.0) < 0.1 {
+                            self.sequencer.force_step0_trigger();
+                        }
                         self.last_host_pos = Some(position_beats);
                     }
                 } else {
