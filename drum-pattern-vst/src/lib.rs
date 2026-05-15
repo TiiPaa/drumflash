@@ -637,14 +637,19 @@ impl Plugin for DrumFlashVst {
                     self.last_host_pos = None;
                 }
             } else if transport.playing {
-                // Detect significant host seeks (>0.2 beats) and resync
+                // Detect significant host seeks and resync. Threshold raised
+                // from 0.2 to 1.0 beats: at 0.2, Reaper and Bitwig's
+                // sub-buffer position drift accumulated until a spurious
+                // resync fired, skipping steps and producing audible drops in
+                // the running mix. Studio One sends sample-accurate
+                // pos_beats so the bug never surfaced there.
                 if let Some(position_beats) = transport.pos_beats() {
                     let host_pos_mod = position_beats.rem_euclid(4.0);
                     let seq_pos_mod = self.sequencer.beat_position().rem_euclid(4.0);
                     let diff = (host_pos_mod - seq_pos_mod).abs();
                     // Use shortest distance on the 4-beat circle
                     let diff = diff.min(4.0 - diff);
-                    if diff > 0.2 {
+                    if diff > 1.0 {
                         self.sequencer.sync_to_host(position_beats, bpm, sample_rate);
                     }
                     self.last_host_pos = Some(position_beats);

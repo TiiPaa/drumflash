@@ -1,3 +1,63 @@
+# Mise a jour - 2026-05-15
+
+## Etat de fin de session
+
+Plugin VST3 Rust installe avec le build:
+
+```text
+20260515-124610
+```
+
+## Nouveautes de la session
+
+### Validation cross-DAW
+- Plugin charge dans Reaper, son OK sur toutes les voix.
+- Sauts de volume initialement suspectes : RMS du plugin mesure stable
+  a ~0.4 dB pres sur de longues sessions. Reproduit ensuite avec
+  d'autres plugins dans Reaper → diagnostique externe (driver audio),
+  plugin innocent.
+- Code de diagnostic temporaire (logs `drumflash_*.log`, accumulateurs
+  RMS, force `master_vol = 1.0`) entierement retire ; le smoothing
+  Logarithmic 50 ms du `master_volume` est restaure.
+
+### Reduction des warnings (17 → 0)
+- Suppression du code mort dans `synthesis/special_params.rs` :
+  struct `SpecialParamDef`, 8 constantes `*_SPECIALS`, helper
+  `specials_for`, champ `AlgoDef::index` jamais lu.
+- Suppression des methodes du trait `Voice::supported_algos` et
+  `Voice::special_params` ainsi que leurs 9 impls et l'agregat dans
+  `DrumVoiceKind`.
+- Suppression de 3 `reset()` jamais utilises dans `dsp.rs`
+  (`PitchEnvelope`, `SineOsc`, `SquareOsc`).
+- Variable morte `base` dans `generator/markov.rs` retiree.
+- Imports nettoyes dans les 9 fichiers voix (plus de `AlgoDef`,
+  `SpecialParamDef`, `special_params` quand inutile).
+- `#[allow(unused_imports)]` cible sur le re-export
+  `pub use special_params::{AlgoDef, algos_for}` pour garder le binaire
+  `test_standalone` clean (il n'utilise pas l'UI qui consomme
+  `algos_for`).
+
+## Validation
+
+- `cargo check --all-targets` : 0 warning, 0 erreur.
+- `cargo build --release --all-targets` : 0 warning, 0 erreur.
+- `cargo test --release` : 26/26 tests OK.
+
+## Build installe courant
+
+- Build UI: `20260515-124610`
+- VST3 class ID: `DrumFlashPlugin1`
+- Binaire installe: `C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3\Contents\x86_64-win\drum-pattern-vst.vst3`
+
+## Commande de build recommandee
+
+```powershell
+cd "E:\Dev\Projets\Drum Flash\drum-pattern-vst"
+.\build.ps1 -Install
+```
+
+---
+
 # Mise a jour - 2026-05-14
 
 ## Etat de fin de session

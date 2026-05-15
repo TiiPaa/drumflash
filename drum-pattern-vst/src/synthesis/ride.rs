@@ -5,7 +5,7 @@
 //! - Highpass filter (~8 kHz) for brightness
 //! - Long exponential decay with shimmer
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 pub struct RideVoice {
     settings: VoiceSettings,
@@ -123,11 +123,4 @@ impl Voice for RideVoice {
         }
     }
 
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::RIDE_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::RIDE_SPECIALS
-    }
 }

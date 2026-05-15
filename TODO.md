@@ -15,7 +15,10 @@
 
 ## Tests & Validation
 
-- [ ] [10] **REPRENDRE ICI** — Tester le plugin dans au moins un autre DAW (Reaper recommande)
+- [x] [10] Tester le plugin dans au moins un autre DAW (Reaper recommande)
+  - chargement OK dans Reaper
+  - sauts de volume initialement suspectes : RMS du plugin mesure stable a ~0.4 dB pres
+  - confirme reproduit avec un autre plugin dans Reaper → pb driver audio, plugin innocent
 - [x] [10a] Corriger les defaults de decay (snare 0.47, hihat 0.36, open_hh 0.66)
 - [x] [10b] Ajouter option Hi-Hat Choke (cut Open HH quand Closed HH trigger)
 - [x] [10c] Corriger les step skips rares (sync_to_host moins agressif)
@@ -42,7 +45,7 @@
 - [x] [24b] Ajouter Kick algos (Sine/Square/FM) + click transient
 - [x] [24c] Ajouter Snare algos (Synth/Noise/Layered) + snap param
 - [x] [24d] Ajouter Clap, Ride, Cymbal voices
-- [ ] [25] Labels complets des instruments dans l'UI ("Grosse Caisse", "Caisse Claire"...) et couleurs par instrument
+- [ ] [25] **REPRENDRE ICI** — Labels complets des instruments dans l'UI ("Grosse Caisse", "Caisse Claire"...) et couleurs par instrument
 - [ ] [26] Barre de progression visuelle du pattern (0-100%)
 
 ## Fonctionnalites P3 (Avancees / Complexes)
@@ -59,13 +62,14 @@
 - [ ] [30] Clarifier si `index.js` doit etre conserve ou archive
 - [ ] [31] Revoir l'organisation du repo pour separer clairement PoC web et plugin
 - [ ] [32] Synchroniser `BACKLOG_VST.md` avec le code reel (items P2 marques comme "hors V1")
-- [ ] [33] Reduire les warnings Rust inutiles
+- [x] [33] Reduire les warnings Rust inutiles (0 warning sur lib + bin + tests, release inclus)
 - [ ] [34] Garder les fichiers de sauvegarde hors de `src/`
 - [x] [34a] Corriger le click de retrigger kick (2 steps BD proches)
-- [ ] [34b] Nettoyer le code mort dans `special_params.rs` (dead_code warnings)
+- [x] [34b] Nettoyer le code mort dans `special_params.rs` (struct `SpecialParamDef`, tous les `*_SPECIALS`, helper `specials_for`, methodes trait `supported_algos`/`special_params`)
 
 ## Bugs a corriger
 
+- [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [ ] [35] Diagnostiquer la sauvegarde/reouverture Studio One
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`

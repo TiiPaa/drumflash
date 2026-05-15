@@ -16,7 +16,7 @@
 //! - `settings.special[1]`      → tone mix: 0 = mostly wires, 1 = mostly body
 //! - `settings.special[2]`      → wire crispness: HP gain of the dry layer
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 const ATTACK_MS: f32 = 1.5;
 
@@ -181,11 +181,4 @@ impl Voice for Snare606Voice {
         }
     }
 
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::SNARE606_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::SNARE606_SPECIALS
-    }
 }
