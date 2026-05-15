@@ -20,7 +20,7 @@
 //! keep their character: `base_freq = freq * 0.3`, `pitch_peak = freq * 0.7`,
 //! giving the same start→end sweep as the legacy multiplicative `PitchEnvelope`.
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 const PITCH_DECAY_SECONDS: f32 = 0.04; // ≈ 40 ms — matches the legacy ~0.12 s
                                        // exponential sweep with curve 5.0.
@@ -204,14 +204,6 @@ impl Voice for KickVoice {
         if index < self.settings.special.len() {
             self.settings.special[index] = value;
         }
-    }
-
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::KICK_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::KICK_SPECIALS
     }
 }
 

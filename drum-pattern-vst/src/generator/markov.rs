@@ -2,11 +2,10 @@
 //! Uses musical templates as transition priors for coherent rhythmic evolution.
 
 use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT, STEP_COUNT};
-use super::styles::{generate_from_template, MusicalTemplate, Style};
+use super::styles::{MusicalTemplate, Style};
 
 pub fn generate(style: Style, density: f32, rng: &mut impl FnMut() -> f32) -> Pattern {
     let template = MusicalTemplate::for_style(style);
-    let base = generate_from_template(&template, density, rng);
 
     let mut pattern = Pattern::empty();
     pattern.name = "Markov".to_string();
