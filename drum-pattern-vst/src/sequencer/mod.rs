@@ -160,6 +160,14 @@ impl Sequencer {
         }
     }
 
+    /// Force a trigger on step 0 for all tracks.
+    /// Call after sync_to_host when starting near beat 0 to avoid missing the first step.
+    pub fn force_step0_trigger(&mut self) {
+        for track in self.tracks.iter_mut() {
+            track.previous_step = 15;
+        }
+    }
+
     pub fn stop(&mut self) {
         self.is_playing = false;
         self.reset();
