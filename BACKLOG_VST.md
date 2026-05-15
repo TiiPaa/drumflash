@@ -76,7 +76,10 @@ Build valide:
 - Ajouter un facteur de groove parametrable.
 - Ajouter un parametre analogique pour legeres variations aleatoires.
 - Permettre un mode stereo analogique avec variation gauche/droite.
-- Ajouter song mode.
+- Ajouter song mode (placeholder UI OK, backend à faire).
+- Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit).
+- Per-instrument stereo toggles + stereo Snare 606.
+- Filter envelope sur Kick, Snare, Tom, HiHat, Snare 606.
 
 ## Dette technique
 

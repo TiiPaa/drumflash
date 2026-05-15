@@ -14,10 +14,14 @@ pub struct InstrumentSettingsState {
     pub decay_curve: AtomicU32,
     pub release_curve: AtomicU32,
     pub hold: AtomicU32,
+    pub filter_env_amount: AtomicU32,
+    pub filter_env_decay: AtomicU32,
+    pub analog: AtomicU32,
+    pub stereo: AtomicU32,
 }
 
 /// Number of f32 values serialized per instrument in the persisted state.
-pub const FIELDS_PER_INSTRUMENT: usize = 8;
+pub const FIELDS_PER_INSTRUMENT: usize = 12;
 
 impl InstrumentSettingsState {
     pub fn new(
@@ -29,6 +33,10 @@ impl InstrumentSettingsState {
         decay_curve: f32,
         release_curve: f32,
         hold: f32,
+        filter_env_amount: f32,
+        filter_env_decay: f32,
+        analog: f32,
+        stereo: f32,
     ) -> Self {
         Self {
             frequency: AtomicU32::new(frequency.to_bits()),
@@ -39,10 +47,14 @@ impl InstrumentSettingsState {
             decay_curve: AtomicU32::new(decay_curve.to_bits()),
             release_curve: AtomicU32::new(release_curve.to_bits()),
             hold: AtomicU32::new(hold.to_bits()),
+            filter_env_amount: AtomicU32::new(filter_env_amount.to_bits()),
+            filter_env_decay: AtomicU32::new(filter_env_decay.to_bits()),
+            analog: AtomicU32::new(analog.to_bits()),
+            stereo: AtomicU32::new(stereo.to_bits()),
         }
     }
 
-    pub fn load(&self) -> (f32, f32, f32, f32, f32, f32, f32, f32) {
+    pub fn load(&self) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) {
         (
             f32::from_bits(self.frequency.load(Ordering::Relaxed)),
             f32::from_bits(self.decay.load(Ordering::Relaxed)),
@@ -52,6 +64,10 @@ impl InstrumentSettingsState {
             f32::from_bits(self.decay_curve.load(Ordering::Relaxed)),
             f32::from_bits(self.release_curve.load(Ordering::Relaxed)),
             f32::from_bits(self.hold.load(Ordering::Relaxed)),
+            f32::from_bits(self.filter_env_amount.load(Ordering::Relaxed)),
+            f32::from_bits(self.filter_env_decay.load(Ordering::Relaxed)),
+            f32::from_bits(self.analog.load(Ordering::Relaxed)),
+            f32::from_bits(self.stereo.load(Ordering::Relaxed)),
         )
     }
 
@@ -65,6 +81,10 @@ impl InstrumentSettingsState {
         decay_curve: f32,
         release_curve: f32,
         hold: f32,
+        filter_env_amount: f32,
+        filter_env_decay: f32,
+        analog: f32,
+        stereo: f32,
     ) {
         self.frequency.store(frequency.to_bits(), Ordering::Relaxed);
         self.decay.store(decay.to_bits(), Ordering::Relaxed);
@@ -74,6 +94,10 @@ impl InstrumentSettingsState {
         self.decay_curve.store(decay_curve.to_bits(), Ordering::Relaxed);
         self.release_curve.store(release_curve.to_bits(), Ordering::Relaxed);
         self.hold.store(hold.to_bits(), Ordering::Relaxed);
+        self.filter_env_amount.store(filter_env_amount.to_bits(), Ordering::Relaxed);
+        self.filter_env_decay.store(filter_env_decay.to_bits(), Ordering::Relaxed);
+        self.analog.store(analog.to_bits(), Ordering::Relaxed);
+        self.stereo.store(stereo.to_bits(), Ordering::Relaxed);
     }
 }
 
@@ -84,25 +108,31 @@ pub struct SoundSettingsState {
 
 impl SoundSettingsState {
     pub fn new() -> Arc<Self> {
-        // (frequency, decay, volume, filter_freq, release, decay_curve, release_curve, hold)
+        // (frequency, decay, volume, filter_freq, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay)
+        // Defaults: (freq, decay, vol, filter_freq, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay)
+        // Filter types per instrument:
+        //   Kick  -> LowPass  (closes after trigger for punch)
+        //   Snare -> HighPass (rises after trigger for snap)
+        //   HiHat -> HighPass (rises after trigger for splash decay)
+        //   Tom   -> LowPass  (closes after trigger for natural damp)
         let defaults = [
-            (60.0,   0.5,  0.8,  100.0,   0.5,  5.0, 3.0, 0.0),  // Kick
-            (200.0,  0.47, 0.6,  1000.0,  0.2,  5.0, 3.0, 0.0),  // Snare
-            (8000.0, 0.36, 0.3,  10000.0, 0.0,  8.0, 3.0, 0.0),  // HiHat
-            (6000.0, 0.66, 0.4,  8000.0,  0.4,  5.5, 3.0, 0.0),  // Open HH
-            (300.0,  0.3,  0.5,  2000.0,  0.3,  4.2, 3.0, 0.0),  // Tom1
-            (200.0,  0.4,  0.5,  1500.0,  0.4,  4.2, 3.0, 0.0),  // Tom2
-            (120.0,  0.5,  0.5,  1000.0,  0.5,  4.2, 3.0, 0.0),  // Tom3
-            (1200.0, 0.03, 0.7,  1000.0,  0.12, 6.0, 3.0, 0.0),  // Clap
-            (8000.0, 1.2,  0.35, 10000.0, 1.5,  3.5, 3.0, 0.0),  // Ride
-            (6000.0, 2.0,  0.4,  8000.0,  2.5,  2.8, 3.0, 0.0),  // Cymbal
-            (220.0,  0.08, 0.7,  3000.0,  0.15, 5.0, 3.0, 0.0),  // Snare 606
+            (60.0,   0.5,  0.8,  30.0,    0.5,  5.0, 3.0, 0.0, 1.0, 0.05, 1.0, 0.0),  // Kick   (LP)
+            (200.0,  0.47, 0.6,  200.0,   0.2,  5.0, 3.0, 0.0, 1.0, 0.03, 1.0, 1.0),  // Snare  (HP)
+            (8000.0, 0.36, 0.3,  5000.0,  0.0,  8.0, 3.0, 0.0, 1.0, 0.04, 1.0, 1.0),  // HiHat  (HP)
+            (6000.0, 0.66, 0.4,  8000.0,  0.4,  5.5, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0),  // Open HH
+            (300.0,  0.3,  0.5,  500.0,   0.3,  4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0),  // Tom1   (LP)
+            (200.0,  0.4,  0.5,  500.0,   0.4,  4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0),  // Tom2   (LP)
+            (120.0,  0.5,  0.5,  500.0,   0.5,  4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0),  // Tom3   (LP)
+            (1200.0, 0.03, 0.7,  1000.0,  0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0),  // Clap
+            (8000.0, 1.2,  0.35, 10000.0, 1.5,  3.5, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0),  // Ride
+            (6000.0, 2.0,  0.4,  8000.0,  2.5,  2.8, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0),  // Cymbal
+            (220.0,  0.08, 0.7,  3000.0,  0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0),  // Snare 606
         ];
 
         Arc::new(Self {
             instruments: std::array::from_fn(|i| {
-                let (f, d, v, fl, r, dc, rc, h) = defaults[i];
-                InstrumentSettingsState::new(f, d, v, fl, r, dc, rc, h)
+                let (f, d, v, fl, r, dc, rc, h, fea, fed, a, s) = defaults[i];
+                InstrumentSettingsState::new(f, d, v, fl, r, dc, rc, h, fea, fed, a, s)
             }),
             version: AtomicU64::new(0),
         })
@@ -115,7 +145,7 @@ impl SoundSettingsState {
     pub fn read_all(&self) -> Vec<f32> {
         let mut result = vec![0.0f32; self.instruments.len() * FIELDS_PER_INSTRUMENT];
         for (i, inst) in self.instruments.iter().enumerate() {
-            let (f, d, v, fl, r, dc, rc, h) = inst.load();
+            let (f, d, v, fl, r, dc, rc, h, fea, fed, a, s) = inst.load();
             let base = i * FIELDS_PER_INSTRUMENT;
             result[base] = f;
             result[base + 1] = d;
@@ -125,6 +155,10 @@ impl SoundSettingsState {
             result[base + 5] = dc;
             result[base + 6] = rc;
             result[base + 7] = h;
+            result[base + 8] = fea;
+            result[base + 9] = fed;
+            result[base + 10] = a;
+            result[base + 11] = s;
         }
         result
     }
@@ -141,6 +175,10 @@ impl SoundSettingsState {
                 values.get(base + 5).copied().unwrap_or(0.0),
                 values.get(base + 6).copied().unwrap_or(0.0),
                 values.get(base + 7).copied().unwrap_or(0.0),
+                values.get(base + 8).copied().unwrap_or(0.0),
+                values.get(base + 9).copied().unwrap_or(0.0),
+                values.get(base + 10).copied().unwrap_or(1.0),
+                values.get(base + 11).copied().unwrap_or(0.0),
             );
         }
         self.bump_version();

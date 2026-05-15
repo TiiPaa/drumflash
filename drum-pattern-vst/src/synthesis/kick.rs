@@ -37,6 +37,8 @@ pub struct KickVoice {
     osc_square: dsp::SquareOsc,
     fm_carrier: dsp::SineOsc,
     fm_mod: dsp::SineOsc,
+    // LowPass filter — cutoff opens then closes after trigger for extra punch.
+    // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 8.0)
     filter: dsp::OnePoleFilter,
 
     // Additive Δ-Hz envelope: target_freq = base_freq + pitch_env.next().
@@ -45,6 +47,8 @@ pub struct KickVoice {
     freq_smoother: dsp::OnePoleSmoother,
     // Body amplitude (decay + release stages), with 1.5 ms attack ramp.
     amp_env: dsp::DecayReleaseEnvelope,
+    // Filter envelope: modulates cutoff for extra punch.
+    filter_env: dsp::ExpDecayEnvelope,
     // Removes DC drift accumulated by asymmetric retriggers.
     dc_block: dsp::DcBlocker,
 
@@ -91,6 +95,8 @@ impl KickVoice {
                 settings.release,
             )
             .with_attack_ms(1.5),
+            filter_env: dsp::ExpDecayEnvelope::new(sample_rate, 8.0, settings.filter_env_decay.max(0.001))
+                .with_attack_ms(0.5),
             dc_block: dsp::DcBlocker::default(),
             click: dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0),
             active: false,
@@ -112,6 +118,7 @@ impl KickVoice {
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
+        self.filter_env.set_decay(self.settings.filter_env_decay.max(0.001));
         // Frequency-related state is rebuilt on the fly each sample from
         // `settings.frequency`, so no need to touch oscillators or smoothers here.
     }
@@ -124,12 +131,23 @@ impl KickVoice {
 impl Voice for KickVoice {
     fn trigger(&mut self) {
         self.active = true;
-        // Analog-style retrigger: oscillator phase, filter state and smoother all
-        // keep their value. The pitch envelope is bumped up to its peak Δ-Hz
-        // *without* resetting if the tail still carries some sweep energy, so
-        // the instantaneous frequency never snaps back to zero between hits.
-        self.pitch_env.trigger_from_current(self.pitch_peak_hz());
+        if self.settings.analog >= 0.5 {
+            // Analog-style retrigger: oscillator phase, filter state and smoother all
+            // keep their value. The pitch envelope is bumped up to its peak Δ-Hz
+            // *without* resetting if the tail still carries some sweep energy.
+            self.pitch_env.trigger_from_current(self.pitch_peak_hz());
+        } else {
+            // Digital stable: reset pitch envelope and oscillator phases for
+            // identical sound on every hit.
+            self.pitch_env.trigger();
+            self.osc_sine.phase = 0.0;
+            self.osc_square.reset_phase();
+            self.fm_carrier.phase = 0.0;
+            self.fm_mod.phase = 0.0;
+            self.filter.reset();
+        }
         self.amp_env.trigger();
+        self.filter_env.trigger();
         if self.click_amount() > 0.0 {
             self.click.trigger();
         }
@@ -159,6 +177,10 @@ impl Voice for KickVoice {
                 }
             };
 
+            let filter_env_val = self.filter_env.next();
+            let modulated_cutoff = self.settings.filter_freq
+                * (1.0 + filter_env_val * self.settings.filter_env_amount * 8.0);
+            self.filter.set_cutoff(modulated_cutoff.max(20.0), self.sample_rate);
             let filtered = self.filter.process(raw);
 
             let env = self.amp_env.next();
@@ -186,6 +208,7 @@ impl Voice for KickVoice {
         self.active = false;
         self.amp_env.reset();
         self.pitch_env.reset();
+        self.filter_env.reset();
         self.click.reset();
         self.dc_block.reset();
     }
@@ -313,6 +336,9 @@ mod tests {
             decay_curve: 5.0,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
             algo: 0,
             special: [0.0; 8],
         };

@@ -15,14 +15,19 @@ pub struct HiHatVoice {
     settings: VoiceSettings,
     sample_rate: f32,
 
-    // Noise generator
+    // Noise generators (stereo pair)
     noise: dsp::WhiteNoise,
+    noise_r: dsp::WhiteNoise,
 
-    // Highpass filter
+    // HighPass filters (stereo pair) — cutoff rises after trigger for bright splash then falls.
+    // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 1.5)
     filter: dsp::OnePoleFilter,
+    filter_r: dsp::OnePoleFilter,
 
     // Bi-stage amplitude envelope (decay + release).
     envelope: dsp::DecayReleaseEnvelope,
+    // Filter envelope for splash decay.
+    filter_env: dsp::ExpDecayEnvelope,
 
     // Active state
     active: bool,
@@ -32,6 +37,8 @@ impl HiHatVoice {
     pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
+        let mut filter_r = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
+        filter_r.set_cutoff(settings.filter_freq, sample_rate);
 
         let mut envelope = dsp::DecayReleaseEnvelope::new(
             sample_rate,
@@ -47,8 +54,12 @@ impl HiHatVoice {
             settings,
             sample_rate,
             noise: dsp::WhiteNoise::new(54321),
+            noise_r: dsp::WhiteNoise::new(98765),
             filter,
+            filter_r,
             envelope,
+            filter_env: dsp::ExpDecayEnvelope::new(sample_rate, 8.0, settings.filter_env_decay.max(0.001))
+                .with_attack_ms(0.3),
             active: false,
         }
     }
@@ -62,6 +73,7 @@ impl Voice for HiHatVoice {
         // free-running zener and the filter is a passive component. The
         // envelope's attack ramp masks any residual transient.
         self.envelope.trigger();
+        self.filter_env.trigger();
     }
 
     fn process_sample(&mut self) -> f32 {
@@ -69,13 +81,32 @@ impl Voice for HiHatVoice {
             return 0.0;
         }
 
-        // Generate and filter noise
-        let noise = self.noise.next();
-        let filtered = self.filter.process(noise);
-
         // Apply amplitude envelope
         let env = self.envelope.next();
-        let output = filtered * env * self.settings.volume;
+
+        let output = match self.settings.algo {
+            1 => {
+                // Bright: steeper cutoff + slight saturation for extra harmonics
+                let filter_env_val = self.filter_env.next();
+                let modulated_cutoff = self.settings.filter_freq * 1.5
+                    * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
+                self.filter.set_cutoff(modulated_cutoff.max(2000.0), self.sample_rate);
+                let noise = self.noise.next();
+                let filtered = self.filter.process(noise);
+                let saturated = filtered.tanh() * 1.2;
+                saturated * env * self.settings.volume
+            }
+            _ => {
+                // Standard: noise + HP
+                let filter_env_val = self.filter_env.next();
+                let modulated_cutoff = self.settings.filter_freq
+                    * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
+                self.filter.set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
+                let noise = self.noise.next();
+                let filtered = self.filter.process(noise);
+                filtered * env * self.settings.volume
+            }
+        };
 
         // Stop when silent
         if !self.envelope.is_active() {
@@ -86,6 +117,54 @@ impl Voice for HiHatVoice {
         output
     }
 
+    fn process_sample_stereo(&mut self) -> (f32, f32) {
+        if !self.active {
+            return (0.0, 0.0);
+        }
+        if self.settings.stereo < 0.5 {
+            let m = self.process_sample();
+            return (m, m);
+        }
+
+        let env = self.envelope.next();
+        let filter_env_val = self.filter_env.next();
+
+        let (cutoff, saturated) = match self.settings.algo {
+            1 => {
+                let c = self.settings.filter_freq * 1.5
+                    * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
+                (c.max(2000.0), true)
+            }
+            _ => {
+                let c = self.settings.filter_freq
+                    * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
+                (c.max(1000.0), false)
+            }
+        };
+
+        self.filter.set_cutoff(cutoff, self.sample_rate);
+        self.filter_r.set_cutoff(cutoff, self.sample_rate);
+
+        let noise_l = self.noise.next();
+        let noise_r = self.noise_r.next();
+        let filtered_l = self.filter.process(noise_l);
+        let filtered_r = self.filter_r.process(noise_r);
+
+        let (left, right) = if saturated {
+            (filtered_l.tanh() * 1.2, filtered_r.tanh() * 1.2)
+        } else {
+            (filtered_l, filtered_r)
+        };
+
+        if !self.envelope.is_active() {
+            self.active = false;
+            return (0.0, 0.0);
+        }
+
+        let vol = env * self.settings.volume;
+        (left * vol, right * vol)
+    }
+
     fn is_active(&self) -> bool {
         self.active
     }
@@ -94,11 +173,13 @@ impl Voice for HiHatVoice {
         self.active = false;
         self.filter.reset();
         self.envelope.reset();
+        self.filter_env.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
         self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
+        self.filter_r.set_cutoff(settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
             settings.decay_curve,
@@ -108,6 +189,7 @@ impl Voice for HiHatVoice {
         )
         .with_attack_ms(HIHAT_ATTACK_MS);
         self.envelope.set_hold(settings.hold);
+        self.filter_env.set_decay(settings.filter_env_decay.max(0.001));
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -152,6 +234,9 @@ mod tests {
             decay_curve: 8.0,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
             algo: 0,
             special: [0.0; 8],
         };

@@ -615,6 +615,10 @@ impl SquareOsc {
         self.phase_increment = freq / self.sample_rate;
     }
 
+    pub fn reset_phase(&mut self) {
+        self.phase = 0.0;
+    }
+
     #[inline]
     pub fn next(&mut self) -> f32 {
         let sample = if self.phase < 0.5 { 1.0 } else { -1.0 };
