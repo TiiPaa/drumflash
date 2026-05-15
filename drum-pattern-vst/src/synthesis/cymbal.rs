@@ -13,7 +13,9 @@ pub struct CymbalVoice {
     sample_rate: f32,
 
     noise: dsp::WhiteNoise,
+    noise_r: dsp::WhiteNoise,
     filter: dsp::OnePoleFilter,
+    filter_r: dsp::OnePoleFilter,
     amp_env: dsp::DecayReleaseEnvelope,
 
     // FM shimmer state
@@ -27,12 +29,16 @@ impl CymbalVoice {
     pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq.max(4000.0), sample_rate);
+        let mut filter_r = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
+        filter_r.set_cutoff(settings.filter_freq.max(4000.0), sample_rate);
 
         Self {
             settings,
             sample_rate,
             noise: dsp::WhiteNoise::new(0xDEAD_BEEF),
+            noise_r: dsp::WhiteNoise::new(0xCAFE_BABE),
             filter,
+            filter_r,
             amp_env: dsp::DecayReleaseEnvelope::new(
                 sample_rate,
                 settings.decay_curve,
@@ -48,7 +54,9 @@ impl CymbalVoice {
     }
 
     fn update_derived_params(&mut self) {
-        self.filter.set_cutoff(self.settings.filter_freq.max(4000.0), self.sample_rate);
+        let cutoff = self.settings.filter_freq.max(4000.0);
+        self.filter.set_cutoff(cutoff, self.sample_rate);
+        self.filter_r.set_cutoff(cutoff, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
@@ -74,17 +82,68 @@ impl Voice for CymbalVoice {
             return 0.0;
         }
 
-        // FM shimmer: modulate filter cutoff slightly
-        self.fm_phase += self.fm_increment;
-        self.fm_phase -= self.fm_phase.floor();
-        let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * 0.15 + 1.0;
-        let modulated_cutoff = self.settings.filter_freq * fm;
-        self.filter.set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
-
         let noise = self.noise.next();
-        let filtered = self.filter.process(noise);
+        let filtered = match self.settings.algo {
+            1 => {
+                // Dark: no FM shimmer, lower cutoff, darker wash
+                self.filter.set_cutoff(
+                    (self.settings.filter_freq * 0.6).max(1000.0),
+                    self.sample_rate,
+                );
+                self.filter.process(noise)
+            }
+            _ => {
+                // Standard: FM shimmer for bright wash
+                self.fm_phase += self.fm_increment;
+                self.fm_phase -= self.fm_phase.floor();
+                let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * 0.15 + 1.0;
+                let modulated_cutoff = self.settings.filter_freq * fm;
+                self.filter.set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
+                self.filter.process(noise)
+            }
+        };
 
         filtered * env * self.settings.volume
+    }
+
+    fn process_sample_stereo(&mut self) -> (f32, f32) {
+        if !self.active {
+            return (0.0, 0.0);
+        }
+        if self.settings.stereo < 0.5 {
+            let m = self.process_sample();
+            return (m, m);
+        }
+
+        let env = self.amp_env.next();
+        if env <= 0.0 {
+            self.active = false;
+            return (0.0, 0.0);
+        }
+
+        let noise_l = self.noise.next();
+        let noise_r = self.noise_r.next();
+
+        let (cutoff_l, cutoff_r) = match self.settings.algo {
+            1 => {
+                let c = (self.settings.filter_freq * 0.6).max(1000.0);
+                (c, c)
+            }
+            _ => {
+                self.fm_phase += self.fm_increment;
+                self.fm_phase -= self.fm_phase.floor();
+                let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * 0.15 + 1.0;
+                let c = (self.settings.filter_freq * fm).max(1000.0);
+                (c, c)
+            }
+        };
+
+        self.filter.set_cutoff(cutoff_l, self.sample_rate);
+        self.filter_r.set_cutoff(cutoff_r, self.sample_rate);
+        let filtered_l = self.filter.process(noise_l);
+        let filtered_r = self.filter_r.process(noise_r);
+        let vol = env * self.settings.volume;
+        (filtered_l * vol, filtered_r * vol)
     }
 
     fn is_active(&self) -> bool {

@@ -121,6 +121,18 @@ pub struct VoiceSettings {
     /// peak for `hold` seconds before the decay starts. Used by snare and
     /// hi-hat voices to add a short sustain phase. 0 = no hold.
     pub hold: f32,
+    /// Filter envelope amount (0..1). Scales the per-voice maximum depth so
+    /// that 0 disables the filter envelope and 1 gives the full effect.
+    pub filter_env_amount: f32,
+    /// Filter envelope decay time in seconds (typically 1 ms .. 200 ms).
+    pub filter_env_decay: f32,
+    /// Analog drift amount (0..1). 1.0 = full analog behavior (phase continuous,
+    /// pitch envelope persistent, filter state retained). 0.0 = digital stable
+    /// (phase reset, pitch envelope reset, filter state reset on trigger).
+    pub analog: f32,
+    /// Stereo width (0..1). 1.0 = stereo (independent L/R noise generators).
+    /// 0.0 = mono. Only affects noise-based voices.
+    pub stereo: f32,
     /// Synthesis algorithm index (interpreted per instrument).
     pub algo: u8,
     /// Special parameters, indexed per instrument convention.
@@ -138,6 +150,10 @@ impl Default for VoiceSettings {
             decay_curve: 5.0,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
+            stereo: 0.0,
             algo: 0,
             special: [0.0; 8],
         }
@@ -150,11 +166,15 @@ impl VoiceSettings {
             frequency: 60.0,
             decay: 0.5,
             volume: 0.8,
-            filter_freq: 100.0,
+            filter_freq: 30.0,
             release: 0.5,
             decay_curve: 5.0,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 1.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
+            stereo: 0.0,
             algo: 0,
             special: [0.5, 0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -165,11 +185,15 @@ impl VoiceSettings {
             frequency: 200.0,
             decay: 0.47,
             volume: 0.6,
-            filter_freq: 1000.0,
+            filter_freq: 200.0,
             release: 0.2,
             decay_curve: 5.0,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 1.0,
+            filter_env_decay: 0.03,
+            analog: 1.0,
+            stereo: 1.0,
             algo: 0,
             special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -180,11 +204,15 @@ impl VoiceSettings {
             frequency: 8000.0,
             decay: 0.36,
             volume: 0.3,
-            filter_freq: 10000.0,
+            filter_freq: 5000.0,
             release: 0.0,
             decay_curve: 8.0,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 1.0,
+            filter_env_decay: 0.04,
+            analog: 1.0,
+            stereo: 1.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -200,6 +228,10 @@ impl VoiceSettings {
             decay_curve: 5.5,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
+            stereo: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -210,11 +242,15 @@ impl VoiceSettings {
             frequency: 300.0,
             decay: 0.3,
             volume: 0.5,
-            filter_freq: 2000.0,
+            filter_freq: 500.0,
             release: 0.3,
             decay_curve: 4.2,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 1.0,
+            filter_env_decay: 0.06,
+            analog: 1.0,
+            stereo: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -225,11 +261,15 @@ impl VoiceSettings {
             frequency: 200.0,
             decay: 0.4,
             volume: 0.5,
-            filter_freq: 1500.0,
+            filter_freq: 500.0,
             release: 0.4,
             decay_curve: 4.2,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 1.0,
+            filter_env_decay: 0.06,
+            analog: 1.0,
+            stereo: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -240,11 +280,15 @@ impl VoiceSettings {
             frequency: 120.0,
             decay: 0.5,
             volume: 0.5,
-            filter_freq: 1000.0,
+            filter_freq: 500.0,
             release: 0.5,
             decay_curve: 4.2,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 1.0,
+            filter_env_decay: 0.06,
+            analog: 1.0,
+            stereo: 0.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -260,6 +304,10 @@ impl VoiceSettings {
             decay_curve: 6.0,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
+            stereo: 1.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -275,6 +323,10 @@ impl VoiceSettings {
             decay_curve: 3.5,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
+            stereo: 1.0,
             algo: 0,
             special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -290,6 +342,10 @@ impl VoiceSettings {
             decay_curve: 2.8,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
+            stereo: 1.0,
             algo: 0,
             special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
@@ -305,6 +361,10 @@ impl VoiceSettings {
             decay_curve: 5.0,
             release_curve: 3.0,
             hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 1.0,
+            stereo: 0.0,
             algo: 0,
             // special[0] = Resonance (Q)
             // special[1] = Tone (body vs wires balance)
@@ -317,6 +377,11 @@ impl VoiceSettings {
 pub trait Voice: Send + Sync {
     fn trigger(&mut self);
     fn process_sample(&mut self) -> f32;
+    /// Stereo version. Default returns duplicated mono.
+    fn process_sample_stereo(&mut self) -> (f32, f32) {
+        let m = self.process_sample();
+        (m, m)
+    }
     #[allow(dead_code)]
     fn is_active(&self) -> bool;
     fn reset(&mut self);
@@ -369,6 +434,20 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ride(v) => v.process_sample(),
             DrumVoiceKind::Cymbal(v) => v.process_sample(),
             DrumVoiceKind::Snare606(v) => v.process_sample(),
+        }
+    }
+
+    fn process_sample_stereo(&mut self) -> (f32, f32) {
+        match self {
+            DrumVoiceKind::Kick(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Snare(v) => v.process_sample_stereo(),
+            DrumVoiceKind::HiHat(v) => v.process_sample_stereo(),
+            DrumVoiceKind::OpenHiHat(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Tom(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Clap(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Ride(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Cymbal(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Snare606(v) => v.process_sample_stereo(),
         }
     }
 
@@ -540,6 +619,15 @@ impl DrumSynthesizer {
         for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
             let vel = self.velocity_smoothers[i].process(self.velocities[i]);
             *output = voice.process_sample() * vel;
+        }
+    }
+
+    pub fn process_voice_samples_stereo(&mut self, outputs: &mut [[f32; 2]; DrumVoice::COUNT]) {
+        for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
+            let vel = self.velocity_smoothers[i].process(self.velocities[i]);
+            let (l, r) = voice.process_sample_stereo();
+            output[0] = l * vel;
+            output[1] = r * vel;
         }
     }
 

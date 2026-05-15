@@ -39,15 +39,20 @@ pub struct ClapVoice {
     sample_rate: f32,
 
     noise: dsp::WhiteNoise,
+    noise_r: dsp::WhiteNoise,
     filter_hp: dsp::OnePoleFilter,
+    filter_hp_r: dsp::OnePoleFilter,
     filter_lp: dsp::OnePoleFilter,
+    filter_lp_r: dsp::OnePoleFilter,
     amp_env: dsp::DecayReleaseEnvelope,
     /// Short broadband transient layered on top of the first burst — provides
     /// the palms-strike "snap" that distinguishes a clap from filtered noise.
     snap: dsp::ClickGenerator,
+    snap_r: dsp::ClickGenerator,
     /// Highpass filter on the snap output — shifts its character toward the
     /// "paper / dry slap" end of the spectrum.
     snap_hp: dsp::OnePoleFilter,
+    snap_hp_r: dsp::OnePoleFilter,
 
     burst_count: usize,
     samples_since_trigger: usize,
@@ -61,19 +66,28 @@ impl ClapVoice {
 
         let mut filter_hp = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter_hp.set_cutoff(hp, sample_rate);
+        let mut filter_hp_r = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
+        filter_hp_r.set_cutoff(hp, sample_rate);
 
         let mut filter_lp = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         filter_lp.set_cutoff(lp_base, sample_rate);
+        let mut filter_lp_r = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
+        filter_lp_r.set_cutoff(lp_base, sample_rate);
 
         let mut snap_hp = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         snap_hp.set_cutoff(SNAP_HP_HZ.min(sample_rate * 0.45), sample_rate);
+        let mut snap_hp_r = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
+        snap_hp_r.set_cutoff(SNAP_HP_HZ.min(sample_rate * 0.45), sample_rate);
 
         Self {
             settings,
             sample_rate,
             noise: dsp::WhiteNoise::new(0xBADC0FFE),
+            noise_r: dsp::WhiteNoise::new(0xDEAD_C0DE),
             filter_hp,
+            filter_hp_r,
             filter_lp,
+            filter_lp_r,
             amp_env: dsp::DecayReleaseEnvelope::new(
                 sample_rate,
                 settings.decay_curve,
@@ -85,7 +99,9 @@ impl ClapVoice {
             // 2 ms decay, mostly noise, moderate level — short snap that gets
             // HP-filtered to the "paper" character.
             snap: dsp::ClickGenerator::new(sample_rate, 2.0, 0.9, 0.6),
+            snap_r: dsp::ClickGenerator::new(sample_rate, 2.0, 0.9, 0.6),
             snap_hp,
+            snap_hp_r,
             burst_count: 0,
             samples_since_trigger: 0,
             active: false,
@@ -112,17 +128,25 @@ impl ClapVoice {
     fn burst_time_samples(&self, burst_idx: usize) -> usize {
         // Scale the configured burst times by the echo amount. At echo=0 all
         // bursts collapse to sample 0 and read as a single hit.
-        let ms = BURST_TIMES_MS[burst_idx.min(BURST_TIMES_MS.len() - 1)] * self.echo_amount();
+        let ms = if self.settings.algo == 1 {
+            // Tight: much shorter spacing for a compact slap
+            let tight_times = [0.0f32, 3.0, 7.0, 12.0];
+            tight_times[burst_idx.min(3)] * self.echo_amount()
+        } else {
+            BURST_TIMES_MS[burst_idx.min(BURST_TIMES_MS.len() - 1)] * self.echo_amount()
+        };
         (ms / 1000.0 * self.sample_rate) as usize
     }
 
     fn update_derived_params(&mut self) {
         let hp = self.settings.filter_freq.max(400.0);
         self.filter_hp.set_cutoff(hp, self.sample_rate);
+        self.filter_hp_r.set_cutoff(hp, self.sample_rate);
         // LP is set per-burst (in process_sample) so the timbre evolves; here
         // we just reset to the first-burst value when settings change.
         let lp = self.lp_for_burst(0);
         self.filter_lp.set_cutoff(lp, self.sample_rate);
+        self.filter_lp_r.set_cutoff(lp, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
@@ -141,6 +165,7 @@ impl Voice for ClapVoice {
         // of the first hit.
         self.amp_env.trigger();
         self.snap.trigger();
+        self.snap_r.trigger();
     }
 
     fn process_sample(&mut self) -> f32 {
@@ -161,9 +186,11 @@ impl Voice for ClapVoice {
             // already fired in the main trigger() so its envelope is fresh.
             if self.burst_count > 0 {
                 self.snap.trigger();
+                self.snap_r.trigger();
             }
             let lp = self.lp_for_burst(self.burst_count);
             self.filter_lp.set_cutoff(lp, self.sample_rate);
+            self.filter_lp_r.set_cutoff(lp, self.sample_rate);
             self.burst_count += 1;
         }
         self.samples_since_trigger += 1;
@@ -192,6 +219,61 @@ impl Voice for ClapVoice {
         };
 
         body + snap_signal
+    }
+
+    fn process_sample_stereo(&mut self) -> (f32, f32) {
+        if !self.active {
+            return (0.0, 0.0);
+        }
+        if self.settings.stereo < 0.5 {
+            let m = self.process_sample();
+            return (m, m);
+        }
+
+        // Same burst logic as mono
+        if self.burst_count < 4
+            && self.samples_since_trigger >= self.burst_time_samples(self.burst_count)
+        {
+            self.amp_env.trigger();
+            if self.burst_count > 0 {
+                self.snap.trigger();
+                self.snap_r.trigger();
+            }
+            let lp = self.lp_for_burst(self.burst_count);
+            self.filter_lp.set_cutoff(lp, self.sample_rate);
+            self.filter_lp_r.set_cutoff(lp, self.sample_rate);
+            self.burst_count += 1;
+        }
+        self.samples_since_trigger += 1;
+
+        let burst_intensity = 1.0 - ((self.burst_count.saturating_sub(1)) as f32 * 0.18);
+        let env = self.amp_env.next();
+        if env <= 0.0 && self.burst_count >= 4 && !self.snap.is_active() {
+            self.active = false;
+            return (0.0, 0.0);
+        }
+
+        let noise_l = self.noise.next();
+        let noise_r = self.noise_r.next();
+        let hp_l = self.filter_hp.process(noise_l);
+        let hp_r = self.filter_hp_r.process(noise_r);
+        let lp_l = self.filter_lp.process(hp_l);
+        let lp_r = self.filter_lp_r.process(hp_r);
+        let body_l = lp_l * env * burst_intensity * self.settings.volume;
+        let body_r = lp_r * env * burst_intensity * self.settings.volume;
+
+        let snap_l = if self.snap.is_active() {
+            self.snap_hp.process(self.snap.next()) * self.settings.volume * burst_intensity
+        } else {
+            0.0
+        };
+        let snap_r = if self.snap_r.is_active() {
+            self.snap_hp_r.process(self.snap_r.next()) * self.settings.volume * burst_intensity
+        } else {
+            0.0
+        };
+
+        (body_l + snap_l, body_r + snap_r)
     }
 
     fn is_active(&self) -> bool {

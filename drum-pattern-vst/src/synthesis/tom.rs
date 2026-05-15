@@ -15,8 +15,12 @@ pub struct TomVoice {
 
     osc: dsp::SineOsc,
     pitch_env: dsp::PitchEnvelope,
+    // LowPass filter — cutoff closes after trigger for natural damp.
+    // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 4.0)
     filter: dsp::OnePoleFilter,
     amp_env: dsp::DecayReleaseEnvelope,
+    // Filter envelope for natural "bouum" decay.
+    filter_env: dsp::ExpDecayEnvelope,
     stick_attack: dsp::ClickGenerator,
 
     active: bool,
@@ -45,6 +49,8 @@ impl TomVoice {
                 settings.release,
             )
             .with_attack_ms(1.5),
+            filter_env: dsp::ExpDecayEnvelope::new(sample_rate, 6.0, settings.filter_env_decay.max(0.001))
+                .with_attack_ms(0.5),
             stick_attack: dsp::ClickGenerator::new(sample_rate, 8.0, 0.5, 0.6),
             active: false,
         };
@@ -59,6 +65,7 @@ impl TomVoice {
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
+        self.filter_env.set_decay(self.settings.filter_env_decay.max(0.001));
         let sweep_time = 0.14f32.min(self.settings.decay);
         self.pitch_env = dsp::PitchEnvelope::new(self.sample_rate, 1.0, 0.55, sweep_time);
     }
@@ -71,11 +78,17 @@ impl TomVoice {
 impl Voice for TomVoice {
     fn trigger(&mut self) {
         self.active = true;
+        if self.settings.analog < 0.5 {
+            // Digital stable: reset phase and filter state for identical hits.
+            self.osc.phase = 0.0;
+            self.filter.reset();
+        }
         // Analog-style retrigger: keep oscillator phase and filter state intact.
         // See kick.rs for the rationale — tonal voices click hard on a phase reset
         // when retriggered during a ringing tail.
         self.pitch_env.trigger();
         self.amp_env.trigger();
+        self.filter_env.trigger();
         if self.stick_amount() > 0.0 {
             self.stick_attack.trigger();
         }
@@ -89,19 +102,38 @@ impl Voice for TomVoice {
             let pitch_ratio = self.pitch_env.next();
             self.osc.set_freq(self.settings.frequency * pitch_ratio);
 
-            // Fundamental + 2nd harmonic overtone
-            let fundamental = self.osc.next();
-            let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
-            let body = fundamental + overtone;
-
-            // Filter
-            let filtered = self.filter.process(body);
-
             // Amplitude envelope
             let env = self.amp_env.next();
             if env <= 0.0 {
                 self.active = false;
             } else {
+                let (body, modulated_cutoff) = match self.settings.algo {
+                    1 => {
+                        // Deep: lower pitch, darker tone, less overtone
+                        let pitch_ratio = self.pitch_env.next();
+                        let deep_freq = self.settings.frequency * 0.7;
+                        self.osc.set_freq(deep_freq * pitch_ratio);
+                        let fundamental = self.osc.next();
+                        let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.12;
+                        let filter_env_val = self.filter_env.next();
+                        let cutoff = self.settings.filter_freq * 0.7
+                            * (1.0 + filter_env_val * self.settings.filter_env_amount * 4.0);
+                        (fundamental + overtone, cutoff.max(50.0))
+                    }
+                    _ => {
+                        // Standard: sine + overtone, pitch sweep
+                        let pitch_ratio = self.pitch_env.next();
+                        self.osc.set_freq(self.settings.frequency * pitch_ratio);
+                        let fundamental = self.osc.next();
+                        let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
+                        let filter_env_val = self.filter_env.next();
+                        let cutoff = self.settings.filter_freq
+                            * (1.0 + filter_env_val * self.settings.filter_env_amount * 4.0);
+                        (fundamental + overtone, cutoff.max(100.0))
+                    }
+                };
+                self.filter.set_cutoff(modulated_cutoff, self.sample_rate);
+                let filtered = self.filter.process(body);
                 tone = filtered * env * self.settings.volume;
             }
         }
@@ -123,6 +155,7 @@ impl Voice for TomVoice {
     fn reset(&mut self) {
         self.active = false;
         self.amp_env.reset();
+        self.filter_env.reset();
         self.stick_attack.reset();
     }
 

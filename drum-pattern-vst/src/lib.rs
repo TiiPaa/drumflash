@@ -61,7 +61,7 @@ pub struct DrumFlashParams {
     #[persist = "pattern-v1"]
     pub pattern_state: PersistentPattern,
 
-    #[persist = "sound-settings-v1"]
+    #[persist = "sound-settings-v2"]
     pub sound_settings: PersistentSoundSettings,
 
     #[id = "master_vol"]
@@ -260,6 +260,10 @@ pub struct DrumFlashParams {
     #[id = "hihat_chokes_oh"]
     pub hihat_chokes_oh: BoolParam,
 
+    // Auto-edit: clicking a step in the grid automatically selects its instrument
+    #[id = "auto_edit"]
+    pub auto_edit: BoolParam,
+
     // Clap echo: scales burst spacing and tone diffusion between the 4 bursts.
     // 0 = collapse to a single burst, 1 = default 12 ms spread, 2 = wider.
     #[id = "clap_echo"]
@@ -281,7 +285,7 @@ impl Default for DrumFlashParams {
         let pattern_state = PersistentPattern::new(&default_pattern);
 
         Self {
-            editor_state: EguiState::from_size(980, 560),
+            editor_state: EguiState::from_size(1200, 720),
             pattern_state,
             sound_settings: PersistentSoundSettings::new(),
 
@@ -466,6 +470,7 @@ impl Default for DrumFlashParams {
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
             hihat_chokes_oh: BoolParam::new("HiHat Chokes OpenHH", true),
+            auto_edit: BoolParam::new("Auto Edit", false),
 
             clap_echo: FloatParam::new(
                 "Clap Echo",
@@ -777,7 +782,7 @@ impl Plugin for DrumFlashVst {
         self.synthesizer.set_algo(9, self.params.algo_cymbal.value() as u8);
         self.synthesizer.set_algo(10, self.params.algo_snare606.value() as u8);
 
-        for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
+        for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
             let swing = self.params.swing.value();
             let groove_type = self.params.groove_type.value();
             let triggers = self.sequencer.process_sample(bpm, sample_rate, swing, groove_type);
@@ -819,8 +824,11 @@ impl Plugin for DrumFlashVst {
             if current_version != self.last_sound_settings_version {
                 self.last_sound_settings_version = current_version;
                 for (i, inst) in self.sound_settings_state.instruments.iter().enumerate() {
-                    let (freq, decay, vol, filt, release, decay_curve, release_curve, hold) =
-                        inst.load();
+                    let (
+                        freq, decay, vol, filt, release,
+                        decay_curve, release_curve, hold,
+                        filter_env_amount, filter_env_decay, analog, stereo,
+                    ) = inst.load();
                     self.synthesizer.set_voice_settings(
                         synthesis::DrumVoice::from_index(i).unwrap(),
                         synthesis::VoiceSettings {
@@ -832,6 +840,10 @@ impl Plugin for DrumFlashVst {
                             decay_curve,
                             release_curve,
                             hold,
+                            filter_env_amount,
+                            filter_env_decay,
+                            analog,
+                            stereo,
                             algo: 0,
                             special: [0.0; 8],
                         },
@@ -840,24 +852,23 @@ impl Plugin for DrumFlashVst {
             }
 
             let master_vol = self.params.master_volume.smoothed.next();
-            let mut voice_outputs = [0.0f32; DrumVoice::COUNT];
-            self.synthesizer.process_voice_samples(&mut voice_outputs);
+            let mut voice_outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+            self.synthesizer.process_voice_samples_stereo(&mut voice_outputs);
 
-            let mixed_sample = voice_outputs.iter().copied().sum::<f32>() * master_vol;
+            let mixed_left = voice_outputs.iter().map(|o| o[0]).sum::<f32>() * master_vol;
+            let mixed_right = voice_outputs.iter().map(|o| o[1]).sum::<f32>() * master_vol;
 
-            for sample in channel_samples {
-                *sample = mixed_sample;
+            for (ch, sample) in channel_samples.iter_mut().enumerate() {
+                *sample = if ch == 0 { mixed_left } else { mixed_right };
             }
 
             for (voice_idx, aux_buffer) in aux.outputs.iter_mut().enumerate() {
                 if voice_idx >= DrumVoice::COUNT {
                     break;
                 }
-
-                let voice_sample = voice_outputs[voice_idx] * master_vol;
-                for channel in aux_buffer.as_slice().iter_mut() {
-                    channel[sample_idx] = voice_sample;
-                }
+                let channels = aux_buffer.as_slice();
+                channels[0][sample_idx] = voice_outputs[voice_idx][0] * master_vol;
+                channels[1][sample_idx] = voice_outputs[voice_idx][1] * master_vol;
             }
         }
 

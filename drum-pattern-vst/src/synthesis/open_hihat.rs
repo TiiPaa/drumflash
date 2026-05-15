@@ -11,7 +11,9 @@ pub struct OpenHiHatVoice {
     settings: VoiceSettings,
     sample_rate: f32,
     noise: dsp::WhiteNoise,
+    noise_r: dsp::WhiteNoise,
     filter: dsp::OnePoleFilter,
+    filter_r: dsp::OnePoleFilter,
     envelope: dsp::DecayReleaseEnvelope,
     active: bool,
     samples_elapsed: usize,
@@ -21,6 +23,8 @@ impl OpenHiHatVoice {
     pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
+        let mut filter_r = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
+        filter_r.set_cutoff(settings.filter_freq, sample_rate);
 
         let mut envelope = dsp::DecayReleaseEnvelope::new(
             sample_rate,
@@ -36,7 +40,9 @@ impl OpenHiHatVoice {
             settings,
             sample_rate,
             noise: dsp::WhiteNoise::new(24680),
+            noise_r: dsp::WhiteNoise::new(13579),
             filter,
+            filter_r,
             envelope,
             active: false,
             samples_elapsed: 0,
@@ -73,6 +79,33 @@ impl Voice for OpenHiHatVoice {
         output
     }
 
+    fn process_sample_stereo(&mut self) -> (f32, f32) {
+        if !self.active {
+            return (0.0, 0.0);
+        }
+        if self.settings.stereo < 0.5 {
+            let m = self.process_sample();
+            return (m, m);
+        }
+
+        let noise_l = self.noise.next();
+        let noise_r = self.noise_r.next();
+        let filtered_l = self.filter.process(noise_l);
+        let filtered_r = self.filter_r.process(noise_r);
+        let env = self.envelope.next().max(0.01);
+
+        let time = self.samples_elapsed as f32 / self.sample_rate;
+        let vol = env * self.settings.volume;
+        self.samples_elapsed += 1;
+
+        if env <= 0.01 && time >= self.settings.decay {
+            self.active = false;
+            return (0.0, 0.0);
+        }
+
+        (filtered_l * vol, filtered_r * vol)
+    }
+
     fn is_active(&self) -> bool {
         self.active
     }
@@ -87,6 +120,7 @@ impl Voice for OpenHiHatVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
         self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
+        self.filter_r.set_cutoff(settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
             settings.decay_curve,

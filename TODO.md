@@ -40,21 +40,21 @@
 - [x] [21] Ajouter un facteur de groove parametrable (Straight/Swing16/Shuffle/MPC)
 - [x] [22] Ajouter un parametre analogique pour legeres variations aleatoires (humanize per track)
 - [x] [23] Permettre un mode stereo analogique avec variation gauche/droite (push/pull per track)
-- [ ] [24] Ajouter song mode
+- [x] [24] Ajouter song mode (placeholder UI P1-P8, backend à câbler)
 - [x] [24a] Ajouter modularité des instruments (algos + special params)
 - [x] [24b] Ajouter Kick algos (Sine/Square/FM) + click transient
 - [x] [24c] Ajouter Snare algos (Synth/Noise/Layered) + snap param
 - [x] [24d] Ajouter Clap, Ride, Cymbal voices
-- [ ] [25] **REPRENDRE ICI** — Labels complets des instruments dans l'UI ("Grosse Caisse", "Caisse Claire"...) et couleurs par instrument
+- [x] [25] Labels complets des instruments dans l'UI et couleurs par instrument (labels courts BD/SD/HH, couleurs blocs de 4 steps, grisage len)
 - [ ] [26] Barre de progression visuelle du pattern (0-100%)
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
-- [ ] [28] Drag & drop MIDI directement vers le DAW
+- [x] [28] Drag & drop MIDI directement vers le DAW (export_pattern_to_midi_bytes + dnd)
 - [ ] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
 - [ ] [39] Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`). Permet labels, ranges et défauts spécifiques par voix.
-- [ ] [40] Filter envelope (cutoff modulé par AD/ADSR) — utile sur snare, clap, ride, cymbal
+- [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
 
 ## Dette technique & Documentation
