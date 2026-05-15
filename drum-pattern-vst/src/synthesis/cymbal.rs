@@ -6,7 +6,7 @@
 //! - Very long exponential decay
 //! - Slight pitch modulation (FM) for the shimmering wash effect
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 pub struct CymbalVoice {
     settings: VoiceSettings,
@@ -111,11 +111,4 @@ impl Voice for CymbalVoice {
         }
     }
 
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::CYMBAL_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::CYMBAL_SPECIALS
-    }
 }

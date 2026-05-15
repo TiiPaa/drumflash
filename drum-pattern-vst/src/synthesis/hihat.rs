@@ -5,7 +5,7 @@
 //! - Highpass filter (metallic sound)
 //! - Short exponential decay (closed hi-hat)
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 /// Anti-click attack ramp (mimics analog VCA RC charge time).
 const HIHAT_ATTACK_MS: f32 = 1.0;
@@ -120,13 +120,6 @@ impl Voice for HiHatVoice {
         }
     }
 
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::HIHAT_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::HIHAT_SPECIALS
-    }
 }
 
 #[cfg(test)]
