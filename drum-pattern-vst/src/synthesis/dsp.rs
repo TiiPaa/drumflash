@@ -501,11 +501,6 @@ impl PitchEnvelope {
             ratio
         }
     }
-
-    pub fn reset(&mut self) {
-        self.active = false;
-        self.time = 0.0;
-    }
 }
 
 // ── Click / Transient Generator ─────────────────────────────────────────────
@@ -596,10 +591,6 @@ impl SineOsc {
         self.phase -= self.phase.floor();
         sample
     }
-
-    pub fn reset(&mut self) {
-        self.phase = 0.0;
-    }
 }
 
 // ── Square Oscillator ───────────────────────────────────────────────────────
@@ -630,10 +621,6 @@ impl SquareOsc {
         self.phase += self.phase_increment;
         self.phase -= self.phase.floor();
         sample
-    }
-
-    pub fn reset(&mut self) {
-        self.phase = 0.0;
     }
 }
 

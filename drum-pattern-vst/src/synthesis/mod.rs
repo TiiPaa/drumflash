@@ -12,7 +12,11 @@ mod snare;
 mod snare606;
 mod tom;
 
-pub use special_params::{AlgoDef, SpecialParamDef, algos_for, specials_for};
+// `algos_for` is consumed by the editor (`ui.rs`) but not by the standalone
+// binary — allow the unused-import warning so both build configurations stay
+// clean.
+#[allow(unused_imports)]
+pub use special_params::{AlgoDef, algos_for};
 
 pub use clap::ClapVoice;
 pub use cymbal::CymbalVoice;
@@ -323,10 +327,6 @@ pub trait Voice: Send + Sync {
     fn set_algo(&mut self, algo: u8);
     /// Set a special parameter by index (0..7).
     fn set_special_param(&mut self, index: usize, value: f32);
-    /// Supported algorithms for this voice.
-    fn supported_algos(&self) -> &'static [AlgoDef];
-    /// Supported special parameters for this voice.
-    fn special_params(&self) -> &'static [SpecialParamDef];
 }
 
 /// Concrete enum wrapping all drum voice types.
@@ -439,34 +439,6 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ride(v) => v.set_special_param(index, value),
             DrumVoiceKind::Cymbal(v) => v.set_special_param(index, value),
             DrumVoiceKind::Snare606(v) => v.set_special_param(index, value),
-        }
-    }
-
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        match self {
-            DrumVoiceKind::Kick(v) => v.supported_algos(),
-            DrumVoiceKind::Snare(v) => v.supported_algos(),
-            DrumVoiceKind::HiHat(v) => v.supported_algos(),
-            DrumVoiceKind::OpenHiHat(v) => v.supported_algos(),
-            DrumVoiceKind::Tom(v) => v.supported_algos(),
-            DrumVoiceKind::Clap(v) => v.supported_algos(),
-            DrumVoiceKind::Ride(v) => v.supported_algos(),
-            DrumVoiceKind::Cymbal(v) => v.supported_algos(),
-            DrumVoiceKind::Snare606(v) => v.supported_algos(),
-        }
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        match self {
-            DrumVoiceKind::Kick(v) => v.special_params(),
-            DrumVoiceKind::Snare(v) => v.special_params(),
-            DrumVoiceKind::HiHat(v) => v.special_params(),
-            DrumVoiceKind::OpenHiHat(v) => v.special_params(),
-            DrumVoiceKind::Tom(v) => v.special_params(),
-            DrumVoiceKind::Clap(v) => v.special_params(),
-            DrumVoiceKind::Ride(v) => v.special_params(),
-            DrumVoiceKind::Cymbal(v) => v.special_params(),
-            DrumVoiceKind::Snare606(v) => v.special_params(),
         }
     }
 }

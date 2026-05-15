@@ -7,7 +7,7 @@
 //! - Exponential amplitude envelope
 //! - Optional stick attack (short noise burst) for realism
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 pub struct TomVoice {
     settings: VoiceSettings,
@@ -142,11 +142,4 @@ impl Voice for TomVoice {
         }
     }
 
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::TOM_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::TOM_SPECIALS
-    }
 }

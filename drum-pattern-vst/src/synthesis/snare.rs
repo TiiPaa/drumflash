@@ -8,7 +8,7 @@
 //! For the analog TR-606 bridged-T snare model, see the separate
 //! `Snare606Voice` (voice index 10).
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 /// Anti-click attack ramp (mimics analog VCA RC charge time).
 const SNARE_ATTACK_MS: f32 = 1.5;
@@ -152,13 +152,6 @@ impl Voice for SnareVoice {
         }
     }
 
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::SNARE_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::SNARE_SPECIALS
-    }
 }
 
 #[cfg(test)]

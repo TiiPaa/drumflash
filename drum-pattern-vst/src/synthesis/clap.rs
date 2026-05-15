@@ -9,7 +9,7 @@
 //!   settings) — this is the difference between a clap and a hi-hat
 //! - Exponential decay envelope per burst, with release tail for the room
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 /// Lowpass cutoff for the first burst, expressed as a multiple of the highpass
 /// cutoff. 2.5 gives a roughly 1.3-octave bandpass — wide enough for body,
@@ -219,11 +219,4 @@ impl Voice for ClapVoice {
         }
     }
 
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::CLAP_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::CLAP_SPECIALS
-    }
 }

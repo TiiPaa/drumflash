@@ -2,7 +2,7 @@
 //!
 //! Similar to the closed hi-hat but with a longer decay and a brighter tail.
 
-use super::{dsp, special_params, AlgoDef, SpecialParamDef, Voice, VoiceSettings};
+use super::{dsp, Voice, VoiceSettings};
 
 /// Anti-click attack ramp (mimics analog VCA RC charge time).
 const OPEN_HIHAT_ATTACK_MS: f32 = 1.5;
@@ -108,11 +108,4 @@ impl Voice for OpenHiHatVoice {
         }
     }
 
-    fn supported_algos(&self) -> &'static [AlgoDef] {
-        special_params::HIHAT_ALGOS
-    }
-
-    fn special_params(&self) -> &'static [SpecialParamDef] {
-        special_params::HIHAT_SPECIALS
-    }
 }
