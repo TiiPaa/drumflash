@@ -12,6 +12,7 @@ use std::sync::{
 mod generator;
 mod groove;
 mod midi_export;
+mod plock;
 mod sequencer;
 mod sound_settings;
 mod synthesis;
@@ -19,6 +20,7 @@ mod ui;
 
 use generator::{GeneratorType, Style};
 use sequencer::{pattern::PersistentPattern, Pattern, Sequencer, SharedPattern};
+use plock::PersistentPlockState;
 use sound_settings::{PersistentSoundSettings, SoundSettingsState};
 use synthesis::{DrumSynthesizer, DrumVoice};
 
@@ -28,11 +30,11 @@ pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
     None => "dev",
 };
 /// Number of dedicated stereo aux outputs. Frozen at 10 to match every saved
-const AUX_OUT_COUNT: usize = 11;
+const AUX_OUT_COUNT: usize = 12;
 const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
-    "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal", "Snare 606",
+    "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal", "Snare 606", "808 Kick",
 ];
-const MIDI_NOTE_MAP: [u8; DrumVoice::COUNT] = [36, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40];
+const MIDI_NOTE_MAP: [u8; DrumVoice::COUNT] = [36, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40, 35];
 const STEP_COUNT: usize = 16;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v1";
@@ -63,6 +65,9 @@ pub struct DrumFlashParams {
 
     #[persist = "sound-settings-v2"]
     pub sound_settings: PersistentSoundSettings,
+
+    #[persist = "plock-v1"]
+    pub plock_state: PersistentPlockState,
 
     #[id = "master_vol"]
     pub master_volume: FloatParam,
@@ -99,6 +104,8 @@ pub struct DrumFlashParams {
     pub humanize_cymbal: FloatParam,
     #[id = "hu_snare606"]
     pub humanize_snare606: FloatParam,
+    #[id = "hu_b8"]
+    pub humanize_bassdrum808: FloatParam,
 
     #[id = "pp_kick"]
     pub push_kick: FloatParam,
@@ -122,6 +129,8 @@ pub struct DrumFlashParams {
     pub push_cymbal: FloatParam,
     #[id = "pp_snare606"]
     pub push_snare606: FloatParam,
+    #[id = "pp_b8"]
+    pub push_bassdrum808: FloatParam,
 
     #[id = "pl_kick"]
     pub length_kick: IntParam,
@@ -145,12 +154,24 @@ pub struct DrumFlashParams {
     pub length_cymbal: IntParam,
     #[id = "pl_snare606"]
     pub length_snare606: IntParam,
+    #[id = "pl_b8"]
+    pub length_bassdrum808: IntParam,
 
     #[id = "kick_click"]
     pub kick_click: FloatParam,
 
     #[id = "tom_stick"]
     pub tom_stick: FloatParam,
+
+    // 808 Bass Drum special parameters
+    #[id = "b8_accent"]
+    pub bassdrum808_accent: FloatParam,
+
+    #[id = "b8_snap"]
+    pub bassdrum808_snap: FloatParam,
+
+    #[id = "b8_drop"]
+    pub bassdrum808_pitch_drop: FloatParam,
 
     #[id = "mute_kick"]
     pub mute_kick: BoolParam,
@@ -180,6 +201,34 @@ pub struct DrumFlashParams {
     pub mute_cymbal: BoolParam,
     #[id = "mute_snare606"]
     pub mute_snare606: BoolParam,
+    #[id = "mute_b8"]
+    pub mute_bassdrum808: BoolParam,
+
+    // Per-instrument Main Mix inclusion (true = routed to Main Mix)
+    #[id = "mix_kick"]
+    pub mix_kick: BoolParam,
+    #[id = "mix_snare"]
+    pub mix_snare: BoolParam,
+    #[id = "mix_hihat"]
+    pub mix_hihat: BoolParam,
+    #[id = "mix_open_hh"]
+    pub mix_open_hh: BoolParam,
+    #[id = "mix_tom1"]
+    pub mix_tom1: BoolParam,
+    #[id = "mix_tom2"]
+    pub mix_tom2: BoolParam,
+    #[id = "mix_tom3"]
+    pub mix_tom3: BoolParam,
+    #[id = "mix_clap"]
+    pub mix_clap: BoolParam,
+    #[id = "mix_ride"]
+    pub mix_ride: BoolParam,
+    #[id = "mix_cymbal"]
+    pub mix_cymbal: BoolParam,
+    #[id = "mix_snare606"]
+    pub mix_snare606: BoolParam,
+    #[id = "mix_b8"]
+    pub mix_bassdrum808: BoolParam,
 
     #[id = "solo_kick"]
     pub solo_kick: BoolParam,
@@ -209,6 +258,8 @@ pub struct DrumFlashParams {
     pub solo_cymbal: BoolParam,
     #[id = "solo_snare606"]
     pub solo_snare606: BoolParam,
+    #[id = "solo_b8"]
+    pub solo_bassdrum808: BoolParam,
 
     #[id = "gen_type"]
     pub generator_type: EnumParam<GeneratorType>,
@@ -251,6 +302,8 @@ pub struct DrumFlashParams {
     pub algo_cymbal: IntParam,
     #[id = "algo_snare606"]
     pub algo_snare606: IntParam,
+    #[id = "algo_b8"]
+    pub algo_bassdrum808: IntParam,
 
     // Special parameters per instrument
     #[id = "snare_snap"]
@@ -288,6 +341,7 @@ impl Default for DrumFlashParams {
             editor_state: EguiState::from_size(1200, 720),
             pattern_state,
             sound_settings: PersistentSoundSettings::new(),
+            plock_state: PersistentPlockState::new(),
 
             master_volume: FloatParam::new(
                 "Master Volume",
@@ -342,6 +396,8 @@ impl Default for DrumFlashParams {
                 .with_smoother(SmoothingStyle::Linear(10.0)),
             humanize_snare606: FloatParam::new("Humanize Snare 606", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_smoother(SmoothingStyle::Linear(10.0)),
+            humanize_bassdrum808: FloatParam::new("Humanize 808 Kick", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0)),
 
             // Push/pull per track (-50 ms = early, +50 ms = late)
             push_kick: FloatParam::new("Push/Pull Kick", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
@@ -377,6 +433,9 @@ impl Default for DrumFlashParams {
             push_snare606: FloatParam::new("Push/Pull Snare 606", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
                 .with_smoother(SmoothingStyle::Linear(10.0))
                 .with_unit(" ms"),
+            push_bassdrum808: FloatParam::new("Push/Pull 808 Kick", 0.0, FloatRange::Linear { min: -50.0, max: 50.0 })
+                .with_smoother(SmoothingStyle::Linear(10.0))
+                .with_unit(" ms"),
 
             // Pattern length per track (1-16 steps)
             length_kick: IntParam::new("Length Kick", 16, IntRange::Linear { min: 1, max: 16 }),
@@ -390,6 +449,7 @@ impl Default for DrumFlashParams {
             length_ride: IntParam::new("Length Ride", 16, IntRange::Linear { min: 1, max: 16 }),
             length_cymbal: IntParam::new("Length Cymbal", 16, IntRange::Linear { min: 1, max: 16 }),
             length_snare606: IntParam::new("Length Snare 606", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_bassdrum808: IntParam::new("Length 808 Kick", 16, IntRange::Linear { min: 1, max: 16 }),
 
             kick_click: FloatParam::new(
                 "Kick Click",
@@ -400,6 +460,27 @@ impl Default for DrumFlashParams {
 
             tom_stick: FloatParam::new(
                 "Tom Stick Attack",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            bassdrum808_accent: FloatParam::new(
+                "808 Accent",
+                0.6,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            bassdrum808_snap: FloatParam::new(
+                "808 Snap",
+                0.7,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            bassdrum808_pitch_drop: FloatParam::new(
+                "808 Pitch Drop",
                 0.5,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -416,6 +497,19 @@ impl Default for DrumFlashParams {
             mute_ride: BoolParam::new("Mute Ride", false),
             mute_cymbal: BoolParam::new("Mute Cymbal", false),
             mute_snare606: BoolParam::new("Mute Snare 606", false),
+            mute_bassdrum808: BoolParam::new("Mute 808 Kick", false),
+            mix_kick: BoolParam::new("Mix Kick", true),
+            mix_snare: BoolParam::new("Mix Snare", true),
+            mix_hihat: BoolParam::new("Mix Hi-Hat", true),
+            mix_open_hh: BoolParam::new("Mix Open HH", true),
+            mix_tom1: BoolParam::new("Mix Tom 1", true),
+            mix_tom2: BoolParam::new("Mix Tom 2", true),
+            mix_tom3: BoolParam::new("Mix Tom 3", true),
+            mix_clap: BoolParam::new("Mix Clap", true),
+            mix_ride: BoolParam::new("Mix Ride", true),
+            mix_cymbal: BoolParam::new("Mix Cymbal", true),
+            mix_snare606: BoolParam::new("Mix Snare 606", true),
+            mix_bassdrum808: BoolParam::new("Mix 808 Kick", true),
             solo_kick: BoolParam::new("Solo Kick", false),
             solo_snare: BoolParam::new("Solo Snare", false),
             solo_hihat: BoolParam::new("Solo Hi-Hat", false),
@@ -427,6 +521,7 @@ impl Default for DrumFlashParams {
             solo_ride: BoolParam::new("Solo Ride", false),
             solo_cymbal: BoolParam::new("Solo Cymbal", false),
             solo_snare606: BoolParam::new("Solo Snare 606", false),
+            solo_bassdrum808: BoolParam::new("Solo 808 Kick", false),
 
             generator_type: EnumParam::new("Generator", GeneratorType::Probabilistic),
             style_primary: EnumParam::new("Style A", Style::Rock),
@@ -461,6 +556,7 @@ impl Default for DrumFlashParams {
             // params as (value - min) / (max - min), which divides by zero when min==max
             // and crashes the host at instantiation.
             algo_snare606: IntParam::new("Snare 606 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_bassdrum808: IntParam::new("808 Kick Algo", 0, IntRange::Linear { min: 0, max: 1 }),
 
             snare_snap: FloatParam::new(
                 "Snare Snap",
@@ -531,6 +627,73 @@ impl DrumFlashVst {
     fn remember_current_pattern(&mut self) {
         self.last_step_masks = self.pattern.step_masks();
     }
+
+    /// Build VoiceSettings including the correct special params for each instrument.
+    fn voice_settings_for(
+        &self,
+        voice_idx: usize,
+        freq: f32,
+        decay: f32,
+        vol: f32,
+        filt: f32,
+        release: f32,
+        decay_curve: f32,
+        release_curve: f32,
+        hold: f32,
+        filter_env_amount: f32,
+        filter_env_decay: f32,
+        analog: f32,
+        stereo: f32,
+    ) -> synthesis::VoiceSettings {
+        let mut special = [0.0f32; 8];
+        match voice_idx {
+            0 => special[0] = self.params.kick_click.value(),
+            1 => special[0] = self.params.snare_snap.value(),
+            4 | 5 | 6 => special[0] = self.params.tom_stick.value(),
+            7 => special[0] = self.params.clap_echo.value(),
+            10 => {
+                special[0] = self.params.snare606_resonance.value();
+                special[1] = self.params.snare606_tone.value();
+                special[2] = self.params.snare606_snap.value();
+            }
+            11 => {
+                special[0] = self.params.bassdrum808_accent.value();
+                special[1] = self.params.bassdrum808_snap.value();
+                special[2] = self.params.bassdrum808_pitch_drop.value();
+            }
+            _ => {}
+        }
+        synthesis::VoiceSettings {
+            frequency: freq,
+            decay,
+            volume: vol,
+            filter_freq: filt,
+            release,
+            decay_curve,
+            release_curve,
+            hold,
+            filter_env_amount,
+            filter_env_decay,
+            analog,
+            stereo,
+            algo: match voice_idx {
+                0 => self.params.algo_kick.value() as u8,
+                1 => self.params.algo_snare.value() as u8,
+                2 => self.params.algo_hihat.value() as u8,
+                3 => self.params.algo_open_hh.value() as u8,
+                4 => self.params.algo_tom1.value() as u8,
+                5 => self.params.algo_tom2.value() as u8,
+                6 => self.params.algo_tom3.value() as u8,
+                7 => self.params.algo_clap.value() as u8,
+                8 => self.params.algo_ride.value() as u8,
+                9 => self.params.algo_cymbal.value() as u8,
+                10 => self.params.algo_snare606.value() as u8,
+                11 => self.params.algo_bassdrum808.value() as u8,
+                _ => 0,
+            },
+            special,
+        }
+    }
 }
 
 impl Plugin for DrumFlashVst {
@@ -575,6 +738,7 @@ impl Plugin for DrumFlashVst {
             self.pattern.clone(),
             self.voice_test_triggers.clone(),
             self.sound_settings_state.clone(),
+            self.params.plock_state.state.clone(),
         )
     }
 
@@ -677,6 +841,7 @@ impl Plugin for DrumFlashVst {
             self.params.mute_ride.value(),
             self.params.mute_cymbal.value(),
             self.params.mute_snare606.value(),
+            self.params.mute_bassdrum808.value(),
         ];
         let solo_states = [
             self.params.solo_kick.value(),
@@ -690,6 +855,7 @@ impl Plugin for DrumFlashVst {
             self.params.solo_ride.value(),
             self.params.solo_cymbal.value(),
             self.params.solo_snare606.value(),
+            self.params.solo_bassdrum808.value(),
         ];
         let any_solo_active = solo_states.iter().copied().any(|solo| solo);
         let effective_mutes = std::array::from_fn(|index| {
@@ -701,6 +867,21 @@ impl Plugin for DrumFlashVst {
         });
 
         self.sequencer.set_mutes(effective_mutes);
+
+        let mix_gains = [
+            if self.params.mix_kick.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_snare.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_hihat.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_open_hh.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_tom1.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_tom2.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_tom3.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_clap.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_ride.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_cymbal.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_snare606.value() { 1.0f32 } else { 0.0f32 },
+            if self.params.mix_bassdrum808.value() { 1.0f32 } else { 0.0f32 },
+        ];
 
         for aux_buffer in aux.outputs.iter_mut() {
             for channel in aux_buffer.as_slice().iter_mut() {
@@ -722,6 +903,7 @@ impl Plugin for DrumFlashVst {
                 self.params.length_ride.value() as usize,
                 self.params.length_cymbal.value() as usize,
                 self.params.length_snare606.value() as usize,
+                self.params.length_bassdrum808.value() as usize,
             ],
             [
                 self.params.push_kick.value(),
@@ -735,6 +917,7 @@ impl Plugin for DrumFlashVst {
                 self.params.push_ride.value(),
                 self.params.push_cymbal.value(),
                 self.params.push_snare606.value(),
+                self.params.push_bassdrum808.value(),
             ],
             [
                 self.params.humanize_kick.value(),
@@ -748,23 +931,9 @@ impl Plugin for DrumFlashVst {
                 self.params.humanize_ride.value(),
                 self.params.humanize_cymbal.value(),
                 self.params.humanize_snare606.value(),
+                self.params.humanize_bassdrum808.value(),
             ],
         );
-
-        self.synthesizer.set_special_param(0, 0, self.params.kick_click.value());
-        for idx in [4, 5, 6] {
-            self.synthesizer.set_special_param(idx, 0, self.params.tom_stick.value());
-        }
-
-        // Propagate special parameters
-        self.synthesizer.set_special_param(1, 0, self.params.snare_snap.value());
-        self.synthesizer.set_special_param(7, 0, self.params.clap_echo.value());
-        self.synthesizer
-            .set_special_param(10, 0, self.params.snare606_resonance.value());
-        self.synthesizer
-            .set_special_param(10, 1, self.params.snare606_tone.value());
-        self.synthesizer
-            .set_special_param(10, 2, self.params.snare606_snap.value());
 
         // Hi-hat chokes open hi-hat
         let hihat_chokes_oh = self.params.hihat_chokes_oh.value();
@@ -781,14 +950,31 @@ impl Plugin for DrumFlashVst {
         self.synthesizer.set_algo(8, self.params.algo_ride.value() as u8);
         self.synthesizer.set_algo(9, self.params.algo_cymbal.value() as u8);
         self.synthesizer.set_algo(10, self.params.algo_snare606.value() as u8);
+        self.synthesizer.set_algo(11, self.params.algo_bassdrum808.value() as u8);
 
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
             let swing = self.params.swing.value();
             let groove_type = self.params.groove_type.value();
             let triggers = self.sequencer.process_sample(bpm, sample_rate, swing, groove_type);
 
+            let current_steps = self.sequencer.current_steps();
             for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
                 if *should_trigger {
+                    // Apply plock if present, otherwise re-apply global settings
+                    if let Some(plock_settings) = self.params.plock_state.state.get_settings(voice_idx, current_steps[voice_idx]) {
+                        self.synthesizer.set_voice_settings(
+                            synthesis::DrumVoice::from_index(voice_idx).unwrap(),
+                            plock_settings,
+                        );
+                    } else {
+                        let inst = &self.sound_settings_state.instruments[voice_idx];
+                        let (freq, decay, vol, filt, release, dc, rc, hold, fea, fed, analog, stereo) = inst.load();
+                        self.synthesizer.set_voice_settings(
+                            synthesis::DrumVoice::from_index(voice_idx).unwrap(),
+                            self.voice_settings_for(voice_idx, freq, decay, vol, filt, release, dc, rc, hold, fea, fed, analog, stereo),
+                        );
+                    }
+
                     self.synthesizer.trigger(voice_idx, *velocity);
 
                     // Hi-hat chokes open hi-hat
@@ -831,22 +1017,7 @@ impl Plugin for DrumFlashVst {
                     ) = inst.load();
                     self.synthesizer.set_voice_settings(
                         synthesis::DrumVoice::from_index(i).unwrap(),
-                        synthesis::VoiceSettings {
-                            frequency: freq,
-                            decay,
-                            volume: vol,
-                            filter_freq: filt,
-                            release,
-                            decay_curve,
-                            release_curve,
-                            hold,
-                            filter_env_amount,
-                            filter_env_decay,
-                            analog,
-                            stereo,
-                            algo: 0,
-                            special: [0.0; 8],
-                        },
+                        self.voice_settings_for(i, freq, decay, vol, filt, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo),
                     );
                 }
             }
@@ -855,8 +1026,8 @@ impl Plugin for DrumFlashVst {
             let mut voice_outputs = [[0.0f32; 2]; DrumVoice::COUNT];
             self.synthesizer.process_voice_samples_stereo(&mut voice_outputs);
 
-            let mixed_left = voice_outputs.iter().map(|o| o[0]).sum::<f32>() * master_vol;
-            let mixed_right = voice_outputs.iter().map(|o| o[1]).sum::<f32>() * master_vol;
+            let mixed_left = voice_outputs.iter().enumerate().map(|(i, o)| o[0] * mix_gains[i]).sum::<f32>() * master_vol;
+            let mixed_right = voice_outputs.iter().enumerate().map(|(i, o)| o[1] * mix_gains[i]).sum::<f32>() * master_vol;
 
             for (ch, sample) in channel_samples.iter_mut().enumerate() {
                 *sample = if ch == 0 { mixed_left } else { mixed_right };
