@@ -17,18 +17,19 @@ use std::{
 use crate::{
     generator,
     midi_export,
+    plock::{PlockState, STEP_COUNT as PLOCK_STEP_COUNT},
     sequencer::{Pattern, SharedPattern},
     sound_settings::SoundSettingsState,
-    synthesis::{self, DrumVoice},
+    synthesis::{self, DrumVoice, VoiceSettings},
     DrumFlashParams, BUILD_ID,
 };
 
 const INSTRUMENT_LABELS: [&str; DrumVoice::COUNT] =
-    ["BD", "SD", "HH", "OH", "T1", "T2", "T3", "CL", "RD", "CY", "S6"];
+    ["BD", "SD", "HH", "OH", "T1", "T2", "T3", "CL", "RD", "CY", "S6", "B8"];
 
 const INSTRUMENT_FULL_NAMES: [&str; DrumVoice::COUNT] = [
     "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal",
-    "Snare 606",
+    "Snare 606", "808 Bass Drum",
 ];
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -44,6 +45,7 @@ pub fn create_editor(
     pattern: Arc<SharedPattern>,
     voice_test_triggers: Arc<[AtomicBool; DrumVoice::COUNT]>,
     sound_settings_state: Arc<SoundSettingsState>,
+    plock_state: Arc<PlockState>,
 ) -> Option<Box<dyn Editor>> {
     let params_for_ui = params.clone();
     let editor_state = params.editor_state.clone();
@@ -51,6 +53,7 @@ pub fn create_editor(
     let voice_test_triggers_for_ui = voice_test_triggers.clone();
     let sound_settings_for_ui = sound_settings_state.clone();
     let current_steps_for_ui = current_steps.clone();
+    let plock_for_ui = plock_state.clone();
 
     create_egui_editor(
         params.editor_state.clone(),
@@ -90,6 +93,8 @@ pub fn create_editor(
                                 &voice_test_triggers_for_ui,
                                 &current_step,
                                 &current_steps_for_ui,
+                                &sound_settings_for_ui,
+                                &plock_for_ui,
                                 state,
                             );
 
@@ -280,6 +285,8 @@ fn draw_grid(
     voice_test_triggers: &[AtomicBool; DrumVoice::COUNT],
     current_step: &AtomicU32,
     current_steps: &[AtomicU32; DrumVoice::COUNT],
+    sound_settings: &SoundSettingsState,
+    plock: &PlockState,
     state: &mut EditorUIState,
 ) {
     let mixer_rows = mixer_rows(params);
@@ -287,19 +294,19 @@ fn draw_grid(
         &params.humanize_kick, &params.humanize_snare, &params.humanize_hihat,
         &params.humanize_open_hh, &params.humanize_tom1, &params.humanize_tom2,
         &params.humanize_tom3, &params.humanize_clap, &params.humanize_ride,
-        &params.humanize_cymbal, &params.humanize_snare606,
+        &params.humanize_cymbal, &params.humanize_snare606, &params.humanize_bassdrum808,
     ];
     let pushes = [
         &params.push_kick, &params.push_snare, &params.push_hihat,
         &params.push_open_hh, &params.push_tom1, &params.push_tom2,
         &params.push_tom3, &params.push_clap, &params.push_ride,
-        &params.push_cymbal, &params.push_snare606,
+        &params.push_cymbal, &params.push_snare606, &params.push_bassdrum808,
     ];
     let lengths = [
         &params.length_kick, &params.length_snare, &params.length_hihat,
         &params.length_open_hh, &params.length_tom1, &params.length_tom2,
         &params.length_tom3, &params.length_clap, &params.length_ride,
-        &params.length_cymbal, &params.length_snare606,
+        &params.length_cymbal, &params.length_snare606, &params.length_bassdrum808,
     ];
 
     egui::Grid::new("pattern-grid")
@@ -360,9 +367,14 @@ fn draw_grid(
                     let active = pattern.is_active(step, inst);
                     let is_current = current_steps[inst].load(Ordering::Relaxed) as usize == step;
                     let beyond_len = step >= track_len;
+                    let has_plock = plock.masks.is_active(inst, step);
 
-                    let bg = if active {
+                    let bg = if active && has_plock {
+                        Color32::from_rgb(255, 140, 0) // orange for plock+active
+                    } else if active {
                         Color32::from_rgb(56, 132, 255)
+                    } else if has_plock {
+                        Color32::from_rgb(180, 100, 0) // darker orange for plock only
                     } else if is_current {
                         Color32::from_rgb(48, 48, 48)
                     } else {
@@ -381,8 +393,8 @@ fn draw_grid(
 
                     let btn = egui::Button::new(if active { "X" } else { "." })
                         .min_size(Vec2::new(20.0, 20.0))
-                        .fill(if active || is_current { bg } else { block_color })
-                        .stroke(if beyond_len && !active {
+                        .fill(if active || is_current || has_plock { bg } else { block_color })
+                        .stroke(if beyond_len && !active && !has_plock {
                             egui::Stroke::new(1.0, Color32::from_rgb(60, 60, 60))
                         } else {
                             egui::Stroke::NONE
@@ -395,11 +407,9 @@ fn draw_grid(
                             state.selected_instrument = inst;
                         }
                     }
-                    if response.secondary_clicked() {
-                        // Plock placeholder: open context menu
-                        // For now, just select instrument
-                        state.selected_instrument = inst;
-                    }
+                    response.context_menu(|ui| {
+                        draw_plock_menu(ui, plock, sound_settings, params, inst, step, state);
+                    });
                 }
 
                 // Hum / Push / Len (compact sliders)
@@ -464,13 +474,16 @@ fn draw_sound_panel(
     // Two-column layout for sound parameters
     ui.columns(2, |cols| {
         cols[0].vertical(|ui| {
-            ui.horizontal(|ui| {
-                ui.label("Frequency");
-                if ui.add(egui::Slider::new(&mut freq, 20.0..=12000.0).logarithmic(true)).changed() {
-                    inst.frequency.store(freq.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
+            let freq_capable = !matches!(state.selected_instrument, 7 | 9);
+            if freq_capable {
+                ui.horizontal(|ui| {
+                    ui.label("Frequency");
+                    if ui.add(egui::Slider::new(&mut freq, 20.0..=12000.0).logarithmic(true)).changed() {
+                        inst.frequency.store(freq.to_bits(), Ordering::Relaxed);
+                        changed = true;
+                    }
+                });
+            }
             ui.horizontal(|ui| {
                 ui.label("Decay");
                 if ui.add(egui::Slider::new(&mut decay, 0.01..=0.5)).changed() {
@@ -540,27 +553,33 @@ fn draw_sound_panel(
                     changed = true;
                 }
             });
-            ui.horizontal(|ui| {
-                ui.label("Filter Env");
-                if ui.add(egui::Slider::new(&mut filter_env_amount, 0.0..=1.0)).changed() {
-                    inst.filter_env_amount.store(filter_env_amount.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Filter Decay");
-                if ui.add(egui::Slider::new(&mut filter_env_decay, 0.001..=0.2).suffix(" s")).changed() {
-                    inst.filter_env_decay.store(filter_env_decay.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Analog");
-                if ui.add(egui::Slider::new(&mut analog, 0.0..=1.0)).changed() {
-                    inst.analog.store(analog.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
+            let filter_env_capable = matches!(state.selected_instrument, 0 | 1 | 2 | 4 | 5 | 6 | 10);
+            if filter_env_capable {
+                ui.horizontal(|ui| {
+                    ui.label("Filter Env");
+                    if ui.add(egui::Slider::new(&mut filter_env_amount, 0.0..=1.0)).changed() {
+                        inst.filter_env_amount.store(filter_env_amount.to_bits(), Ordering::Relaxed);
+                        changed = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Filter Decay");
+                    if ui.add(egui::Slider::new(&mut filter_env_decay, 0.001..=0.2).suffix(" s")).changed() {
+                        inst.filter_env_decay.store(filter_env_decay.to_bits(), Ordering::Relaxed);
+                        changed = true;
+                    }
+                });
+            }
+            let analog_capable = matches!(state.selected_instrument, 0 | 1 | 4 | 5 | 6 | 10 | 11);
+            if analog_capable {
+                ui.horizontal(|ui| {
+                    ui.label("Analog");
+                    if ui.add(egui::Slider::new(&mut analog, 0.0..=1.0)).changed() {
+                        inst.analog.store(analog.to_bits(), Ordering::Relaxed);
+                        changed = true;
+                    }
+                });
+            }
             let stereo_capable = matches!(state.selected_instrument, 1 | 2 | 3 | 7 | 8 | 9 | 10);
             if stereo_capable {
                 ui.horizontal(|ui| {
@@ -573,10 +592,33 @@ fn draw_sound_panel(
                 });
             }
 
+            let mix_param = match state.selected_instrument {
+                0 => &params.mix_kick,
+                1 => &params.mix_snare,
+                2 => &params.mix_hihat,
+                3 => &params.mix_open_hh,
+                4 => &params.mix_tom1,
+                5 => &params.mix_tom2,
+                6 => &params.mix_tom3,
+                7 => &params.mix_clap,
+                8 => &params.mix_ride,
+                9 => &params.mix_cymbal,
+                10 => &params.mix_snare606,
+                11 => &params.mix_bassdrum808,
+                _ => &params.mix_kick,
+            };
+            ui.horizontal(|ui| {
+                ui.label("Mix");
+                let mut mix = mix_param.value();
+                if ui.add(egui::Checkbox::new(&mut mix, "")).changed() {
+                    setter.set_parameter(mix_param.into(), mix);
+                }
+            });
+
             // Algorithm selector
             let voice = DrumVoice::from_index(state.selected_instrument).unwrap();
             let algos = synthesis::algos_for(voice);
-            if algos.len() > 1 {
+            if algos.len() > 1 && state.selected_instrument != 3 {
                 let algo_param = match state.selected_instrument {
                     0 => &params.algo_kick,
                     1 => &params.algo_snare,
@@ -589,6 +631,7 @@ fn draw_sound_panel(
                     8 => &params.algo_ride,
                     9 => &params.algo_cymbal,
                     10 => &params.algo_snare606,
+                    11 => &params.algo_bassdrum808,
                     _ => &params.algo_kick,
                 };
                 ui.horizontal(|ui| {
@@ -625,6 +668,14 @@ fn draw_sound_panel(
             ui.add(widgets::ParamSlider::for_param(&params.snare606_tone, setter).with_width(120.0));
             ui.label("Snap");
             ui.add(widgets::ParamSlider::for_param(&params.snare606_snap, setter).with_width(120.0));
+        }
+        if state.selected_instrument == 11 {
+            ui.label("Accent");
+            ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_accent, setter).with_width(120.0));
+            ui.label("Snap");
+            ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_snap, setter).with_width(120.0));
+            ui.label("Pitch Drop");
+            ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_pitch_drop, setter).with_width(120.0));
         }
     });
 
@@ -666,6 +717,7 @@ fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; DrumVoice::COUNT] {
         MixerRow { mute: &params.mute_ride, solo: &params.solo_ride },
         MixerRow { mute: &params.mute_cymbal, solo: &params.solo_cymbal },
         MixerRow { mute: &params.mute_snare606, solo: &params.solo_snare606 },
+        MixerRow { mute: &params.mute_bassdrum808, solo: &params.solo_bassdrum808 },
     ]
 }
 
@@ -767,4 +819,228 @@ fn export_midi_to_documents(
 
     midi_export::export_pattern_to_midi(pattern, bpm, &path)?;
     Ok(path)
+}
+
+
+// ─────────────────────────────────────
+// Plock context menu
+// ─────────────────────────────────────
+fn draw_plock_menu(
+    ui: &mut egui::Ui,
+    plock: &PlockState,
+    sound_settings: &SoundSettingsState,
+    params: &DrumFlashParams,
+    instrument: usize,
+    step: usize,
+    _state: &mut EditorUIState,
+) {
+    ui.label(
+        RichText::new(format!(
+            "Plock {} — Step {}",
+            INSTRUMENT_LABELS[instrument],
+            step + 1
+        ))
+        .strong(),
+    );
+    ui.separator();
+
+    let inst = &sound_settings.instruments[instrument];
+    let global = inst.load();
+
+    let has_plock = plock.masks.is_active(instrument, step);
+
+    // If no plock exists yet, seed from global settings
+    if !has_plock {
+        if ui.button("➕ Create plock from current settings").clicked() {
+            let mut special = [0.0f32; 8];
+            if instrument == 7 {
+                special[0] = params.clap_echo.value();
+            }
+            if instrument == 11 {
+                special[0] = params.bassdrum808_accent.value();
+            }
+            let algo = match instrument {
+                0 => params.algo_kick.value() as u8,
+                1 => params.algo_snare.value() as u8,
+                2 => params.algo_hihat.value() as u8,
+                3 => params.algo_open_hh.value() as u8,
+                4 => params.algo_tom1.value() as u8,
+                5 => params.algo_tom2.value() as u8,
+                6 => params.algo_tom3.value() as u8,
+                7 => params.algo_clap.value() as u8,
+                8 => params.algo_ride.value() as u8,
+                9 => params.algo_cymbal.value() as u8,
+                10 => params.algo_snare606.value() as u8,
+                11 => params.algo_bassdrum808.value() as u8,
+                _ => 0,
+            };
+            let settings = VoiceSettings {
+                frequency: global.0,
+                decay: global.1,
+                volume: global.2,
+                filter_freq: global.3,
+                release: global.4,
+                decay_curve: global.5,
+                release_curve: global.6,
+                hold: global.7,
+                filter_env_amount: global.8,
+                filter_env_decay: global.9,
+                analog: global.10,
+                stereo: global.11,
+                algo,
+                special,
+            };
+            plock.set_settings(instrument, step, &settings);
+        }
+    } else {
+        let mut changed = false;
+
+        let mut freq = plock.values.get(instrument, step, 0);
+        let mut decay = plock.values.get(instrument, step, 1);
+        let mut vol = plock.values.get(instrument, step, 2);
+        let mut filt = plock.values.get(instrument, step, 3);
+        let mut release = plock.values.get(instrument, step, 4);
+        let mut decay_curve = plock.values.get(instrument, step, 5);
+        let mut release_curve = plock.values.get(instrument, step, 6);
+        let mut hold = plock.values.get(instrument, step, 7);
+        let mut filter_env_amount = plock.values.get(instrument, step, 8);
+        let mut filter_env_decay = plock.values.get(instrument, step, 9);
+        let mut analog = plock.values.get(instrument, step, 10);
+        let mut stereo = plock.values.get(instrument, step, 11);
+        let mut clap_echo = if instrument == 7 {
+            plock.values.get(instrument, step, 12)
+        } else {
+            0.0
+        };
+        let mut b8_accent = if instrument == 11 {
+            plock.values.get(instrument, step, 12)
+        } else {
+            0.0
+        };
+        let algo = plock.values.get(instrument, step, 13) as u8;
+
+        ui.horizontal(|ui| {
+            ui.label("Freq");
+            if ui.add(egui::Slider::new(&mut freq, 20.0..=12000.0).logarithmic(true)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Decay");
+            if ui.add(egui::Slider::new(&mut decay, 0.01..=0.5)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Vol");
+            if ui.add(egui::Slider::new(&mut vol, 0.0..=1.5)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Filter");
+            if ui.add(egui::Slider::new(&mut filt, 20.0..=15000.0).logarithmic(true)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Release");
+            if ui.add(egui::Slider::new(&mut release, 0.0..=5.0)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("DecCurve");
+            if ui.add(egui::Slider::new(&mut decay_curve, 2.0..=10.0)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("RelCurve");
+            if ui.add(egui::Slider::new(&mut release_curve, 2.0..=10.0)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Hold");
+            if ui.add(egui::Slider::new(&mut hold, 0.0..=0.5).suffix(" s")).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("FiltEnv");
+            if ui.add(egui::Slider::new(&mut filter_env_amount, 0.0..=1.0)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("FiltDec");
+            if ui.add(egui::Slider::new(&mut filter_env_decay, 0.001..=0.2).suffix(" s")).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Analog");
+            if ui.add(egui::Slider::new(&mut analog, 0.0..=1.0)).changed() {
+                changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Stereo");
+            if ui.add(egui::Checkbox::new(&mut (stereo >= 0.5), "")).changed() {
+                stereo = if stereo >= 0.5 { 0.0 } else { 1.0 };
+                changed = true;
+            }
+        });
+
+        if instrument == 7 {
+            ui.horizontal(|ui| {
+                ui.label("Echo");
+                if ui.add(egui::Slider::new(&mut clap_echo, 0.0..=3.0)).changed() {
+                    changed = true;
+                }
+            });
+        }
+
+        if instrument == 11 {
+            ui.horizontal(|ui| {
+                ui.label("Accent");
+                if ui.add(egui::Slider::new(&mut b8_accent, 0.0..=1.0)).changed() {
+                    changed = true;
+                }
+            });
+        }
+
+        if changed {
+            let mut special = [0.0f32; 8];
+            if instrument == 7 {
+                special[0] = clap_echo;
+            }
+            if instrument == 11 {
+                special[0] = b8_accent;
+            }
+            let settings = VoiceSettings {
+                frequency: freq,
+                decay,
+                volume: vol,
+                filter_freq: filt,
+                release,
+                decay_curve,
+                release_curve,
+                hold,
+                filter_env_amount,
+                filter_env_decay,
+                analog,
+                stereo,
+                algo,
+                special,
+            };
+            plock.set_settings(instrument, step, &settings);
+        }
+
+        ui.separator();
+        if ui.button("🗑 Clear plock").clicked() {
+            plock.clear(instrument, step);
+        }
+    }
 }

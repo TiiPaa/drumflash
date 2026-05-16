@@ -1,3 +1,47 @@
+# Mise a jour - 2026-05-16
+
+## Etat de fin de session
+
+Plugin VST3 Rust installe avec le build:
+
+```text
+20260516-205054
+```
+
+## Nouveautes de la session
+
+### Per-instrument Mix Bus checkbox
+- Remplacement du slider Mix par une Checkbox `mix_*` par voix.
+- Lorsque cochée, la voix est routée vers le Main Mix ; sinon elle sort uniquement sur son Aux Out.
+- Fonctionne indépendamment du Mute.
+
+### Parameter Locks — plock echo fix + B8 support
+- Expansion du format plock : `FIELD_COUNT` 12 → 14 (fields 12 = clap_echo, 13 = algo).
+- Migration du compte d'instruments : 11 → 12 (B8).
+- **Fix root cause echo perdu** : `set_special_param()` était appelé une fois par buffer dans `process()`, écrasant les valeurs plock au buffer suivant. Tous les appels à `set_special_param` ont été retirés de `process()` ; les special params sont désormais propagés uniquement au moment du trigger (plock ou `voice_settings_for()`).
+
+### Masquage conditionnel des paramètres
+- Le Sound Panel masque les sliders inutilisés par instrument :
+  - Kick : pas de Hold/Stereo
+  - Clap : pas de Freq/FilterEnv/Analog
+  - OpenHH : pas de FilterEnv/Analog/Algo
+  - etc.
+- Réduit la charge visuelle et évite les réglages sans effet.
+
+### Nouvel instrument B8 — TR-808 Bass Drum
+- 12e voix (`BassDrum808 = 11`) avec synthèse dédiée :
+  - Oscillateur sinus + pitch snap (attaque) + pitch drop (dérive organique)
+  - Accent click + tone LP + analog frequency smoothing
+  - Params fonctionnels : Accent, Snap, Pitch Drop, Analog, Release
+- Correction crash UI : tableaux `hums`/`pushes`/`lengths` étendus de 11 → 12 éléments.
+- Affinements audio : click réduit (1.0 → 0.05), decay étendu (4 ms → 15 ms), ajout d'un `freq_smoother` pour le pitch analogique.
+- Enveloppe d'amplitude changée de `ExpDecayEnvelope` à `DecayReleaseEnvelope` pour que le slider Release soit actif.
+
+### Warnings Rust
+- 6 warnings restantes (unused import, unused variable, dead code) — non bloquantes.
+
+---
+
 # Mise a jour - 2026-05-15
 
 ## Etat de fin de session

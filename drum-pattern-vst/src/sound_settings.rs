@@ -102,7 +102,7 @@ impl InstrumentSettingsState {
 }
 
 pub struct SoundSettingsState {
-    pub instruments: [InstrumentSettingsState; 11],
+    pub instruments: [InstrumentSettingsState; 12],
     pub version: AtomicU64,
 }
 
@@ -127,6 +127,7 @@ impl SoundSettingsState {
             (8000.0, 1.2,  0.35, 10000.0, 1.5,  3.5, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0),  // Ride
             (6000.0, 2.0,  0.4,  8000.0,  2.5,  2.8, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0),  // Cymbal
             (220.0,  0.08, 0.7,  3000.0,  0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0),  // Snare 606
+            (50.0,   0.4,  0.9,  3000.0,  0.0,  3.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0),  // 808 Kick
         ];
 
         Arc::new(Self {

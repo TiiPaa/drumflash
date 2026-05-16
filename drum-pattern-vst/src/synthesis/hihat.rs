@@ -19,6 +19,11 @@ pub struct HiHatVoice {
     noise: dsp::WhiteNoise,
     noise_r: dsp::WhiteNoise,
 
+    // Peaking filters (stereo pair) — pitch the noise by boosting a narrow band.
+    // Frequency controlled by settings.frequency.
+    peaking: dsp::Biquad,
+    peaking_r: dsp::Biquad,
+
     // HighPass filters (stereo pair) — cutoff rises after trigger for bright splash then falls.
     // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 1.5)
     filter: dsp::OnePoleFilter,
@@ -35,6 +40,11 @@ pub struct HiHatVoice {
 
 impl HiHatVoice {
     pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+        let mut peaking = dsp::Biquad::new();
+        peaking.set_peaking(settings.frequency, 2.0, 6.0, sample_rate);
+        let mut peaking_r = dsp::Biquad::new();
+        peaking_r.set_peaking(settings.frequency, 2.0, 6.0, sample_rate);
+
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
         let mut filter_r = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
@@ -55,6 +65,8 @@ impl HiHatVoice {
             sample_rate,
             noise: dsp::WhiteNoise::new(54321),
             noise_r: dsp::WhiteNoise::new(98765),
+            peaking,
+            peaking_r,
             filter,
             filter_r,
             envelope,
@@ -92,7 +104,8 @@ impl Voice for HiHatVoice {
                     * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
                 self.filter.set_cutoff(modulated_cutoff.max(2000.0), self.sample_rate);
                 let noise = self.noise.next();
-                let filtered = self.filter.process(noise);
+                let peaked = self.peaking.process(noise);
+                let filtered = self.filter.process(peaked);
                 let saturated = filtered.tanh() * 1.2;
                 saturated * env * self.settings.volume
             }
@@ -103,7 +116,8 @@ impl Voice for HiHatVoice {
                     * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
                 self.filter.set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
                 let noise = self.noise.next();
-                let filtered = self.filter.process(noise);
+                let peaked = self.peaking.process(noise);
+                let filtered = self.filter.process(peaked);
                 filtered * env * self.settings.volume
             }
         };
@@ -147,8 +161,10 @@ impl Voice for HiHatVoice {
 
         let noise_l = self.noise.next();
         let noise_r = self.noise_r.next();
-        let filtered_l = self.filter.process(noise_l);
-        let filtered_r = self.filter_r.process(noise_r);
+        let peaked_l = self.peaking.process(noise_l);
+        let peaked_r = self.peaking_r.process(noise_r);
+        let filtered_l = self.filter.process(peaked_l);
+        let filtered_r = self.filter_r.process(peaked_r);
 
         let (left, right) = if saturated {
             (filtered_l.tanh() * 1.2, filtered_r.tanh() * 1.2)
@@ -171,6 +187,8 @@ impl Voice for HiHatVoice {
 
     fn reset(&mut self) {
         self.active = false;
+        self.peaking.reset();
+        self.peaking_r.reset();
         self.filter.reset();
         self.envelope.reset();
         self.filter_env.reset();
@@ -178,6 +196,8 @@ impl Voice for HiHatVoice {
 
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
+        self.peaking.set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+        self.peaking_r.set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
         self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
         self.filter_r.set_cutoff(settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(

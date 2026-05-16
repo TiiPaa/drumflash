@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(sort -t'\"' -k2)",
+      "Bash(uniq -d -f1)",
+      "Bash(cargo check *)"
+    ]
+  }
+}
