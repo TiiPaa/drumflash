@@ -133,6 +133,24 @@ impl Biquad {
         self.a2 = (1.0 - alpha) / a0;
     }
 
+    /// Configure as a peaking EQ (RBJ cookbook). `freq` in Hz, `q` is the
+    /// bandwidth, `gain_db` is the boost/cut in dB (positive = boost).
+    pub fn set_peaking(&mut self, freq: f32, q: f32, gain_db: f32, sample_rate: f32) {
+        let f = freq.clamp(10.0, sample_rate * 0.45);
+        let q = q.max(0.1);
+        let a = 10.0f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * std::f32::consts::PI * f / sample_rate;
+        let cos_w0 = w0.cos();
+        let sin_w0 = w0.sin();
+        let alpha = sin_w0 / (2.0 * q);
+        let a0 = 1.0 + alpha / a;
+        self.b0 = (1.0 + alpha * a) / a0;
+        self.b1 = (-2.0 * cos_w0) / a0;
+        self.b2 = (1.0 - alpha * a) / a0;
+        self.a1 = (-2.0 * cos_w0) / a0;
+        self.a2 = (1.0 - alpha / a) / a0;
+    }
+
     #[inline]
     pub fn process(&mut self, input: f32) -> f32 {
         let output = self.b0 * input + self.b1 * self.x1 + self.b2 * self.x2

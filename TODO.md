@@ -47,12 +47,20 @@
 - [x] [24d] Ajouter Clap, Ride, Cymbal voices
 - [x] [25] Labels complets des instruments dans l'UI et couleurs par instrument (labels courts BD/SD/HH, couleurs blocs de 4 steps, grisage len)
 - [ ] [26] Barre de progression visuelle du pattern (0-100%)
+- [x] [26a] Per-instrument Mix Bus checkbox (exclure du Main Mix)
+- [x] [26b] Clap Echo plockable par step
+- [x] [26c] Masquer les paramètres inutiles par instrument dans le Sound Panel
+- [x] [26d] Nouvel instrument B8 (TR-808 Bass Drum)
+- [x] [26e] Slider Analog actif pour B8
+- [x] [26f] Release fonctionnel pour B8 (DecayReleaseEnvelope)
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
 - [x] [28] Drag & drop MIDI directement vers le DAW (export_pattern_to_midi_bytes + dnd)
-- [ ] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
+- [x] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
+  - 14 champs plockables (12 sound settings + clap_echo + algo)
+  - special params (accent/snap/pitch_drop) propagés uniquement au trigger (fix echo perdu)
 - [ ] [39] Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`). Permet labels, ranges et défauts spécifiques par voix.
 - [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
@@ -71,9 +79,11 @@
 
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [ ] [35] Diagnostiquer la sauvegarde/reouverture Studio One
+- [ ] [35a] Plock B8 : accent plockable, snap/drop non plockables (manque champs dans PlockState)
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
 - [ ] [38] Ecart entre documentation et code reel a surveiller
+- [ ] [38a] `CLAUDE.md` mentionne encore `DrumVoice::COUNT = 11` et `AUX_OUT_COUNT = 10`
 - [x] [42] Crash a l'instanciation avec 11e voix (cause: `IntRange { min:0, max:0 }` → div par zéro nih-plug)
 - [x] [43] Index out of bounds dans UI (`hums`/`pushes`/`lengths` taille 10 vs INSTRUMENT_LABELS taille 11)
 - [x] [44] Step mask hardcode `0x3ff` (10 bits) — extensible via `INSTRUMENT_COUNT`

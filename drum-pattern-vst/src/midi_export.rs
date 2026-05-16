@@ -59,7 +59,7 @@ pub fn export_pattern_to_midi(pattern: &SharedPattern, bpm: f32, path: &Path) ->
         ],
     ));
 
-    let midi_notes = [36u8, 38, 42, 46, 50, 47, 43, 39, 51, 49];
+    let midi_notes = [36u8, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40, 35];
 
     for step in 0..16 {
         let mask = pattern.load_step_mask(step);
@@ -114,7 +114,7 @@ pub fn export_pattern_to_midi_bytes(pattern: &SharedPattern, bpm: f32) -> std::i
         ],
     ));
 
-    let midi_notes = [36u8, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40];
+    let midi_notes = [36u8, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40, 35];
 
     for step in 0..16 {
         let mask = pattern.load_step_mask(step);
