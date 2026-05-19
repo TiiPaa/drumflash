@@ -75,9 +75,9 @@ pub const BASSDRUM808_ALGOS: &[AlgoDef] = &[
     AlgoDef { name: "Standard" },
 ];
 
-// ── Zap ─────────────────────────────────────────────────────────────────────
+// ── Perc1 ───────────────────────────────────────────────────────────────────
 
-pub const ZAP_ALGOS: &[AlgoDef] = &[
+pub const PERC1_ALGOS: &[AlgoDef] = &[
     AlgoDef { name: "Sine" },
     AlgoDef { name: "Saw" },
 ];
@@ -101,6 +101,6 @@ pub fn algos_for(voice: DrumVoice) -> &'static [AlgoDef] {
         DrumVoice::Cymbal => CYMBAL_ALGOS,
         DrumVoice::Snare606 => SNARE606_ALGOS,
         DrumVoice::BassDrum808 => BASSDRUM808_ALGOS,
-        DrumVoice::Zap => ZAP_ALGOS,
+        DrumVoice::Perc1 => PERC1_ALGOS,
     }
 }

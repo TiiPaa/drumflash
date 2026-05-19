@@ -112,21 +112,21 @@ mod tests {
     use crate::sequencer::pattern::Pattern;
 
     #[test]
-    fn midi_export_includes_zap_thirteenth_instrument() {
+    fn midi_export_includes_perc1_thirteenth_instrument() {
         let pattern = SharedPattern::new(&Pattern::empty());
-        let zap_index = INSTRUMENTS.len() - 1;
-        pattern.set_step_mask(0, 1u16 << zap_index);
+        let perc1_index = INSTRUMENTS.len() - 1;
+        pattern.set_step_mask(0, 1u16 << perc1_index);
 
         let bytes =
             export_pattern_to_midi_bytes(&pattern, 120.0).expect("MIDI export should succeed");
 
         assert!(
             bytes.windows(3).any(|window| window == [0x99, 37, 100]),
-            "Zap note-on event should be exported"
+            "Perc1 note-on event should be exported"
         );
         assert!(
             bytes.windows(3).any(|window| window == [0x89, 37, 0]),
-            "Zap note-off event should be exported"
+            "Perc1 note-off event should be exported"
         );
     }
 }

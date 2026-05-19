@@ -34,7 +34,7 @@
 - [x] [17a] Corriger l'export MIDI fichier/drag-drop pour inclure les 13 instruments
   - `midi_export.rs` utilise encore deux tableaux `midi_notes` hardcodes a 12 notes
   - deriver les notes depuis `instrument_registry::INSTRUMENTS` ou une constante unique partagee avec `MIDI_NOTE_MAP`
-  - verifier que Zap (note 37) est exporte en fichier MIDI et dans `export_pattern_to_midi_bytes`
+  - verifier que Perc1 (note 37) est exporte en fichier MIDI et dans `export_pattern_to_midi_bytes`
   - ajouter un test unitaire couvrant au moins le 13e instrument
 - [x] [18] Ajouter sortie MIDI temps reel vers hardware externe
 - [x] [19] Ajouter la generation de pattern aleatoire (grille + option Random BPM + option Random Sounds)
@@ -69,18 +69,18 @@
 
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
 - [ ] [28] Drag & drop MIDI directement vers le DAW
-  - l'ancien `dnd_set_drag_payload(bytes)` etait un drag/drop interne egui, pas un fichier OS accepte par les DAW
-  - export fichier OK via bouton MIDI dans `Documents/Drum Flash/exports`
-  - a implementer proprement via drag fichier OS natif si le wrapper UI/host le permet
+  - [x] remplacer l'ancien `dnd_set_drag_payload(bytes)` interne egui par un drag fichier OS natif Windows (`CF_HDROP` via OLE `DoDragDrop`)
+  - [x] garder l'export fichier OK via bouton MIDI dans `Documents/Drum Flash/exports`
+  - [ ] valider dans Studio One : glisser le bouton `Drag` vers une piste/instrument et verifier qu'un clip MIDI est cree
 - [x] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
   - 14 champs plockables (12 sound settings + clap_echo + algo)
   - special params (accent/snap/pitch_drop) propagés uniquement au trigger (fix echo perdu)
 - [x] [29a] Refactor plock UI data-driven depuis `instrument_registry`
   - remplacer les branches hardcodees par instrument dans `draw_plock_menu`
-  - exposer automatiquement les `special_params` de Clap, Snare606, B8, Zap et futurs instruments
+  - exposer automatiquement les `special_params` de Clap, Snare606, B8, Perc1 et futurs instruments
   - aligner les champs plock stockes/lus (`FIELD_COUNT = 18`) avec les special params reels
   - clarifier/corriger l'incoherence Clap Echo : UI lit le champ 12 alors que `PlockState::set_settings()` stocke les specials en 14..17
-  - ajouter tests unitaires sur `PlockState::set_settings/get_settings` pour Clap Echo, B8 specials et Zap specials
+  - ajouter tests unitaires sur `PlockState::set_settings/get_settings` pour Clap Echo, B8 specials et Perc1 specials
 - [ ] [39] Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`). Permet labels, ranges et défauts spécifiques par voix.
 - [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
@@ -107,8 +107,9 @@
 
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé
-- [ ] [47] Refaire Perc1 proprement : ne pas recréer les enveloppes dans `set_settings`
-- [ ] [48] Refaire Perc1 proprement : utiliser `DecayReleaseEnvelope` pour le slider Release
+- [x] [47] Refaire Perc1 proprement : ne pas recréer les enveloppes dans `set_settings`
+- [x] [48] Refaire Perc1 proprement : utiliser `DecayReleaseEnvelope` pour le slider Release
+- [ ] **REPRENDRE ICI** [50] Diagnostiquer pourquoi la moitié des paramètres Perc1 ne sont pas actionnables (Release inaudible, etc.)
 - [ ] [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
 - [ ] [35] Diagnostiquer la sauvegarde/reouverture Studio One
 - [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
