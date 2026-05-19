@@ -113,9 +113,6 @@ impl PlockState {
             algo: v.get(instrument, step, 13) as u8,
             special: {
                 let mut s = [0.0f32; 8];
-                if instrument == 7 {
-                    s[0] = v.get(instrument, step, 12);
-                }
                 s[0] = v.get(instrument, step, 14);
                 s[1] = v.get(instrument, step, 15);
                 s[2] = v.get(instrument, step, 16);
@@ -140,9 +137,6 @@ impl PlockState {
         v.set(instrument, step, 9, settings.filter_env_decay);
         v.set(instrument, step, 10, settings.analog);
         v.set(instrument, step, 11, settings.stereo);
-        if instrument == 7 {
-            v.set(instrument, step, 12, settings.special[0]);
-        }
         v.set(instrument, step, 13, settings.algo as f32);
         v.set(instrument, step, 14, settings.special[0]);
         v.set(instrument, step, 15, settings.special[1]);

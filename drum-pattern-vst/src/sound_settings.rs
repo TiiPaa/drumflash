@@ -108,31 +108,13 @@ pub struct SoundSettingsState {
 
 impl SoundSettingsState {
     pub fn new() -> Arc<Self> {
-        // (frequency, decay, volume, filter_freq, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay)
-        // Defaults: (freq, decay, vol, filter_freq, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay)
-        // Filter types per instrument:
-        //   Kick  -> LowPass  (closes after trigger for punch)
-        //   Snare -> HighPass (rises after trigger for snap)
-        //   HiHat -> HighPass (rises after trigger for splash decay)
-        //   Tom   -> LowPass  (closes after trigger for natural damp)
-        let defaults = [
-            (60.0,   0.5,  0.8,  30.0,    0.5,  5.0, 3.0, 0.0, 1.0, 0.05, 1.0, 0.0),  // Kick   (LP)
-            (200.0,  0.47, 0.6,  200.0,   0.2,  5.0, 3.0, 0.0, 1.0, 0.03, 1.0, 1.0),  // Snare  (HP)
-            (8000.0, 0.36, 0.3,  5000.0,  0.0,  8.0, 3.0, 0.0, 1.0, 0.04, 1.0, 1.0),  // HiHat  (HP)
-            (6000.0, 0.66, 0.4,  8000.0,  0.4,  5.5, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0),  // Open HH
-            (300.0,  0.3,  0.5,  500.0,   0.3,  4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0),  // Tom1   (LP)
-            (200.0,  0.4,  0.5,  500.0,   0.4,  4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0),  // Tom2   (LP)
-            (120.0,  0.5,  0.5,  500.0,   0.5,  4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0),  // Tom3   (LP)
-            (1200.0, 0.03, 0.7,  1000.0,  0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0),  // Clap
-            (8000.0, 1.2,  0.35, 10000.0, 1.5,  3.5, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0),  // Ride
-            (6000.0, 2.0,  0.4,  8000.0,  2.5,  2.8, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0),  // Cymbal
-            (220.0,  0.08, 0.7,  3000.0,  0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0),  // Snare 606
-            (50.0,   0.4,  0.9,  3000.0,  0.0,  3.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0),  // 808 Kick
-        ];
+        let defaults: [[f32; 12]; 12] = std::array::from_fn(|i| {
+            crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
+        });
 
         Arc::new(Self {
             instruments: std::array::from_fn(|i| {
-                let (f, d, v, fl, r, dc, rc, h, fea, fed, a, s) = defaults[i];
+                let [f, d, v, fl, r, dc, rc, h, fea, fed, a, s] = defaults[i];
                 InstrumentSettingsState::new(f, d, v, fl, r, dc, rc, h, fea, fed, a, s)
             }),
             version: AtomicU64::new(0),
