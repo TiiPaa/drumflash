@@ -30,7 +30,7 @@ pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
     Some(build_id) => build_id,
     None => "dev",
 };
-/// Number of dedicated stereo aux outputs. Frozen at 10 to match every saved
+/// Number of dedicated stereo aux outputs. Keep stable for saved DAW sessions.
 const AUX_OUT_COUNT: usize = 13;
 const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
     "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal", "Snare 606", "808 Kick", "Zap",
@@ -859,7 +859,7 @@ impl Plugin for DrumFlashVst {
         aux_input_ports: &[],
         aux_output_ports: &[new_nonzero_u32(2); AUX_OUT_COUNT],
         names: PortNames {
-            layout: Some("Stereo mix + 10 stereo drum outs"),
+            layout: Some("Stereo mix + 13 stereo drum outs"),
             main_input: None,
             main_output: Some("Main Mix"),
             aux_inputs: &[],
