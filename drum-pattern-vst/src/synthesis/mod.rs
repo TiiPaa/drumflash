@@ -401,9 +401,9 @@ impl VoiceSettings {
             algo: 0,
             // special[0] = Sweep amount (-1..1)
             // special[1] = Sweep speed (ms)
-            // special[2] = Bite (drive)
-            // special[3] = Width (stereo)
-            special: [0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            // special[2] = Bite (FM amount)
+            // special[3] = Width (stereo + slap delay)
+            special: [0.0, 80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
     }
 }
