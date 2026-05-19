@@ -13,7 +13,7 @@ use crate::sequencer::pattern::INSTRUMENT_COUNT;
 use crate::synthesis::VoiceSettings;
 
 pub const STEP_COUNT: usize = 16;
-pub const FIELD_COUNT: usize = 14;
+pub const FIELD_COUNT: usize = 18;
 
 /// Active-bit mask: one u16 per instrument (bit = step has a plock).
 /// Stored as atomic so the UI can toggle bits without locking.
@@ -116,6 +116,10 @@ impl PlockState {
                 if instrument == 7 {
                     s[0] = v.get(instrument, step, 12);
                 }
+                s[0] = v.get(instrument, step, 14);
+                s[1] = v.get(instrument, step, 15);
+                s[2] = v.get(instrument, step, 16);
+                s[3] = v.get(instrument, step, 17);
                 s
             },
         })
@@ -140,6 +144,10 @@ impl PlockState {
             v.set(instrument, step, 12, settings.special[0]);
         }
         v.set(instrument, step, 13, settings.algo as f32);
+        v.set(instrument, step, 14, settings.special[0]);
+        v.set(instrument, step, 15, settings.special[1]);
+        v.set(instrument, step, 16, settings.special[2]);
+        v.set(instrument, step, 17, settings.special[3]);
         self.masks.set_active(instrument, step, true);
     }
 
