@@ -305,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn zap_specials_and_algo_roundtrip() {
+    fn perc1_specials_and_algo_roundtrip() {
         let state = PlockState::new();
         let mut settings = base_settings();
         settings.algo = 1;

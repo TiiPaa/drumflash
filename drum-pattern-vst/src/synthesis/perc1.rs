@@ -1,9 +1,10 @@
-//! Zap synthesizer — laser/blaster percussion
+//! Perc1 synthesizer — laser/blaster percussion
 //!
 //! Architecture inspired by the Sequential Pro-One:
 //! - Two oscillators (A + B) with FM for metallic character
 //! - Exponential pitch sweep via dedicated pitch envelope
-//! - Very short amplitude envelope (attack ~0, decay 50–300 ms)
+//! - Bi-stage amplitude envelope (decay + release) with adjustable release tail
+//! - Filter + filter envelope for tonal shaping
 //! - Slap delay (80–150 ms) for spatial context
 //!
 //! Two algorithms:
@@ -16,58 +17,62 @@ const MAX_DELAY_SAMPLES: usize = 8192;
 const SLAP_DELAY_MS: f32 = 100.0;
 const DELAY_FEEDBACK: f32 = 0.35;
 
-enum ZapOsc {
+enum Perc1Osc {
     Sine(dsp::SineOsc),
     Saw(dsp::SawOsc),
 }
 
-impl ZapOsc {
+impl Perc1Osc {
     fn new(sample_rate: f32, algo: u8) -> Self {
         if algo == 0 {
-            ZapOsc::Sine(dsp::SineOsc::new(sample_rate))
+            Perc1Osc::Sine(dsp::SineOsc::new(sample_rate))
         } else {
-            ZapOsc::Saw(dsp::SawOsc::new(sample_rate))
+            Perc1Osc::Saw(dsp::SawOsc::new(sample_rate))
         }
     }
 
     fn set_freq(&mut self, freq: f32) {
         match self {
-            ZapOsc::Sine(o) => o.set_freq(freq),
-            ZapOsc::Saw(o) => o.set_freq(freq),
+            Perc1Osc::Sine(o) => o.set_freq(freq),
+            Perc1Osc::Saw(o) => o.set_freq(freq),
         }
     }
 
     fn next(&mut self) -> f32 {
         match self {
-            ZapOsc::Sine(o) => o.next(),
-            ZapOsc::Saw(o) => o.next(),
+            Perc1Osc::Sine(o) => o.next(),
+            Perc1Osc::Saw(o) => o.next(),
         }
     }
 
     fn reset_phase(&mut self, phase: f32) {
         match self {
-            ZapOsc::Sine(o) => o.phase = phase,
-            ZapOsc::Saw(o) => o.phase = phase,
+            Perc1Osc::Sine(o) => o.phase = phase,
+            Perc1Osc::Saw(o) => o.phase = phase,
         }
     }
 }
 
-pub struct ZapVoice {
+pub struct Perc1Voice {
     settings: VoiceSettings,
     sample_rate: f32,
 
     // Carrier oscillators (left / right)
-    osc_a_l: ZapOsc,
-    osc_a_r: ZapOsc,
+    osc_a_l: Perc1Osc,
+    osc_a_r: Perc1Osc,
     // Modulator oscillators (FM source)
-    osc_b_l: ZapOsc,
-    osc_b_r: ZapOsc,
+    osc_b_l: Perc1Osc,
+    osc_b_r: Perc1Osc,
 
     // Pitch sweep envelope — exponential curve
     sweep_env: dsp::PitchEnvelope,
 
-    // Amplitude envelope — very short, no sustain
-    amp_env: dsp::ExpDecayEnvelope,
+    // Amplitude envelope — bi-stage decay + release
+    amp_env: dsp::DecayReleaseEnvelope,
+
+    // Filter + filter envelope
+    filter: dsp::OnePoleFilter,
+    filter_env: dsp::ExpDecayEnvelope,
 
     // Slap delay buffers
     delay_buf_l: [f32; MAX_DELAY_SAMPLES],
@@ -78,15 +83,15 @@ pub struct ZapVoice {
     active: bool,
 }
 
-impl ZapVoice {
+impl Perc1Voice {
     pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
         let algo = settings.algo;
         let base_freq = settings.frequency.max(20.0);
 
-        let mut osc_a_l = ZapOsc::new(sample_rate, algo);
-        let mut osc_a_r = ZapOsc::new(sample_rate, algo);
-        let mut osc_b_l = ZapOsc::new(sample_rate, algo);
-        let mut osc_b_r = ZapOsc::new(sample_rate, algo);
+        let mut osc_a_l = Perc1Osc::new(sample_rate, algo);
+        let mut osc_a_r = Perc1Osc::new(sample_rate, algo);
+        let mut osc_b_l = Perc1Osc::new(sample_rate, algo);
+        let mut osc_b_r = Perc1Osc::new(sample_rate, algo);
         osc_a_l.set_freq(base_freq);
         osc_a_r.set_freq(base_freq);
         osc_b_l.set_freq(base_freq * 1.5);
@@ -96,8 +101,19 @@ impl ZapVoice {
         let sweep_time = Self::sweep_time(&settings);
         let sweep_env = dsp::PitchEnvelope::new(sample_rate, sweep_start, sweep_end, sweep_time);
 
-        let decay = settings.decay.max(0.01).min(0.3);
-        let amp_env = dsp::ExpDecayEnvelope::new(sample_rate, settings.decay_curve, decay)
+        let decay = settings.decay.max(0.01).min(2.0);
+        let amp_env = dsp::DecayReleaseEnvelope::new(
+            sample_rate,
+            settings.decay_curve,
+            decay,
+            settings.release_curve,
+            settings.release.max(0.001),
+        )
+        .with_attack_ms(0.5);
+
+        let filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
+        let filter_env_decay = settings.filter_env_decay.max(0.01).min(2.0);
+        let filter_env = dsp::ExpDecayEnvelope::new(sample_rate, settings.decay_curve, filter_env_decay)
             .with_attack_ms(0.5);
 
         let delay_samples = ((SLAP_DELAY_MS * 0.001) * sample_rate).round() as usize;
@@ -112,6 +128,8 @@ impl ZapVoice {
             osc_b_r,
             sweep_env,
             amp_env,
+            filter,
+            filter_env,
             delay_buf_l: [0.0; MAX_DELAY_SAMPLES],
             delay_buf_r: [0.0; MAX_DELAY_SAMPLES],
             delay_pos: 0,
@@ -145,12 +163,13 @@ impl ZapVoice {
     }
 }
 
-impl Voice for ZapVoice {
+impl Voice for Perc1Voice {
     fn trigger(&mut self) {
         self.active = true;
         self.rebuild_sweep();
         self.sweep_env.trigger();
         self.amp_env.trigger();
+        self.filter_env.trigger();
 
         // Reset phases for crisp attack
         self.osc_a_l.reset_phase(0.0);
@@ -181,7 +200,15 @@ impl Voice for ZapVoice {
         self.osc_b_l.set_freq(freq * 1.5);
         let mod_sample = self.osc_b_l.next();
         self.osc_a_l.set_freq(freq + mod_sample * fm_deviation);
-        let dry = self.osc_a_l.next() * amp * self.settings.volume;
+        let mut dry = self.osc_a_l.next() * amp * self.settings.volume;
+
+        // Filter — additive envelope: Cutoff at rest + (envelope × amount × depth)
+        let filter_env_val = self.filter_env.next();
+        let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);
+        let filter_env_amount = self.settings.filter_env_amount;
+        let effective_freq = filter_freq + filter_env_val * filter_env_amount * 15000.0;
+        self.filter.set_cutoff(effective_freq.max(20.0).min(20000.0), self.sample_rate);
+        dry = self.filter.process(dry);
 
         // Simple mono delay
         let wet = self.delay_buf_l[self.delay_pos];
@@ -221,13 +248,22 @@ impl Voice for ZapVoice {
         self.osc_b_l.set_freq(freq * 1.5);
         let mod_l = self.osc_b_l.next();
         self.osc_a_l.set_freq(freq + mod_l * fm_deviation);
-        let dry_l = self.osc_a_l.next() * amp * self.settings.volume;
+        let mut dry_l = self.osc_a_l.next() * amp * self.settings.volume;
 
         // Right channel
         self.osc_b_r.set_freq(freq * 1.5 * detune);
         let mod_r = self.osc_b_r.next();
         self.osc_a_r.set_freq(freq * detune + mod_r * fm_deviation);
-        let dry_r = self.osc_a_r.next() * amp * self.settings.volume;
+        let mut dry_r = self.osc_a_r.next() * amp * self.settings.volume;
+
+        // Filter — additive envelope
+        let filter_env_val = self.filter_env.next();
+        let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);
+        let filter_env_amount = self.settings.filter_env_amount;
+        let effective_freq = filter_freq + filter_env_val * filter_env_amount * 15000.0;
+        self.filter.set_cutoff(effective_freq.max(20.0).min(20000.0), self.sample_rate);
+        dry_l = self.filter.process(dry_l);
+        dry_r = self.filter.process(dry_r);
 
         // Slap delay
         let wet_l = self.delay_buf_l[self.delay_pos];
@@ -250,6 +286,7 @@ impl Voice for ZapVoice {
     fn reset(&mut self) {
         self.active = false;
         self.amp_env.reset();
+        self.filter_env.reset();
         self.sweep_env.trigger(); // reset internal state
         self.delay_buf_l = [0.0; MAX_DELAY_SAMPLES];
         self.delay_buf_r = [0.0; MAX_DELAY_SAMPLES];
@@ -263,10 +300,10 @@ impl Voice for ZapVoice {
 
         if algo_changed {
             let algo = settings.algo;
-            self.osc_a_l = ZapOsc::new(self.sample_rate, algo);
-            self.osc_a_r = ZapOsc::new(self.sample_rate, algo);
-            self.osc_b_l = ZapOsc::new(self.sample_rate, algo);
-            self.osc_b_r = ZapOsc::new(self.sample_rate, algo);
+            self.osc_a_l = Perc1Osc::new(self.sample_rate, algo);
+            self.osc_a_r = Perc1Osc::new(self.sample_rate, algo);
+            self.osc_b_l = Perc1Osc::new(self.sample_rate, algo);
+            self.osc_b_r = Perc1Osc::new(self.sample_rate, algo);
         }
         self.osc_a_l.set_freq(base_freq);
         self.osc_a_r.set_freq(base_freq);
@@ -275,9 +312,20 @@ impl Voice for ZapVoice {
 
         self.rebuild_sweep();
 
-        let decay = settings.decay.max(0.01).min(0.3);
-        self.amp_env = dsp::ExpDecayEnvelope::new(self.sample_rate, settings.decay_curve, decay)
-            .with_attack_ms(0.5);
+        // Update amplitude envelope via setters — do NOT recreate to preserve tail state
+        self.amp_env.set_decay(settings.decay.max(0.01).min(2.0));
+        self.amp_env.set_release(settings.release.max(0.001));
+        self.amp_env.set_decay_curve(settings.decay_curve);
+        self.amp_env.set_release_curve(settings.release_curve);
+
+        // Update filter envelope via setters — do NOT recreate to preserve tail state
+        let filter_env_decay = settings.filter_env_decay.max(0.01).min(2.0);
+        self.filter_env.set_decay(filter_env_decay);
+        self.filter_env.set_curve(settings.decay_curve);
+
+        // Update filter cutoff
+        let filter_freq = settings.filter_freq.max(20.0).min(20000.0);
+        self.filter.set_cutoff(filter_freq, self.sample_rate);
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -286,10 +334,10 @@ impl Voice for ZapVoice {
         }
         self.settings.algo = algo;
         let base_freq = self.settings.frequency.max(20.0);
-        self.osc_a_l = ZapOsc::new(self.sample_rate, algo);
-        self.osc_a_r = ZapOsc::new(self.sample_rate, algo);
-        self.osc_b_l = ZapOsc::new(self.sample_rate, algo);
-        self.osc_b_r = ZapOsc::new(self.sample_rate, algo);
+        self.osc_a_l = Perc1Osc::new(self.sample_rate, algo);
+        self.osc_a_r = Perc1Osc::new(self.sample_rate, algo);
+        self.osc_b_l = Perc1Osc::new(self.sample_rate, algo);
+        self.osc_b_r = Perc1Osc::new(self.sample_rate, algo);
         self.osc_a_l.set_freq(base_freq);
         self.osc_a_r.set_freq(base_freq);
         self.osc_b_l.set_freq(base_freq * 1.5);
