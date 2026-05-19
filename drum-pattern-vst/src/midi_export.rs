@@ -1,6 +1,6 @@
 //! MIDI file export (SMF Type 0)
 
-use crate::sequencer::SharedPattern;
+use crate::{instrument_registry::INSTRUMENTS, sequencer::SharedPattern};
 use std::path::Path;
 
 const TICKS_PER_QUARTER: u32 = 480;
@@ -41,7 +41,15 @@ fn midi_header(track_length: u32) -> Vec<u8> {
     data
 }
 
-pub fn export_pattern_to_midi(pattern: &SharedPattern, bpm: f32, path: &Path) -> std::io::Result<()> {
+pub fn export_pattern_to_midi(
+    pattern: &SharedPattern,
+    bpm: f32,
+    path: &Path,
+) -> std::io::Result<()> {
+    std::fs::write(path, export_pattern_to_midi_data(pattern, bpm))
+}
+
+fn export_pattern_to_midi_data(pattern: &SharedPattern, bpm: f32) -> Vec<u8> {
     let microseconds_per_quarter = (60_000_000.0 / bpm).round() as u32;
 
     let mut events: Vec<(u32, Vec<u8>)> = Vec::new();
@@ -59,15 +67,13 @@ pub fn export_pattern_to_midi(pattern: &SharedPattern, bpm: f32, path: &Path) ->
         ],
     ));
 
-    let midi_notes = [36u8, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40, 35];
-
     for step in 0..16 {
         let mask = pattern.load_step_mask(step);
-        for (instrument, &note) in midi_notes.iter().enumerate() {
-            if (mask & (1 << instrument)) != 0 {
+        for (instrument, def) in INSTRUMENTS.iter().enumerate() {
+            if (mask & (1u16 << instrument)) != 0 {
                 let tick = step as u32 * TICKS_PER_STEP;
-                events.push((tick, vec![0x99, note, 100]));
-                events.push((tick + 10, vec![0x89, note, 0]));
+                events.push((tick, vec![0x99, def.midi_note, 100]));
+                events.push((tick + 10, vec![0x89, def.midi_note, 0]));
             }
         }
     }
@@ -91,57 +97,35 @@ pub fn export_pattern_to_midi(pattern: &SharedPattern, bpm: f32, path: &Path) ->
 
     let mut file_data = midi_header(track_data.len() as u32);
     file_data.extend_from_slice(&track_data);
-
-    std::fs::write(path, file_data)
+    file_data
 }
 
 /// Export pattern to MIDI bytes in memory (for drag-and-drop).
 pub fn export_pattern_to_midi_bytes(pattern: &SharedPattern, bpm: f32) -> std::io::Result<Vec<u8>> {
-    let microseconds_per_quarter = (60_000_000.0 / bpm).round() as u32;
+    Ok(export_pattern_to_midi_data(pattern, bpm))
+}
 
-    let mut events: Vec<(u32, Vec<u8>)> = Vec::new();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sequencer::pattern::Pattern;
 
-    // Set tempo (meta event)
-    events.push((
-        0,
-        vec![
-            0xFF,
-            0x51,
-            0x03,
-            (microseconds_per_quarter >> 16) as u8,
-            (microseconds_per_quarter >> 8) as u8,
-            microseconds_per_quarter as u8,
-        ],
-    ));
+    #[test]
+    fn midi_export_includes_zap_thirteenth_instrument() {
+        let pattern = SharedPattern::new(&Pattern::empty());
+        let zap_index = INSTRUMENTS.len() - 1;
+        pattern.set_step_mask(0, 1u16 << zap_index);
 
-    let midi_notes = [36u8, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40, 35];
+        let bytes =
+            export_pattern_to_midi_bytes(&pattern, 120.0).expect("MIDI export should succeed");
 
-    for step in 0..16 {
-        let mask = pattern.load_step_mask(step);
-        for (instrument, &note) in midi_notes.iter().enumerate() {
-            if (mask & (1 << instrument)) != 0 {
-                let tick = step as u32 * TICKS_PER_STEP;
-                events.push((tick, vec![0x99, note, 100]));
-                events.push((tick + 10, vec![0x89, note, 0]));
-            }
-        }
+        assert!(
+            bytes.windows(3).any(|window| window == [0x99, 37, 100]),
+            "Zap note-on event should be exported"
+        );
+        assert!(
+            bytes.windows(3).any(|window| window == [0x89, 37, 0]),
+            "Zap note-off event should be exported"
+        );
     }
-
-    events.sort_by_key(|e| e.0);
-
-    let mut track_data = Vec::new();
-    let mut last_tick = 0u32;
-    for (tick, data) in events {
-        let delta = tick - last_tick;
-        last_tick = tick;
-        track_data.extend_from_slice(&encode_vlq(delta));
-        track_data.extend_from_slice(&data);
-    }
-
-    track_data.extend_from_slice(&encode_vlq(0));
-    track_data.extend_from_slice(&[0xFF, 0x2F, 0x00]);
-
-    let mut file_data = midi_header(track_data.len() as u32);
-    file_data.extend_from_slice(&track_data);
-    Ok(file_data)
 }
