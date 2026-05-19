@@ -676,6 +676,8 @@ fn draw_sound_panel(
             ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_snap, setter).with_width(120.0));
             ui.label("Pitch Drop");
             ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_pitch_drop, setter).with_width(120.0));
+            ui.label("Click Tone");
+            ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_click_tone, setter).with_width(120.0));
         }
     });
 
@@ -856,8 +858,16 @@ fn draw_plock_menu(
             if instrument == 7 {
                 special[0] = params.clap_echo.value();
             }
+            if instrument == 10 {
+                special[0] = params.snare606_resonance.value();
+                special[1] = params.snare606_tone.value();
+                special[2] = params.snare606_snap.value();
+            }
             if instrument == 11 {
                 special[0] = params.bassdrum808_accent.value();
+                special[1] = params.bassdrum808_snap.value();
+                special[2] = params.bassdrum808_pitch_drop.value();
+                special[3] = params.bassdrum808_click_tone.value();
             }
             let algo = match instrument {
                 0 => params.algo_kick.value() as u8,
@@ -913,9 +923,24 @@ fn draw_plock_menu(
             0.0
         };
         let mut b8_accent = if instrument == 11 {
-            plock.values.get(instrument, step, 12)
+            plock.values.get(instrument, step, 14)
         } else {
             0.0
+        };
+        let mut b8_snap = if instrument == 11 {
+            plock.values.get(instrument, step, 15)
+        } else {
+            0.0
+        };
+        let mut b8_pitch_drop = if instrument == 11 {
+            plock.values.get(instrument, step, 16)
+        } else {
+            0.0
+        };
+        let mut b8_click_tone = if instrument == 11 {
+            plock.values.get(instrument, step, 17)
+        } else {
+            4000.0
         };
         let algo = plock.values.get(instrument, step, 13) as u8;
 
@@ -1005,7 +1030,25 @@ fn draw_plock_menu(
         if instrument == 11 {
             ui.horizontal(|ui| {
                 ui.label("Accent");
-                if ui.add(egui::Slider::new(&mut b8_accent, 0.0..=1.0)).changed() {
+                if ui.add(egui::Slider::new(&mut b8_accent, 0.0..=2.0)).changed() {
+                    changed = true;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Snap");
+                if ui.add(egui::Slider::new(&mut b8_snap, 0.0..=2.0)).changed() {
+                    changed = true;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Pitch Drop");
+                if ui.add(egui::Slider::new(&mut b8_pitch_drop, 0.0..=2.0)).changed() {
+                    changed = true;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Click Tone");
+                if ui.add(egui::Slider::new(&mut b8_click_tone, 100.0..=8000.0).logarithmic(true)).changed() {
                     changed = true;
                 }
             });
@@ -1018,6 +1061,9 @@ fn draw_plock_menu(
             }
             if instrument == 11 {
                 special[0] = b8_accent;
+                special[1] = b8_snap;
+                special[2] = b8_pitch_drop;
+                special[3] = b8_click_tone;
             }
             let settings = VoiceSettings {
                 frequency: freq,

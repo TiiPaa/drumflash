@@ -173,6 +173,9 @@ pub struct DrumFlashParams {
     #[id = "b8_drop"]
     pub bassdrum808_pitch_drop: FloatParam,
 
+    #[id = "b8_click_tone"]
+    pub bassdrum808_click_tone: FloatParam,
+
     #[id = "mute_kick"]
     pub mute_kick: BoolParam,
 
@@ -467,22 +470,29 @@ impl Default for DrumFlashParams {
 
             bassdrum808_accent: FloatParam::new(
                 "808 Accent",
-                0.6,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 2.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
             bassdrum808_snap: FloatParam::new(
                 "808 Snap",
-                0.7,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 2.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
             bassdrum808_pitch_drop: FloatParam::new(
                 "808 Pitch Drop",
-                0.5,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            bassdrum808_click_tone: FloatParam::new(
+                "808 Click Tone",
+                4000.0,
+                FloatRange::Linear { min: 100.0, max: 8000.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
@@ -660,6 +670,7 @@ impl DrumFlashVst {
                 special[0] = self.params.bassdrum808_accent.value();
                 special[1] = self.params.bassdrum808_snap.value();
                 special[2] = self.params.bassdrum808_pitch_drop.value();
+                special[3] = self.params.bassdrum808_click_tone.value();
             }
             _ => {}
         }
