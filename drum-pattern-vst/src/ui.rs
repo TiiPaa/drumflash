@@ -221,6 +221,27 @@ fn draw_preset_bar(
         }
         response.on_hover_text("Export MIDI file to Documents/Drum Flash/exports");
 
+        let drag_btn = egui::Button::new("Drag").sense(egui::Sense::click_and_drag());
+        let drag_response = ui.add(drag_btn);
+        if drag_response.drag_started() {
+            let bpm = params.bpm.value();
+            match export_midi_to_documents(pattern, bpm)
+                .and_then(|path| start_native_midi_drag(&path).map(|_| path))
+            {
+                Ok(path) => {
+                    nih_log!("MIDI drag started from: {}", path.display());
+                    state.last_midi_export_path = Some(path.display().to_string());
+                    state.last_midi_export_error = None;
+                }
+                Err(e) => {
+                    nih_log!("MIDI drag failed: {}", e);
+                    state.last_midi_export_path = None;
+                    state.last_midi_export_error = Some(e.to_string());
+                }
+            }
+        }
+        drag_response.on_hover_text("Drag MIDI file to DAW");
+
         if let Some(path) = &state.last_midi_export_path {
             if ui.button("Copy Path").clicked() {
                 ui.ctx().copy_text(path.clone());
@@ -736,6 +757,17 @@ fn export_midi_to_documents(
 
     midi_export::export_pattern_to_midi(pattern, bpm, &path)?;
     Ok(path)
+}
+
+#[cfg(target_os = "windows")]
+fn start_native_midi_drag(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    crate::native_drag::start_midi_file_drag(path)
+        .map_err(|error| -> Box<dyn std::error::Error> { error.into() })
+}
+
+#[cfg(not(target_os = "windows"))]
+fn start_native_midi_drag(_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    Err("Native MIDI drag-and-drop is only implemented on Windows".into())
 }
 
 

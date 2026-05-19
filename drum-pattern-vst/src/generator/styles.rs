@@ -179,7 +179,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -271,7 +271,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -363,7 +363,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -455,7 +455,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -547,7 +547,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -639,7 +639,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -731,7 +731,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -823,7 +823,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -915,7 +915,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
@@ -1007,7 +1007,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
-                // Zap: occasional fill / effect
+                // Perc1: occasional fill / effect
                 RhythmicRole {
                     anchors: &[],
                     candidates: &[14, 15],
