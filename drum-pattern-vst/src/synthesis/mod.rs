@@ -71,37 +71,15 @@ impl DrumVoice {
     }
 
     pub fn midi_note(&self) -> u8 {
-        match self {
-            DrumVoice::Kick => 36,
-            DrumVoice::Snare => 38,
-            DrumVoice::HiHat => 42,
-            DrumVoice::OpenHiHat => 46,
-            DrumVoice::Tom1 => 50,
-            DrumVoice::Tom2 => 47,
-            DrumVoice::Tom3 => 43,
-            DrumVoice::Clap => 39,
-            DrumVoice::Ride => 51,
-            DrumVoice::Cymbal => 49,
-            DrumVoice::Snare606 => 40,
-            DrumVoice::BassDrum808 => 35,
-        }
+        crate::instrument_registry::INSTRUMENTS[*self as usize].midi_note
     }
 
     pub fn name(&self) -> &'static str {
-        match self {
-            DrumVoice::Kick => "Kick",
-            DrumVoice::Snare => "Snare",
-            DrumVoice::HiHat => "Hi-Hat",
-            DrumVoice::OpenHiHat => "Open HH",
-            DrumVoice::Tom1 => "Tom 1",
-            DrumVoice::Tom2 => "Tom 2",
-            DrumVoice::Tom3 => "Tom 3",
-            DrumVoice::Clap => "Clap",
-            DrumVoice::Ride => "Ride",
-            DrumVoice::Cymbal => "Cymbal",
-            DrumVoice::Snare606 => "Snare 606",
-            DrumVoice::BassDrum808 => "808 Kick",
-        }
+        crate::instrument_registry::INSTRUMENTS[*self as usize].name
+    }
+
+    pub fn label(&self) -> &'static str {
+        crate::instrument_registry::INSTRUMENTS[*self as usize].label
     }
 }
 
@@ -420,6 +398,7 @@ pub trait Voice: Send + Sync {
     /// Set synthesis algorithm by index.
     fn set_algo(&mut self, algo: u8);
     /// Set a special parameter by index (0..7).
+    #[allow(dead_code)]
     fn set_special_param(&mut self, index: usize, value: f32);
 }
 
@@ -657,6 +636,7 @@ impl DrumSynthesizer {
         *output = mixed;
     }
 
+    #[allow(dead_code)]
     pub fn process_voice_samples(&mut self, outputs: &mut [f32; DrumVoice::COUNT]) {
         for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
             let vel = self.velocity_smoothers[i].process(self.velocities[i]);
@@ -686,6 +666,7 @@ impl DrumSynthesizer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_special_param(&mut self, voice_idx: usize, index: usize, value: f32) {
         if let Some(v) = self.voices.get_mut(voice_idx) {
             v.set_special_param(index, value);

@@ -339,6 +339,7 @@ mod tests {
             filter_env_amount: 0.0,
             filter_env_decay: 0.05,
             analog: 1.0,
+            stereo: 0.0,
             algo: 0,
             special: [0.0; 8],
         };
