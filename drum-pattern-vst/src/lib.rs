@@ -35,7 +35,6 @@ const AUX_OUT_COUNT: usize = 13;
 const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
     "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal", "Snare 606", "808 Kick", "Zap",
 ];
-const MIDI_NOTE_MAP: [u8; DrumVoice::COUNT] = [36, 38, 42, 46, 50, 47, 43, 39, 51, 49, 40, 35, 37];
 const STEP_COUNT: usize = 16;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v1";
@@ -1048,7 +1047,7 @@ impl Plugin for DrumFlashVst {
                         self.synthesizer.reset_voice(3);
                     }
 
-                    let note = MIDI_NOTE_MAP[voice_idx];
+                    let note = crate::instrument_registry::INSTRUMENTS[voice_idx].midi_note;
                     context.send_event(NoteEvent::NoteOn {
                         timing: sample_idx as u32,
                         voice_id: None,
