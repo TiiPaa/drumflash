@@ -53,6 +53,9 @@
 - [x] [26d] Nouvel instrument B8 (TR-808 Bass Drum)
 - [x] [26e] Slider Analog actif pour B8
 - [x] [26f] Release fonctionnel pour B8 (DecayReleaseEnvelope)
+- [x] [26g] Attack ramp 1.5 ms sur B8 (élimine click de démarrage)
+- [x] [26h] Filtre LP dédié Click Tone sur B8 (100-8000 Hz)
+- [x] [26i] Plock B8 fix : special params (accent/snap/pitch_drop/click_tone) stockés
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
@@ -79,11 +82,11 @@
 
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [ ] [35] Diagnostiquer la sauvegarde/reouverture Studio One
-- [ ] [35a] Plock B8 : accent plockable, snap/drop non plockables (manque champs dans PlockState)
+- [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
 - [ ] [38] Ecart entre documentation et code reel a surveiller
-- [ ] [38a] `CLAUDE.md` mentionne encore `DrumVoice::COUNT = 11` et `AUX_OUT_COUNT = 10`
+- [x] [38a] `CLAUDE.md` mis à jour (12 instruments, AUX_OUT_COUNT = 12)
 - [x] [42] Crash a l'instanciation avec 11e voix (cause: `IntRange { min:0, max:0 }` → div par zéro nih-plug)
 - [x] [43] Index out of bounds dans UI (`hums`/`pushes`/`lengths` taille 10 vs INSTRUMENT_LABELS taille 11)
 - [x] [44] Step mask hardcode `0x3ff` (10 bits) — extensible via `INSTRUMENT_COUNT`
