@@ -68,11 +68,14 @@
 ## Fonctionnalites P3 (Avancees / Complexes)
 
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
-- [x] [28] Drag & drop MIDI directement vers le DAW (export_pattern_to_midi_bytes + dnd)
+- [ ] [28] Drag & drop MIDI directement vers le DAW
+  - l'ancien `dnd_set_drag_payload(bytes)` etait un drag/drop interne egui, pas un fichier OS accepte par les DAW
+  - export fichier OK via bouton MIDI dans `Documents/Drum Flash/exports`
+  - a implementer proprement via drag fichier OS natif si le wrapper UI/host le permet
 - [x] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
   - 14 champs plockables (12 sound settings + clap_echo + algo)
   - special params (accent/snap/pitch_drop) propagés uniquement au trigger (fix echo perdu)
-- [ ] [29a] Refactor plock UI data-driven depuis `instrument_registry`
+- [x] [29a] Refactor plock UI data-driven depuis `instrument_registry`
   - remplacer les branches hardcodees par instrument dans `draw_plock_menu`
   - exposer automatiquement les `special_params` de Clap, Snare606, B8, Zap et futurs instruments
   - aligner les champs plock stockes/lus (`FIELD_COUNT = 18`) avec les special params reels
@@ -112,7 +115,7 @@
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
 - [ ] [38] Ecart entre documentation et code reel a surveiller
-- [ ] [38b] Supprimer les `unwrap()` evitables du chemin audio/UI sensible
+- [x] [38b] Supprimer les `unwrap()` evitables du chemin audio/UI sensible
   - `lib.rs::process()` utilise `DrumVoice::from_index(...).unwrap()` sur des index bornes par `DrumVoice::COUNT`
   - risque faible aujourd'hui, mais non conforme a la regle stricte "audio thread sans panic"
   - remplacer par API interne sans `Option`, ou par branche defensive sans panic

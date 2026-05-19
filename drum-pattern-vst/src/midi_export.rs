@@ -101,6 +101,7 @@ fn export_pattern_to_midi_data(pattern: &SharedPattern, bpm: f32) -> Vec<u8> {
 }
 
 /// Export pattern to MIDI bytes in memory (for drag-and-drop).
+#[allow(dead_code)]
 pub fn export_pattern_to_midi_bytes(pattern: &SharedPattern, bpm: f32) -> std::io::Result<Vec<u8>> {
     Ok(export_pattern_to_midi_data(pattern, bpm))
 }
