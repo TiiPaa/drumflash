@@ -95,7 +95,7 @@
 - [ ] [34] Garder les fichiers de sauvegarde hors de `src/`
 - [x] [34a] Corriger le click de retrigger kick (2 steps BD proches)
 - [x] [34b] Nettoyer le code mort dans `special_params.rs` (struct `SpecialParamDef`, tous les `*_SPECIALS`, helper `specials_for`, methodes trait `supported_algos`/`special_params`)
-- [ ] [34c] Corriger les libelles obsoletes multi-out dans le code
+- [x] [34c] Corriger les libelles obsoletes multi-out dans le code
   - `AUX_OUT_COUNT` vaut 13 mais `lib.rs` parle encore de "10 stereo drum outs"
   - corriger le commentaire "Frozen at 10" et le `PortNames.layout`
   - verifier que la doc Studio One reste alignee avec Main Mix + 13 sorties aux
