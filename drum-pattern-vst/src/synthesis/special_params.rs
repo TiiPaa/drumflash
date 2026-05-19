@@ -78,8 +78,8 @@ pub const BASSDRUM808_ALGOS: &[AlgoDef] = &[
 // ── Zap ─────────────────────────────────────────────────────────────────────
 
 pub const ZAP_ALGOS: &[AlgoDef] = &[
+    AlgoDef { name: "Sine" },
     AlgoDef { name: "Saw" },
-    AlgoDef { name: "Square" },
 ];
 
 // ── Registry helpers ────────────────────────────────────────────────────────
