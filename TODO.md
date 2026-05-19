@@ -56,6 +56,9 @@
 - [x] [26g] Attack ramp 1.5 ms sur B8 (élimine click de démarrage)
 - [x] [26h] Filtre LP dédié Click Tone sur B8 (100-8000 Hz)
 - [x] [26i] Plock B8 fix : special params (accent/snap/pitch_drop/click_tone) stockés
+- [ ] [26j] Finaliser les réglages de synthèse par instrument
+- [ ] [26k] Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit)
+- [ ] [26l] Per-instrument stereo toggles + stereo Snare 606
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
@@ -72,7 +75,7 @@
 
 - [ ] [30] Clarifier si `index.js` doit etre conserve ou archive
 - [ ] [31] Revoir l'organisation du repo pour separer clairement PoC web et plugin
-- [ ] [32] Synchroniser `BACKLOG_VST.md` avec le code reel (items P2 marques comme "hors V1")
+- [x] [32] Synchroniser `BACKLOG_VST.md` avec `TODO.md`
 - [x] [33] Reduire les warnings Rust inutiles (0 warning sur lib + bin + tests, release inclus)
 - [ ] [34] Garder les fichiers de sauvegarde hors de `src/`
 - [x] [34a] Corriger le click de retrigger kick (2 steps BD proches)
@@ -90,7 +93,7 @@
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
 - [ ] [38] Ecart entre documentation et code reel a surveiller
-- [ ] [38a] `CLAUDE.md` mis à jour (13 instruments, AUX_OUT_COUNT = 13, Zap ajouté)
+- [x] [38a] Fusionner `CLAUDE.md` dans `AGENTS.md` (13 instruments, AUX_OUT_COUNT = 13, Zap ajouté)
 - [x] [42] Crash a l'instanciation avec 11e voix (cause: `IntRange { min:0, max:0 }` → div par zéro nih-plug)
 - [x] [43] Index out of bounds dans UI (`hums`/`pushes`/`lengths` taille 10 vs INSTRUMENT_LABELS taille 11)
 - [x] [44] Step mask hardcode `0x3ff` (10 bits) — extensible via `INSTRUMENT_COUNT`
