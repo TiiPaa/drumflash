@@ -519,6 +519,10 @@ impl PitchEnvelope {
             ratio
         }
     }
+
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
 }
 
 // ── Click / Transient Generator ─────────────────────────────────────────────

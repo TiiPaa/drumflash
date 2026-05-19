@@ -647,8 +647,8 @@ impl Default for DrumFlashParams {
             .with_smoother(SmoothingStyle::Linear(10.0)),
             zap_speed: FloatParam::new(
                 "Zap Speed",
-                5.0,
-                FloatRange::Linear { min: 0.5, max: 50.0 },
+                80.0,
+                FloatRange::Linear { min: 5.0, max: 300.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0))
             .with_unit(" ms"),
