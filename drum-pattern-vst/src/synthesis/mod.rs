@@ -12,7 +12,7 @@ mod ride;
 mod snare;
 mod snare606;
 mod tom;
-mod zap;
+mod perc1;
 
 // `algos_for` is consumed by the editor (`ui.rs`) but not by the standalone
 // binary — allow the unused-import warning so both build configurations stay
@@ -30,7 +30,7 @@ pub use ride::RideVoice;
 pub use snare::SnareVoice;
 pub use snare606::Snare606Voice;
 pub use tom::TomVoice;
-pub use zap::ZapVoice;
+pub use perc1::Perc1Voice;
 
 /// Drum voice types matching the original web app
 #[allow(dead_code)]
@@ -48,7 +48,7 @@ pub enum DrumVoice {
     Cymbal = 9,
     Snare606 = 10,
     BassDrum808 = 11,
-    Zap = 12,
+    Perc1 = 12,
 }
 
 #[allow(dead_code)]
@@ -69,7 +69,7 @@ impl DrumVoice {
             9 => Some(Self::Cymbal),
             10 => Some(Self::Snare606),
             11 => Some(Self::BassDrum808),
-            12 => Some(Self::Zap),
+            12 => Some(Self::Perc1),
             _ => None,
         }
     }
@@ -384,7 +384,7 @@ impl VoiceSettings {
         }
     }
 
-    pub fn zap() -> Self {
+    pub fn perc1() -> Self {
         Self {
             frequency: 2000.0,
             decay: 0.15,
@@ -442,7 +442,7 @@ pub enum DrumVoiceKind {
     Cymbal(CymbalVoice),
     Snare606(Snare606Voice),
     BassDrum808(Kick808Voice),
-    Zap(ZapVoice),
+    Perc1(Perc1Voice),
 }
 
 impl Voice for DrumVoiceKind {
@@ -458,7 +458,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Cymbal(v) => v.trigger(),
             DrumVoiceKind::Snare606(v) => v.trigger(),
             DrumVoiceKind::BassDrum808(v) => v.trigger(),
-            DrumVoiceKind::Zap(v) => v.trigger(),
+            DrumVoiceKind::Perc1(v) => v.trigger(),
         }
     }
 
@@ -474,7 +474,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Cymbal(v) => v.process_sample(),
             DrumVoiceKind::Snare606(v) => v.process_sample(),
             DrumVoiceKind::BassDrum808(v) => v.process_sample(),
-            DrumVoiceKind::Zap(v) => v.process_sample(),
+            DrumVoiceKind::Perc1(v) => v.process_sample(),
         }
     }
 
@@ -490,7 +490,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Cymbal(v) => v.process_sample_stereo(),
             DrumVoiceKind::Snare606(v) => v.process_sample_stereo(),
             DrumVoiceKind::BassDrum808(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Zap(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Perc1(v) => v.process_sample_stereo(),
         }
     }
 
@@ -506,7 +506,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Cymbal(v) => v.is_active(),
             DrumVoiceKind::Snare606(v) => v.is_active(),
             DrumVoiceKind::BassDrum808(v) => v.is_active(),
-            DrumVoiceKind::Zap(v) => v.is_active(),
+            DrumVoiceKind::Perc1(v) => v.is_active(),
         }
     }
 
@@ -522,7 +522,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Cymbal(v) => v.reset(),
             DrumVoiceKind::Snare606(v) => v.reset(),
             DrumVoiceKind::BassDrum808(v) => v.reset(),
-            DrumVoiceKind::Zap(v) => v.reset(),
+            DrumVoiceKind::Perc1(v) => v.reset(),
         }
     }
 
@@ -538,7 +538,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Cymbal(v) => v.set_settings(settings),
             DrumVoiceKind::Snare606(v) => v.set_settings(settings),
             DrumVoiceKind::BassDrum808(v) => v.set_settings(settings),
-            DrumVoiceKind::Zap(v) => v.set_settings(settings),
+            DrumVoiceKind::Perc1(v) => v.set_settings(settings),
         }
     }
 
@@ -554,7 +554,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Cymbal(v) => v.set_algo(algo),
             DrumVoiceKind::Snare606(v) => v.set_algo(algo),
             DrumVoiceKind::BassDrum808(v) => v.set_algo(algo),
-            DrumVoiceKind::Zap(v) => v.set_algo(algo),
+            DrumVoiceKind::Perc1(v) => v.set_algo(algo),
         }
     }
 
@@ -570,7 +570,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Cymbal(v) => v.set_special_param(index, value),
             DrumVoiceKind::Snare606(v) => v.set_special_param(index, value),
             DrumVoiceKind::BassDrum808(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Zap(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Perc1(v) => v.set_special_param(index, value),
         }
     }
 }
@@ -654,9 +654,9 @@ impl DrumSynthesizer {
             sample_rate,
             VoiceSettings::kick808(),
         )));
-        self.voices.push(DrumVoiceKind::Zap(ZapVoice::new(
+        self.voices.push(DrumVoiceKind::Perc1(Perc1Voice::new(
             sample_rate,
-            VoiceSettings::zap(),
+            VoiceSettings::perc1(),
         )));
     }
 

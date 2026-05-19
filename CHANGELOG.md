@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-05-19 — Perc1 refactor (Zap → Perc1)
+
+**Build:** `20260519-191344`  
+**VST3 Class ID:** `DrumFlashPlugin1`
+
+### Changes
+- Rename Zap → Perc1 (`perc1.rs`, `DrumVoice::Perc1`, label `"P1"`, all params `perc1_*`).
+- Migrate Perc1 `amp_env` from `ExpDecayEnvelope` to `DecayReleaseEnvelope` — Release slider is now wired.
+- Fix `set_settings` anti-click invariant: use `set_decay()` / `set_release()` / `set_curve()` instead of recreating envelopes.
+- Add `filter` + `filter_env` to Perc1 with additive cutoff formula.
+- Fix latent bug in `voice_settings_for`: index 12 now correctly reads `algo_perc1`.
+- Update plock tests, MIDI export tests, generator comments, and algo registry for Perc1.
+
+### Known issues
+- Perc1 Release and other parameters reported as non-responsive in Studio One — under investigation ([50]).
+
+---
+
 ## 2026-05-19 — Revert stable + documentation
 
 **Build:** `20260519-163250`  
