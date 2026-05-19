@@ -31,8 +31,12 @@ pub struct Kick808Voice {
     tone_filter: dsp::OnePoleFilter,
     // Accent click
     click: dsp::ClickGenerator,
+    // LP filter on the click to tame high-freq noise
+    click_filter: dsp::OnePoleFilter,
     // Smooths frequency jumps for analog-style pitch slide
     freq_smoother: dsp::OnePoleSmoother,
+    // DC blocker to kill offset clicks on asymmetric retriggers
+    dc_blocker: dsp::DcBlocker,
 
     active: bool,
 }
@@ -61,10 +65,13 @@ impl Kick808Voice {
                 settings.decay.max(0.05),
                 settings.release_curve,
                 settings.release.max(0.001),
-            ),
+            )
+            .with_attack_ms(1.5),
             tone_filter,
-            click: dsp::ClickGenerator::new(sample_rate, 15.0, 0.2, 0.05),
-            freq_smoother: dsp::OnePoleSmoother::new(sample_rate, 0.5, settings.frequency.max(10.0)),
+            click: dsp::ClickGenerator::new(sample_rate, 15.0, 0.2, 2.0),
+            click_filter: dsp::OnePoleFilter::new(dsp::FilterMode::LowPass),
+            freq_smoother: dsp::OnePoleSmoother::new(sample_rate, 5.0, settings.frequency.max(10.0)),
+            dc_blocker: dsp::DcBlocker::default(),
             active: false,
         }
     }
@@ -75,15 +82,15 @@ impl Kick808Voice {
     }
 
     fn snap_depth_hz(&self) -> f32 {
-        // With snap=1.0, push up to ~130 Hz from base.
+        // EXTREME for testing: push up to ~800 Hz from base.
         let base = self.settings.frequency.max(10.0);
-        let target = 130.0f32;
+        let target = 800.0f32;
         (target - base).max(0.0) * self.settings.special[1].clamp(0.0, 1.0)
     }
 
     fn drop_depth_hz(&self) -> f32 {
-        // With drop=1.0, drift down by ~35 % of base frequency.
-        self.settings.frequency.max(10.0) * 0.35 * self.settings.special[2].clamp(0.0, 1.0)
+        // EXTREME for testing: drift down by ~150 % of base frequency.
+        self.settings.frequency.max(10.0) * 1.5 * self.settings.special[2].clamp(0.0, 1.0)
     }
 
     fn accent_amount(&self) -> f32 {
@@ -98,16 +105,21 @@ impl Kick808Voice {
         self.drop_env.set_decay(Self::drop_time(self.settings.decay));
         self.tone_filter
             .set_cutoff(self.settings.filter_freq, self.sample_rate);
-        self.freq_smoother.set_time_ms(self.sample_rate, 0.5);
+        // Click filter: dedicated LP cutoff from special[3].
+        self.click_filter
+            .set_cutoff(self.settings.special[3].clamp(100.0, 8000.0), self.sample_rate);
+        self.freq_smoother.set_time_ms(self.sample_rate, 5.0);
     }
 }
 
 impl Voice for Kick808Voice {
     fn trigger(&mut self) {
+        let is_cold_start = !self.active;
         self.active = true;
         let base = self.settings.frequency.max(10.0);
-        if self.settings.analog < 0.5 {
-            // Digital stable: reset phase and smoother for identical sound every hit
+        if self.settings.analog < 0.5 && is_cold_start {
+            // Digital stable: reset phase and smoother only on cold start.
+            // Never reset during a retrigger on a ringing tail — that causes a click.
             self.osc.phase = 0.0;
             self.freq_smoother.reset(base);
         }
@@ -145,12 +157,12 @@ impl Voice for Kick808Voice {
         let body = self.tone_filter.process(raw) * env * self.settings.volume;
 
         let click = if self.accent_amount() > 0.0 && self.click.is_active() {
-            self.click.next() * self.accent_amount()
+            self.click_filter.process(self.click.next()) * self.accent_amount()
         } else {
             0.0
         };
 
-        body + click
+        self.dc_blocker.process(body + click)
     }
 
     fn is_active(&self) -> bool {
