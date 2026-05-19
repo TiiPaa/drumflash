@@ -11,6 +11,7 @@ use std::sync::{
 
 mod generator;
 mod groove;
+mod instrument_registry;
 mod midi_export;
 mod plock;
 mod sequencer;
@@ -607,6 +608,86 @@ impl Default for DrumFlashParams {
     }
 }
 
+impl DrumFlashParams {
+    /// Indexed access to mute parameters.
+    pub fn mutes(&self) -> [&BoolParam; DrumVoice::COUNT] {
+        [
+            &self.mute_kick, &self.mute_snare, &self.mute_hihat, &self.mute_open_hh,
+            &self.mute_tom1, &self.mute_tom2, &self.mute_tom3, &self.mute_clap,
+            &self.mute_ride, &self.mute_cymbal, &self.mute_snare606, &self.mute_bassdrum808,
+        ]
+    }
+
+    /// Indexed access to solo parameters.
+    pub fn solos(&self) -> [&BoolParam; DrumVoice::COUNT] {
+        [
+            &self.solo_kick, &self.solo_snare, &self.solo_hihat, &self.solo_open_hh,
+            &self.solo_tom1, &self.solo_tom2, &self.solo_tom3, &self.solo_clap,
+            &self.solo_ride, &self.solo_cymbal, &self.solo_snare606, &self.solo_bassdrum808,
+        ]
+    }
+
+    /// Indexed access to mix parameters.
+    pub fn mixes(&self) -> [&BoolParam; DrumVoice::COUNT] {
+        [
+            &self.mix_kick, &self.mix_snare, &self.mix_hihat, &self.mix_open_hh,
+            &self.mix_tom1, &self.mix_tom2, &self.mix_tom3, &self.mix_clap,
+            &self.mix_ride, &self.mix_cymbal, &self.mix_snare606, &self.mix_bassdrum808,
+        ]
+    }
+
+    /// Indexed access to algo parameters.
+    pub fn algos(&self) -> [&IntParam; DrumVoice::COUNT] {
+        [
+            &self.algo_kick, &self.algo_snare, &self.algo_hihat, &self.algo_open_hh,
+            &self.algo_tom1, &self.algo_tom2, &self.algo_tom3, &self.algo_clap,
+            &self.algo_ride, &self.algo_cymbal, &self.algo_snare606, &self.algo_bassdrum808,
+        ]
+    }
+
+    pub fn humanizes(&self) -> [&FloatParam; DrumVoice::COUNT] {
+        [
+            &self.humanize_kick, &self.humanize_snare, &self.humanize_hihat, &self.humanize_open_hh,
+            &self.humanize_tom1, &self.humanize_tom2, &self.humanize_tom3, &self.humanize_clap,
+            &self.humanize_ride, &self.humanize_cymbal, &self.humanize_snare606, &self.humanize_bassdrum808,
+        ]
+    }
+
+    pub fn pushes(&self) -> [&FloatParam; DrumVoice::COUNT] {
+        [
+            &self.push_kick, &self.push_snare, &self.push_hihat, &self.push_open_hh,
+            &self.push_tom1, &self.push_tom2, &self.push_tom3, &self.push_clap,
+            &self.push_ride, &self.push_cymbal, &self.push_snare606, &self.push_bassdrum808,
+        ]
+    }
+
+    pub fn lengths(&self) -> [&IntParam; DrumVoice::COUNT] {
+        [
+            &self.length_kick, &self.length_snare, &self.length_hihat, &self.length_open_hh,
+            &self.length_tom1, &self.length_tom2, &self.length_tom3, &self.length_clap,
+            &self.length_ride, &self.length_cymbal, &self.length_snare606, &self.length_bassdrum808,
+        ]
+    }
+
+    /// Lookup a special parameter by instrument index and special slot.
+    pub fn special_param(&self, instrument: usize, special_idx: usize) -> Option<&FloatParam> {
+        match (instrument, special_idx) {
+            (0, 0) => Some(&self.kick_click),
+            (1, 0) => Some(&self.snare_snap),
+            (4 | 5 | 6, 0) => Some(&self.tom_stick),
+            (7, 0) => Some(&self.clap_echo),
+            (10, 0) => Some(&self.snare606_resonance),
+            (10, 1) => Some(&self.snare606_tone),
+            (10, 2) => Some(&self.snare606_snap),
+            (11, 0) => Some(&self.bassdrum808_accent),
+            (11, 1) => Some(&self.bassdrum808_snap),
+            (11, 2) => Some(&self.bassdrum808_pitch_drop),
+            (11, 3) => Some(&self.bassdrum808_click_tone),
+            _ => None,
+        }
+    }
+}
+
 impl Default for DrumFlashVst {
     fn default() -> Self {
         let params = Arc::new(DrumFlashParams::default());
@@ -656,23 +737,10 @@ impl DrumFlashVst {
         stereo: f32,
     ) -> synthesis::VoiceSettings {
         let mut special = [0.0f32; 8];
-        match voice_idx {
-            0 => special[0] = self.params.kick_click.value(),
-            1 => special[0] = self.params.snare_snap.value(),
-            4 | 5 | 6 => special[0] = self.params.tom_stick.value(),
-            7 => special[0] = self.params.clap_echo.value(),
-            10 => {
-                special[0] = self.params.snare606_resonance.value();
-                special[1] = self.params.snare606_tone.value();
-                special[2] = self.params.snare606_snap.value();
+        for sp_def in crate::instrument_registry::INSTRUMENTS[voice_idx].special_params {
+            if let Some(param) = self.params.special_param(voice_idx, sp_def.special_index) {
+                special[sp_def.special_index] = param.value();
             }
-            11 => {
-                special[0] = self.params.bassdrum808_accent.value();
-                special[1] = self.params.bassdrum808_snap.value();
-                special[2] = self.params.bassdrum808_pitch_drop.value();
-                special[3] = self.params.bassdrum808_click_tone.value();
-            }
-            _ => {}
         }
         synthesis::VoiceSettings {
             frequency: freq,
@@ -950,18 +1018,9 @@ impl Plugin for DrumFlashVst {
         let hihat_chokes_oh = self.params.hihat_chokes_oh.value();
 
         // Propagate synthesis algorithms
-        self.synthesizer.set_algo(0, self.params.algo_kick.value() as u8);
-        self.synthesizer.set_algo(1, self.params.algo_snare.value() as u8);
-        self.synthesizer.set_algo(2, self.params.algo_hihat.value() as u8);
-        self.synthesizer.set_algo(3, self.params.algo_open_hh.value() as u8);
-        self.synthesizer.set_algo(4, self.params.algo_tom1.value() as u8);
-        self.synthesizer.set_algo(5, self.params.algo_tom2.value() as u8);
-        self.synthesizer.set_algo(6, self.params.algo_tom3.value() as u8);
-        self.synthesizer.set_algo(7, self.params.algo_clap.value() as u8);
-        self.synthesizer.set_algo(8, self.params.algo_ride.value() as u8);
-        self.synthesizer.set_algo(9, self.params.algo_cymbal.value() as u8);
-        self.synthesizer.set_algo(10, self.params.algo_snare606.value() as u8);
-        self.synthesizer.set_algo(11, self.params.algo_bassdrum808.value() as u8);
+        for i in 0..DrumVoice::COUNT {
+            self.synthesizer.set_algo(i, self.params.algos()[i].value() as u8);
+        }
 
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
             let swing = self.params.swing.value();

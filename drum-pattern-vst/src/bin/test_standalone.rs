@@ -6,6 +6,8 @@ mod groove;
 mod sequencer;
 #[path = "../synthesis/mod.rs"]
 mod synthesis;
+#[path = "../instrument_registry.rs"]
+mod instrument_registry;
 
 use groove::GrooveType;
 use sequencer::Sequencer;
