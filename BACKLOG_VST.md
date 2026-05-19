@@ -77,30 +77,35 @@ Build valide:
 - OK: DcBlocker + freq_smoother 5 ms sur B8.
 - OK: Filtre LP dédié Click Tone sur B8 (100-8000 Hz, slider + plockable).
 - OK: Plock B8 fix : special params (accent/snap/pitch_drop/click_tone) stockés dans champs 14-17.
+- OK: Export MIDI depuis le plugin.
+- OK: Sortie MIDI temps reel.
+- OK: Swing.
+- OK: Facteur de groove parametrable (Straight/Swing16/Shuffle/MPC).
+- OK: Parametre analogique pour legeres variations aleatoires (humanize per track).
+- OK: Mode stereo analogique avec variation gauche/droite (push/pull per track).
+- OK: Song mode (placeholder UI P1-P8, backend à câbler).
+- OK: Filter envelope sur Kick, Snare, Tom, HiHat, Snare 606.
+- OK: Drag & drop MIDI directement vers le DAW.
+- OK: Parameter locks (plocks) façon Elektron.
 
 - Finaliser les reglages de synthese par instrument.
-- Ajouter export MIDI depuis le plugin.
-- Ajouter sortie MIDI temps reel.
-- Ajouter swing.
-- Ajouter un facteur de groove parametrable.
-- OK: B8 — slider Analog actif (pitch smoothing + freq variation).
-- OK: B8 — slider Release actif (DecayReleaseEnvelope).
-- OK: B8 — Pitch Drop label + accélération du drop.
-- Ajouter un parametre analogique pour legeres variations aleatoires.
-- Permettre un mode stereo analogique avec variation gauche/droite.
-- Ajouter song mode (placeholder UI OK, backend à faire).
 - Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit).
 - Per-instrument stereo toggles + stereo Snare 606.
-- Filter envelope sur Kick, Snare, Tom, HiHat, Snare 606.
+- Barre de progression visuelle du pattern (0-100%).
+- Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap).
+- Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`).
+- Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling).
 
 ## Dette technique
 
-- Eviter la divergence entre fichiers de documentation.
+- OK: Fusionner `CLAUDE.md` dans `AGENTS.md` — doc agent unifiée.
+- Eviter la divergence entre fichiers de documentation (BACKLOG vs TODO).
 - Clarifier si `index.js` doit etre conserve ou archive.
 - Revoir l'organisation du repo pour separer clairement PoC web et plugin.
 - Ajouter un chemin de build/test standard documente.
 - OK: warnings Rust inutiles reduits sans supprimer les API reservees pour les prochaines fonctions.
 - Garder les fichiers de sauvegarde hors de `src/`; `src/lib.rs.backup` a ete supprime le 2026-05-10.
+- Corriger le plock menu pour qu'il soit data-driven via `instrument_registry` (plus de hardcode par index).
 
 ## Notes techniques Studio One
 
