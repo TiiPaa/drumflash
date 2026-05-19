@@ -179,6 +179,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (90.0, 140.0),
         }
@@ -263,6 +270,13 @@ impl MusicalTemplate {
                     candidates: &[4, 12, 2, 6, 10, 14],
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
+                },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (90.0, 130.0),
@@ -349,6 +363,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (120.0, 140.0),
         }
@@ -433,6 +454,13 @@ impl MusicalTemplate {
                     candidates: &[4, 12, 2, 6, 10, 14],
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
+                },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (80.0, 100.0),
@@ -519,6 +547,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 160.0),
         }
@@ -603,6 +638,13 @@ impl MusicalTemplate {
                     candidates: &[4, 12, 2, 6, 10, 14],
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
+                },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (140.0, 200.0),
@@ -689,6 +731,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 140.0),
         }
@@ -773,6 +822,13 @@ impl MusicalTemplate {
                     candidates: &[4, 12, 2, 6, 10, 14],
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
+                },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (110.0, 130.0),
@@ -859,6 +915,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
                 },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (130.0, 160.0),
         }
@@ -943,6 +1006,13 @@ impl MusicalTemplate {
                     candidates: &[4, 12, 2, 6, 10, 14],
                     candidate_prob: 0.15,
                     exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
+                },
+                // Zap: occasional fill / effect
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
                 },
             ],
             bpm_range: (70.0, 90.0),

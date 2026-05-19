@@ -75,6 +75,13 @@ pub const BASSDRUM808_ALGOS: &[AlgoDef] = &[
     AlgoDef { name: "Standard" },
 ];
 
+// ── Zap ─────────────────────────────────────────────────────────────────────
+
+pub const ZAP_ALGOS: &[AlgoDef] = &[
+    AlgoDef { name: "Saw" },
+    AlgoDef { name: "Square" },
+];
+
 // ── Registry helpers ────────────────────────────────────────────────────────
 
 use super::DrumVoice;
@@ -94,5 +101,6 @@ pub fn algos_for(voice: DrumVoice) -> &'static [AlgoDef] {
         DrumVoice::Cymbal => CYMBAL_ALGOS,
         DrumVoice::Snare606 => SNARE606_ALGOS,
         DrumVoice::BassDrum808 => BASSDRUM808_ALGOS,
+        DrumVoice::Zap => ZAP_ALGOS,
     }
 }

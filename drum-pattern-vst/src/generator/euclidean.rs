@@ -55,6 +55,7 @@ fn euclidean_params(density: f32) -> [(usize, usize); INSTRUMENT_COUNT] {
         ((d * 2.0).round() as usize, STEP_COUNT), // Cymbal
         (0, STEP_COUNT), // Snare 606 — user-only, no auto-generation
         ((2.0 + d * 3.0).round() as usize, STEP_COUNT), // 808 Kick
+        ((d * 2.0).round() as usize, STEP_COUNT), // Zap
     ]
 }
 
