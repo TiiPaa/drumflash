@@ -397,7 +397,8 @@ impl VoiceSettings {
             // special[0] = Accent (click level)
             // special[1] = Snap (pitch sweep depth)
             // special[2] = Pitch Drop amount
-            special: [0.6, 0.7, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
+            // Defaults at 0 so the user hears the difference when raising sliders.
+            special: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
     }
 }
