@@ -78,6 +78,11 @@ Build valide:
 - OK: Masquage des paramètres inutiles dans le Sound Panel par instrument.
 - OK: Nouvel instrument B8 (TR-808 Bass Drum) avec accent/snap/pitch_drop.
 - OK: Special params propagés uniquement au trigger (fix écrasement buffer suivant).
+- OK: Attack ramp 1.5 ms sur B8 (élimine click de démarrage brutal).
+- OK: Reset de phase B8 uniquement sur cold start (pas en retrigger).
+- OK: DcBlocker + freq_smoother 5 ms sur B8.
+- OK: Filtre LP dédié Click Tone sur B8 (100-8000 Hz, slider + plockable).
+- OK: Plock B8 fix : special params (accent/snap/pitch_drop/click_tone) stockés dans champs 14-17.
 
 - Finaliser les reglages de synthese par instrument.
 - Ajouter export MIDI depuis le plugin.
