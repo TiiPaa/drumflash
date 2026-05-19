@@ -81,12 +81,16 @@
 ## Bugs a corriger
 
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
+- [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé
+- [ ] [47] Refaire Perc1 proprement : ne pas recréer les enveloppes dans `set_settings`
+- [ ] [48] Refaire Perc1 proprement : utiliser `DecayReleaseEnvelope` pour le slider Release
+- [ ] [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
 - [ ] [35] Diagnostiquer la sauvegarde/reouverture Studio One
 - [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
 - [ ] [38] Ecart entre documentation et code reel a surveiller
-- [x] [38a] `CLAUDE.md` mis à jour (12 instruments, AUX_OUT_COUNT = 12)
+- [ ] [38a] `CLAUDE.md` mis à jour (13 instruments, AUX_OUT_COUNT = 13, Zap ajouté)
 - [x] [42] Crash a l'instanciation avec 11e voix (cause: `IntRange { min:0, max:0 }` → div par zéro nih-plug)
 - [x] [43] Index out of bounds dans UI (`hums`/`pushes`/`lengths` taille 10 vs INSTRUMENT_LABELS taille 11)
 - [x] [44] Step mask hardcode `0x3ff` (10 bits) — extensible via `INSTRUMENT_COUNT`
