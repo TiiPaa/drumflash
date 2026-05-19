@@ -54,6 +54,21 @@ Plugin VST3 Rust installe avec le build:
 
 ## Nouveautes de la session
 
+### Filtre LP dédié Click Tone B8
+- Nouveau paramètre `bassdrum808_click_tone` (100-8000 Hz, défaut 4 kHz).
+- Filtre passe-bas OnePole dédié sur le click Accent, indépendant du Tone du body.
+- Slider exposé dans le Sound Panel + plockable (champ 17).
+
+### Plock B8 fix
+- `FIELD_COUNT` étendu 14 → 18 (champs 14-17 pour special[0..3]).
+- `get_settings` / `set_settings` récupèrent et stockent `accent`, `snap`, `pitch_drop`, `click_tone` pour la B8.
+- Création et édition de plock dans l'UI copient correctement les 4 special params.
+
+### Attack ramp B8 + anti-click
+- Ajout `.with_attack_ms(1.5)` sur l'enveloppe d'amplitude B8 (identique à la BD standard).
+- Reset de phase `osc.phase = 0.0` uniquement sur **cold start**, jamais en retrigger (évite le saut brutal).
+- Ajout `DcBlocker` sur la sortie B8 + `freq_smoother` ralenti à 5 ms.
+
 ### Validation cross-DAW
 - Plugin charge dans Reaper, son OK sur toutes les voix.
 - Sauts de volume initialement suspectes : RMS du plugin mesure stable
