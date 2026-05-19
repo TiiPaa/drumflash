@@ -17,20 +17,14 @@ use std::{
 use crate::{
     generator,
     midi_export,
-    plock::{PlockState, STEP_COUNT as PLOCK_STEP_COUNT},
+    plock::PlockState,
     sequencer::{Pattern, SharedPattern},
     sound_settings::SoundSettingsState,
     synthesis::{self, DrumVoice, VoiceSettings},
     DrumFlashParams, BUILD_ID,
 };
 
-const INSTRUMENT_LABELS: [&str; DrumVoice::COUNT] =
-    ["BD", "SD", "HH", "OH", "T1", "T2", "T3", "CL", "RD", "CY", "S6", "B8"];
-
-const INSTRUMENT_FULL_NAMES: [&str; DrumVoice::COUNT] = [
-    "Kick", "Snare", "Hi-Hat", "Open HH", "Tom 1", "Tom 2", "Tom 3", "Clap", "Ride", "Cymbal",
-    "Snare 606", "808 Bass Drum",
-];
+// Instrument labels and names are sourced from instrument_registry::INSTRUMENTS
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct EditorUIState {
@@ -175,7 +169,7 @@ fn draw_preset_bar(
     ui: &mut egui::Ui,
     pattern: &SharedPattern,
     params: &DrumFlashParams,
-    setter: &ParamSetter,
+    _setter: &ParamSetter,
 ) {
     ui.horizontal(|ui| {
         // Presets (left)
@@ -290,24 +284,9 @@ fn draw_grid(
     state: &mut EditorUIState,
 ) {
     let mixer_rows = mixer_rows(params);
-    let hums = [
-        &params.humanize_kick, &params.humanize_snare, &params.humanize_hihat,
-        &params.humanize_open_hh, &params.humanize_tom1, &params.humanize_tom2,
-        &params.humanize_tom3, &params.humanize_clap, &params.humanize_ride,
-        &params.humanize_cymbal, &params.humanize_snare606, &params.humanize_bassdrum808,
-    ];
-    let pushes = [
-        &params.push_kick, &params.push_snare, &params.push_hihat,
-        &params.push_open_hh, &params.push_tom1, &params.push_tom2,
-        &params.push_tom3, &params.push_clap, &params.push_ride,
-        &params.push_cymbal, &params.push_snare606, &params.push_bassdrum808,
-    ];
-    let lengths = [
-        &params.length_kick, &params.length_snare, &params.length_hihat,
-        &params.length_open_hh, &params.length_tom1, &params.length_tom2,
-        &params.length_tom3, &params.length_clap, &params.length_ride,
-        &params.length_cymbal, &params.length_snare606, &params.length_bassdrum808,
-    ];
+    let hums: [&FloatParam; DrumVoice::COUNT] = std::array::from_fn(|i| params.humanizes()[i]);
+    let pushes: [&FloatParam; DrumVoice::COUNT] = std::array::from_fn(|i| params.pushes()[i]);
+    let lengths: [&IntParam; DrumVoice::COUNT] = std::array::from_fn(|i| params.lengths()[i]);
 
     egui::Grid::new("pattern-grid")
         .spacing(Vec2::new(4.0, 4.0))
@@ -343,7 +322,7 @@ fn draw_grid(
 
                 // Instrument label (clickable)
                 let label_btn = egui::Button::new(
-                    RichText::new(INSTRUMENT_LABELS[inst]).monospace().size(11.0),
+                    RichText::new(crate::instrument_registry::INSTRUMENTS[inst].label).monospace().size(11.0),
                 )
                 .min_size(Vec2::new(28.0, 22.0))
                 .fill(if state.selected_instrument == inst {
@@ -437,10 +416,10 @@ fn draw_sound_panel(
 
     // Instrument tabs
     ui.horizontal(|ui| {
-        for (i, label) in INSTRUMENT_LABELS.iter().enumerate() {
+        for (i, label) in crate::instrument_registry::INSTRUMENTS.iter().map(|d| d.label).enumerate() {
             let selected = state.selected_instrument == i;
             let btn = egui::Button::new(
-                RichText::new(*label).monospace().size(11.0),
+                RichText::new(label).monospace().size(11.0),
             )
             .min_size(Vec2::new(32.0, 22.0))
             .fill(if selected {
@@ -470,12 +449,12 @@ fn draw_sound_panel(
         mut stereo,
     ) = inst.load();
     let mut changed = false;
+    let caps = crate::instrument_registry::capabilities(state.selected_instrument);
 
     // Two-column layout for sound parameters
     ui.columns(2, |cols| {
         cols[0].vertical(|ui| {
-            let freq_capable = !matches!(state.selected_instrument, 7 | 9);
-            if freq_capable {
+            if caps.freq {
                 ui.horizontal(|ui| {
                     ui.label("Frequency");
                     if ui.add(egui::Slider::new(&mut freq, 20.0..=12000.0).logarithmic(true)).changed() {
@@ -498,8 +477,7 @@ fn draw_sound_panel(
                     changed = true;
                 }
             });
-            let hold_capable = matches!(state.selected_instrument, 1 | 2 | 3 | 10);
-            if hold_capable {
+            if caps.hold {
                 ui.horizontal(|ui| {
                     ui.label("Hold");
                     if ui.add(egui::Slider::new(&mut hold, 0.0..=0.5).suffix(" s")).changed() {
@@ -532,20 +510,7 @@ fn draw_sound_panel(
         });
 
         cols[1].vertical(|ui| {
-            let filter_type_label = match state.selected_instrument {
-                0 => "LP",
-                1 => "HP",
-                2 => "HP",
-                3 => "HP",
-                4 => "LP",
-                5 => "LP",
-                6 => "LP",
-                7 => "HP",
-                8 => "HP",
-                9 => "HP",
-                10 => "LP",
-                _ => "",
-            };
+            let filter_type_label = crate::instrument_registry::filter_type_label(state.selected_instrument);
             ui.horizontal(|ui| {
                 ui.label(format!("Filter ({filter_type_label})"));
                 if ui.add(egui::Slider::new(&mut filt, 20.0..=15000.0).logarithmic(true)).changed() {
@@ -553,8 +518,7 @@ fn draw_sound_panel(
                     changed = true;
                 }
             });
-            let filter_env_capable = matches!(state.selected_instrument, 0 | 1 | 2 | 4 | 5 | 6 | 10);
-            if filter_env_capable {
+            if caps.filter_env {
                 ui.horizontal(|ui| {
                     ui.label("Filter Env");
                     if ui.add(egui::Slider::new(&mut filter_env_amount, 0.0..=1.0)).changed() {
@@ -570,8 +534,7 @@ fn draw_sound_panel(
                     }
                 });
             }
-            let analog_capable = matches!(state.selected_instrument, 0 | 1 | 4 | 5 | 6 | 10 | 11);
-            if analog_capable {
+            if caps.analog {
                 ui.horizontal(|ui| {
                     ui.label("Analog");
                     if ui.add(egui::Slider::new(&mut analog, 0.0..=1.0)).changed() {
@@ -580,8 +543,7 @@ fn draw_sound_panel(
                     }
                 });
             }
-            let stereo_capable = matches!(state.selected_instrument, 1 | 2 | 3 | 7 | 8 | 9 | 10);
-            if stereo_capable {
+            if caps.stereo {
                 ui.horizontal(|ui| {
                     ui.label("Stereo");
                     if ui.add(egui::Checkbox::new(&mut (stereo >= 0.5), "")).changed() {
@@ -592,21 +554,7 @@ fn draw_sound_panel(
                 });
             }
 
-            let mix_param = match state.selected_instrument {
-                0 => &params.mix_kick,
-                1 => &params.mix_snare,
-                2 => &params.mix_hihat,
-                3 => &params.mix_open_hh,
-                4 => &params.mix_tom1,
-                5 => &params.mix_tom2,
-                6 => &params.mix_tom3,
-                7 => &params.mix_clap,
-                8 => &params.mix_ride,
-                9 => &params.mix_cymbal,
-                10 => &params.mix_snare606,
-                11 => &params.mix_bassdrum808,
-                _ => &params.mix_kick,
-            };
+            let mix_param = params.mixes()[state.selected_instrument];
             ui.horizontal(|ui| {
                 ui.label("Mix");
                 let mut mix = mix_param.value();
@@ -619,21 +567,7 @@ fn draw_sound_panel(
             let voice = DrumVoice::from_index(state.selected_instrument).unwrap();
             let algos = synthesis::algos_for(voice);
             if algos.len() > 1 && state.selected_instrument != 3 {
-                let algo_param = match state.selected_instrument {
-                    0 => &params.algo_kick,
-                    1 => &params.algo_snare,
-                    2 => &params.algo_hihat,
-                    3 => &params.algo_open_hh,
-                    4 => &params.algo_tom1,
-                    5 => &params.algo_tom2,
-                    6 => &params.algo_tom3,
-                    7 => &params.algo_clap,
-                    8 => &params.algo_ride,
-                    9 => &params.algo_cymbal,
-                    10 => &params.algo_snare606,
-                    11 => &params.algo_bassdrum808,
-                    _ => &params.algo_kick,
-                };
+                let algo_param = params.algos()[state.selected_instrument];
                 ui.horizontal(|ui| {
                     ui.label("Algorithm");
                     let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
@@ -643,41 +577,14 @@ fn draw_sound_panel(
         });
     });
 
-    // Per-instrument special parameters (moved from bottom bar)
+    // Per-instrument special parameters (data-driven from registry)
     ui.horizontal(|ui| {
-        if state.selected_instrument == 0 {
-            ui.label("Click Level");
-            ui.add(widgets::ParamSlider::for_param(&params.kick_click, setter).with_width(120.0));
-        }
-        if state.selected_instrument == 1 {
-            ui.label("Snap");
-            ui.add(widgets::ParamSlider::for_param(&params.snare_snap, setter).with_width(120.0));
-        }
-        if matches!(state.selected_instrument, 4 | 5 | 6) {
-            ui.label("Stick Attack");
-            ui.add(widgets::ParamSlider::for_param(&params.tom_stick, setter).with_width(120.0));
-        }
-        if state.selected_instrument == 7 {
-            ui.label("Echo");
-            ui.add(widgets::ParamSlider::for_param(&params.clap_echo, setter).with_width(120.0));
-        }
-        if state.selected_instrument == 10 {
-            ui.label("Resonance");
-            ui.add(widgets::ParamSlider::for_param(&params.snare606_resonance, setter).with_width(120.0));
-            ui.label("Tone");
-            ui.add(widgets::ParamSlider::for_param(&params.snare606_tone, setter).with_width(120.0));
-            ui.label("Snap");
-            ui.add(widgets::ParamSlider::for_param(&params.snare606_snap, setter).with_width(120.0));
-        }
-        if state.selected_instrument == 11 {
-            ui.label("Accent");
-            ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_accent, setter).with_width(120.0));
-            ui.label("Snap");
-            ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_snap, setter).with_width(120.0));
-            ui.label("Pitch Drop");
-            ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_pitch_drop, setter).with_width(120.0));
-            ui.label("Click Tone");
-            ui.add(widgets::ParamSlider::for_param(&params.bassdrum808_click_tone, setter).with_width(120.0));
+        let special_defs = crate::instrument_registry::special_params(state.selected_instrument);
+        for def in special_defs {
+            if let Some(param) = params.special_param(state.selected_instrument, def.special_index) {
+                ui.label(def.label);
+                ui.add(widgets::ParamSlider::for_param(param, setter).with_width(120.0));
+            }
         }
     });
 
@@ -707,20 +614,10 @@ struct MixerRow<'a> {
 }
 
 fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; DrumVoice::COUNT] {
-    [
-        MixerRow { mute: &params.mute_kick, solo: &params.solo_kick },
-        MixerRow { mute: &params.mute_snare, solo: &params.solo_snare },
-        MixerRow { mute: &params.mute_hihat, solo: &params.solo_hihat },
-        MixerRow { mute: &params.mute_open_hh, solo: &params.solo_open_hh },
-        MixerRow { mute: &params.mute_tom1, solo: &params.solo_tom1 },
-        MixerRow { mute: &params.mute_tom2, solo: &params.solo_tom2 },
-        MixerRow { mute: &params.mute_tom3, solo: &params.solo_tom3 },
-        MixerRow { mute: &params.mute_clap, solo: &params.solo_clap },
-        MixerRow { mute: &params.mute_ride, solo: &params.solo_ride },
-        MixerRow { mute: &params.mute_cymbal, solo: &params.solo_cymbal },
-        MixerRow { mute: &params.mute_snare606, solo: &params.solo_snare606 },
-        MixerRow { mute: &params.mute_bassdrum808, solo: &params.solo_bassdrum808 },
-    ]
+    std::array::from_fn(|i| MixerRow {
+        mute: params.mutes()[i],
+        solo: params.solos()[i],
+    })
 }
 
 fn bool_checkbox(ui: &mut egui::Ui, setter: &ParamSetter, param: &BoolParam, label: &str) {
@@ -839,7 +736,7 @@ fn draw_plock_menu(
     ui.label(
         RichText::new(format!(
             "Plock {} — Step {}",
-            INSTRUMENT_LABELS[instrument],
+            crate::instrument_registry::INSTRUMENTS[instrument].label,
             step + 1
         ))
         .strong(),
