@@ -31,6 +31,11 @@
 - [x] [15] Connecter `filter_freq` dans `SnareVoice` (actuellement ignore)
 - [x] [16] Ajouter un bouton "Test" par instrument pour declencher le son isole
 - [x] [17] Ajouter export MIDI fichier depuis le plugin
+- [x] [17a] Corriger l'export MIDI fichier/drag-drop pour inclure les 13 instruments
+  - `midi_export.rs` utilise encore deux tableaux `midi_notes` hardcodes a 12 notes
+  - deriver les notes depuis `instrument_registry::INSTRUMENTS` ou une constante unique partagee avec `MIDI_NOTE_MAP`
+  - verifier que Zap (note 37) est exporte en fichier MIDI et dans `export_pattern_to_midi_bytes`
+  - ajouter un test unitaire couvrant au moins le 13e instrument
 - [x] [18] Ajouter sortie MIDI temps reel vers hardware externe
 - [x] [19] Ajouter la generation de pattern aleatoire (grille + option Random BPM + option Random Sounds)
 
@@ -67,6 +72,12 @@
 - [x] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
   - 14 champs plockables (12 sound settings + clap_echo + algo)
   - special params (accent/snap/pitch_drop) propagés uniquement au trigger (fix echo perdu)
+- [ ] [29a] Refactor plock UI data-driven depuis `instrument_registry`
+  - remplacer les branches hardcodees par instrument dans `draw_plock_menu`
+  - exposer automatiquement les `special_params` de Clap, Snare606, B8, Zap et futurs instruments
+  - aligner les champs plock stockes/lus (`FIELD_COUNT = 18`) avec les special params reels
+  - clarifier/corriger l'incoherence Clap Echo : UI lit le champ 12 alors que `PlockState::set_settings()` stocke les specials en 14..17
+  - ajouter tests unitaires sur `PlockState::set_settings/get_settings` pour Clap Echo, B8 specials et Zap specials
 - [ ] [39] Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`). Permet labels, ranges et défauts spécifiques par voix.
 - [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
@@ -75,11 +86,19 @@
 
 - [ ] [30] Clarifier si `index.js` doit etre conserve ou archive
 - [ ] [31] Revoir l'organisation du repo pour separer clairement PoC web et plugin
+- [ ] [31a] Clarifier l'emplacement des docs produit actives
+  - `AGENTS.md` cite `PROJECT_BRIEF.md` et `BACKLOG_VST.md`, mais les fichiers presents sont sous `docs/historique/`
+  - decider si ces docs doivent revenir a la racine, etre remplacees par `TODO.md`/`README.md`, ou etre explicitement marquees comme archivees
+  - mettre a jour `README.md`, `AGENTS.md` et les references croisees en consequence
 - [x] [32] Synchroniser `BACKLOG_VST.md` avec `TODO.md`
 - [x] [33] Reduire les warnings Rust inutiles (0 warning sur lib + bin + tests, release inclus)
 - [ ] [34] Garder les fichiers de sauvegarde hors de `src/`
 - [x] [34a] Corriger le click de retrigger kick (2 steps BD proches)
 - [x] [34b] Nettoyer le code mort dans `special_params.rs` (struct `SpecialParamDef`, tous les `*_SPECIALS`, helper `specials_for`, methodes trait `supported_algos`/`special_params`)
+- [ ] [34c] Corriger les libelles obsoletes multi-out dans le code
+  - `AUX_OUT_COUNT` vaut 13 mais `lib.rs` parle encore de "10 stereo drum outs"
+  - corriger le commentaire "Frozen at 10" et le `PortNames.layout`
+  - verifier que la doc Studio One reste alignee avec Main Mix + 13 sorties aux
 
 ## Bugs a corriger
 
@@ -93,6 +112,10 @@
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
 - [ ] [38] Ecart entre documentation et code reel a surveiller
+- [ ] [38b] Supprimer les `unwrap()` evitables du chemin audio/UI sensible
+  - `lib.rs::process()` utilise `DrumVoice::from_index(...).unwrap()` sur des index bornes par `DrumVoice::COUNT`
+  - risque faible aujourd'hui, mais non conforme a la regle stricte "audio thread sans panic"
+  - remplacer par API interne sans `Option`, ou par branche defensive sans panic
 - [x] [38a] Fusionner `CLAUDE.md` dans `AGENTS.md` (13 instruments, AUX_OUT_COUNT = 13, Zap ajouté)
 - [x] [42] Crash a l'instanciation avec 11e voix (cause: `IntRange { min:0, max:0 }` → div par zéro nih-plug)
 - [x] [43] Index out of bounds dans UI (`hums`/`pushes`/`lengths` taille 10 vs INSTRUMENT_LABELS taille 11)
