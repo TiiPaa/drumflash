@@ -1025,17 +1025,21 @@ impl Plugin for DrumFlashVst {
             let current_steps = self.sequencer.current_steps();
             for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
                 if *should_trigger {
+                    let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+                        continue;
+                    };
+
                     // Apply plock if present, otherwise re-apply global settings
                     if let Some(plock_settings) = self.params.plock_state.state.get_settings(voice_idx, current_steps[voice_idx]) {
                         self.synthesizer.set_voice_settings(
-                            synthesis::DrumVoice::from_index(voice_idx).unwrap(),
+                            voice,
                             plock_settings,
                         );
                     } else {
                         let inst = &self.sound_settings_state.instruments[voice_idx];
                         let (freq, decay, vol, filt, release, dc, rc, hold, fea, fed, analog, stereo) = inst.load();
                         self.synthesizer.set_voice_settings(
-                            synthesis::DrumVoice::from_index(voice_idx).unwrap(),
+                            voice,
                             self.voice_settings_for(voice_idx, freq, decay, vol, filt, release, dc, rc, hold, fea, fed, analog, stereo),
                         );
                     }
@@ -1075,13 +1079,16 @@ impl Plugin for DrumFlashVst {
             if current_version != self.last_sound_settings_version {
                 self.last_sound_settings_version = current_version;
                 for (i, inst) in self.sound_settings_state.instruments.iter().enumerate() {
+                    let Some(voice) = synthesis::DrumVoice::from_index(i) else {
+                        continue;
+                    };
                     let (
                         freq, decay, vol, filt, release,
                         decay_curve, release_curve, hold,
                         filter_env_amount, filter_env_decay, analog, stereo,
                     ) = inst.load();
                     self.synthesizer.set_voice_settings(
-                        synthesis::DrumVoice::from_index(i).unwrap(),
+                        voice,
                         self.voice_settings_for(i, freq, decay, vol, filt, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo),
                     );
                 }

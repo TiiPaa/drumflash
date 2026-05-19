@@ -30,6 +30,8 @@ use crate::{
 struct EditorUIState {
     selected_instrument: usize,
     selected_pattern_slot: usize,
+    last_midi_export_path: Option<String>,
+    last_midi_export_error: Option<String>,
 }
 
 pub fn create_editor(
@@ -75,6 +77,7 @@ pub fn create_editor(
                                 &pattern_for_ui,
                                 &params_for_ui,
                                 setter,
+                                state,
                             );
                             draw_generator_bar(ui, setter, &params_for_ui, &pattern_for_ui);
 
@@ -170,6 +173,7 @@ fn draw_preset_bar(
     pattern: &SharedPattern,
     params: &DrumFlashParams,
     _setter: &ParamSetter,
+    state: &mut EditorUIState,
 ) {
     ui.horizontal(|ui| {
         // Presets (left)
@@ -196,27 +200,34 @@ fn draw_preset_bar(
 
         ui.add_space(16.0);
 
-        // Export MIDI (right) with drag-and-drop support
+        // Export MIDI (right)
         ui.label(RichText::new("Export").strong().size(11.0));
-        let export_btn = egui::Button::new("📄 MIDI");
+        let export_btn = egui::Button::new("MIDI");
         let response = ui.add(export_btn);
         if response.clicked() {
             let bpm = params.bpm.value();
             match export_midi_to_documents(pattern, bpm) {
                 Ok(path) => {
                     nih_log!("MIDI exported to: {}", path.display());
+                    state.last_midi_export_path = Some(path.display().to_string());
+                    state.last_midi_export_error = None;
                 }
                 Err(e) => {
                     nih_log!("MIDI export failed: {}", e);
+                    state.last_midi_export_path = None;
+                    state.last_midi_export_error = Some(e.to_string());
                 }
             }
         }
-        // Drag and drop payload
-        if response.drag_started() {
-            let bpm = params.bpm.value();
-            if let Ok(bytes) = midi_export::export_pattern_to_midi_bytes(pattern, bpm) {
-                response.dnd_set_drag_payload(bytes);
+        response.on_hover_text("Export MIDI file to Documents/Drum Flash/exports");
+
+        if let Some(path) = &state.last_midi_export_path {
+            if ui.button("Copy Path").clicked() {
+                ui.ctx().copy_text(path.clone());
             }
+            ui.label(RichText::new("Exported").size(10.0));
+        } else if state.last_midi_export_error.is_some() {
+            ui.label(RichText::new("Export failed").size(10.0).color(Color32::RED));
         }
     });
 }
@@ -255,8 +266,8 @@ fn draw_generator_bar(
             };
             let seed = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos() as u64;
+                .map(|duration| duration.as_nanos() as u64)
+                .unwrap_or(0);
             let mut rng_state = seed;
             let mut rng = || {
                 rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
@@ -413,6 +424,7 @@ fn draw_sound_panel(
     state: &mut EditorUIState,
 ) {
     ui.label(RichText::new("Sound Editor").strong());
+    state.selected_instrument = state.selected_instrument.min(DrumVoice::COUNT - 1);
 
     // Instrument tabs
     ui.horizontal(|ui| {
@@ -564,15 +576,16 @@ fn draw_sound_panel(
             });
 
             // Algorithm selector
-            let voice = DrumVoice::from_index(state.selected_instrument).unwrap();
-            let algos = synthesis::algos_for(voice);
-            if algos.len() > 1 && state.selected_instrument != 3 {
-                let algo_param = params.algos()[state.selected_instrument];
-                ui.horizontal(|ui| {
-                    ui.label("Algorithm");
-                    let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
-                    algo_combo(ui, setter, algo_param, &algo_names);
-                });
+            if let Some(voice) = DrumVoice::from_index(state.selected_instrument) {
+                let algos = synthesis::algos_for(voice);
+                if algos.len() > 1 && state.selected_instrument != 3 {
+                    let algo_param = params.algos()[state.selected_instrument];
+                    ui.horizontal(|ui| {
+                        ui.label("Algorithm");
+                        let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
+                        algo_combo(ui, setter, algo_param, &algo_names);
+                    });
+                }
             }
         });
     });
@@ -596,6 +609,11 @@ fn draw_sound_panel(
 // ─────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────
+fn plock_special_field(special_index: usize) -> Option<usize> {
+    let field = crate::plock::SPECIAL_FIELD_START.checked_add(special_index)?;
+    (field < crate::plock::FIELD_COUNT).then_some(field)
+}
+
 fn load_pattern_for_ui(pattern_for_ui: &SharedPattern, pattern: &Pattern) {
     let masks = pattern.step_masks();
     pattern_for_ui.load_step_masks(&masks);
@@ -752,35 +770,15 @@ fn draw_plock_menu(
     if !has_plock {
         if ui.button("➕ Create plock from current settings").clicked() {
             let mut special = [0.0f32; 8];
-            if instrument == 7 {
-                special[0] = params.clap_echo.value();
+            for def in crate::instrument_registry::special_params(instrument) {
+                if def.special_index < special.len() {
+                    special[def.special_index] = params
+                        .special_param(instrument, def.special_index)
+                        .map(|param| param.value())
+                        .unwrap_or(def.default);
+                }
             }
-            if instrument == 10 {
-                special[0] = params.snare606_resonance.value();
-                special[1] = params.snare606_tone.value();
-                special[2] = params.snare606_snap.value();
-            }
-            if instrument == 11 {
-                special[0] = params.bassdrum808_accent.value();
-                special[1] = params.bassdrum808_snap.value();
-                special[2] = params.bassdrum808_pitch_drop.value();
-                special[3] = params.bassdrum808_click_tone.value();
-            }
-            let algo = match instrument {
-                0 => params.algo_kick.value() as u8,
-                1 => params.algo_snare.value() as u8,
-                2 => params.algo_hihat.value() as u8,
-                3 => params.algo_open_hh.value() as u8,
-                4 => params.algo_tom1.value() as u8,
-                5 => params.algo_tom2.value() as u8,
-                6 => params.algo_tom3.value() as u8,
-                7 => params.algo_clap.value() as u8,
-                8 => params.algo_ride.value() as u8,
-                9 => params.algo_cymbal.value() as u8,
-                10 => params.algo_snare606.value() as u8,
-                11 => params.algo_bassdrum808.value() as u8,
-                _ => 0,
-            };
+            let algo = params.algos()[instrument].value() as u8;
             let settings = VoiceSettings {
                 frequency: global.0,
                 decay: global.1,
@@ -814,32 +812,16 @@ fn draw_plock_menu(
         let mut filter_env_decay = plock.values.get(instrument, step, 9);
         let mut analog = plock.values.get(instrument, step, 10);
         let mut stereo = plock.values.get(instrument, step, 11);
-        let mut clap_echo = if instrument == 7 {
-            plock.values.get(instrument, step, 12)
-        } else {
-            0.0
-        };
-        let mut b8_accent = if instrument == 11 {
-            plock.values.get(instrument, step, 14)
-        } else {
-            0.0
-        };
-        let mut b8_snap = if instrument == 11 {
-            plock.values.get(instrument, step, 15)
-        } else {
-            0.0
-        };
-        let mut b8_pitch_drop = if instrument == 11 {
-            plock.values.get(instrument, step, 16)
-        } else {
-            0.0
-        };
-        let mut b8_click_tone = if instrument == 11 {
-            plock.values.get(instrument, step, 17)
-        } else {
-            4000.0
-        };
         let algo = plock.values.get(instrument, step, 13) as u8;
+        let special_defs = crate::instrument_registry::special_params(instrument);
+        let mut special = [0.0f32; 8];
+        for def in special_defs {
+            if def.special_index < special.len() {
+                special[def.special_index] = plock_special_field(def.special_index)
+                    .map(|field| plock.values.get(instrument, step, field))
+                    .unwrap_or(def.default);
+            }
+        }
 
         ui.horizontal(|ui| {
             ui.label("Freq");
@@ -915,53 +897,26 @@ fn draw_plock_menu(
             }
         });
 
-        if instrument == 7 {
-            ui.horizontal(|ui| {
-                ui.label("Echo");
-                if ui.add(egui::Slider::new(&mut clap_echo, 0.0..=3.0)).changed() {
-                    changed = true;
+        for def in special_defs {
+            if def.special_index >= special.len() {
+                continue;
+            }
+            let mut value = special[def.special_index];
+            let changed_special = ui.horizontal(|ui| {
+                let mut slider = egui::Slider::new(&mut value, def.min..=def.max);
+                if def.min > 0.0 && def.max / def.min >= 20.0 {
+                    slider = slider.logarithmic(true);
                 }
-            });
-        }
-
-        if instrument == 11 {
-            ui.horizontal(|ui| {
-                ui.label("Accent");
-                if ui.add(egui::Slider::new(&mut b8_accent, 0.0..=2.0)).changed() {
-                    changed = true;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Snap");
-                if ui.add(egui::Slider::new(&mut b8_snap, 0.0..=2.0)).changed() {
-                    changed = true;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Pitch Drop");
-                if ui.add(egui::Slider::new(&mut b8_pitch_drop, 0.0..=2.0)).changed() {
-                    changed = true;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Click Tone");
-                if ui.add(egui::Slider::new(&mut b8_click_tone, 100.0..=8000.0).logarithmic(true)).changed() {
-                    changed = true;
-                }
-            });
+                ui.label(def.label);
+                ui.add(slider).changed()
+            }).inner;
+            if changed_special {
+                special[def.special_index] = value;
+                changed = true;
+            }
         }
 
         if changed {
-            let mut special = [0.0f32; 8];
-            if instrument == 7 {
-                special[0] = clap_echo;
-            }
-            if instrument == 11 {
-                special[0] = b8_accent;
-                special[1] = b8_snap;
-                special[2] = b8_pitch_drop;
-                special[3] = b8_click_tone;
-            }
             let settings = VoiceSettings {
                 frequency: freq,
                 decay,

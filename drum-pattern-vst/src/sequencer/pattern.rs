@@ -189,8 +189,8 @@ impl Pattern {
 
         let seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u64;
+            .map(|duration| duration.as_nanos() as u64)
+            .unwrap_or(0);
 
         // Simple LCG for deterministic randomness without dependencies
         let mut rng = seed;
