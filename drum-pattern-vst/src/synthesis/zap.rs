@@ -257,14 +257,17 @@ impl Voice for ZapVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
+        let algo_changed = self.settings.algo != settings.algo;
         self.settings = settings;
         let base_freq = settings.frequency.max(20.0);
-        let algo = settings.algo;
 
-        self.osc_a_l = ZapOsc::new(self.sample_rate, algo);
-        self.osc_a_r = ZapOsc::new(self.sample_rate, algo);
-        self.osc_b_l = ZapOsc::new(self.sample_rate, algo);
-        self.osc_b_r = ZapOsc::new(self.sample_rate, algo);
+        if algo_changed {
+            let algo = settings.algo;
+            self.osc_a_l = ZapOsc::new(self.sample_rate, algo);
+            self.osc_a_r = ZapOsc::new(self.sample_rate, algo);
+            self.osc_b_l = ZapOsc::new(self.sample_rate, algo);
+            self.osc_b_r = ZapOsc::new(self.sample_rate, algo);
+        }
         self.osc_a_l.set_freq(base_freq);
         self.osc_a_r.set_freq(base_freq);
         self.osc_b_l.set_freq(base_freq * 1.5);
@@ -278,6 +281,9 @@ impl Voice for ZapVoice {
     }
 
     fn set_algo(&mut self, algo: u8) {
+        if self.settings.algo == algo {
+            return;
+        }
         self.settings.algo = algo;
         let base_freq = self.settings.frequency.max(20.0);
         self.osc_a_l = ZapOsc::new(self.sample_rate, algo);

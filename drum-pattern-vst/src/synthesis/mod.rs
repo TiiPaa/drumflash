@@ -387,7 +387,7 @@ impl VoiceSettings {
     pub fn zap() -> Self {
         Self {
             frequency: 2000.0,
-            decay: 0.04,
+            decay: 0.15,
             volume: 0.6,
             filter_freq: 6000.0,
             release: 0.0,
@@ -403,7 +403,7 @@ impl VoiceSettings {
             // special[1] = Sweep speed (ms)
             // special[2] = Bite (FM amount)
             // special[3] = Width (stereo + slap delay)
-            special: [0.0, 80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [0.5, 80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
     }
 }

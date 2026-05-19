@@ -215,13 +215,13 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         midi_note: 37,
         algo_count: 2,
         special_params: &[
-            SpecialParamDef { name: "zap_sweep", label: "Sweep", default: 0.0, min: -1.0, max: 1.0, special_index: 0 },
+            SpecialParamDef { name: "zap_sweep", label: "Sweep", default: 0.5, min: -1.0, max: 1.0, special_index: 0 },
             SpecialParamDef { name: "zap_speed", label: "Speed", default: 80.0, min: 5.0, max: 300.0, special_index: 1 },
             SpecialParamDef { name: "zap_bite", label: "Bite", default: 0.0, min: 0.0, max: 1.0, special_index: 2 },
             SpecialParamDef { name: "zap_width", label: "Width", default: 0.0, min: 0.0, max: 1.0, special_index: 3 },
         ],
         capabilities: InstrumentCapabilities { freq: true, hold: false, filter_env: true, analog: true, stereo: true },
-        sound_settings_default: [2000.0, 0.04, 0.6, 6000.0, 0.0, 5.0, 3.0, 0.0, 0.7, 0.03, 0.3, 1.0],
+        sound_settings_default: [2000.0, 0.15, 0.6, 6000.0, 0.0, 5.0, 3.0, 0.0, 0.7, 0.03, 0.3, 1.0],
         filter_type_label: "LP",
     },
 ];

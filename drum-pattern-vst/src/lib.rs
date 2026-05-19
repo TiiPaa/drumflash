@@ -641,7 +641,7 @@ impl Default for DrumFlashParams {
 
             zap_sweep: FloatParam::new(
                 "Zap Sweep",
-                0.0,
+                0.5,
                 FloatRange::Linear { min: -1.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
