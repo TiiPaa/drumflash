@@ -102,13 +102,13 @@ impl InstrumentSettingsState {
 }
 
 pub struct SoundSettingsState {
-    pub instruments: [InstrumentSettingsState; 12],
+    pub instruments: [InstrumentSettingsState; crate::synthesis::DrumVoice::COUNT],
     pub version: AtomicU64,
 }
 
 impl SoundSettingsState {
     pub fn new() -> Arc<Self> {
-        let defaults: [[f32; 12]; 12] = std::array::from_fn(|i| {
+        let defaults: [[f32; 12]; crate::synthesis::DrumVoice::COUNT] = std::array::from_fn(|i| {
             crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
         });
 

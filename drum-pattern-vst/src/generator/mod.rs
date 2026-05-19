@@ -59,7 +59,7 @@ pub fn generate(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Patt
         ),
         GeneratorType::Euclidean => {
             // Default rotations: slightly offset per instrument for groove
-            let rotations = [0, 0, 0, 2, 4, 6, 8, 0, 0, 0, 0, 0];
+            let rotations = [0, 0, 0, 2, 4, 6, 8, 0, 0, 0, 0, 0, 0];
             euclidean::generate(params.style_primary, params.density, &rotations, rng)
         }
         GeneratorType::Classic => classic::generate(

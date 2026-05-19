@@ -646,6 +646,42 @@ impl SquareOsc {
     }
 }
 
+// ── Sawtooth Oscillator ─────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, Debug)]
+pub struct SawOsc {
+    pub phase: f32,
+    phase_increment: f32,
+    sample_rate: f32,
+}
+
+impl SawOsc {
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            phase: 0.0,
+            phase_increment: 0.0,
+            sample_rate,
+        }
+    }
+
+    pub fn set_freq(&mut self, freq: f32) {
+        self.phase_increment = freq / self.sample_rate;
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> f32 {
+        let sample = 2.0 * self.phase - 1.0;
+        self.phase += self.phase_increment;
+        self.phase -= self.phase.floor();
+        sample
+    }
+
+    #[allow(dead_code)]
+    pub fn reset(&mut self) {
+        self.phase = 0.0;
+    }
+}
+
 // ── Triangle Oscillator ─────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug)]

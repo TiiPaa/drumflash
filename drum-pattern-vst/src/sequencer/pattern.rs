@@ -7,7 +7,7 @@ use std::sync::{
     Arc,
 };
 
-pub const INSTRUMENT_COUNT: usize = 12;
+pub const INSTRUMENT_COUNT: usize = 13;
 pub const STEP_COUNT: usize = 16;
 
 /// A single step in a pattern containing trigger states for all instruments.
