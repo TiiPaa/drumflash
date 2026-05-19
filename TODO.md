@@ -89,7 +89,7 @@
 
 - [ ] [30] Clarifier si `index.js` doit etre conserve ou archive
 - [ ] [31] Revoir l'organisation du repo pour separer clairement PoC web et plugin
-- [ ] [31a] Clarifier l'emplacement des docs produit actives
+- [x] [31a] Clarifier l'emplacement des docs produit actives
   - `AGENTS.md` cite `PROJECT_BRIEF.md` et `BACKLOG_VST.md`, mais les fichiers presents sont sous `docs/historique/`
   - decider si ces docs doivent revenir a la racine, etre remplacees par `TODO.md`/`README.md`, ou etre explicitement marquees comme archivees
   - mettre a jour `README.md`, `AGENTS.md` et les references croisees en consequence

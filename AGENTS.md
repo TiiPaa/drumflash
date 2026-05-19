@@ -6,15 +6,17 @@ Primary goal: build a VST3 drum sequencer plugin in Rust.
 
 The web app in `index.html` and `index.js` is a legacy PoC and functional reference. It is not the target product anymore.
 
-Authoritative product docs: `PROJECT_BRIEF.md` (scope/V1), `BACKLOG_VST.md` (priorities), `drum-pattern-vst/README.md` (real plugin state).
+Authoritative product docs: `TODO.md` (active priorities), `drum-pattern-vst/README.md` (real plugin state), `CHANGELOG.md` (build history). Older scope/backlog notes live under `docs/historique/` and are historical references, not the active source of truth.
 
 ## Current Project Layout
 
 - `drum-pattern-vst/` - primary implementation target
 - `index.html` - browser PoC used as behavioral reference
 - `index.js` - modular PoC variant, not the main product
-- `PROJECT_BRIEF.md` - product scope and V1 definition
-- `BACKLOG_VST.md` - prioritized work list
+- `TODO.md` - active priorities and known issues
+- `CHANGELOG.md` - build history and validation notes
+- `docs/historique/PROJECT_BRIEF.md` - historical V1 scope reference
+- `docs/historique/BACKLOG_VST.md` - historical backlog reference
 - `ADDING_AN_INSTRUMENT.md` - guide for adding new synthesis voices
 
 ## Development Priority

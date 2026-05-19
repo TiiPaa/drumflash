@@ -18,3 +18,4 @@ cd "E:\Dev\Projets\Drum Flash\drum-pattern-vst"
 - **`CHANGELOG.md`** — historique des builds et nouveautés
 - **`ADDING_AN_INSTRUMENT.md`** — procédure pour ajouter une voix de synthèse
 - **`drum-pattern-vst/STUDIO_ONE_MULTI_OUT.md`** — notes techniques multi-out
+- **`docs/historique/`** - anciens brief/backlog/guides conserves comme archives
