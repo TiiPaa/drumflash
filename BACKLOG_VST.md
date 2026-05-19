@@ -1,25 +1,19 @@
 # Backlog VST
 
-## Etat courant - 2026-05-16
+## Etat courant - 2026-05-19
 
-- OK: correctif ajoute pour resynchroniser le pattern joue depuis les parametres restaures par l'hote.
-- OK: ouverture de l'editeur et debut de `process()` resynchronisent la grille atomique depuis les 16 parametres de pas.
-- OK: diagnostic Studio One confirme que l'etat VST3 restaure les parametres classiques (`master_vol`, `bpm`).
-- OK: la grille est maintenant sauvegardee dans le champ persistant `pattern-v1`, directement depuis `SharedPattern`.
-- OK: migration ajoutee depuis les anciens parametres caches `st01` a `st16` vers `pattern-v1`.
-- OK: wrapper VST3 vendore corrige pour sauvegarder/restaurer le meme etat cote `IEditController` et `IComponent`.
-- OK: `cargo test` passe avec 16 tests.
-- OK: `build.ps1 -Install` installe le bundle systeme dans `C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3`.
+- OK: revert au commit stable `5ae1286` (Zap voice) après identification de bugs critiques dans le commit `8d56e72` (Perc1).
+- OK: build réinstallé `20260519-163250`.
+- OK: documentation `ADDING_AN_INSTRUMENT.md` créée — guide pour agents externes.
+- A corriger: Perc1 doit être refait proprement (pas de recréation d'enveloppes dans `set_settings`, `DecayReleaseEnvelope` pour Release, plock menu data-driven).
 - A valider dans Studio One: sauvegarde/reouverture d'un projet avec pattern modifie.
 
 Build installe courant:
 
-- Build UI: `20260516-205054`
+- Build UI: `20260519-163250`
 - VST3 class ID: `DrumFlashPlugin1`
 - Binaire installe: `C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3\Contents\x86_64-win\drum-pattern-vst.vst3`
-- Timestamp: `2026-05-11 09:13:16`
-- SHA-256: `62AA5FCC445FEFDBC1E30196E614BCAED53A61C9F9EB2AB9BD5A4E1C5C510CEF`
-- 12 instruments dont B8 (TR-808 Bass Drum)
+- 13 instruments dont Zap (index 12)
 - Mix Bus checkbox par instrument
 - Plock fix (special params uniquement au trigger)
 - Parameter locks 14 champs (12 sound + clap_echo + algo)

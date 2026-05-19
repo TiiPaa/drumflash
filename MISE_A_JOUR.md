@@ -1,3 +1,28 @@
+# Mise a jour - 2026-05-19
+
+## Etat de fin de session
+
+Revert du code au commit stable `5ae1286` (Zap voice). Build réinstallé :
+
+```text
+20260519-163250
+```
+
+## Actions de la session
+
+- **Revert** : `git reset --hard 5ae1286` — retour à l'état stable avant le commit `8d56e72` qui avait introduit des bugs critiques sur Perc1 (recréation des enveloppes dans `set_settings`, slider Filter Env manquant, release non fonctionnel).
+- **Rebuild + install** : `cargo build --release` + `build.ps1 -Install` — bundle VST3 régénéré et copié dans `C:\Program Files\Common Files\VST3\`.
+- **Documentation** : création de `ADDING_AN_INSTRUMENT.md` — guide complet pour ajouter un nouvel instrument (architecture, checklist étape par étape, pièges à éviter, notamment l'anti-pattern de recréation d'enveloppes dans `set_settings`).
+
+## Problèmes identifiés à corriger sur Perc1 (prochaine session)
+
+1. **Ne pas recréer `amp_env` et `filter_env` dans `set_settings`** — utiliser `.set_decay()` / `.set_curve()` à la place.
+2. **Migrer `amp_env` de `ExpDecayEnvelope` vers `DecayReleaseEnvelope`** pour avoir un slider Release fonctionnel.
+3. **Rendre le plock menu data-driven** via `instrument_registry::special_params()` au lieu de blocs `if instrument == 7 / 11` hardcodés.
+4. **Mettre à jour `CLAUDE.md`** : corriger les mentions obsolètes de 12 instruments / 12 aux outs (13 désormais).
+
+---
+
 # Mise a jour - 2026-05-16
 
 ## Etat de fin de session
