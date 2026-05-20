@@ -61,8 +61,15 @@
 - [x] [26g] Attack ramp 1.5 ms sur B8 (élimine click de démarrage)
 - [x] [26h] Filtre LP dédié Click Tone sur B8 (100-8000 Hz)
 - [x] [26i] Plock B8 fix : special params (accent/snap/pitch_drop/click_tone) stockés
-- [ ] [26j] Finaliser les réglages de synthèse par instrument
-- [ ] [26k] Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit)
+- [x] [26j] Finaliser les réglages de synthèse par instrument
+  - `standard_params` data-driven avec ranges UI (min/max, log, suffix, checkbox)
+  - Ranges corrigés pour éviter le clamp involontaire (ex: Ride decay 1.2s > slider 0.5s)
+- [ ] [51] Ajouter un paramètre Attack réglable par instrument (graphique AHDSR complet A-H-D-R)
+- [ ] [52] Ajouter un paramètre Sustain level pour un vrai ADSR séquentiel
+- [x] [26k] Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit)
+  - Sound Panel regroupé par familles data-driven (OSC/ENV/FILTER/OUTPUT)
+  - Visualisations interactives d'enveloppe (Amp AHDSR + Filter Env)
+  - Layout horizontal : params à gauche, graph à droite
 - [ ] [26l] Per-instrument stereo toggles + stereo Snare 606
 
 ## Fonctionnalites P3 (Avancees / Complexes)
@@ -109,8 +116,8 @@
 - [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé
 - [x] [47] Refaire Perc1 proprement : ne pas recréer les enveloppes dans `set_settings`
 - [x] [48] Refaire Perc1 proprement : utiliser `DecayReleaseEnvelope` pour le slider Release
-- [ ] **REPRENDRE ICI** [50] Diagnostiquer pourquoi la moitié des paramètres Perc1 ne sont pas actionnables (Release inaudible, etc.)
-- [ ] [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
+- [x] [50] Diagnostiquer pourquoi la moitié des paramètres Perc1 ne sont pas actionnables (faux positif — tests unitaires confirment que decay/release fonctionnent)
+- [ ] **REPRENDRE ICI** [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
 - [ ] [35] Diagnostiquer la sauvegarde/reouverture Studio One
 - [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
