@@ -1032,20 +1032,16 @@ impl Plugin for DrumFlashVst {
                         continue;
                     };
 
-                    // Apply plock if present, otherwise re-apply global settings
-                    if let Some(plock_settings) = self.params.plock_state.state.get_settings(voice_idx, current_steps[voice_idx]) {
-                        self.synthesizer.set_voice_settings(
-                            voice,
-                            plock_settings,
-                        );
-                    } else {
+                    // Build global settings, then merge with plock if present
+                    let global_settings = {
                         let inst = &self.sound_settings_state.instruments[voice_idx];
                         let (freq, decay, vol, filt, release, dc, rc, hold, fea, fed, analog, stereo) = inst.load();
-                        self.synthesizer.set_voice_settings(
-                            voice,
-                            self.voice_settings_for(voice_idx, freq, decay, vol, filt, release, dc, rc, hold, fea, fed, analog, stereo),
-                        );
-                    }
+                        self.voice_settings_for(voice_idx, freq, decay, vol, filt, release, dc, rc, hold, fea, fed, analog, stereo)
+                    };
+                    let settings = self.params.plock_state.state
+                        .get_settings(voice_idx, current_steps[voice_idx], &global_settings)
+                        .unwrap_or(global_settings);
+                    self.synthesizer.set_voice_settings(voice, settings);
 
                     self.synthesizer.trigger(voice_idx, *velocity);
 
