@@ -350,3 +350,45 @@ impl Voice for Perc1Voice {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn count_active_samples(voice: &mut Perc1Voice) -> usize {
+        let mut count = 0;
+        for _ in 0..(44100 * 5) {
+            let (l, r) = voice.process_sample_stereo();
+            if l != 0.0 || r != 0.0 {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    #[test]
+    fn perc1_decay_release_are_audible() {
+        let sr = 44100.0;
+        let mut settings = VoiceSettings::perc1();
+
+        // Short decay, no release
+        settings.decay = 0.01;
+        settings.release = 0.0;
+        let mut voice = Perc1Voice::new(sr, settings);
+        voice.trigger();
+        let short = count_active_samples(&mut voice);
+
+        // Long decay + long release
+        settings.decay = 0.5;
+        settings.release = 1.0;
+        voice.set_settings(settings);
+        voice.trigger();
+        let long = count_active_samples(&mut voice);
+
+        assert!(
+            long > short * 2,
+            "Long decay+release should produce significantly more samples than short (short={}, long={})",
+            short, long
+        );
+    }
+}
