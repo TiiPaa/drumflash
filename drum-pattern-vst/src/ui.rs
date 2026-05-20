@@ -24,6 +24,9 @@ use crate::{
     DrumFlashParams, BUILD_ID,
 };
 
+mod envelope_viz;
+use envelope_viz::{draw_amp_envelope, draw_filter_envelope};
+
 // Instrument labels and names are sourced from instrument_registry::INSTRUMENTS
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -482,145 +485,145 @@ fn draw_sound_panel(
         mut stereo,
     ) = inst.load();
     let mut changed = false;
-    let caps = crate::instrument_registry::capabilities(state.selected_instrument);
 
-    // Two-column layout for sound parameters
-    ui.columns(2, |cols| {
-        cols[0].vertical(|ui| {
-            if caps.freq {
-                ui.horizontal(|ui| {
-                    ui.label("Frequency");
-                    if ui.add(egui::Slider::new(&mut freq, 20.0..=12000.0).logarithmic(true)).changed() {
-                        inst.frequency.store(freq.to_bits(), Ordering::Relaxed);
-                        changed = true;
+    // Data-driven grouped Sound Panel
+    let instrument = &crate::instrument_registry::INSTRUMENTS[state.selected_instrument];
+    let standard_defs = instrument.standard_params;
+    let special_defs = instrument.special_params;
+
+    for family in [
+        crate::instrument_registry::ParamFamily::Osc,
+        crate::instrument_registry::ParamFamily::Env,
+        crate::instrument_registry::ParamFamily::Filter,
+        crate::instrument_registry::ParamFamily::Output,
+    ] {
+        ui.group(|ui| {
+            ui.label(RichText::new(family.label()).strong().size(13.0));
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                // Left column: params
+                ui.vertical(|ui| {
+                    // Standard params for this family
+                    for def in standard_defs.iter().filter(|d| d.family == family) {
+                        ui.horizontal(|ui| {
+                            ui.label(def.label);
+                            match (&def.widget, def.field) {
+                                (crate::instrument_registry::ParamWidget::Slider { min, max, logarithmic, suffix }, field) => {
+                                    let value: &mut f32 = match field {
+                                        crate::instrument_registry::StandardField::Freq => &mut freq,
+                                        crate::instrument_registry::StandardField::Decay => &mut decay,
+                                        crate::instrument_registry::StandardField::Volume => &mut vol,
+                                        crate::instrument_registry::StandardField::FilterFreq => &mut filt,
+                                        crate::instrument_registry::StandardField::Release => &mut release,
+                                        crate::instrument_registry::StandardField::DecayCurve => &mut decay_curve,
+                                        crate::instrument_registry::StandardField::ReleaseCurve => &mut release_curve,
+                                        crate::instrument_registry::StandardField::Hold => &mut hold,
+                                        crate::instrument_registry::StandardField::FilterEnvAmount => &mut filter_env_amount,
+                                        crate::instrument_registry::StandardField::FilterEnvDecay => &mut filter_env_decay,
+                                        crate::instrument_registry::StandardField::Analog => &mut analog,
+                                        crate::instrument_registry::StandardField::Stereo => &mut stereo,
+                                    };
+                                    let mut slider = egui::Slider::new(value, *min..=*max);
+                                    if *logarithmic {
+                                        slider = slider.logarithmic(true);
+                                    }
+                                    if let Some(s) = suffix {
+                                        slider = slider.suffix(*s);
+                                    }
+                                    if ui.add(slider).changed() {
+                                        store_field(inst, field, *value);
+                                        changed = true;
+                                    }
+                                }
+                                (crate::instrument_registry::ParamWidget::Checkbox, field) => {
+                                    let value: &mut f32 = match field {
+                                        crate::instrument_registry::StandardField::Stereo => &mut stereo,
+                                        _ => &mut stereo,
+                                    };
+                                    let mut checked = *value >= 0.5;
+                                    if ui.checkbox(&mut checked, "").changed() {
+                                        *value = if checked { 1.0 } else { 0.0 };
+                                        store_field(inst, field, *value);
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    // Special params for this family
+                    for def in special_defs.iter().filter(|d| d.family == family) {
+                        if let Some(param) = params.special_param(state.selected_instrument, def.special_index) {
+                            ui.horizontal(|ui| {
+                                ui.label(def.label);
+                                ui.add(widgets::ParamSlider::for_param(param, setter).with_width(120.0));
+                            });
+                        }
+                    }
+
+                    // Algorithm selector inside OSC family
+                    if family == crate::instrument_registry::ParamFamily::Osc {
+                        if let Some(voice) = DrumVoice::from_index(state.selected_instrument) {
+                            let algos = synthesis::algos_for(voice);
+                            if algos.len() > 1 && state.selected_instrument != 3 {
+                                let algo_param = params.algos()[state.selected_instrument];
+                                ui.horizontal(|ui| {
+                                    ui.label("Algorithm");
+                                    let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
+                                    algo_combo(ui, setter, algo_param, &algo_names);
+                                });
+                            }
+                        }
+                    }
+
+                    // Mix checkbox inside OUTPUT family
+                    if family == crate::instrument_registry::ParamFamily::Output {
+                        let mix_param = params.mixes()[state.selected_instrument];
+                        ui.horizontal(|ui| {
+                            ui.label("Mix");
+                            let mut mix = mix_param.value();
+                            if ui.add(egui::Checkbox::new(&mut mix, "")).changed() {
+                                setter.set_parameter(mix_param.into(), mix);
+                            }
+                        });
+                    }
+
+                    // Legend inside ENV family (under the params)
+                    if family == crate::instrument_registry::ParamFamily::Env {
+                        let has_release = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::Release);
+                        ui.horizontal(|ui| {
+                            let legend = |ui: &mut egui::Ui, color: Color32, text: &str| {
+                                ui.label(RichText::new("■").color(color));
+                                ui.label(text);
+                            };
+                            // Attack is not shown today (no Attack parameter yet)
+                            legend(ui, Color32::from_rgb(140, 220, 255), "H");
+                            legend(ui, Color32::from_rgb(100, 180, 255), "D");
+                            if has_release {
+                                legend(ui, Color32::from_rgb(180, 120, 255), "R");
+                            }
+                        });
                     }
                 });
-            }
-            ui.horizontal(|ui| {
-                ui.label("Decay");
-                if ui.add(egui::Slider::new(&mut decay, 0.01..=0.5)).changed() {
-                    inst.decay.store(decay.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Decay Curve");
-                if ui.add(egui::Slider::new(&mut decay_curve, 2.0..=10.0)).changed() {
-                    inst.decay_curve.store(decay_curve.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
-            if caps.hold {
-                ui.horizontal(|ui| {
-                    ui.label("Hold");
-                    if ui.add(egui::Slider::new(&mut hold, 0.0..=0.5).suffix(" s")).changed() {
-                        inst.hold.store(hold.to_bits(), Ordering::Relaxed);
-                        changed = true;
+
+                // Right column: graphs
+                match family {
+                    crate::instrument_registry::ParamFamily::Env => {
+                        let has_release = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::Release);
+                        draw_amp_envelope(ui, 0.0, decay, decay_curve, hold, release, release_curve, has_release);
                     }
-                });
-            }
-            ui.horizontal(|ui| {
-                ui.label("Release");
-                if ui.add(egui::Slider::new(&mut release, 0.0..=5.0)).changed() {
-                    inst.release.store(release.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Release Curve");
-                if ui.add(egui::Slider::new(&mut release_curve, 2.0..=10.0)).changed() {
-                    inst.release_curve.store(release_curve.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Volume");
-                if ui.add(egui::Slider::new(&mut vol, 0.0..=1.5)).changed() {
-                    inst.volume.store(vol.to_bits(), Ordering::Relaxed);
-                    changed = true;
+                    crate::instrument_registry::ParamFamily::Filter => {
+                        let has_filter_env = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::FilterEnvAmount);
+                        if has_filter_env {
+                            draw_filter_envelope(ui, decay_curve, filter_env_decay);
+                        }
+                    }
+                    _ => {}
                 }
             });
         });
-
-        cols[1].vertical(|ui| {
-            let filter_type_label = crate::instrument_registry::filter_type_label(state.selected_instrument);
-            ui.horizontal(|ui| {
-                ui.label(format!("Filter ({filter_type_label})"));
-                if ui.add(egui::Slider::new(&mut filt, 20.0..=15000.0).logarithmic(true)).changed() {
-                    inst.filter_freq.store(filt.to_bits(), Ordering::Relaxed);
-                    changed = true;
-                }
-            });
-            if caps.filter_env {
-                ui.horizontal(|ui| {
-                    ui.label("Filter Env");
-                    if ui.add(egui::Slider::new(&mut filter_env_amount, 0.0..=1.0)).changed() {
-                        inst.filter_env_amount.store(filter_env_amount.to_bits(), Ordering::Relaxed);
-                        changed = true;
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Filter Decay");
-                    if ui.add(egui::Slider::new(&mut filter_env_decay, 0.001..=0.2).suffix(" s")).changed() {
-                        inst.filter_env_decay.store(filter_env_decay.to_bits(), Ordering::Relaxed);
-                        changed = true;
-                    }
-                });
-            }
-            if caps.analog {
-                ui.horizontal(|ui| {
-                    ui.label("Analog");
-                    if ui.add(egui::Slider::new(&mut analog, 0.0..=1.0)).changed() {
-                        inst.analog.store(analog.to_bits(), Ordering::Relaxed);
-                        changed = true;
-                    }
-                });
-            }
-            if caps.stereo {
-                ui.horizontal(|ui| {
-                    ui.label("Stereo");
-                    if ui.add(egui::Checkbox::new(&mut (stereo >= 0.5), "")).changed() {
-                        stereo = if stereo >= 0.5 { 0.0 } else { 1.0 };
-                        inst.stereo.store(stereo.to_bits(), Ordering::Relaxed);
-                        changed = true;
-                    }
-                });
-            }
-
-            let mix_param = params.mixes()[state.selected_instrument];
-            ui.horizontal(|ui| {
-                ui.label("Mix");
-                let mut mix = mix_param.value();
-                if ui.add(egui::Checkbox::new(&mut mix, "")).changed() {
-                    setter.set_parameter(mix_param.into(), mix);
-                }
-            });
-
-            // Algorithm selector
-            if let Some(voice) = DrumVoice::from_index(state.selected_instrument) {
-                let algos = synthesis::algos_for(voice);
-                if algos.len() > 1 && state.selected_instrument != 3 {
-                    let algo_param = params.algos()[state.selected_instrument];
-                    ui.horizontal(|ui| {
-                        ui.label("Algorithm");
-                        let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
-                        algo_combo(ui, setter, algo_param, &algo_names);
-                    });
-                }
-            }
-        });
-    });
-
-    // Per-instrument special parameters (data-driven from registry)
-    ui.horizontal(|ui| {
-        let special_defs = crate::instrument_registry::special_params(state.selected_instrument);
-        for def in special_defs {
-            if let Some(param) = params.special_param(state.selected_instrument, def.special_index) {
-                ui.label(def.label);
-                ui.add(widgets::ParamSlider::for_param(param, setter).with_width(120.0));
-            }
-        }
-    });
+    }
 
     if changed {
         sound_settings.bump_version();
@@ -630,6 +633,24 @@ fn draw_sound_panel(
 // ─────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────
+fn store_field(inst: &crate::sound_settings::InstrumentSettingsState, field: crate::instrument_registry::StandardField, value: f32) {
+    use crate::instrument_registry::StandardField;
+    match field {
+        StandardField::Freq => inst.frequency.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::Decay => inst.decay.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::Volume => inst.volume.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::FilterFreq => inst.filter_freq.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::Release => inst.release.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::DecayCurve => inst.decay_curve.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::ReleaseCurve => inst.release_curve.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::Hold => inst.hold.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::FilterEnvAmount => inst.filter_env_amount.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::FilterEnvDecay => inst.filter_env_decay.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::Analog => inst.analog.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::Stereo => inst.stereo.store(value.to_bits(), Ordering::Relaxed),
+    }
+}
+
 fn plock_special_field(special_index: usize) -> Option<usize> {
     let field = crate::plock::SPECIAL_FIELD_START.checked_add(special_index)?;
     (field < crate::plock::FIELD_COUNT).then_some(field)
