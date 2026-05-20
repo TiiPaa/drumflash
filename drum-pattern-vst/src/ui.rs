@@ -507,7 +507,13 @@ fn draw_sound_panel(
                     // Standard params for this family
                     for def in standard_defs.iter().filter(|d| d.family == family) {
                         ui.horizontal(|ui| {
-                            ui.label(def.label);
+                            let label_text = if def.field == crate::instrument_registry::StandardField::FilterFreq {
+                                let ft = crate::instrument_registry::filter_type_label(state.selected_instrument);
+                                format!("{} ({})", def.label, ft)
+                            } else {
+                                def.label.to_string()
+                            };
+                            ui.label(label_text);
                             match (&def.widget, def.field) {
                                 (crate::instrument_registry::ParamWidget::Slider { min, max, logarithmic, suffix }, field) => {
                                     let value: &mut f32 = match field {
@@ -649,11 +655,6 @@ fn store_field(inst: &crate::sound_settings::InstrumentSettingsState, field: cra
         StandardField::Analog => inst.analog.store(value.to_bits(), Ordering::Relaxed),
         StandardField::Stereo => inst.stereo.store(value.to_bits(), Ordering::Relaxed),
     }
-}
-
-fn plock_special_field(special_index: usize) -> Option<usize> {
-    let field = crate::plock::SPECIAL_FIELD_START.checked_add(special_index)?;
-    (field < crate::plock::FIELD_COUNT).then_some(field)
 }
 
 fn load_pattern_for_ui(pattern_for_ui: &SharedPattern, pattern: &Pattern) {
@@ -804,6 +805,8 @@ fn draw_plock_menu(
     step: usize,
     _state: &mut EditorUIState,
 ) {
+    use crate::plock::{FIELD_COUNT, SPECIAL_FIELD_START};
+
     ui.label(
         RichText::new(format!(
             "Plock {} — Step {}",
@@ -819,9 +822,13 @@ fn draw_plock_menu(
 
     let has_plock = plock.masks.is_active(instrument, step);
 
-    // If no plock exists yet, seed from global settings
+    // ── Creation ──
     if !has_plock {
-        if ui.button("➕ Create plock from current settings").clicked() {
+        ui.label("Create plock:");
+        if ui.button("🔗 Link to global").clicked() {
+            plock.masks.set_active(instrument, step, true);
+        }
+        if ui.button("📸 Snapshot current settings").clicked() {
             let mut special = [0.0f32; 8];
             for def in crate::instrument_registry::special_params(instrument) {
                 if def.special_index < special.len() {
@@ -850,148 +857,161 @@ fn draw_plock_menu(
             };
             plock.set_settings(instrument, step, &settings);
         }
+        return;
+    }
+
+    // ── Mode indicator ──
+    let mask = plock.field_masks.get(instrument, step);
+    let all_bits = if FIELD_COUNT >= 32 { 0xFFFFFFFF } else { (1u32 << FIELD_COUNT) - 1 };
+    let mode_text = if mask == 0 {
+        "🔗 Linked to global"
+    } else if mask == all_bits {
+        "📸 Full snapshot"
     } else {
-        let mut changed = false;
+        "🔀 Mixed"
+    };
+    ui.label(RichText::new(mode_text).small());
+    ui.separator();
 
-        let mut freq = plock.values.get(instrument, step, 0);
-        let mut decay = plock.values.get(instrument, step, 1);
-        let mut vol = plock.values.get(instrument, step, 2);
-        let mut filt = plock.values.get(instrument, step, 3);
-        let mut release = plock.values.get(instrument, step, 4);
-        let mut decay_curve = plock.values.get(instrument, step, 5);
-        let mut release_curve = plock.values.get(instrument, step, 6);
-        let mut hold = plock.values.get(instrument, step, 7);
-        let mut filter_env_amount = plock.values.get(instrument, step, 8);
-        let mut filter_env_decay = plock.values.get(instrument, step, 9);
-        let mut analog = plock.values.get(instrument, step, 10);
-        let mut stereo = plock.values.get(instrument, step, 11);
-        let algo = plock.values.get(instrument, step, 13) as u8;
-        let special_defs = crate::instrument_registry::special_params(instrument);
-        let mut special = [0.0f32; 8];
-        for def in special_defs {
-            if def.special_index < special.len() {
-                special[def.special_index] = plock_special_field(def.special_index)
-                    .map(|field| plock.values.get(instrument, step, field))
-                    .unwrap_or(def.default);
+    // ── Helpers ──
+    let draw_slider = |ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>, log: bool, field: usize| {
+        let overridden = plock.field_masks.is_set(instrument, step, field);
+        let label_text = if overridden {
+            RichText::new(label).strong()
+        } else {
+            RichText::new(label).weak()
+        };
+        let (changed, reset) = ui.horizontal(|ui| {
+            ui.label(label_text);
+            let mut slider = egui::Slider::new(value, range);
+            if log {
+                slider = slider.logarithmic(true);
             }
-        }
-
-        ui.horizontal(|ui| {
-            ui.label("Freq");
-            if ui.add(egui::Slider::new(&mut freq, 20.0..=12000.0).logarithmic(true)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Decay");
-            if ui.add(egui::Slider::new(&mut decay, 0.01..=0.5)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Vol");
-            if ui.add(egui::Slider::new(&mut vol, 0.0..=1.5)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Filter");
-            if ui.add(egui::Slider::new(&mut filt, 20.0..=15000.0).logarithmic(true)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Release");
-            if ui.add(egui::Slider::new(&mut release, 0.0..=5.0)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("DecCurve");
-            if ui.add(egui::Slider::new(&mut decay_curve, 2.0..=10.0)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("RelCurve");
-            if ui.add(egui::Slider::new(&mut release_curve, 2.0..=10.0)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Hold");
-            if ui.add(egui::Slider::new(&mut hold, 0.0..=0.5).suffix(" s")).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("FiltEnv");
-            if ui.add(egui::Slider::new(&mut filter_env_amount, 0.0..=1.0)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("FiltDec");
-            if ui.add(egui::Slider::new(&mut filter_env_decay, 0.001..=0.2).suffix(" s")).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Analog");
-            if ui.add(egui::Slider::new(&mut analog, 0.0..=1.0)).changed() {
-                changed = true;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Stereo");
-            if ui.add(egui::Checkbox::new(&mut (stereo >= 0.5), "")).changed() {
-                stereo = if stereo >= 0.5 { 0.0 } else { 1.0 };
-                changed = true;
-            }
-        });
-
-        for def in special_defs {
-            if def.special_index >= special.len() {
-                continue;
-            }
-            let mut value = special[def.special_index];
-            let changed_special = ui.horizontal(|ui| {
-                let mut slider = egui::Slider::new(&mut value, def.min..=def.max);
-                if def.min > 0.0 && def.max / def.min >= 20.0 {
-                    slider = slider.logarithmic(true);
-                }
-                ui.label(def.label);
-                ui.add(slider).changed()
-            }).inner;
-            if changed_special {
-                special[def.special_index] = value;
-                changed = true;
-            }
-        }
-
+            let c = ui.add(slider).changed();
+            let r = overridden && ui.small_button("↺").clicked();
+            (c, r)
+        }).inner;
         if changed {
-            let settings = VoiceSettings {
-                frequency: freq,
-                decay,
-                volume: vol,
-                filter_freq: filt,
-                release,
-                decay_curve,
-                release_curve,
-                hold,
-                filter_env_amount,
-                filter_env_decay,
-                analog,
-                stereo,
-                algo,
-                special,
-            };
-            plock.set_settings(instrument, step, &settings);
+            plock.set_field(instrument, step, field, *value);
         }
+        if reset {
+            plock.field_masks.clear(instrument, step, field);
+        }
+    };
 
-        ui.separator();
-        if ui.button("🗑 Clear plock").clicked() {
-            plock.clear(instrument, step);
+    // ── Standard fields ──
+    let mut freq = if plock.field_masks.is_set(instrument, step, 0) { plock.values.get(instrument, step, 0) } else { global.0 };
+    draw_slider(ui, "Freq", &mut freq, 20.0..=12000.0, true, 0);
+
+    let mut decay = if plock.field_masks.is_set(instrument, step, 1) { plock.values.get(instrument, step, 1) } else { global.1 };
+    draw_slider(ui, "Decay", &mut decay, 0.01..=2.0, false, 1);
+
+    let mut vol = if plock.field_masks.is_set(instrument, step, 2) { plock.values.get(instrument, step, 2) } else { global.2 };
+    draw_slider(ui, "Vol", &mut vol, 0.0..=1.5, false, 2);
+
+    let mut filt = if plock.field_masks.is_set(instrument, step, 3) { plock.values.get(instrument, step, 3) } else { global.3 };
+    draw_slider(ui, "Filter", &mut filt, 20.0..=15000.0, true, 3);
+
+    let mut release = if plock.field_masks.is_set(instrument, step, 4) { plock.values.get(instrument, step, 4) } else { global.4 };
+    draw_slider(ui, "Release", &mut release, 0.0..=5.0, false, 4);
+
+    let mut decay_curve = if plock.field_masks.is_set(instrument, step, 5) { plock.values.get(instrument, step, 5) } else { global.5 };
+    draw_slider(ui, "DecCurve", &mut decay_curve, 2.0..=10.0, false, 5);
+
+    let mut release_curve = if plock.field_masks.is_set(instrument, step, 6) { plock.values.get(instrument, step, 6) } else { global.6 };
+    draw_slider(ui, "RelCurve", &mut release_curve, 2.0..=10.0, false, 6);
+
+    let mut hold = if plock.field_masks.is_set(instrument, step, 7) { plock.values.get(instrument, step, 7) } else { global.7 };
+    draw_slider(ui, "Hold", &mut hold, 0.0..=0.5, false, 7);
+
+    let mut filter_env_amount = if plock.field_masks.is_set(instrument, step, 8) { plock.values.get(instrument, step, 8) } else { global.8 };
+    draw_slider(ui, "FiltEnv", &mut filter_env_amount, 0.0..=1.0, false, 8);
+
+    let mut filter_env_decay = if plock.field_masks.is_set(instrument, step, 9) { plock.values.get(instrument, step, 9) } else { global.9 };
+    draw_slider(ui, "FiltDec", &mut filter_env_decay, 0.001..=0.2, false, 9);
+
+    let mut analog = if plock.field_masks.is_set(instrument, step, 10) { plock.values.get(instrument, step, 10) } else { global.10 };
+    draw_slider(ui, "Analog", &mut analog, 0.0..=1.0, false, 10);
+
+    // Stereo is a checkbox, not a slider
+    let mut stereo_val = if plock.field_masks.is_set(instrument, step, 11) { plock.values.get(instrument, step, 11) } else { global.11 };
+    let stereo_overridden = plock.field_masks.is_set(instrument, step, 11);
+    let stereo_label = if stereo_overridden { RichText::new("Stereo").strong() } else { RichText::new("Stereo").weak() };
+    let (stereo_changed, stereo_reset) = ui.horizontal(|ui| {
+        ui.label(stereo_label);
+        let mut checked = stereo_val >= 0.5;
+        let c = ui.add(egui::Checkbox::new(&mut checked, "")).changed();
+        if c {
+            stereo_val = if checked { 1.0 } else { 0.0 };
         }
+        let r = stereo_overridden && ui.small_button("↺").clicked();
+        (c, r)
+    }).inner;
+    if stereo_changed {
+        plock.set_field(instrument, step, 11, stereo_val);
+    }
+    if stereo_reset {
+        plock.field_masks.clear(instrument, step, 11);
+    }
+
+    // ── Algo ──
+    let mut algo_val = if plock.field_masks.is_set(instrument, step, 13) {
+        plock.values.get(instrument, step, 13) as u8
+    } else {
+        params.algos()[instrument].value() as u8
+    };
+    let algo_overridden = plock.field_masks.is_set(instrument, step, 13);
+    let algo_label = if algo_overridden { RichText::new("Algo").strong() } else { RichText::new("Algo").weak() };
+    let (algo_changed, algo_reset) = ui.horizontal(|ui| {
+        ui.label(algo_label);
+        let c = ui.add(egui::Slider::new(&mut algo_val, 0u8..=3)).changed();
+        let r = algo_overridden && ui.small_button("↺").clicked();
+        (c, r)
+    }).inner;
+    if algo_changed {
+        plock.set_field(instrument, step, 13, algo_val as f32);
+    }
+    if algo_reset {
+        plock.field_masks.clear(instrument, step, 13);
+    }
+
+    // ── Special params ──
+    let special_defs = crate::instrument_registry::special_params(instrument);
+    for def in special_defs {
+        if def.special_index >= 8 {
+            continue;
+        }
+        let field = SPECIAL_FIELD_START + def.special_index;
+        let mut value = if plock.field_masks.is_set(instrument, step, field) {
+            plock.values.get(instrument, step, field)
+        } else {
+            params
+                .special_param(instrument, def.special_index)
+                .map(|p| p.value())
+                .unwrap_or(def.default)
+        };
+        let overridden = plock.field_masks.is_set(instrument, step, field);
+        let label_text = if overridden { RichText::new(def.label).strong() } else { RichText::new(def.label).weak() };
+        let (changed, reset) = ui.horizontal(|ui| {
+            ui.label(label_text);
+            let mut slider = egui::Slider::new(&mut value, def.min..=def.max);
+            if def.min > 0.0 && def.max / def.min >= 20.0 {
+                slider = slider.logarithmic(true);
+            }
+            let c = ui.add(slider).changed();
+            let r = overridden && ui.small_button("↺").clicked();
+            (c, r)
+        }).inner;
+        if changed {
+            plock.set_field(instrument, step, field, value);
+        }
+        if reset {
+            plock.field_masks.clear(instrument, step, field);
+        }
+    }
+
+    ui.separator();
+    if ui.button("🗑 Clear plock").clicked() {
+        plock.clear(instrument, step);
     }
 }

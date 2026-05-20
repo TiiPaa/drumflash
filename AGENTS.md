@@ -73,6 +73,24 @@ The plugin is a single `nih-plug` VST3 with an internal step sequencer, modular 
 - `DcBlocker` on voices with asymmetric retriggers (kick) catches the DC drift
   that builds up over dense patterns.
 
+### Parameter Locks (plocks)
+
+`src/plock.rs` stores per-step sound overrides via three lock-free structures:
+- `PlockMasks` (`AtomicU16`) — one bit per step indicating whether a plock exists at all.
+- `PlockValues` (`AtomicU32` bitcast f32) — 18 fields per instrument × step.
+- `PlockFieldMasks` (`AtomicU32`) — **18-bit mask per instrument × step** tracking which individual fields have been explicitly overridden.
+
+Creation modes:
+- **Snapshot** (`set_settings`) : copies all global values and sets all 18 bits — the old behavior.
+- **Link** (`masks.set_active` only) : leaves the field mask at 0; unmodified fields follow live global settings at trigger time.
+
+Audio-thread merge (`get_settings(instrument, step, &global)`):
+- If step mask inactive → `None` (use global).
+- If field mask is 0 → `Some(global)` (link mode, nothing overridden yet).
+- Otherwise → copy `global`, overwrite only the fields whose bit is set.
+
+Persistence format is `[values][step_masks][field_masks]`. Old presets without `field_masks` are loaded as full snapshots (retro-compatibility).
+
 ### Pattern persistence + legacy migration
 
 The grid is persisted in the VST3 state field **`pattern-v1`** (see `PATTERN_STATE_FIELD` in `lib.rs`), serialized directly from `SharedPattern`. Older builds stored 16 hidden `IntParam`s named `st01`…`st16`; `DrumFlashVst::filter_state` migrates those to `pattern-v1` on load and is covered by `legacy_step_params_migrate_to_persistent_pattern_field`. Don’t reintroduce `stNN` params or rename `pattern-v1` — it’s the contract that keeps existing Studio One sessions loading.

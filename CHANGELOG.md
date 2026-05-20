@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-05-20 — Plock Snapshot vs Link mode
+
+**Build:** `20260520-211700`  
+**VST3 Class ID:** `DrumFlashPlugin1`
+
+### Changes
+- **Plock per-field masks** (`PlockFieldMasks`) : each plock step now tracks which fields are explicitly overridden via an 18-bit `u32` mask.
+- **Snapshot mode** (default) : "📸 Snapshot current settings" copies all global values and locks them — previous behavior.
+- **Link mode** (new) : "🔗 Link to global" activates the plock without copying values; only fields you subsequently modify override the live global settings.
+- **`get_settings` merge** : audio thread builds global `VoiceSettings`, then merges with plock — overridden fields come from plock storage, unmodified fields fall back to globals.
+- **Plock editor UI** :
+  - Mode indicator : `🔗 Linked`, `📸 Full snapshot`, or `🔀 Mixed`.
+  - Bold labels for overridden fields, weak labels for linked fields.
+  - `↺` reset button per field to revert to global (clears the bit).
+  - Per-field `set_field` writes only the changed field instead of rewriting the entire `VoiceSettings`.
+- **Persistence retro-compatibility** : old presets without field masks load as full snapshots (all bits set).
+- New unit tests : `link_mode_returns_global`, `merge_takes_modified_fields`, `set_field_only_sets_one_bit`, `clear_field_unlinks_without_clearing_plock`, `clear_removes_field_mask`.
+
+---
+
 ## 2026-05-20 — Sound Panel redesign (families + interactive envelope viz)
 
 **Build:** `20260520-123040`  
