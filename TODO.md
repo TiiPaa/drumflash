@@ -117,7 +117,9 @@
 - [x] [47] Refaire Perc1 proprement : ne pas recréer les enveloppes dans `set_settings`
 - [x] [48] Refaire Perc1 proprement : utiliser `DecayReleaseEnvelope` pour le slider Release
 - [x] [50] Diagnostiquer pourquoi la moitié des paramètres Perc1 ne sont pas actionnables (faux positif — tests unitaires confirment que decay/release fonctionnent)
-- [ ] **REPRENDRE ICI** [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
+- [x] [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
+- [x] [53] Plock Snapshot vs Link : choix à la création du plock (snapshot fige tout, link ne stocke que les champs modifiés)
+- [ ] **REPRENDRE ICI** [35] Diagnostiquer la sauvegarde/reouverture Studio One
 - [ ] [35] Diagnostiquer la sauvegarde/reouverture Studio One
 - [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
