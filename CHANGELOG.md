@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-05-20 — Sound Panel redesign (families + interactive envelope viz)
+
+**Build:** `20260520-123040`  
+**VST3 Class ID:** `DrumFlashPlugin1`
+
+### Changes
+- Sound Panel fully data-driven from `instrument_registry.rs`:
+  - New `ParamFamily` enum (Osc / Env / Filter / Output) with `StandardParamDef` metadata (range, log scale, suffix, checkbox).
+  - Parameters grouped per family with titled frames.
+  - Removed legacy `InstrumentCapabilities` — parameter visibility is now encoded in `standard_params` slices.
+- Interactive envelope visualizations:
+  - `draw_amp_envelope` : AHDSR-style curve with colour-coded phases (Hold=cyan, Decay=blue, Release=purple). Attack phase is hidden when no Attack parameter exists.
+  - `draw_filter_envelope` : dedicated filter-env curve (orange) inside the FILTER family group.
+  - Layout horizontal : params on the left, graph on the right.
+  - Real-time update when moving Decay / Release / Curve sliders.
+- Fixed decay slider ranges that were clamping long-decay voices (Ride 1.2s, Cymbal 2.0s).
+
+---
+
 ## 2026-05-19 — Perc1 refactor (Zap → Perc1)
 
 **Build:** `20260519-191344`  
