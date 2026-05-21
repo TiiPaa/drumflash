@@ -12,9 +12,7 @@ pub struct WhiteNoise {
 
 impl WhiteNoise {
     pub fn new(seed: u32) -> Self {
-        Self {
-            state: seed.max(1),
-        }
+        Self { state: seed.max(1) }
     }
 
     #[inline]
@@ -243,6 +241,10 @@ impl ExpDecayEnvelope {
         self
     }
 
+    pub fn set_attack_ms(&mut self, ms: f32) {
+        self.attack_time = ms.max(0.0) / 1000.0;
+    }
+
     /// Set the hold time in seconds. After the attack ramp completes, the
     /// envelope stays at its peak for `hold_seconds` before the decay starts.
     pub fn set_hold(&mut self, hold_seconds: f32) {
@@ -312,8 +314,7 @@ impl ExpDecayEnvelope {
                 return self.value;
             }
             let t = 1.0 - (self.attack_remaining / self.attack_time);
-            self.value =
-                self.attack_start_value + (self.attack_peak - self.attack_start_value) * t;
+            self.value = self.attack_start_value + (self.attack_peak - self.attack_start_value) * t;
             return self.value;
         }
 
@@ -414,6 +415,11 @@ impl DecayReleaseEnvelope {
         self
     }
 
+    pub fn set_attack_ms(&mut self, ms: f32) {
+        self.decay.set_attack_ms(ms);
+        self.release.set_attack_ms(ms);
+    }
+
     pub fn trigger(&mut self) {
         self.decay.trigger();
         // Release stage ramps from its current value up to the shelf level
@@ -427,7 +433,11 @@ impl DecayReleaseEnvelope {
     pub fn next(&mut self) -> f32 {
         let d = self.decay.next();
         let r = self.release.next();
-        if d > r { d } else { r }
+        if d > r {
+            d
+        } else {
+            r
+        }
     }
 
     pub fn is_active(&self) -> bool {
@@ -566,7 +576,11 @@ impl ClickGenerator {
             return 0.0;
         }
         let env = self.envelope.next();
-        let impulse = if self.samples_since_trigger == 0 { 1.0 } else { 0.0 };
+        let impulse = if self.samples_since_trigger == 0 {
+            1.0
+        } else {
+            0.0
+        };
         self.samples_since_trigger = self.samples_since_trigger.saturating_add(1);
         let noise = self.noise.next();
         let sample = impulse * (1.0 - self.noise_mix) + noise * self.noise_mix;
