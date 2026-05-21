@@ -5,10 +5,10 @@
 //! - Highpass filter (~8 kHz) for brightness
 //! - Long exponential decay with shimmer
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::ride::RideSettings, Voice, VoiceSettings};
 
 pub struct RideVoice {
-    settings: VoiceSettings,
+    settings: RideSettings,
     sample_rate: f32,
 
     noise: dsp::WhiteNoise,
@@ -24,7 +24,7 @@ pub struct RideVoice {
 }
 
 impl RideVoice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: RideSettings) -> Self {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq.max(6000.0), sample_rate);
         let mut filter_r = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
@@ -153,7 +153,7 @@ impl Voice for RideVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = settings;
+        self.settings = RideSettings::from(settings);
         self.update_derived_params();
     }
 
@@ -161,9 +161,7 @@ impl Voice for RideVoice {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
-        }
+    fn set_special_param(&mut self, _index: usize, _value: f32) {
+        // Ride has no special parameters
     }
 }

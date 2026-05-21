@@ -8,14 +8,14 @@
 //! - Tone: one-pole LP filter on the output.
 //! - Accent: short impulse burst mixed at the attack.
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::kick_808::Kick808Settings, Voice, VoiceSettings};
 
 const SNAP_DECAY_SECONDS: f32 = 0.006; // ~6 ms
 const SNAP_CURVE: f32 = 8.0;
 const PITCH_DROP_CURVE: f32 = 2.0;
 
 pub struct Kick808Voice {
-    settings: VoiceSettings,
+    settings: Kick808Settings,
     sample_rate: f32,
 
     // Core oscillator
@@ -42,7 +42,7 @@ pub struct Kick808Voice {
 }
 
 impl Kick808Voice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: Kick808Settings) -> Self {
         let mut osc = dsp::SineOsc::new(sample_rate);
         osc.set_freq(settings.frequency.max(10.0));
 
@@ -89,16 +89,16 @@ impl Kick808Voice {
         // EXTREME for testing: push up to ~800 Hz from base.
         let base = self.settings.frequency.max(10.0);
         let target = 800.0f32;
-        (target - base).max(0.0) * self.settings.special[1].clamp(0.0, 1.0)
+        (target - base).max(0.0) * self.settings.snap.clamp(0.0, 1.0)
     }
 
     fn drop_depth_hz(&self) -> f32 {
         // EXTREME for testing: drift down by ~150 % of base frequency.
-        self.settings.frequency.max(10.0) * 1.5 * self.settings.special[2].clamp(0.0, 1.0)
+        self.settings.frequency.max(10.0) * 1.5 * self.settings.pitch_drop.clamp(0.0, 1.0)
     }
 
     fn accent_amount(&self) -> f32 {
-        self.settings.special[0].clamp(0.0, 1.0)
+        self.settings.accent.clamp(0.0, 1.0)
     }
 
     fn update_derived_params(&mut self) {
@@ -113,7 +113,7 @@ impl Kick808Voice {
             .set_cutoff(self.settings.filter_freq, self.sample_rate);
         // Click filter: dedicated LP cutoff from special[3].
         self.click_filter.set_cutoff(
-            self.settings.special[3].clamp(100.0, 8000.0),
+            self.settings.click_tone.clamp(100.0, 8000.0),
             self.sample_rate,
         );
         self.freq_smoother.set_time_ms(self.sample_rate, 5.0);
@@ -186,7 +186,7 @@ impl Voice for Kick808Voice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = settings;
+        self.settings = Kick808Settings::from(settings);
         self.update_derived_params();
     }
 
@@ -195,8 +195,12 @@ impl Voice for Kick808Voice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
+        match index {
+            0 => self.settings.accent = value,
+            1 => self.settings.snap = value,
+            2 => self.settings.pitch_drop = value,
+            3 => self.settings.click_tone = value,
+            _ => {}
         }
     }
 }

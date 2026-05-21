@@ -26,6 +26,16 @@ pub use cymbal::CymbalVoice;
 pub use hihat::HiHatVoice;
 pub use kick::KickVoice;
 pub use settings::kick::KickSettings;
+pub use settings::snare::SnareSettings;
+pub use settings::hihat::HiHatSettings;
+pub use settings::open_hihat::OpenHiHatSettings;
+pub use settings::tom::TomSettings;
+pub use settings::clap::ClapSettings;
+pub use settings::ride::RideSettings;
+pub use settings::cymbal::CymbalSettings;
+pub use settings::snare606::Snare606Settings;
+pub use settings::kick_808::Kick808Settings;
+pub use settings::perc1::Perc1Settings;
 pub use kick_808::Kick808Voice;
 pub use open_hihat::OpenHiHatVoice;
 pub use perc1::Perc1Voice;
@@ -631,53 +641,53 @@ impl DrumSynthesizer {
         )));
         self.voices.push(DrumVoiceKind::Snare(SnareVoice::new(
             sample_rate,
-            VoiceSettings::snare(),
+            SnareSettings::from(VoiceSettings::snare()),
         )));
         self.voices.push(DrumVoiceKind::HiHat(HiHatVoice::new(
             sample_rate,
-            VoiceSettings::hihat(),
+            HiHatSettings::from(VoiceSettings::hihat()),
         )));
         self.voices
             .push(DrumVoiceKind::OpenHiHat(OpenHiHatVoice::new(
                 sample_rate,
-                VoiceSettings::open_hihat(),
+                OpenHiHatSettings::from(VoiceSettings::open_hihat()),
             )));
         self.voices.push(DrumVoiceKind::Tom(TomVoice::new(
             sample_rate,
-            VoiceSettings::tom1(),
+            TomSettings::from(VoiceSettings::tom1()),
         )));
         self.voices.push(DrumVoiceKind::Tom(TomVoice::new(
             sample_rate,
-            VoiceSettings::tom2(),
+            TomSettings::from(VoiceSettings::tom2()),
         )));
         self.voices.push(DrumVoiceKind::Tom(TomVoice::new(
             sample_rate,
-            VoiceSettings::tom3(),
+            TomSettings::from(VoiceSettings::tom3()),
         )));
         self.voices.push(DrumVoiceKind::Clap(ClapVoice::new(
             sample_rate,
-            VoiceSettings::clap(),
+            ClapSettings::from(VoiceSettings::clap()),
         )));
         self.voices.push(DrumVoiceKind::Ride(RideVoice::new(
             sample_rate,
-            VoiceSettings::ride(),
+            RideSettings::from(VoiceSettings::ride()),
         )));
         self.voices.push(DrumVoiceKind::Cymbal(CymbalVoice::new(
             sample_rate,
-            VoiceSettings::cymbal(),
+            CymbalSettings::from(VoiceSettings::cymbal()),
         )));
         self.voices.push(DrumVoiceKind::Snare606(Snare606Voice::new(
             sample_rate,
-            VoiceSettings::snare606(),
+            Snare606Settings::from(VoiceSettings::snare606()),
         )));
         self.voices
             .push(DrumVoiceKind::BassDrum808(Kick808Voice::new(
                 sample_rate,
-                VoiceSettings::kick808(),
+                Kick808Settings::from(VoiceSettings::kick808()),
             )));
         self.voices.push(DrumVoiceKind::Perc1(Perc1Voice::new(
             sample_rate,
-            VoiceSettings::perc1(),
+            Perc1Settings::from(VoiceSettings::perc1()),
         )));
     }
 

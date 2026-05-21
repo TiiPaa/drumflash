@@ -3,10 +3,10 @@
 //! Similar to the closed hi-hat but with a longer decay and a brighter tail.
 //! Peaking filter controlled by settings.frequency adds a pitched metallic peak.
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::open_hihat::OpenHiHatSettings, Voice, VoiceSettings};
 
 pub struct OpenHiHatVoice {
-    settings: VoiceSettings,
+    settings: OpenHiHatSettings,
     sample_rate: f32,
     noise: dsp::WhiteNoise,
     noise_r: dsp::WhiteNoise,
@@ -21,7 +21,7 @@ pub struct OpenHiHatVoice {
 }
 
 impl OpenHiHatVoice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: OpenHiHatSettings) -> Self {
         let mut peaking = dsp::Biquad::new();
         peaking.set_peaking(settings.frequency, 2.0, 6.0, sample_rate);
         let mut peaking_r = dsp::Biquad::new();
@@ -131,33 +131,31 @@ impl Voice for OpenHiHatVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = settings;
+        self.settings = OpenHiHatSettings::from(settings);
         self.peaking
-            .set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+            .set_peaking(self.settings.frequency, 2.0, 6.0, self.sample_rate);
         self.peaking_r
-            .set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+            .set_peaking(self.settings.frequency, 2.0, 6.0, self.sample_rate);
         self.filter
-            .set_cutoff(settings.filter_freq, self.sample_rate);
+            .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.filter_r
-            .set_cutoff(settings.filter_freq, self.sample_rate);
+            .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
-            settings.decay_curve,
-            settings.decay,
-            settings.release_curve,
-            settings.release,
+            self.settings.decay_curve,
+            self.settings.decay,
+            self.settings.release_curve,
+            self.settings.release,
         )
-        .with_attack_ms(settings.attack * 1000.0);
-        self.envelope.set_hold(settings.hold);
+        .with_attack_ms(self.settings.attack * 1000.0);
+        self.envelope.set_hold(self.settings.hold);
     }
 
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
-        }
+    fn set_special_param(&mut self, _index: usize, _value: f32) {
+        // OpenHiHat has no special parameters
     }
 }
