@@ -607,14 +607,20 @@ fn draw_sound_panel(
 
                     // Legend inside ENV family (under the params)
                     if family == crate::instrument_registry::ParamFamily::Env {
+                        let has_attack = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::Attack);
+                        let has_hold = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::Hold);
                         let has_release = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::Release);
                         ui.horizontal(|ui| {
                             let legend = |ui: &mut egui::Ui, color: Color32, text: &str| {
                                 ui.label(RichText::new("■").color(color));
                                 ui.label(text);
                             };
-                            legend(ui, Color32::from_rgb(255, 220, 80), "A");
-                            legend(ui, Color32::from_rgb(140, 220, 255), "H");
+                            if has_attack {
+                                legend(ui, Color32::from_rgb(255, 220, 80), "A");
+                            }
+                            if has_hold {
+                                legend(ui, Color32::from_rgb(140, 220, 255), "H");
+                            }
                             legend(ui, Color32::from_rgb(100, 180, 255), "D");
                             if has_release {
                                 legend(ui, Color32::from_rgb(180, 120, 255), "R");
