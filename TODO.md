@@ -119,8 +119,8 @@
 - [x] [50] Diagnostiquer pourquoi la moitié des paramètres Perc1 ne sont pas actionnables (faux positif — tests unitaires confirment que decay/release fonctionnent)
 - [x] [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
 - [x] [53] Plock Snapshot vs Link : choix à la création du plock (snapshot fige tout, link ne stocke que les champs modifiés)
-- [ ] **REPRENDRE ICI** [35] Diagnostiquer la sauvegarde/reouverture Studio One
-- [ ] [35] Diagnostiquer la sauvegarde/reouverture Studio One
+- [x] [35] Diagnostiquer la sauvegarde/reouverture Studio One
+- [ ] **REPRENDRE ICI** [26] Barre de progression visuelle du pattern (0-100%)
 - [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
