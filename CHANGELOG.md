@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-05-21 — [39] Typed per-instrument settings (all 13 voices)
+
+**Build:** `20260521-213022`  
+**Commits:** `fcde87c`
+
+### Changes
+- Generalize typed settings structs to all 13 instruments (Kick prototype → all voices).
+- New settings files: `SnareSettings`, `HiHatSettings`, `OpenHiHatSettings`, `TomSettings`, `ClapSettings`, `RideSettings`, `CymbalSettings`, `Snare606Settings`, `Kick808Settings`, `Perc1Settings`.
+- Each voice refactored to store its typed struct instead of `VoiceSettings` + opaque `special[N]`.
+- `VoiceSettings` remains the persistence boundary; conversions happen in `set_settings()` with zero-allocation stack copies.
+- All 43 tests pass; bit-identical guarantee maintained.
+
+---
+
 ## 2026-05-21 — [39] Prototype Kick : typed per-instrument settings
 
 **Build:** `20260521-201743`  
