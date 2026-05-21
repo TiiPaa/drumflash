@@ -66,11 +66,15 @@ impl Kick808Voice {
                 settings.release_curve,
                 settings.release.max(0.001),
             )
-            .with_attack_ms(1.5),
+            .with_attack_ms(settings.attack * 1000.0),
             tone_filter,
             click: dsp::ClickGenerator::new(sample_rate, 15.0, 0.2, 2.0),
             click_filter: dsp::OnePoleFilter::new(dsp::FilterMode::LowPass),
-            freq_smoother: dsp::OnePoleSmoother::new(sample_rate, 5.0, settings.frequency.max(10.0)),
+            freq_smoother: dsp::OnePoleSmoother::new(
+                sample_rate,
+                5.0,
+                settings.frequency.max(10.0),
+            ),
             dc_blocker: dsp::DcBlocker::default(),
             active: false,
         }
@@ -99,15 +103,19 @@ impl Kick808Voice {
 
     fn update_derived_params(&mut self) {
         self.amp_env.set_decay(self.settings.decay.max(0.05));
+        self.amp_env.set_attack_ms(self.settings.attack * 1000.0);
         self.amp_env.set_release(self.settings.release.max(0.001));
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
-        self.drop_env.set_decay(Self::drop_time(self.settings.decay));
+        self.drop_env
+            .set_decay(Self::drop_time(self.settings.decay));
         self.tone_filter
             .set_cutoff(self.settings.filter_freq, self.sample_rate);
         // Click filter: dedicated LP cutoff from special[3].
-        self.click_filter
-            .set_cutoff(self.settings.special[3].clamp(100.0, 8000.0), self.sample_rate);
+        self.click_filter.set_cutoff(
+            self.settings.special[3].clamp(100.0, 8000.0),
+            self.sample_rate,
+        );
         self.freq_smoother.set_time_ms(self.sample_rate, 5.0);
     }
 }
@@ -142,8 +150,8 @@ impl Voice for Kick808Voice {
         let drop = self.drop_env.next();
 
         // Frequency modulation: base + snap_peak*env - drop_depth*env
-        let target_freq = (base + self.snap_depth_hz() * snap - self.drop_depth_hz() * (1.0 - drop))
-            .max(10.0);
+        let target_freq =
+            (base + self.snap_depth_hz() * snap - self.drop_depth_hz() * (1.0 - drop)).max(10.0);
         let freq = self.freq_smoother.process(target_freq);
         self.osc.set_freq(freq);
 

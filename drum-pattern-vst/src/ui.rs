@@ -8,6 +8,7 @@ use nih_plug_egui::{
 use std::{
     fs::create_dir_all,
     path::PathBuf,
+    process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
@@ -15,8 +16,7 @@ use std::{
 };
 
 use crate::{
-    generator,
-    midi_export,
+    generator, midi_export,
     plock::PlockState,
     sequencer::{Pattern, SharedPattern},
     sound_settings::SoundSettingsState,
@@ -75,13 +75,7 @@ pub fn create_editor(
 
                             draw_top_bar(ui, setter, &params_for_ui);
                             draw_song_bar(ui, state);
-                            draw_preset_bar(
-                                ui,
-                                &pattern_for_ui,
-                                &params_for_ui,
-                                setter,
-                                state,
-                            );
+                            draw_preset_bar(ui, &pattern_for_ui, &params_for_ui, setter, state);
                             draw_generator_bar(ui, setter, &params_for_ui, &pattern_for_ui);
 
                             ui.separator();
@@ -226,13 +220,13 @@ fn draw_preset_bar(
 
         let drag_btn = egui::Button::new("Drag").sense(egui::Sense::click_and_drag());
         let drag_response = ui.add(drag_btn);
-        if drag_response.drag_started() {
+        if drag_response.clicked() || drag_response.drag_started() {
             let bpm = params.bpm.value();
             match export_midi_to_documents(pattern, bpm)
-                .and_then(|path| start_native_midi_drag(&path).map(|_| path))
+                .and_then(|path| start_external_midi_drag(&path).map(|_| path))
             {
                 Ok(path) => {
-                    nih_log!("MIDI drag started from: {}", path.display());
+                    nih_log!("MIDI drag helper started from: {}", path.display());
                     state.last_midi_export_path = Some(path.display().to_string());
                     state.last_midi_export_error = None;
                 }
@@ -243,7 +237,7 @@ fn draw_preset_bar(
                 }
             }
         }
-        drag_response.on_hover_text("Drag MIDI file to DAW");
+        drag_response.on_hover_text("Open external MIDI drag handle");
 
         if let Some(path) = &state.last_midi_export_path {
             if ui.button("Copy Path").clicked() {
@@ -251,7 +245,11 @@ fn draw_preset_bar(
             }
             ui.label(RichText::new("Exported").size(10.0));
         } else if state.last_midi_export_error.is_some() {
-            ui.label(RichText::new("Export failed").size(10.0).color(Color32::RED));
+            ui.label(
+                RichText::new("Export failed")
+                    .size(10.0)
+                    .color(Color32::RED),
+            );
         }
     });
 }
@@ -339,7 +337,10 @@ fn draw_grid(
                     RichText::new(format!("{}", step + 1)).size(10.0)
                 };
                 let label = if is_current {
-                    RichText::new(text.text()).strong().color(Color32::YELLOW).size(10.0)
+                    RichText::new(text.text())
+                        .strong()
+                        .color(Color32::YELLOW)
+                        .size(10.0)
                 } else {
                     text
                 };
@@ -357,7 +358,9 @@ fn draw_grid(
 
                 // Instrument label (clickable)
                 let label_btn = egui::Button::new(
-                    RichText::new(crate::instrument_registry::INSTRUMENTS[inst].label).monospace().size(11.0),
+                    RichText::new(crate::instrument_registry::INSTRUMENTS[inst].label)
+                        .monospace()
+                        .size(11.0),
                 )
                 .min_size(Vec2::new(28.0, 22.0))
                 .fill(if state.selected_instrument == inst {
@@ -407,7 +410,11 @@ fn draw_grid(
 
                     let btn = egui::Button::new(if active { "X" } else { "." })
                         .min_size(Vec2::new(20.0, 20.0))
-                        .fill(if active || is_current || has_plock { bg } else { block_color })
+                        .fill(if active || is_current || has_plock {
+                            bg
+                        } else {
+                            block_color
+                        })
                         .stroke(if beyond_len && !active && !has_plock {
                             egui::Stroke::new(1.0, Color32::from_rgb(60, 60, 60))
                         } else {
@@ -436,7 +443,6 @@ fn draw_grid(
         });
 }
 
-
 // ─────────────────────────────────────
 // Sound Panel (always visible, tabbed by instrument)
 // ─────────────────────────────────────
@@ -452,17 +458,19 @@ fn draw_sound_panel(
 
     // Instrument tabs
     ui.horizontal(|ui| {
-        for (i, label) in crate::instrument_registry::INSTRUMENTS.iter().map(|d| d.label).enumerate() {
+        for (i, label) in crate::instrument_registry::INSTRUMENTS
+            .iter()
+            .map(|d| d.label)
+            .enumerate()
+        {
             let selected = state.selected_instrument == i;
-            let btn = egui::Button::new(
-                RichText::new(label).monospace().size(11.0),
-            )
-            .min_size(Vec2::new(32.0, 22.0))
-            .fill(if selected {
-                Color32::from_rgb(56, 132, 255)
-            } else {
-                Color32::from_rgb(36, 36, 36)
-            });
+            let btn = egui::Button::new(RichText::new(label).monospace().size(11.0))
+                .min_size(Vec2::new(32.0, 22.0))
+                .fill(if selected {
+                    Color32::from_rgb(56, 132, 255)
+                } else {
+                    Color32::from_rgb(36, 36, 36)
+                });
             if ui.add(btn).clicked() {
                 state.selected_instrument = i;
             }
@@ -475,6 +483,7 @@ fn draw_sound_panel(
         mut decay,
         mut vol,
         mut filt,
+        mut attack,
         mut release,
         mut decay_curve,
         mut release_curve,
@@ -521,6 +530,7 @@ fn draw_sound_panel(
                                         crate::instrument_registry::StandardField::Decay => &mut decay,
                                         crate::instrument_registry::StandardField::Volume => &mut vol,
                                         crate::instrument_registry::StandardField::FilterFreq => &mut filt,
+                                        crate::instrument_registry::StandardField::Attack => &mut attack,
                                         crate::instrument_registry::StandardField::Release => &mut release,
                                         crate::instrument_registry::StandardField::DecayCurve => &mut decay_curve,
                                         crate::instrument_registry::StandardField::ReleaseCurve => &mut release_curve,
@@ -603,7 +613,7 @@ fn draw_sound_panel(
                                 ui.label(RichText::new("■").color(color));
                                 ui.label(text);
                             };
-                            // Attack is not shown today (no Attack parameter yet)
+                            legend(ui, Color32::from_rgb(255, 220, 80), "A");
                             legend(ui, Color32::from_rgb(140, 220, 255), "H");
                             legend(ui, Color32::from_rgb(100, 180, 255), "D");
                             if has_release {
@@ -617,7 +627,7 @@ fn draw_sound_panel(
                 match family {
                     crate::instrument_registry::ParamFamily::Env => {
                         let has_release = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::Release);
-                        draw_amp_envelope(ui, 0.0, decay, decay_curve, hold, release, release_curve, has_release);
+                        draw_amp_envelope(ui, attack, decay, decay_curve, hold, release, release_curve, has_release);
                     }
                     crate::instrument_registry::ParamFamily::Filter => {
                         let has_filter_env = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::FilterEnvAmount);
@@ -639,19 +649,28 @@ fn draw_sound_panel(
 // ─────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────
-fn store_field(inst: &crate::sound_settings::InstrumentSettingsState, field: crate::instrument_registry::StandardField, value: f32) {
+fn store_field(
+    inst: &crate::sound_settings::InstrumentSettingsState,
+    field: crate::instrument_registry::StandardField,
+    value: f32,
+) {
     use crate::instrument_registry::StandardField;
     match field {
         StandardField::Freq => inst.frequency.store(value.to_bits(), Ordering::Relaxed),
         StandardField::Decay => inst.decay.store(value.to_bits(), Ordering::Relaxed),
         StandardField::Volume => inst.volume.store(value.to_bits(), Ordering::Relaxed),
         StandardField::FilterFreq => inst.filter_freq.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::Attack => inst.attack.store(value.to_bits(), Ordering::Relaxed),
         StandardField::Release => inst.release.store(value.to_bits(), Ordering::Relaxed),
         StandardField::DecayCurve => inst.decay_curve.store(value.to_bits(), Ordering::Relaxed),
         StandardField::ReleaseCurve => inst.release_curve.store(value.to_bits(), Ordering::Relaxed),
         StandardField::Hold => inst.hold.store(value.to_bits(), Ordering::Relaxed),
-        StandardField::FilterEnvAmount => inst.filter_env_amount.store(value.to_bits(), Ordering::Relaxed),
-        StandardField::FilterEnvDecay => inst.filter_env_decay.store(value.to_bits(), Ordering::Relaxed),
+        StandardField::FilterEnvAmount => inst
+            .filter_env_amount
+            .store(value.to_bits(), Ordering::Relaxed),
+        StandardField::FilterEnvDecay => inst
+            .filter_env_decay
+            .store(value.to_bits(), Ordering::Relaxed),
         StandardField::Analog => inst.analog.store(value.to_bits(), Ordering::Relaxed),
         StandardField::Stereo => inst.stereo.store(value.to_bits(), Ordering::Relaxed),
     }
@@ -713,12 +732,7 @@ fn enum_combo<E: nih_plug::prelude::Enum + PartialEq + 'static>(
         });
 }
 
-fn algo_combo(
-    ui: &mut egui::Ui,
-    setter: &ParamSetter,
-    param: &IntParam,
-    algo_names: &[&str],
-) {
+fn algo_combo(ui: &mut egui::Ui, setter: &ParamSetter, param: &IntParam, algo_names: &[&str]) {
     let current = param.value() as usize;
     let current_clamped = current.min(algo_names.len().saturating_sub(1));
     egui::ComboBox::from_label("")
@@ -782,16 +796,52 @@ fn export_midi_to_documents(
 }
 
 #[cfg(target_os = "windows")]
-fn start_native_midi_drag(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    crate::native_drag::start_midi_file_drag(path)
-        .map_err(|error| -> Box<dyn std::error::Error> { error.into() })
+fn start_external_midi_drag(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let helper = find_midi_drag_helper().ok_or("MIDI drag helper not found")?;
+    Command::new(helper).arg(path).spawn()?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn find_midi_drag_helper() -> Option<PathBuf> {
+    const HELPER_NAME: &str = "drum-pattern-midi-drag-helper.exe";
+
+    if let Ok(path) = std::env::var("DRUM_FLASH_MIDI_DRAG_HELPER") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    if let Ok(common_files) = std::env::var("CommonProgramFiles") {
+        let path = PathBuf::from(common_files)
+            .join("VST3")
+            .join("drum-pattern-vst.vst3")
+            .join("Contents")
+            .join("x86_64-win")
+            .join(HELPER_NAME);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    let local_bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("build")
+        .join("drum-pattern-vst.vst3")
+        .join("Contents")
+        .join("x86_64-win")
+        .join(HELPER_NAME);
+    if local_bundle.is_file() {
+        return Some(local_bundle);
+    }
+
+    None
 }
 
 #[cfg(not(target_os = "windows"))]
-fn start_native_midi_drag(_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    Err("Native MIDI drag-and-drop is only implemented on Windows".into())
+fn start_external_midi_drag(_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    Err("MIDI drag helper is only implemented on Windows".into())
 }
-
 
 // ─────────────────────────────────────
 // Plock context menu
@@ -844,14 +894,15 @@ fn draw_plock_menu(
                 decay: global.1,
                 volume: global.2,
                 filter_freq: global.3,
-                release: global.4,
-                decay_curve: global.5,
-                release_curve: global.6,
-                hold: global.7,
-                filter_env_amount: global.8,
-                filter_env_decay: global.9,
-                analog: global.10,
-                stereo: global.11,
+                attack: global.4,
+                release: global.5,
+                decay_curve: global.6,
+                release_curve: global.7,
+                hold: global.8,
+                filter_env_amount: global.9,
+                filter_env_decay: global.10,
+                analog: global.11,
+                stereo: global.12,
                 algo,
                 special,
             };
@@ -862,7 +913,11 @@ fn draw_plock_menu(
 
     // ── Mode indicator ──
     let mask = plock.field_masks.get(instrument, step);
-    let all_bits = if FIELD_COUNT >= 32 { 0xFFFFFFFF } else { (1u32 << FIELD_COUNT) - 1 };
+    let all_bits = if FIELD_COUNT >= 32 {
+        0xFFFFFFFF
+    } else {
+        (1u32 << FIELD_COUNT) - 1
+    };
     let mode_text = if mask == 0 {
         "🔗 Linked to global"
     } else if mask == all_bits {
@@ -874,23 +929,30 @@ fn draw_plock_menu(
     ui.separator();
 
     // ── Helpers ──
-    let draw_slider = |ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>, log: bool, field: usize| {
+    let draw_slider = |ui: &mut egui::Ui,
+                       label: &str,
+                       value: &mut f32,
+                       range: std::ops::RangeInclusive<f32>,
+                       log: bool,
+                       field: usize| {
         let overridden = plock.field_masks.is_set(instrument, step, field);
         let label_text = if overridden {
             RichText::new(label).strong()
         } else {
             RichText::new(label).weak()
         };
-        let (changed, reset) = ui.horizontal(|ui| {
-            ui.label(label_text);
-            let mut slider = egui::Slider::new(value, range);
-            if log {
-                slider = slider.logarithmic(true);
-            }
-            let c = ui.add(slider).changed();
-            let r = overridden && ui.small_button("↺").clicked();
-            (c, r)
-        }).inner;
+        let (changed, reset) = ui
+            .horizontal(|ui| {
+                ui.label(label_text);
+                let mut slider = egui::Slider::new(value, range);
+                if log {
+                    slider = slider.logarithmic(true);
+                }
+                let c = ui.add(slider).changed();
+                let r = overridden && ui.small_button("↺").clicked();
+                (c, r)
+            })
+            .inner;
         if changed {
             plock.set_field(instrument, step, field, *value);
         }
@@ -900,53 +962,114 @@ fn draw_plock_menu(
     };
 
     // ── Standard fields ──
-    let mut freq = if plock.field_masks.is_set(instrument, step, 0) { plock.values.get(instrument, step, 0) } else { global.0 };
+    let mut freq = if plock.field_masks.is_set(instrument, step, 0) {
+        plock.values.get(instrument, step, 0)
+    } else {
+        global.0
+    };
     draw_slider(ui, "Freq", &mut freq, 20.0..=12000.0, true, 0);
 
-    let mut decay = if plock.field_masks.is_set(instrument, step, 1) { plock.values.get(instrument, step, 1) } else { global.1 };
+    let mut decay = if plock.field_masks.is_set(instrument, step, 1) {
+        plock.values.get(instrument, step, 1)
+    } else {
+        global.1
+    };
     draw_slider(ui, "Decay", &mut decay, 0.01..=2.0, false, 1);
 
-    let mut vol = if plock.field_masks.is_set(instrument, step, 2) { plock.values.get(instrument, step, 2) } else { global.2 };
+    let mut vol = if plock.field_masks.is_set(instrument, step, 2) {
+        plock.values.get(instrument, step, 2)
+    } else {
+        global.2
+    };
     draw_slider(ui, "Vol", &mut vol, 0.0..=1.5, false, 2);
 
-    let mut filt = if plock.field_masks.is_set(instrument, step, 3) { plock.values.get(instrument, step, 3) } else { global.3 };
+    let mut filt = if plock.field_masks.is_set(instrument, step, 3) {
+        plock.values.get(instrument, step, 3)
+    } else {
+        global.3
+    };
     draw_slider(ui, "Filter", &mut filt, 20.0..=15000.0, true, 3);
 
-    let mut release = if plock.field_masks.is_set(instrument, step, 4) { plock.values.get(instrument, step, 4) } else { global.4 };
+    let mut attack = if plock.field_masks.is_set(instrument, step, 18) {
+        plock.values.get(instrument, step, 18)
+    } else {
+        global.4
+    };
+    draw_slider(ui, "Attack", &mut attack, 0.0..=0.2, false, 18);
+
+    let mut release = if plock.field_masks.is_set(instrument, step, 4) {
+        plock.values.get(instrument, step, 4)
+    } else {
+        global.5
+    };
     draw_slider(ui, "Release", &mut release, 0.0..=5.0, false, 4);
 
-    let mut decay_curve = if plock.field_masks.is_set(instrument, step, 5) { plock.values.get(instrument, step, 5) } else { global.5 };
+    let mut decay_curve = if plock.field_masks.is_set(instrument, step, 5) {
+        plock.values.get(instrument, step, 5)
+    } else {
+        global.6
+    };
     draw_slider(ui, "DecCurve", &mut decay_curve, 2.0..=10.0, false, 5);
 
-    let mut release_curve = if plock.field_masks.is_set(instrument, step, 6) { plock.values.get(instrument, step, 6) } else { global.6 };
+    let mut release_curve = if plock.field_masks.is_set(instrument, step, 6) {
+        plock.values.get(instrument, step, 6)
+    } else {
+        global.7
+    };
     draw_slider(ui, "RelCurve", &mut release_curve, 2.0..=10.0, false, 6);
 
-    let mut hold = if plock.field_masks.is_set(instrument, step, 7) { plock.values.get(instrument, step, 7) } else { global.7 };
+    let mut hold = if plock.field_masks.is_set(instrument, step, 7) {
+        plock.values.get(instrument, step, 7)
+    } else {
+        global.8
+    };
     draw_slider(ui, "Hold", &mut hold, 0.0..=0.5, false, 7);
 
-    let mut filter_env_amount = if plock.field_masks.is_set(instrument, step, 8) { plock.values.get(instrument, step, 8) } else { global.8 };
+    let mut filter_env_amount = if plock.field_masks.is_set(instrument, step, 8) {
+        plock.values.get(instrument, step, 8)
+    } else {
+        global.9
+    };
     draw_slider(ui, "FiltEnv", &mut filter_env_amount, 0.0..=1.0, false, 8);
 
-    let mut filter_env_decay = if plock.field_masks.is_set(instrument, step, 9) { plock.values.get(instrument, step, 9) } else { global.9 };
+    let mut filter_env_decay = if plock.field_masks.is_set(instrument, step, 9) {
+        plock.values.get(instrument, step, 9)
+    } else {
+        global.10
+    };
     draw_slider(ui, "FiltDec", &mut filter_env_decay, 0.001..=0.2, false, 9);
 
-    let mut analog = if plock.field_masks.is_set(instrument, step, 10) { plock.values.get(instrument, step, 10) } else { global.10 };
+    let mut analog = if plock.field_masks.is_set(instrument, step, 10) {
+        plock.values.get(instrument, step, 10)
+    } else {
+        global.11
+    };
     draw_slider(ui, "Analog", &mut analog, 0.0..=1.0, false, 10);
 
     // Stereo is a checkbox, not a slider
-    let mut stereo_val = if plock.field_masks.is_set(instrument, step, 11) { plock.values.get(instrument, step, 11) } else { global.11 };
+    let mut stereo_val = if plock.field_masks.is_set(instrument, step, 11) {
+        plock.values.get(instrument, step, 11)
+    } else {
+        global.12
+    };
     let stereo_overridden = plock.field_masks.is_set(instrument, step, 11);
-    let stereo_label = if stereo_overridden { RichText::new("Stereo").strong() } else { RichText::new("Stereo").weak() };
-    let (stereo_changed, stereo_reset) = ui.horizontal(|ui| {
-        ui.label(stereo_label);
-        let mut checked = stereo_val >= 0.5;
-        let c = ui.add(egui::Checkbox::new(&mut checked, "")).changed();
-        if c {
-            stereo_val = if checked { 1.0 } else { 0.0 };
-        }
-        let r = stereo_overridden && ui.small_button("↺").clicked();
-        (c, r)
-    }).inner;
+    let stereo_label = if stereo_overridden {
+        RichText::new("Stereo").strong()
+    } else {
+        RichText::new("Stereo").weak()
+    };
+    let (stereo_changed, stereo_reset) = ui
+        .horizontal(|ui| {
+            ui.label(stereo_label);
+            let mut checked = stereo_val >= 0.5;
+            let c = ui.add(egui::Checkbox::new(&mut checked, "")).changed();
+            if c {
+                stereo_val = if checked { 1.0 } else { 0.0 };
+            }
+            let r = stereo_overridden && ui.small_button("↺").clicked();
+            (c, r)
+        })
+        .inner;
     if stereo_changed {
         plock.set_field(instrument, step, 11, stereo_val);
     }
@@ -961,13 +1084,19 @@ fn draw_plock_menu(
         params.algos()[instrument].value() as u8
     };
     let algo_overridden = plock.field_masks.is_set(instrument, step, 13);
-    let algo_label = if algo_overridden { RichText::new("Algo").strong() } else { RichText::new("Algo").weak() };
-    let (algo_changed, algo_reset) = ui.horizontal(|ui| {
-        ui.label(algo_label);
-        let c = ui.add(egui::Slider::new(&mut algo_val, 0u8..=3)).changed();
-        let r = algo_overridden && ui.small_button("↺").clicked();
-        (c, r)
-    }).inner;
+    let algo_label = if algo_overridden {
+        RichText::new("Algo").strong()
+    } else {
+        RichText::new("Algo").weak()
+    };
+    let (algo_changed, algo_reset) = ui
+        .horizontal(|ui| {
+            ui.label(algo_label);
+            let c = ui.add(egui::Slider::new(&mut algo_val, 0u8..=3)).changed();
+            let r = algo_overridden && ui.small_button("↺").clicked();
+            (c, r)
+        })
+        .inner;
     if algo_changed {
         plock.set_field(instrument, step, 13, algo_val as f32);
     }
@@ -991,17 +1120,23 @@ fn draw_plock_menu(
                 .unwrap_or(def.default)
         };
         let overridden = plock.field_masks.is_set(instrument, step, field);
-        let label_text = if overridden { RichText::new(def.label).strong() } else { RichText::new(def.label).weak() };
-        let (changed, reset) = ui.horizontal(|ui| {
-            ui.label(label_text);
-            let mut slider = egui::Slider::new(&mut value, def.min..=def.max);
-            if def.min > 0.0 && def.max / def.min >= 20.0 {
-                slider = slider.logarithmic(true);
-            }
-            let c = ui.add(slider).changed();
-            let r = overridden && ui.small_button("↺").clicked();
-            (c, r)
-        }).inner;
+        let label_text = if overridden {
+            RichText::new(def.label).strong()
+        } else {
+            RichText::new(def.label).weak()
+        };
+        let (changed, reset) = ui
+            .horizontal(|ui| {
+                ui.label(label_text);
+                let mut slider = egui::Slider::new(&mut value, def.min..=def.max);
+                if def.min > 0.0 && def.max / def.min >= 20.0 {
+                    slider = slider.logarithmic(true);
+                }
+                let c = ui.add(slider).changed();
+                let r = overridden && ui.small_button("↺").clicked();
+                (c, r)
+            })
+            .inner;
         if changed {
             plock.set_field(instrument, step, field, value);
         }

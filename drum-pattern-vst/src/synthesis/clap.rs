@@ -95,7 +95,7 @@ impl ClapVoice {
                 settings.release_curve,
                 settings.release,
             )
-            .with_attack_ms(1.5),
+            .with_attack_ms(settings.attack * 1000.0),
             // 2 ms decay, mostly noise, moderate level — short snap that gets
             // HP-filtered to the "paper" character.
             snap: dsp::ClickGenerator::new(sample_rate, 2.0, 0.9, 0.6),
@@ -148,6 +148,7 @@ impl ClapVoice {
         self.filter_lp.set_cutoff(lp, self.sample_rate);
         self.filter_lp_r.set_cutoff(lp, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
+        self.amp_env.set_attack_ms(self.settings.attack * 1000.0);
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
@@ -300,5 +301,4 @@ impl Voice for ClapVoice {
             self.settings.special[index] = value;
         }
     }
-
 }

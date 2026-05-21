@@ -51,7 +51,7 @@
 - [x] [24c] Ajouter Snare algos (Synth/Noise/Layered) + snap param
 - [x] [24d] Ajouter Clap, Ride, Cymbal voices
 - [x] [25] Labels complets des instruments dans l'UI et couleurs par instrument (labels courts BD/SD/HH, couleurs blocs de 4 steps, grisage len)
-- [ ] [26] Barre de progression visuelle du pattern (0-100%)
+- [ ] [26] Barre de progression visuelle du pattern (0-100%) — non prio
 - [x] [26a] Per-instrument Mix Bus checkbox (exclure du Main Mix)
 - [x] [26b] Clap Echo plockable par step
 - [x] [26c] Masquer les paramètres inutiles par instrument dans le Sound Panel
@@ -64,21 +64,26 @@
 - [x] [26j] Finaliser les réglages de synthèse par instrument
   - `standard_params` data-driven avec ranges UI (min/max, log, suffix, checkbox)
   - Ranges corrigés pour éviter le clamp involontaire (ex: Ride decay 1.2s > slider 0.5s)
-- [ ] [51] Ajouter un paramètre Attack réglable par instrument (graphique AHDSR complet A-H-D-R)
-- [ ] [52] Ajouter un paramètre Sustain level pour un vrai ADSR séquentiel
+- [x] [51] Ajouter un paramètre Attack réglable par instrument (graphique AHDSR complet A-H-D-R)
+- [ ] [52] Ajouter un paramètre Sustain level pour un vrai ADSR séquentiel — non prio
 - [x] [26k] Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit)
   - Sound Panel regroupé par familles data-driven (OSC/ENV/FILTER/OUTPUT)
   - Visualisations interactives d'enveloppe (Amp AHDSR + Filter Env)
   - Layout horizontal : params à gauche, graph à droite
-- [ ] [26l] Per-instrument stereo toggles + stereo Snare 606
+- [x] [26l] Stereo ciblée par instrument, pas systématique
+  - exposer/finir les toggles stéréo pour les voix où la largeur apporte une vraie valeur : Snare, HiHat, OpenHH, Clap, Ride, Cymbal, Snare606, Perc1
+  - garder Kick, B8 et Toms mono par défaut pour préserver le centre et la compatibilité mono
+  - priorité technique : finir stereo Snare606 et vérifier que les toggles UI ne sont visibles que sur les voix concernées
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
-- [ ] [28] Drag & drop MIDI directement vers le DAW
+- [x] [28] Drag & drop MIDI directement vers le DAW — helper externe validé dans Studio One
   - [x] remplacer l'ancien `dnd_set_drag_payload(bytes)` interne egui par un drag fichier OS natif Windows (`CF_HDROP` via OLE `DoDragDrop`)
   - [x] garder l'export fichier OK via bouton MIDI dans `Documents/Drum Flash/exports`
-  - [ ] valider dans Studio One : glisser le bouton `Drag` vers une piste/instrument et verifier qu'un clip MIDI est cree
+  - [x] isoler `DoDragDrop` hors process DAW via `drum-pattern-midi-drag-helper.exe`
+  - [x] réactiver le bouton `Drag` : export MIDI puis ouverture d'une petite poignée de drag externe
+  - [x] valider dans Studio One : cliquer `Drag`, puis glisser la fenêtre `Drag MIDI` vers une piste/instrument et vérifier qu'un clip MIDI est créé sans crash
 - [x] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
   - 14 champs plockables (12 sound settings + clap_echo + algo)
   - special params (accent/snap/pitch_drop) propagés uniquement au trigger (fix echo perdu)
@@ -89,6 +94,8 @@
   - clarifier/corriger l'incoherence Clap Echo : UI lit le champ 12 alors que `PlockState::set_settings()` stocke les specials en 14..17
   - ajouter tests unitaires sur `PlockState::set_settings/get_settings` pour Clap Echo, B8 specials et Perc1 specials
 - [ ] [39] Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`). Permet labels, ranges et défauts spécifiques par voix.
+  - [x] Prototype Kick : `KickSettings` struct typée, conversion `VoiceSettings ↔ KickSettings`, tests passent
+  - [ ] Généraliser aux 12 autres instruments (Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
 - [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
 
@@ -120,7 +127,6 @@
 - [x] [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
 - [x] [53] Plock Snapshot vs Link : choix à la création du plock (snapshot fige tout, link ne stocke que les champs modifiés)
 - [x] [35] Diagnostiquer la sauvegarde/reouverture Studio One
-- [ ] **REPRENDRE ICI** [26] Barre de progression visuelle du pattern (0-100%)
 - [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`

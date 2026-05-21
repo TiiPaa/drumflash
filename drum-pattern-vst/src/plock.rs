@@ -18,11 +18,13 @@ use crate::sequencer::pattern::INSTRUMENT_COUNT;
 use crate::synthesis::VoiceSettings;
 
 pub const STEP_COUNT: usize = 16;
-pub const FIELD_COUNT: usize = 18;
+pub const FIELD_COUNT: usize = 19;
+const LEGACY_FIELD_COUNT: usize = 18;
 const LEGACY_CLAP_ECHO_FIELD: usize = 12;
 const ALGO_FIELD: usize = 13;
 pub const SPECIAL_FIELD_START: usize = 14;
-pub const SPECIAL_FIELD_COUNT: usize = FIELD_COUNT - SPECIAL_FIELD_START;
+pub const SPECIAL_FIELD_COUNT: usize = 4;
+const ATTACK_FIELD: usize = 18;
 
 /// Active-bit mask: one u16 per instrument (bit = step has a plock).
 /// Stored as atomic so the UI can toggle bits without locking.
@@ -70,9 +72,7 @@ impl PlockValues {
     pub fn new() -> Self {
         Self {
             values: std::array::from_fn(|_| {
-                std::array::from_fn(|_| {
-                    std::array::from_fn(|_| AtomicU32::new(0))
-                })
+                std::array::from_fn(|_| std::array::from_fn(|_| AtomicU32::new(0)))
             }),
         }
     }
@@ -95,9 +95,7 @@ pub struct PlockFieldMasks {
 impl PlockFieldMasks {
     pub fn new() -> Self {
         Self {
-            masks: std::array::from_fn(|_| {
-                std::array::from_fn(|_| AtomicU32::new(0))
-            }),
+            masks: std::array::from_fn(|_| std::array::from_fn(|_| AtomicU32::new(0))),
         }
     }
 
@@ -136,7 +134,14 @@ impl PlockFieldMasks {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.masks[instrument][step].store(0xFFFFFFFF, Ordering::Relaxed);
+        self.masks[instrument][step].store((1u32 << FIELD_COUNT) - 1, Ordering::Relaxed);
+    }
+
+    pub fn set_legacy_snapshot(&self, instrument: usize, step: usize) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        self.masks[instrument][step].store((1u32 << LEGACY_FIELD_COUNT) - 1, Ordering::Relaxed);
     }
 
     pub fn clear_all(&self, instrument: usize, step: usize) {
@@ -178,7 +183,12 @@ impl PlockState {
     /// Fields whose bit is set in `field_masks` come from the plock storage;
     /// all other fields fall back to `global`.
     /// Returns `None` when the step has no plock at all.
-    pub fn get_settings(&self, instrument: usize, step: usize, global: &VoiceSettings) -> Option<VoiceSettings> {
+    pub fn get_settings(
+        &self,
+        instrument: usize,
+        step: usize,
+        global: &VoiceSettings,
+    ) -> Option<VoiceSettings> {
         if !self.masks.is_active(instrument, step) {
             return None;
         }
@@ -191,24 +201,61 @@ impl PlockState {
         let mut result = *global;
         let v = &self.values;
 
-        if mask & (1 << 0) != 0 { result.frequency = v.get(instrument, step, 0); }
-        if mask & (1 << 1) != 0 { result.decay = v.get(instrument, step, 1); }
-        if mask & (1 << 2) != 0 { result.volume = v.get(instrument, step, 2); }
-        if mask & (1 << 3) != 0 { result.filter_freq = v.get(instrument, step, 3); }
-        if mask & (1 << 4) != 0 { result.release = v.get(instrument, step, 4); }
-        if mask & (1 << 5) != 0 { result.decay_curve = v.get(instrument, step, 5); }
-        if mask & (1 << 6) != 0 { result.release_curve = v.get(instrument, step, 6); }
-        if mask & (1 << 7) != 0 { result.hold = v.get(instrument, step, 7); }
-        if mask & (1 << 8) != 0 { result.filter_env_amount = v.get(instrument, step, 8); }
-        if mask & (1 << 9) != 0 { result.filter_env_decay = v.get(instrument, step, 9); }
-        if mask & (1 << 10) != 0 { result.analog = v.get(instrument, step, 10); }
-        if mask & (1 << 11) != 0 { result.stereo = v.get(instrument, step, 11); }
-        if mask & (1 << 13) != 0 { result.algo = v.get(instrument, step, ALGO_FIELD) as u8; }
+        if mask & (1 << 0) != 0 {
+            result.frequency = v.get(instrument, step, 0);
+        }
+        if mask & (1 << 1) != 0 {
+            result.decay = v.get(instrument, step, 1);
+        }
+        if mask & (1 << 2) != 0 {
+            result.volume = v.get(instrument, step, 2);
+        }
+        if mask & (1 << 3) != 0 {
+            result.filter_freq = v.get(instrument, step, 3);
+        }
+        if mask & (1 << 4) != 0 {
+            result.release = v.get(instrument, step, 4);
+        }
+        if mask & (1 << 5) != 0 {
+            result.decay_curve = v.get(instrument, step, 5);
+        }
+        if mask & (1 << 6) != 0 {
+            result.release_curve = v.get(instrument, step, 6);
+        }
+        if mask & (1 << 7) != 0 {
+            result.hold = v.get(instrument, step, 7);
+        }
+        if mask & (1 << 8) != 0 {
+            result.filter_env_amount = v.get(instrument, step, 8);
+        }
+        if mask & (1 << 9) != 0 {
+            result.filter_env_decay = v.get(instrument, step, 9);
+        }
+        if mask & (1 << 10) != 0 {
+            result.analog = v.get(instrument, step, 10);
+        }
+        if mask & (1 << 11) != 0 {
+            result.stereo = v.get(instrument, step, 11);
+        }
+        if mask & (1 << 13) != 0 {
+            result.algo = v.get(instrument, step, ALGO_FIELD) as u8;
+        }
+        if mask & (1 << ATTACK_FIELD) != 0 {
+            result.attack = v.get(instrument, step, ATTACK_FIELD);
+        }
 
-        if mask & (1 << 14) != 0 { result.special[0] = v.get(instrument, step, SPECIAL_FIELD_START + 0); }
-        if mask & (1 << 15) != 0 { result.special[1] = v.get(instrument, step, SPECIAL_FIELD_START + 1); }
-        if mask & (1 << 16) != 0 { result.special[2] = v.get(instrument, step, SPECIAL_FIELD_START + 2); }
-        if mask & (1 << 17) != 0 { result.special[3] = v.get(instrument, step, SPECIAL_FIELD_START + 3); }
+        if mask & (1 << 14) != 0 {
+            result.special[0] = v.get(instrument, step, SPECIAL_FIELD_START + 0);
+        }
+        if mask & (1 << 15) != 0 {
+            result.special[1] = v.get(instrument, step, SPECIAL_FIELD_START + 1);
+        }
+        if mask & (1 << 16) != 0 {
+            result.special[2] = v.get(instrument, step, SPECIAL_FIELD_START + 2);
+        }
+        if mask & (1 << 17) != 0 {
+            result.special[3] = v.get(instrument, step, SPECIAL_FIELD_START + 3);
+        }
 
         // Legacy clap echo fallback (old presets stored echo in field 12)
         if instrument == 7 && result.special[0] == 0.0 {
@@ -237,6 +284,7 @@ impl PlockState {
         v.set(instrument, step, 9, settings.filter_env_decay);
         v.set(instrument, step, 10, settings.analog);
         v.set(instrument, step, 11, settings.stereo);
+        v.set(instrument, step, ATTACK_FIELD, settings.attack);
         if instrument == 7 {
             v.set(instrument, step, LEGACY_CLAP_ECHO_FIELD, 0.0);
         }
@@ -288,16 +336,22 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
         // Binary format: instrument * step * field f32 values (little-endian u32),
         // followed by instrument u16 step masks, followed by instrument * step u32 field masks.
         let expected_values = INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4;
+        let legacy_expected_values = INSTRUMENT_COUNT * STEP_COUNT * LEGACY_FIELD_COUNT * 4;
         let expected_masks = INSTRUMENT_COUNT * 2;
         let expected_field_masks = INSTRUMENT_COUNT * STEP_COUNT * 4;
-        if new_value.len() < expected_values + expected_masks {
+        let value_field_count = if new_value.len() >= expected_values + expected_masks {
+            FIELD_COUNT
+        } else if new_value.len() >= legacy_expected_values + expected_masks {
+            LEGACY_FIELD_COUNT
+        } else {
             return;
-        }
+        };
+        let values_len = INSTRUMENT_COUNT * STEP_COUNT * value_field_count * 4;
 
         let mut offset = 0usize;
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
-                for field in 0..FIELD_COUNT {
+                for field in 0..value_field_count {
                     let bytes = [
                         new_value[offset],
                         new_value[offset + 1],
@@ -317,7 +371,7 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
             offset += 2;
         }
 
-        if new_value.len() >= expected_values + expected_masks + expected_field_masks {
+        if new_value.len() >= values_len + expected_masks + expected_field_masks {
             for inst in 0..INSTRUMENT_COUNT {
                 for step in 0..STEP_COUNT {
                     let bytes = [
@@ -337,7 +391,11 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
             for inst in 0..INSTRUMENT_COUNT {
                 for step in 0..STEP_COUNT {
                     if self.state.masks.is_active(inst, step) {
-                        self.state.field_masks.set_all(inst, step);
+                        if value_field_count == LEGACY_FIELD_COUNT {
+                            self.state.field_masks.set_legacy_snapshot(inst, step);
+                        } else {
+                            self.state.field_masks.set_all(inst, step);
+                        }
                     }
                 }
             }
@@ -356,14 +414,17 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
                 for field in 0..FIELD_COUNT {
-                    result.extend_from_slice(
-                        &self.state.values.get(inst, step, field).to_le_bytes(),
-                    );
+                    result
+                        .extend_from_slice(&self.state.values.get(inst, step, field).to_le_bytes());
                 }
             }
         }
         for inst in 0..INSTRUMENT_COUNT {
-            result.extend_from_slice(&self.state.masks.masks[inst].load(Ordering::Relaxed).to_le_bytes());
+            result.extend_from_slice(
+                &self.state.masks.masks[inst]
+                    .load(Ordering::Relaxed)
+                    .to_le_bytes(),
+            );
         }
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
@@ -384,6 +445,7 @@ mod tests {
             decay: 0.2,
             volume: 0.8,
             filter_freq: 1000.0,
+            attack: 0.0015,
             release: 0.1,
             decay_curve: 5.0,
             release_curve: 3.0,
@@ -405,7 +467,9 @@ mod tests {
 
         state.set_settings(7, 3, &settings);
         let global = base_settings();
-        let restored = state.get_settings(7, 3, &global).expect("plock should exist");
+        let restored = state
+            .get_settings(7, 3, &global)
+            .expect("plock should exist");
 
         assert_eq!(restored.special[0], 2.5);
         assert_eq!(state.values.get(7, 3, SPECIAL_FIELD_START), 2.5);
@@ -422,7 +486,9 @@ mod tests {
         state.field_masks.set_all(7, 3);
 
         let global = base_settings();
-        let restored = state.get_settings(7, 3, &global).expect("plock should exist");
+        let restored = state
+            .get_settings(7, 3, &global)
+            .expect("plock should exist");
 
         assert_eq!(restored.special[0], 1.75);
     }
@@ -438,7 +504,9 @@ mod tests {
 
         state.set_settings(11, 4, &settings);
         let global = base_settings();
-        let restored = state.get_settings(11, 4, &global).expect("plock should exist");
+        let restored = state
+            .get_settings(11, 4, &global)
+            .expect("plock should exist");
 
         assert_eq!(restored.special[0], 1.1);
         assert_eq!(restored.special[1], 1.2);
@@ -458,7 +526,9 @@ mod tests {
 
         state.set_settings(12, 5, &settings);
         let global = base_settings();
-        let restored = state.get_settings(12, 5, &global).expect("plock should exist");
+        let restored = state
+            .get_settings(12, 5, &global)
+            .expect("plock should exist");
 
         assert_eq!(restored.algo, 1);
         assert_eq!(restored.special[0], -0.5);
@@ -468,13 +538,30 @@ mod tests {
     }
 
     #[test]
+    fn attack_roundtrips_as_appended_field() {
+        let state = PlockState::new();
+        let mut settings = base_settings();
+        settings.attack = 0.045;
+
+        state.set_settings(0, 2, &settings);
+        let global = base_settings();
+        let restored = state.get_settings(0, 2, &global).expect("plock should exist");
+
+        assert_eq!(restored.attack, 0.045);
+        assert_eq!(state.values.get(0, 2, ATTACK_FIELD), 0.045);
+        assert_eq!(state.values.get(0, 2, LEGACY_CLAP_ECHO_FIELD), 0.0);
+    }
+
+    #[test]
     fn link_mode_returns_global_when_mask_empty() {
         let state = PlockState::new();
         state.masks.set_active(0, 0, true);
         // field_masks left at 0 → link mode
 
         let global = base_settings();
-        let restored = state.get_settings(0, 0, &global).expect("plock should exist");
+        let restored = state
+            .get_settings(0, 0, &global)
+            .expect("plock should exist");
 
         assert_eq!(restored.frequency, global.frequency);
         assert_eq!(restored.decay, global.decay);
@@ -489,7 +576,9 @@ mod tests {
         state.set_field(0, 0, 1, 0.99); // decay
         state.set_field(0, 0, 2, 0.42); // volume
 
-        let restored = state.get_settings(0, 0, &global).expect("plock should exist");
+        let restored = state
+            .get_settings(0, 0, &global)
+            .expect("plock should exist");
 
         assert_eq!(restored.frequency, global.frequency); // unchanged
         assert_eq!(restored.decay, 0.99);
@@ -532,7 +621,9 @@ mod tests {
         assert!(!state.field_masks.is_set(0, 0, 1));
         assert!(state.masks.is_active(0, 0)); // plock still active
 
-        let restored = state.get_settings(0, 0, &global).expect("plock should exist");
+        let restored = state
+            .get_settings(0, 0, &global)
+            .expect("plock should exist");
         assert_eq!(restored.decay, global.decay); // falls back to global
     }
 }

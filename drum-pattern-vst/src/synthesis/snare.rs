@@ -10,9 +10,6 @@
 
 use super::{dsp, Voice, VoiceSettings};
 
-/// Anti-click attack ramp (mimics analog VCA RC charge time).
-const SNARE_ATTACK_MS: f32 = 1.5;
-
 /// Snare drum voice using triangle oscillator + noise
 pub struct SnareVoice {
     settings: VoiceSettings,
@@ -55,7 +52,7 @@ impl SnareVoice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(SNARE_ATTACK_MS);
+        .with_attack_ms(settings.attack * 1000.0);
         envelope.set_hold(settings.hold);
 
         Self {
@@ -67,8 +64,12 @@ impl SnareVoice {
             filter,
             filter_r,
             envelope,
-            filter_env: dsp::ExpDecayEnvelope::new(sample_rate, 8.0, settings.filter_env_decay.max(0.001))
-                .with_attack_ms(0.3),
+            filter_env: dsp::ExpDecayEnvelope::new(
+                sample_rate,
+                8.0,
+                settings.filter_env_decay.max(0.001),
+            )
+            .with_attack_ms(0.3),
             active: false,
         }
     }
@@ -99,8 +100,10 @@ impl Voice for SnareVoice {
         let filter_env_val = self.filter_env.next();
         let modulated_cutoff = self.settings.filter_freq
             * (1.0 + filter_env_val * self.settings.filter_env_amount * 3.0);
-        self.filter.set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
-        self.filter_r.set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
+        self.filter
+            .set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
+        self.filter_r
+            .set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
 
         let output = match self.settings.algo {
             1 => {
@@ -153,8 +156,10 @@ impl Voice for SnareVoice {
         let filter_env_val = self.filter_env.next();
         let modulated_cutoff = self.settings.filter_freq
             * (1.0 + filter_env_val * self.settings.filter_env_amount * 3.0);
-        self.filter.set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
-        self.filter_r.set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
+        self.filter
+            .set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
+        self.filter_r
+            .set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
 
         let (left, right) = match self.settings.algo {
             1 => {
@@ -213,8 +218,10 @@ impl Voice for SnareVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
         self.osc.set_freq(settings.frequency);
-        self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
-        self.filter_r.set_cutoff(settings.filter_freq, self.sample_rate);
+        self.filter
+            .set_cutoff(settings.filter_freq, self.sample_rate);
+        self.filter_r
+            .set_cutoff(settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
             settings.decay_curve,
@@ -222,9 +229,10 @@ impl Voice for SnareVoice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(SNARE_ATTACK_MS);
+        .with_attack_ms(settings.attack * 1000.0);
         self.envelope.set_hold(settings.hold);
-        self.filter_env.set_decay(settings.filter_env_decay.max(0.001));
+        self.filter_env
+            .set_decay(settings.filter_env_decay.max(0.001));
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -236,7 +244,6 @@ impl Voice for SnareVoice {
             self.settings.special[index] = value;
         }
     }
-
 }
 
 #[cfg(test)]

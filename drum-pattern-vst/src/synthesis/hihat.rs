@@ -7,9 +7,6 @@
 
 use super::{dsp, Voice, VoiceSettings};
 
-/// Anti-click attack ramp (mimics analog VCA RC charge time).
-const HIHAT_ATTACK_MS: f32 = 1.0;
-
 /// Hi-Hat voice using filtered white noise
 pub struct HiHatVoice {
     settings: VoiceSettings,
@@ -57,7 +54,7 @@ impl HiHatVoice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(HIHAT_ATTACK_MS);
+        .with_attack_ms(settings.attack * 1000.0);
         envelope.set_hold(settings.hold);
 
         Self {
@@ -70,8 +67,12 @@ impl HiHatVoice {
             filter,
             filter_r,
             envelope,
-            filter_env: dsp::ExpDecayEnvelope::new(sample_rate, 8.0, settings.filter_env_decay.max(0.001))
-                .with_attack_ms(0.3),
+            filter_env: dsp::ExpDecayEnvelope::new(
+                sample_rate,
+                8.0,
+                settings.filter_env_decay.max(0.001),
+            )
+            .with_attack_ms(0.3),
             active: false,
         }
     }
@@ -100,9 +101,11 @@ impl Voice for HiHatVoice {
             1 => {
                 // Bright: steeper cutoff + slight saturation for extra harmonics
                 let filter_env_val = self.filter_env.next();
-                let modulated_cutoff = self.settings.filter_freq * 1.5
+                let modulated_cutoff = self.settings.filter_freq
+                    * 1.5
                     * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
-                self.filter.set_cutoff(modulated_cutoff.max(2000.0), self.sample_rate);
+                self.filter
+                    .set_cutoff(modulated_cutoff.max(2000.0), self.sample_rate);
                 let noise = self.noise.next();
                 let peaked = self.peaking.process(noise);
                 let filtered = self.filter.process(peaked);
@@ -114,7 +117,8 @@ impl Voice for HiHatVoice {
                 let filter_env_val = self.filter_env.next();
                 let modulated_cutoff = self.settings.filter_freq
                     * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
-                self.filter.set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
+                self.filter
+                    .set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
                 let noise = self.noise.next();
                 let peaked = self.peaking.process(noise);
                 let filtered = self.filter.process(peaked);
@@ -145,7 +149,8 @@ impl Voice for HiHatVoice {
 
         let (cutoff, saturated) = match self.settings.algo {
             1 => {
-                let c = self.settings.filter_freq * 1.5
+                let c = self.settings.filter_freq
+                    * 1.5
                     * (1.0 + filter_env_val * self.settings.filter_env_amount * 1.5);
                 (c.max(2000.0), true)
             }
@@ -196,10 +201,14 @@ impl Voice for HiHatVoice {
 
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
-        self.peaking.set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
-        self.peaking_r.set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
-        self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
-        self.filter_r.set_cutoff(settings.filter_freq, self.sample_rate);
+        self.peaking
+            .set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+        self.peaking_r
+            .set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+        self.filter
+            .set_cutoff(settings.filter_freq, self.sample_rate);
+        self.filter_r
+            .set_cutoff(settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
             settings.decay_curve,
@@ -207,9 +216,10 @@ impl Voice for HiHatVoice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(HIHAT_ATTACK_MS);
+        .with_attack_ms(settings.attack * 1000.0);
         self.envelope.set_hold(settings.hold);
-        self.filter_env.set_decay(settings.filter_env_decay.max(0.001));
+        self.filter_env
+            .set_decay(settings.filter_env_decay.max(0.001));
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -221,7 +231,6 @@ impl Voice for HiHatVoice {
             self.settings.special[index] = value;
         }
     }
-
 }
 
 #[cfg(test)]
@@ -250,6 +259,7 @@ mod tests {
             decay: 0.05, // 50ms
             volume: 1.0,
             filter_freq: 10000.0,
+            attack: 0.0003,
             release: 0.0, // disable release so the decay test is meaningful
             decay_curve: 8.0,
             release_curve: 3.0,

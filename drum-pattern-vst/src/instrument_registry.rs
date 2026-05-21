@@ -9,12 +9,14 @@
 
 use crate::synthesis::DrumVoice;
 
+pub const SOUND_SETTINGS_FIELD_COUNT: usize = 13;
+
 /// Functional family of a parameter, used by the Sound Panel to group sliders.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParamFamily {
     /// Oscillator / source parameters: pitch, algo, timbre, special tone controls.
     Osc,
-    /// Amplitude envelope parameters: decay, release, curves, hold.
+    /// Amplitude envelope parameters: attack, decay, release, curves, hold.
     Env,
     /// Filter parameters: cutoff, filter envelope amount/decay.
     Filter,
@@ -33,21 +35,22 @@ impl ParamFamily {
     }
 }
 
-/// Standard sound-setting field index (matches the 12 f32 array order).
+/// Standard sound-setting field index (matches the persistent f32 array order).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StandardField {
     Freq = 0,
     Decay = 1,
     Volume = 2,
     FilterFreq = 3,
-    Release = 4,
-    DecayCurve = 5,
-    ReleaseCurve = 6,
-    Hold = 7,
-    FilterEnvAmount = 8,
-    FilterEnvDecay = 9,
-    Analog = 10,
-    Stereo = 11,
+    Attack = 4,
+    Release = 5,
+    DecayCurve = 6,
+    ReleaseCurve = 7,
+    Hold = 8,
+    FilterEnvAmount = 9,
+    FilterEnvDecay = 10,
+    Analog = 11,
+    Stereo = 12,
 }
 
 /// Widget kind for a standard parameter.
@@ -92,7 +95,7 @@ pub struct InstrumentDef {
     pub algo_count: usize,
     pub standard_params: &'static [StandardParamDef],
     pub special_params: &'static [SpecialParamDef],
-    pub sound_settings_default: [f32; 12],
+    pub sound_settings_default: [f32; SOUND_SETTINGS_FIELD_COUNT],
     pub filter_type_label: &'static str,
 }
 
@@ -131,69 +134,560 @@ const fn cb(field: StandardField, label: &'static str, family: ParamFamily) -> S
 
 /// Generic standard params for instruments that support everything.
 const FULL_STD: &[StandardParamDef] = &[
-    s(StandardField::Freq, "Frequency", ParamFamily::Osc, 20.0, 12000.0, true, None),
-    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 5.0, false, Some(" s")),
-    s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Hold, "Hold", ParamFamily::Env, 0.0, 2.0, false, Some(" s")),
-    s(StandardField::Release, "Release", ParamFamily::Env, 0.0, 5.0, false, Some(" s")),
-    s(StandardField::ReleaseCurve, "Release Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 1.5, false, None),
-    s(StandardField::FilterFreq, "Filter", ParamFamily::Filter, 20.0, 20000.0, true, Some(" Hz")),
-    s(StandardField::FilterEnvAmount, "Filter Env", ParamFamily::Filter, 0.0, 1.0, false, None),
-    s(StandardField::FilterEnvDecay, "Filter Decay", ParamFamily::Filter, 0.001, 2.0, false, Some(" s")),
-    s(StandardField::Analog, "Analog", ParamFamily::Output, 0.0, 1.0, false, None),
+    s(
+        StandardField::Freq,
+        "Frequency",
+        ParamFamily::Osc,
+        20.0,
+        12000.0,
+        true,
+        None,
+    ),
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.001,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Hold,
+        "Hold",
+        ParamFamily::Env,
+        0.0,
+        2.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Release,
+        "Release",
+        ParamFamily::Env,
+        0.0,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Release Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        1.5,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::FilterEnvAmount,
+        "Filter Env",
+        ParamFamily::Filter,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterEnvDecay,
+        "Filter Decay",
+        ParamFamily::Filter,
+        0.001,
+        2.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Output,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
     cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
 ];
 
 /// Kick-like: no hold, no filter env, no stereo.
 const KICK_STD: &[StandardParamDef] = &[
-    s(StandardField::Freq, "Frequency", ParamFamily::Osc, 20.0, 12000.0, true, None),
-    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 5.0, false, Some(" s")),
-    s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Release, "Release", ParamFamily::Env, 0.0, 5.0, false, Some(" s")),
-    s(StandardField::ReleaseCurve, "Release Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 1.5, false, None),
-    s(StandardField::FilterFreq, "Filter", ParamFamily::Filter, 20.0, 20000.0, true, Some(" Hz")),
-    s(StandardField::Analog, "Analog", ParamFamily::Output, 0.0, 1.0, false, None),
+    s(
+        StandardField::Freq,
+        "Frequency",
+        ParamFamily::Osc,
+        20.0,
+        12000.0,
+        true,
+        None,
+    ),
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.001,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Release,
+        "Release",
+        ParamFamily::Env,
+        0.0,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Release Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        1.5,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Output,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
 ];
 
 /// Open-hat / ride / cymbal / clap: no hold, no filter env.
 const NO_HOLD_NO_FILTENV_STD: &[StandardParamDef] = &[
-    s(StandardField::Freq, "Frequency", ParamFamily::Osc, 20.0, 12000.0, true, None),
-    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 5.0, false, Some(" s")),
-    s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Release, "Release", ParamFamily::Env, 0.0, 5.0, false, Some(" s")),
-    s(StandardField::ReleaseCurve, "Release Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 1.5, false, None),
-    s(StandardField::FilterFreq, "Filter", ParamFamily::Filter, 20.0, 20000.0, true, Some(" Hz")),
-    s(StandardField::Analog, "Analog", ParamFamily::Output, 0.0, 1.0, false, None),
+    s(
+        StandardField::Freq,
+        "Frequency",
+        ParamFamily::Osc,
+        20.0,
+        12000.0,
+        true,
+        None,
+    ),
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.001,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Release,
+        "Release",
+        ParamFamily::Env,
+        0.0,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Release Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        1.5,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Output,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
     cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
 ];
 
 /// Tom-like: no hold, filter env, no stereo.
 const TOM_STD: &[StandardParamDef] = &[
-    s(StandardField::Freq, "Frequency", ParamFamily::Osc, 20.0, 12000.0, true, None),
-    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 5.0, false, Some(" s")),
-    s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Release, "Release", ParamFamily::Env, 0.0, 5.0, false, Some(" s")),
-    s(StandardField::ReleaseCurve, "Release Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 1.5, false, None),
-    s(StandardField::FilterFreq, "Filter", ParamFamily::Filter, 20.0, 20000.0, true, Some(" Hz")),
-    s(StandardField::FilterEnvAmount, "Filter Env", ParamFamily::Filter, 0.0, 1.0, false, None),
-    s(StandardField::FilterEnvDecay, "Filter Decay", ParamFamily::Filter, 0.001, 2.0, false, Some(" s")),
-    s(StandardField::Analog, "Analog", ParamFamily::Output, 0.0, 1.0, false, None),
+    s(
+        StandardField::Freq,
+        "Frequency",
+        ParamFamily::Osc,
+        20.0,
+        12000.0,
+        true,
+        None,
+    ),
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.001,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Release,
+        "Release",
+        ParamFamily::Env,
+        0.0,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Release Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        1.5,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::FilterEnvAmount,
+        "Filter Env",
+        ParamFamily::Filter,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterEnvDecay,
+        "Filter Decay",
+        ParamFamily::Filter,
+        0.001,
+        2.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Output,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
 ];
 
-/// Snare606 / B8: no hold, no filter env, no stereo.
+/// Snare606: no hold, no filter env, stereo-capable.
+const SNARE606_STD: &[StandardParamDef] = &[
+    s(
+        StandardField::Freq,
+        "Frequency",
+        ParamFamily::Osc,
+        20.0,
+        12000.0,
+        true,
+        None,
+    ),
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.001,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Release,
+        "Release",
+        ParamFamily::Env,
+        0.0,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Release Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        1.5,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Output,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
+    cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
+];
+
+/// B8: no hold, no filter env, no stereo.
 const MINIMAL_STD: &[StandardParamDef] = &[
-    s(StandardField::Freq, "Frequency", ParamFamily::Osc, 20.0, 12000.0, true, None),
-    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 5.0, false, Some(" s")),
-    s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Release, "Release", ParamFamily::Env, 0.0, 5.0, false, Some(" s")),
-    s(StandardField::ReleaseCurve, "Release Curve", ParamFamily::Env, 0.1, 20.0, false, None),
-    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 1.5, false, None),
-    s(StandardField::FilterFreq, "Filter", ParamFamily::Filter, 20.0, 20000.0, true, Some(" Hz")),
-    s(StandardField::Analog, "Analog", ParamFamily::Output, 0.0, 1.0, false, None),
+    s(
+        StandardField::Freq,
+        "Frequency",
+        ParamFamily::Osc,
+        20.0,
+        12000.0,
+        true,
+        None,
+    ),
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.001,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Release,
+        "Release",
+        ParamFamily::Env,
+        0.0,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Release Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        1.5,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Output,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
 ];
 
 pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
@@ -205,11 +699,19 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         midi_note: 36,
         algo_count: 3,
         standard_params: KICK_STD,
-        special_params: &[
-            SpecialParamDef { name: "kick_click", label: "Click Level", default: 0.5, min: 0.0, max: 1.0, special_index: 0, family: ParamFamily::Osc },
-        ],
+        special_params: &[SpecialParamDef {
+            name: "kick_click",
+            label: "Click Level",
+            default: 0.5,
+            min: 0.0,
+            max: 1.0,
+            special_index: 0,
+            family: ParamFamily::Osc,
+        }],
         // Kick-like: no hold, no filter env, no stereo
-        sound_settings_default: [60.0, 0.5, 0.8, 30.0, 0.5, 5.0, 3.0, 0.0, 1.0, 0.05, 1.0, 0.0],
+        sound_settings_default: [
+            60.0, 0.5, 0.8, 30.0, 0.0015, 0.5, 5.0, 3.0, 0.0, 1.0, 0.05, 1.0, 0.0,
+        ],
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -220,11 +722,19 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         midi_note: 38,
         algo_count: 3,
         standard_params: FULL_STD,
-        special_params: &[
-            SpecialParamDef { name: "snare_snap", label: "Snap", default: 0.5, min: 0.0, max: 1.0, special_index: 0, family: ParamFamily::Osc },
-        ],
+        special_params: &[SpecialParamDef {
+            name: "snare_snap",
+            label: "Snap",
+            default: 0.5,
+            min: 0.0,
+            max: 1.0,
+            special_index: 0,
+            family: ParamFamily::Osc,
+        }],
         // Full: hold, filter env, stereo
-        sound_settings_default: [200.0, 0.47, 0.6, 200.0, 0.2, 5.0, 3.0, 0.0, 1.0, 0.03, 1.0, 1.0],
+        sound_settings_default: [
+            200.0, 0.47, 0.6, 200.0, 0.0003, 0.2, 5.0, 3.0, 0.0, 1.0, 0.03, 1.0, 1.0,
+        ],
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -237,7 +747,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         standard_params: FULL_STD,
         special_params: &[],
         // Full: hold, filter env, stereo
-        sound_settings_default: [8000.0, 0.36, 0.3, 5000.0, 0.0, 8.0, 3.0, 0.0, 1.0, 0.04, 1.0, 1.0],
+        sound_settings_default: [
+            8000.0, 0.36, 0.3, 5000.0, 0.0003, 0.0, 8.0, 3.0, 0.0, 1.0, 0.04, 1.0, 1.0,
+        ],
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -250,7 +762,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         standard_params: NO_HOLD_NO_FILTENV_STD,
         special_params: &[],
         // No hold, no filter env, no stereo
-        sound_settings_default: [6000.0, 0.66, 0.4, 8000.0, 0.4, 5.5, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0],
+        sound_settings_default: [
+            6000.0, 0.66, 0.4, 8000.0, 0.0003, 0.4, 5.5, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
+        ],
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -261,11 +775,19 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         midi_note: 50,
         algo_count: 2,
         standard_params: TOM_STD,
-        special_params: &[
-            SpecialParamDef { name: "tom_stick", label: "Stick Attack", default: 0.5, min: 0.0, max: 1.0, special_index: 0, family: ParamFamily::Osc },
-        ],
+        special_params: &[SpecialParamDef {
+            name: "tom_stick",
+            label: "Stick Attack",
+            default: 0.5,
+            min: 0.0,
+            max: 1.0,
+            special_index: 0,
+            family: ParamFamily::Osc,
+        }],
         // No hold, filter env, no stereo
-        sound_settings_default: [300.0, 0.3, 0.5, 500.0, 0.3, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0],
+        sound_settings_default: [
+            300.0, 0.3, 0.5, 500.0, 0.0015, 0.3, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0,
+        ],
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -276,11 +798,19 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         midi_note: 47,
         algo_count: 2,
         standard_params: TOM_STD,
-        special_params: &[
-            SpecialParamDef { name: "tom_stick", label: "Stick Attack", default: 0.5, min: 0.0, max: 1.0, special_index: 0, family: ParamFamily::Osc },
-        ],
+        special_params: &[SpecialParamDef {
+            name: "tom_stick",
+            label: "Stick Attack",
+            default: 0.5,
+            min: 0.0,
+            max: 1.0,
+            special_index: 0,
+            family: ParamFamily::Osc,
+        }],
         // No hold, filter env, no stereo
-        sound_settings_default: [200.0, 0.4, 0.5, 500.0, 0.4, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0],
+        sound_settings_default: [
+            200.0, 0.4, 0.5, 500.0, 0.0015, 0.4, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0,
+        ],
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -291,11 +821,19 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         midi_note: 43,
         algo_count: 2,
         standard_params: TOM_STD,
-        special_params: &[
-            SpecialParamDef { name: "tom_stick", label: "Stick Attack", default: 0.5, min: 0.0, max: 1.0, special_index: 0, family: ParamFamily::Osc },
-        ],
+        special_params: &[SpecialParamDef {
+            name: "tom_stick",
+            label: "Stick Attack",
+            default: 0.5,
+            min: 0.0,
+            max: 1.0,
+            special_index: 0,
+            family: ParamFamily::Osc,
+        }],
         // No hold, filter env, no stereo
-        sound_settings_default: [120.0, 0.5, 0.5, 500.0, 0.5, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0],
+        sound_settings_default: [
+            120.0, 0.5, 0.5, 500.0, 0.0015, 0.5, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0,
+        ],
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -306,11 +844,19 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         midi_note: 39,
         algo_count: 2,
         standard_params: NO_HOLD_NO_FILTENV_STD,
-        special_params: &[
-            SpecialParamDef { name: "clap_echo", label: "Echo", default: 0.5, min: 0.0, max: 3.0, special_index: 0, family: ParamFamily::Env },
-        ],
+        special_params: &[SpecialParamDef {
+            name: "clap_echo",
+            label: "Echo",
+            default: 0.5,
+            min: 0.0,
+            max: 3.0,
+            special_index: 0,
+            family: ParamFamily::Env,
+        }],
         // No hold, no filter env, stereo
-        sound_settings_default: [1200.0, 0.03, 0.7, 1000.0, 0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0],
+        sound_settings_default: [
+            1200.0, 0.03, 0.7, 1000.0, 0.0015, 0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0,
+        ],
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -323,7 +869,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         standard_params: NO_HOLD_NO_FILTENV_STD,
         special_params: &[],
         // No hold, no filter env, stereo
-        sound_settings_default: [8000.0, 1.2, 0.35, 10000.0, 1.5, 3.5, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0],
+        sound_settings_default: [
+            8000.0, 1.2, 0.35, 10000.0, 0.002, 1.5, 3.5, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0,
+        ],
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -336,7 +884,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         standard_params: NO_HOLD_NO_FILTENV_STD,
         special_params: &[],
         // No hold, no filter env, stereo
-        sound_settings_default: [6000.0, 2.0, 0.4, 8000.0, 2.5, 2.8, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0],
+        sound_settings_default: [
+            6000.0, 2.0, 0.4, 8000.0, 0.002, 2.5, 2.8, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0,
+        ],
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -346,14 +896,40 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         full_name: "Snare 606",
         midi_note: 40,
         algo_count: 2,
-        standard_params: MINIMAL_STD,
+        standard_params: SNARE606_STD,
         special_params: &[
-            SpecialParamDef { name: "snare606_resonance", label: "Resonance", default: 4.5, min: 0.5, max: 12.0, special_index: 0, family: ParamFamily::Filter },
-            SpecialParamDef { name: "snare606_tone", label: "Tone", default: 0.55, min: 0.0, max: 1.0, special_index: 1, family: ParamFamily::Osc },
-            SpecialParamDef { name: "snare606_snap", label: "Snap", default: 0.3, min: 0.0, max: 1.0, special_index: 2, family: ParamFamily::Osc },
+            SpecialParamDef {
+                name: "snare606_resonance",
+                label: "Resonance",
+                default: 4.5,
+                min: 0.5,
+                max: 12.0,
+                special_index: 0,
+                family: ParamFamily::Filter,
+            },
+            SpecialParamDef {
+                name: "snare606_tone",
+                label: "Tone",
+                default: 0.55,
+                min: 0.0,
+                max: 1.0,
+                special_index: 1,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "snare606_snap",
+                label: "Snap",
+                default: 0.3,
+                min: 0.0,
+                max: 1.0,
+                special_index: 2,
+                family: ParamFamily::Osc,
+            },
         ],
-        // Minimal: no hold, no filter env, no stereo
-        sound_settings_default: [220.0, 0.08, 0.7, 3000.0, 0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0],
+        // Snare606: no hold, no filter env, stereo-capable
+        sound_settings_default: [
+            220.0, 0.08, 0.7, 3000.0, 0.0003, 0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
+        ],
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -365,13 +941,47 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         algo_count: 2,
         standard_params: MINIMAL_STD,
         special_params: &[
-            SpecialParamDef { name: "bassdrum808_accent", label: "Accent", default: 0.0, min: 0.0, max: 2.0, special_index: 0, family: ParamFamily::Osc },
-            SpecialParamDef { name: "bassdrum808_snap", label: "Snap", default: 0.0, min: 0.0, max: 2.0, special_index: 1, family: ParamFamily::Osc },
-            SpecialParamDef { name: "bassdrum808_pitch_drop", label: "Pitch Drop", default: 0.0, min: 0.0, max: 2.0, special_index: 2, family: ParamFamily::Osc },
-            SpecialParamDef { name: "bassdrum808_click_tone", label: "Click Tone", default: 4000.0, min: 100.0, max: 8000.0, special_index: 3, family: ParamFamily::Filter },
+            SpecialParamDef {
+                name: "bassdrum808_accent",
+                label: "Accent",
+                default: 0.0,
+                min: 0.0,
+                max: 2.0,
+                special_index: 0,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "bassdrum808_snap",
+                label: "Snap",
+                default: 0.0,
+                min: 0.0,
+                max: 2.0,
+                special_index: 1,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "bassdrum808_pitch_drop",
+                label: "Pitch Drop",
+                default: 0.0,
+                min: 0.0,
+                max: 2.0,
+                special_index: 2,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "bassdrum808_click_tone",
+                label: "Click Tone",
+                default: 4000.0,
+                min: 100.0,
+                max: 8000.0,
+                special_index: 3,
+                family: ParamFamily::Filter,
+            },
         ],
         // Minimal: no hold, no filter env, no stereo
-        sound_settings_default: [50.0, 0.4, 0.9, 3000.0, 0.0, 3.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0],
+        sound_settings_default: [
+            50.0, 0.4, 0.9, 3000.0, 0.0015, 0.0, 3.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
+        ],
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -383,13 +993,47 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         algo_count: 2,
         standard_params: FULL_STD,
         special_params: &[
-            SpecialParamDef { name: "perc1_sweep", label: "Sweep", default: 0.5, min: -1.0, max: 1.0, special_index: 0, family: ParamFamily::Osc },
-            SpecialParamDef { name: "perc1_speed", label: "Speed", default: 80.0, min: 5.0, max: 300.0, special_index: 1, family: ParamFamily::Osc },
-            SpecialParamDef { name: "perc1_bite", label: "Bite", default: 0.0, min: 0.0, max: 1.0, special_index: 2, family: ParamFamily::Osc },
-            SpecialParamDef { name: "perc1_width", label: "Width", default: 0.0, min: 0.0, max: 1.0, special_index: 3, family: ParamFamily::Output },
+            SpecialParamDef {
+                name: "perc1_sweep",
+                label: "Sweep",
+                default: 0.5,
+                min: -1.0,
+                max: 1.0,
+                special_index: 0,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "perc1_speed",
+                label: "Speed",
+                default: 80.0,
+                min: 5.0,
+                max: 300.0,
+                special_index: 1,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "perc1_bite",
+                label: "Bite",
+                default: 0.0,
+                min: 0.0,
+                max: 1.0,
+                special_index: 2,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "perc1_width",
+                label: "Width",
+                default: 0.0,
+                min: 0.0,
+                max: 1.0,
+                special_index: 3,
+                family: ParamFamily::Output,
+            },
         ],
         // Full: filter env, stereo
-        sound_settings_default: [2000.0, 0.15, 0.6, 6000.0, 0.0, 5.0, 3.0, 0.0, 0.7, 0.03, 0.3, 1.0],
+        sound_settings_default: [
+            2000.0, 0.15, 0.6, 6000.0, 0.0005, 0.0, 5.0, 3.0, 0.0, 0.7, 0.03, 0.3, 1.0,
+        ],
         filter_type_label: "LP",
     },
 ];
@@ -419,7 +1063,7 @@ pub fn special_params(voice_idx: usize) -> &'static [SpecialParamDef] {
 }
 
 #[allow(dead_code)]
-pub fn sound_settings_default(voice_idx: usize) -> &'static [f32; 12] {
+pub fn sound_settings_default(voice_idx: usize) -> &'static [f32; SOUND_SETTINGS_FIELD_COUNT] {
     &INSTRUMENTS[voice_idx].sound_settings_default
 }
 
