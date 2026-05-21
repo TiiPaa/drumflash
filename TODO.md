@@ -95,9 +95,13 @@
   - ajouter tests unitaires sur `PlockState::set_settings/get_settings` pour Clap Echo, B8 specials et Perc1 specials
 - [ ] [39] Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`). Permet labels, ranges et défauts spécifiques par voix.
   - [x] Prototype Kick : `KickSettings` struct typée, conversion `VoiceSettings ↔ KickSettings`, tests passent
-  - [ ] Généraliser aux 12 autres instruments (Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
+  - [x] Généraliser aux 12 autres instruments (Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
 - [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
+- [ ] [54] Saisie clavier de valeurs précises + Alt+mouse pour affiner les sliders de paramètres
+  - ParamSlider : réactiver Alt+clic pour type-in (bug focus commenté), ajouter Alt+drag mode ultra-fin
+  - egui::Slider (Sound Panel) : vérifier/vérifier que double-clic type-in natif fonctionne
+  - Documenter les raccourcis dans l'UI (tooltip ou indication visuelle)
 
 ## Dette technique & Documentation
 
