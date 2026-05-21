@@ -8,11 +8,11 @@
 //! For the analog TR-606 bridged-T snare model, see the separate
 //! `Snare606Voice` (voice index 10).
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::snare::SnareSettings, Voice, VoiceSettings};
 
 /// Snare drum voice using triangle oscillator + noise
 pub struct SnareVoice {
-    settings: VoiceSettings,
+    settings: SnareSettings,
     sample_rate: f32,
 
     // Oscillator (triangle) for body
@@ -36,7 +36,7 @@ pub struct SnareVoice {
 }
 
 impl SnareVoice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: SnareSettings) -> Self {
         let mut osc = dsp::TriangleOsc::new(sample_rate);
         osc.set_freq(settings.frequency);
 
@@ -94,7 +94,7 @@ impl Voice for SnareVoice {
             return 0.0;
         }
 
-        let snap = self.settings.special[0];
+        let snap = self.settings.snap;
         let env = self.envelope.next();
 
         let filter_env_val = self.filter_env.next();
@@ -150,7 +150,7 @@ impl Voice for SnareVoice {
             return (m, m);
         }
 
-        let snap = self.settings.special[0];
+        let snap = self.settings.snap;
         let env = self.envelope.next();
 
         let filter_env_val = self.filter_env.next();
@@ -216,23 +216,23 @@ impl Voice for SnareVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = settings;
-        self.osc.set_freq(settings.frequency);
+        self.settings = SnareSettings::from(settings);
+        self.osc.set_freq(self.settings.frequency);
         self.filter
-            .set_cutoff(settings.filter_freq, self.sample_rate);
+            .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.filter_r
-            .set_cutoff(settings.filter_freq, self.sample_rate);
+            .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
-            settings.decay_curve,
-            settings.decay,
-            settings.release_curve,
-            settings.release,
+            self.settings.decay_curve,
+            self.settings.decay,
+            self.settings.release_curve,
+            self.settings.release,
         )
-        .with_attack_ms(settings.attack * 1000.0);
-        self.envelope.set_hold(settings.hold);
+        .with_attack_ms(self.settings.attack * 1000.0);
+        self.envelope.set_hold(self.settings.hold);
         self.filter_env
-            .set_decay(settings.filter_env_decay.max(0.001));
+            .set_decay(self.settings.filter_env_decay.max(0.001));
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -240,8 +240,8 @@ impl Voice for SnareVoice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
+        if index == 0 {
+            self.settings.snap = value;
         }
     }
 }
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_snare_basic() {
-        let mut snare = SnareVoice::new(44100.0, VoiceSettings::snare());
+        let mut snare = SnareVoice::new(44100.0, SnareSettings::from(VoiceSettings::snare()));
 
         // Silent before trigger
         assert!(!snare.is_active());
@@ -270,7 +270,7 @@ mod tests {
     #[test]
     fn test_snare_has_noise() {
         let settings = VoiceSettings::snare();
-        let mut snare = SnareVoice::new(44100.0, settings);
+        let mut snare = SnareVoice::new(44100.0, SnareSettings::from(settings));
 
         snare.trigger();
 

@@ -9,7 +9,7 @@
 //!   settings) — this is the difference between a clap and a hi-hat
 //! - Exponential decay envelope per burst, with release tail for the room
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::clap::ClapSettings, Voice, VoiceSettings};
 
 /// Lowpass cutoff for the first burst, expressed as a multiple of the highpass
 /// cutoff. 2.5 gives a roughly 1.3-octave bandpass — wide enough for body,
@@ -35,7 +35,7 @@ const BURST_LP_RATIOS: [f32; 4] = [1.0, 0.85, 0.72, 0.60];
 const SNAP_HP_HZ: f32 = 3500.0;
 
 pub struct ClapVoice {
-    settings: VoiceSettings,
+    settings: ClapSettings,
     sample_rate: f32,
 
     noise: dsp::WhiteNoise,
@@ -60,7 +60,7 @@ pub struct ClapVoice {
 }
 
 impl ClapVoice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: ClapSettings) -> Self {
         let hp = settings.filter_freq.max(400.0);
         let lp_base = (hp * LP_RATIO).min(sample_rate * 0.45);
 
@@ -112,7 +112,7 @@ impl ClapVoice {
     /// impact (no audible echo); 1 spreads bursts over 50 ms (default clap);
     /// higher values stretch the bursts up to 150 ms apart for a clap-echo.
     fn echo_amount(&self) -> f32 {
-        self.settings.special[0].clamp(0.0, 3.0)
+        self.settings.echo.clamp(0.0, 3.0)
     }
 
     fn lp_for_burst(&self, burst_idx: usize) -> f32 {
@@ -288,7 +288,7 @@ impl Voice for ClapVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = settings;
+        self.settings = ClapSettings::from(settings);
         self.update_derived_params();
     }
 
@@ -297,8 +297,8 @@ impl Voice for ClapVoice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
+        if index == 0 {
+            self.settings.echo = value;
         }
     }
 }
