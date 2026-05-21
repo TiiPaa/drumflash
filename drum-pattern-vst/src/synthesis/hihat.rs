@@ -5,11 +5,11 @@
 //! - Highpass filter (metallic sound)
 //! - Short exponential decay (closed hi-hat)
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::hihat::HiHatSettings, Voice, VoiceSettings};
 
 /// Hi-Hat voice using filtered white noise
 pub struct HiHatVoice {
-    settings: VoiceSettings,
+    settings: HiHatSettings,
     sample_rate: f32,
 
     // Noise generators (stereo pair)
@@ -36,7 +36,7 @@ pub struct HiHatVoice {
 }
 
 impl HiHatVoice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: HiHatSettings) -> Self {
         let mut peaking = dsp::Biquad::new();
         peaking.set_peaking(settings.frequency, 2.0, 6.0, sample_rate);
         let mut peaking_r = dsp::Biquad::new();
@@ -200,36 +200,34 @@ impl Voice for HiHatVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = settings;
+        self.settings = HiHatSettings::from(settings);
         self.peaking
-            .set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+            .set_peaking(self.settings.frequency, 2.0, 6.0, self.sample_rate);
         self.peaking_r
-            .set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+            .set_peaking(self.settings.frequency, 2.0, 6.0, self.sample_rate);
         self.filter
-            .set_cutoff(settings.filter_freq, self.sample_rate);
+            .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.filter_r
-            .set_cutoff(settings.filter_freq, self.sample_rate);
+            .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
-            settings.decay_curve,
-            settings.decay,
-            settings.release_curve,
-            settings.release,
+            self.settings.decay_curve,
+            self.settings.decay,
+            self.settings.release_curve,
+            self.settings.release,
         )
-        .with_attack_ms(settings.attack * 1000.0);
-        self.envelope.set_hold(settings.hold);
+        .with_attack_ms(self.settings.attack * 1000.0);
+        self.envelope.set_hold(self.settings.hold);
         self.filter_env
-            .set_decay(settings.filter_env_decay.max(0.001));
+            .set_decay(self.settings.filter_env_decay.max(0.001));
     }
 
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
-        }
+    fn set_special_param(&mut self, _index: usize, _value: f32) {
+        // HiHat has no special parameters
     }
 }
 
@@ -239,7 +237,7 @@ mod tests {
 
     #[test]
     fn test_hihat_basic() {
-        let mut hihat = HiHatVoice::new(44100.0, VoiceSettings::hihat());
+        let mut hihat = HiHatVoice::new(44100.0, HiHatSettings::from(VoiceSettings::hihat()));
 
         assert!(!hihat.is_active());
         assert_eq!(hihat.process_sample(), 0.0);
@@ -271,7 +269,7 @@ mod tests {
             algo: 0,
             special: [0.0; 8],
         };
-        let mut hihat = HiHatVoice::new(44100.0, settings);
+        let mut hihat = HiHatVoice::new(44100.0, HiHatSettings::from(settings));
 
         hihat.trigger();
 

@@ -6,10 +6,10 @@
 //! - Very long exponential decay
 //! - Slight pitch modulation (FM) for the shimmering wash effect
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::cymbal::CymbalSettings, Voice, VoiceSettings};
 
 pub struct CymbalVoice {
-    settings: VoiceSettings,
+    settings: CymbalSettings,
     sample_rate: f32,
 
     noise: dsp::WhiteNoise,
@@ -26,7 +26,7 @@ pub struct CymbalVoice {
 }
 
 impl CymbalVoice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: CymbalSettings) -> Self {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
         filter.set_cutoff(settings.filter_freq.max(4000.0), sample_rate);
         let mut filter_r = dsp::OnePoleFilter::new(dsp::FilterMode::HighPass);
@@ -158,7 +158,7 @@ impl Voice for CymbalVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = settings;
+        self.settings = CymbalSettings::from(settings);
         self.update_derived_params();
     }
 
@@ -166,9 +166,7 @@ impl Voice for CymbalVoice {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
-        }
+    fn set_special_param(&mut self, _index: usize, _value: f32) {
+        // Cymbal has no special parameters
     }
 }

@@ -7,10 +7,10 @@
 //! - Exponential amplitude envelope
 //! - Optional stick attack (short noise burst) for realism
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::tom::TomSettings, Voice, VoiceSettings};
 
 pub struct TomVoice {
-    settings: VoiceSettings,
+    settings: TomSettings,
     sample_rate: f32,
 
     osc: dsp::SineOsc,
@@ -27,7 +27,7 @@ pub struct TomVoice {
 }
 
 impl TomVoice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: TomSettings) -> Self {
         let sweep_time = 0.14f32.min(settings.decay);
         let mut osc = dsp::SineOsc::new(sample_rate);
         osc.set_freq(settings.frequency);
@@ -78,7 +78,7 @@ impl TomVoice {
     }
 
     fn stick_amount(&self) -> f32 {
-        self.settings.special[0]
+        self.settings.stick_attack
     }
 }
 
@@ -170,7 +170,7 @@ impl Voice for TomVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = settings;
+        self.settings = TomSettings::from(settings);
         self.update_derived_params();
     }
 
@@ -180,8 +180,8 @@ impl Voice for TomVoice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
+        if index == 0 {
+            self.settings.stick_attack = value;
         }
     }
 }

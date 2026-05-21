@@ -11,7 +11,7 @@
 //! - 0 Sine: clean "pew-pew" cartoon laser
 //! - 1 Saw: aggressive sci-fi blaster
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::perc1::Perc1Settings, Voice, VoiceSettings};
 
 const MAX_DELAY_SAMPLES: usize = 8192;
 const SLAP_DELAY_MS: f32 = 100.0;
@@ -54,7 +54,7 @@ impl Perc1Osc {
 }
 
 pub struct Perc1Voice {
-    settings: VoiceSettings,
+    settings: Perc1Settings,
     sample_rate: f32,
 
     // Carrier oscillators (left / right)
@@ -84,7 +84,7 @@ pub struct Perc1Voice {
 }
 
 impl Perc1Voice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: Perc1Settings) -> Self {
         let algo = settings.algo;
         let base_freq = settings.frequency.max(20.0);
 
@@ -140,8 +140,8 @@ impl Perc1Voice {
         }
     }
 
-    fn sweep_ratios(settings: &VoiceSettings) -> (f32, f32) {
-        let amount = settings.special[0].clamp(-1.0, 1.0);
+    fn sweep_ratios(settings: &Perc1Settings) -> (f32, f32) {
+        let amount = settings.sweep.clamp(-1.0, 1.0);
         if amount >= 0.0 {
             // Descending laser (high → low)
             let depth = 0.05_f32.powf(amount); // 1.0 → 0.05
@@ -153,8 +153,8 @@ impl Perc1Voice {
         }
     }
 
-    fn sweep_time(settings: &VoiceSettings) -> f32 {
-        let speed_ms = settings.special[1].clamp(1.0, 300.0);
+    fn sweep_time(settings: &Perc1Settings) -> f32 {
+        let speed_ms = settings.speed.clamp(1.0, 300.0);
         speed_ms / 1000.0
     }
 
@@ -195,7 +195,7 @@ impl Voice for Perc1Voice {
         let ratio = self.sweep_env.next();
         let freq = base * ratio;
 
-        let bite = self.settings.special[2].clamp(0.0, 1.0);
+        let bite = self.settings.bite.clamp(0.0, 1.0);
         let fm_deviation = bite * 3000.0;
 
         // FM: osc B modulates osc A frequency
@@ -221,7 +221,7 @@ impl Voice for Perc1Voice {
             self.delay_pos = 0;
         }
 
-        let width = self.settings.special[3].clamp(0.0, 1.0);
+        let width = self.settings.width.clamp(0.0, 1.0);
         dry + wet * width * 0.5
     }
 
@@ -240,9 +240,9 @@ impl Voice for Perc1Voice {
         let ratio = self.sweep_env.next();
         let freq = base * ratio;
 
-        let bite = self.settings.special[2].clamp(0.0, 1.0);
+        let bite = self.settings.bite.clamp(0.0, 1.0);
         let fm_deviation = bite * 3000.0;
-        let width = self.settings.special[3].clamp(0.0, 1.0);
+        let width = self.settings.width.clamp(0.0, 1.0);
 
         // Detune right channel slightly for stereo width
         let detune = 1.0 + width * 0.008;
@@ -298,12 +298,13 @@ impl Voice for Perc1Voice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        let algo_changed = self.settings.algo != settings.algo;
-        self.settings = settings;
-        let base_freq = settings.frequency.max(20.0);
+        let new = Perc1Settings::from(settings);
+        let algo_changed = self.settings.algo != new.algo;
+        self.settings = new;
+        let base_freq = self.settings.frequency.max(20.0);
 
         if algo_changed {
-            let algo = settings.algo;
+            let algo = self.settings.algo;
             self.osc_a_l = Perc1Osc::new(self.sample_rate, algo);
             self.osc_a_r = Perc1Osc::new(self.sample_rate, algo);
             self.osc_b_l = Perc1Osc::new(self.sample_rate, algo);
@@ -317,20 +318,20 @@ impl Voice for Perc1Voice {
         self.rebuild_sweep();
 
         // Update amplitude envelope via setters — do NOT recreate to preserve tail state
-        self.amp_env.set_decay(settings.decay.max(0.01).min(2.0));
-        self.amp_env.set_attack_ms(settings.attack * 1000.0);
-        self.amp_env.set_release(settings.release.max(0.001));
-        self.amp_env.set_decay_curve(settings.decay_curve);
-        self.amp_env.set_release_curve(settings.release_curve);
-        self.amp_env.set_hold(settings.hold);
+        self.amp_env.set_decay(self.settings.decay.max(0.01).min(2.0));
+        self.amp_env.set_attack_ms(self.settings.attack * 1000.0);
+        self.amp_env.set_release(self.settings.release.max(0.001));
+        self.amp_env.set_decay_curve(self.settings.decay_curve);
+        self.amp_env.set_release_curve(self.settings.release_curve);
+        self.amp_env.set_hold(self.settings.hold);
 
         // Update filter envelope via setters — do NOT recreate to preserve tail state
-        let filter_env_decay = settings.filter_env_decay.max(0.01).min(2.0);
+        let filter_env_decay = self.settings.filter_env_decay.max(0.01).min(2.0);
         self.filter_env.set_decay(filter_env_decay);
-        self.filter_env.set_curve(settings.decay_curve);
+        self.filter_env.set_curve(self.settings.decay_curve);
 
         // Update filter cutoff
-        let filter_freq = settings.filter_freq.max(20.0).min(20000.0);
+        let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);
         self.filter.set_cutoff(filter_freq, self.sample_rate);
     }
 
@@ -351,8 +352,12 @@ impl Voice for Perc1Voice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
+        match index {
+            0 => self.settings.sweep = value,
+            1 => self.settings.speed = value,
+            2 => self.settings.bite = value,
+            3 => self.settings.width = value,
+            _ => {}
         }
     }
 }
@@ -380,7 +385,7 @@ mod tests {
         // Short decay, no release
         settings.decay = 0.01;
         settings.release = 0.0;
-        let mut voice = Perc1Voice::new(sr, settings);
+        let mut voice = Perc1Voice::new(sr, settings.into());
         voice.trigger();
         let short = count_active_samples(&mut voice);
 
@@ -407,7 +412,7 @@ mod tests {
         settings.hold = 0.0;
         settings.special[1] = 5.0;
 
-        let mut voice = Perc1Voice::new(sr, settings);
+        let mut voice = Perc1Voice::new(sr, settings.into());
         voice.trigger();
         let no_hold = count_active_samples(&mut voice);
 
