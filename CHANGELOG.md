@@ -1,5 +1,65 @@
 # Changelog
 
+## 2026-05-21 — [39] Prototype Kick : typed per-instrument settings
+
+**Build:** `20260521-201743`  
+**VST3 Class ID:** `DrumFlashPlugin1`
+
+### Changes
+- New typed settings struct for Kick (`KickSettings`) replacing opaque `special[0]` access.
+- `KickSettings` contains named fields for all standard and special parameters used by the Kick voice.
+- `From<VoiceSettings>` and `Into<VoiceSettings>` implementations for seamless conversion at the persistence boundary.
+- `KickVoice` refactored to store `KickSettings` internally; `Voice::set_settings` wrapper handles conversion.
+- Round-trip test (`kick_settings_roundtrip_preserves_all_fields`) verifies no data loss.
+- All existing kick tests pass unchanged — confirms bit-identical behavior.
+- No change to `plock-v1` format, `DrumFlashParams`, or automation IDs.
+
+---
+
+## 2026-05-21 - External MIDI drag helper
+
+### Changes
+- Add `drum-pattern-midi-drag-helper.exe`, a Windows helper bin that performs OLE `DoDragDrop` outside the DAW process.
+- Re-enable `Drag`: the plugin exports the MIDI file, then opens a tiny topmost `Drag MIDI` helper window with the exported `.mid` path.
+- Update `build.ps1` to copy the helper next to the VST3 DLL in the bundle/install.
+- Keep MIDI file export available through the `MIDI` button and `Copy Path`.
+- Polish the helper window into a compact rounded drag handle instead of a raw Windows-looking box.
+
+### Notes
+- Direct in-process OLE drag crashed Studio One; the helper isolates that risk from the host.
+- The previous invisible helper launch did not provide a reliable Windows drag source. Drag now starts from the helper window itself.
+
+---
+
+## 2026-05-21 — Perc1 Hold wiring
+
+### Fixes
+- Wire Perc1 `hold` into its amplitude `DecayReleaseEnvelope` on creation and settings updates.
+- Add a regression test confirming Perc1 Hold extends the active envelope duration.
+
+---
+
+## 2026-05-21 — Targeted stereo controls
+
+### Changes
+- Expose Stereo in the Sound Panel for Snare606 without exposing it on B8.
+- Keep Kick, B8 and Toms mono-focused in the registry.
+- Fix Snare606 resonance retuning so both left and right resonators update when resonance changes.
+- Add a Snare606 stereo unit test that verifies stereo mode produces independent L/R channels.
+
+---
+
+## 2026-05-21 — Per-instrument Attack parameter
+
+### Changes
+- Add `attack` to `VoiceSettings` and expose it in the Sound Panel ENV group for every instrument.
+- Wire Attack into each amplitude `DecayReleaseEnvelope`, preserving the existing anti-click ramp defaults per voice.
+- Update the amplitude envelope graph and legend to show full A-H-D-R shape.
+- Persist sound settings with 13 fields per instrument while migrating old 12-field states.
+- Extend plocks with Attack as appended field 18, preserving legacy field 12 for old Clap Echo compatibility.
+
+---
+
 ## 2026-05-20 — Plock Snapshot vs Link mode
 
 **Build:** `20260520-211700`  

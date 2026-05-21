@@ -48,9 +48,13 @@ impl TomVoice {
                 settings.release_curve,
                 settings.release,
             )
-            .with_attack_ms(1.5),
-            filter_env: dsp::ExpDecayEnvelope::new(sample_rate, 6.0, settings.filter_env_decay.max(0.001))
-                .with_attack_ms(0.5),
+            .with_attack_ms(settings.attack * 1000.0),
+            filter_env: dsp::ExpDecayEnvelope::new(
+                sample_rate,
+                6.0,
+                settings.filter_env_decay.max(0.001),
+            )
+            .with_attack_ms(0.5),
             stick_attack: dsp::ClickGenerator::new(sample_rate, 8.0, 0.5, 0.6),
             active: false,
         };
@@ -60,12 +64,15 @@ impl TomVoice {
 
     fn update_derived_params(&mut self) {
         self.osc.set_freq(self.settings.frequency);
-        self.filter.set_cutoff(self.settings.filter_freq, self.sample_rate);
+        self.filter
+            .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
+        self.amp_env.set_attack_ms(self.settings.attack * 1000.0);
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
-        self.filter_env.set_decay(self.settings.filter_env_decay.max(0.001));
+        self.filter_env
+            .set_decay(self.settings.filter_env_decay.max(0.001));
         let sweep_time = 0.14f32.min(self.settings.decay);
         self.pitch_env = dsp::PitchEnvelope::new(self.sample_rate, 1.0, 0.55, sweep_time);
     }
@@ -114,9 +121,11 @@ impl Voice for TomVoice {
                         let deep_freq = self.settings.frequency * 0.7;
                         self.osc.set_freq(deep_freq * pitch_ratio);
                         let fundamental = self.osc.next();
-                        let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.12;
+                        let overtone =
+                            ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.12;
                         let filter_env_val = self.filter_env.next();
-                        let cutoff = self.settings.filter_freq * 0.7
+                        let cutoff = self.settings.filter_freq
+                            * 0.7
                             * (1.0 + filter_env_val * self.settings.filter_env_amount * 4.0);
                         (fundamental + overtone, cutoff.max(50.0))
                     }
@@ -125,7 +134,8 @@ impl Voice for TomVoice {
                         let pitch_ratio = self.pitch_env.next();
                         self.osc.set_freq(self.settings.frequency * pitch_ratio);
                         let fundamental = self.osc.next();
-                        let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
+                        let overtone =
+                            ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
                         let filter_env_val = self.filter_env.next();
                         let cutoff = self.settings.filter_freq
                             * (1.0 + filter_env_val * self.settings.filter_env_amount * 4.0);
@@ -174,5 +184,4 @@ impl Voice for TomVoice {
             self.settings.special[index] = value;
         }
     }
-
 }

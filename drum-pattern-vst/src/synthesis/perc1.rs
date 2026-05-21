@@ -102,19 +102,21 @@ impl Perc1Voice {
         let sweep_env = dsp::PitchEnvelope::new(sample_rate, sweep_start, sweep_end, sweep_time);
 
         let decay = settings.decay.max(0.01).min(2.0);
-        let amp_env = dsp::DecayReleaseEnvelope::new(
+        let mut amp_env = dsp::DecayReleaseEnvelope::new(
             sample_rate,
             settings.decay_curve,
             decay,
             settings.release_curve,
             settings.release.max(0.001),
         )
-        .with_attack_ms(0.5);
+        .with_attack_ms(settings.attack * 1000.0);
+        amp_env.set_hold(settings.hold);
 
         let filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         let filter_env_decay = settings.filter_env_decay.max(0.01).min(2.0);
-        let filter_env = dsp::ExpDecayEnvelope::new(sample_rate, settings.decay_curve, filter_env_decay)
-            .with_attack_ms(0.5);
+        let filter_env =
+            dsp::ExpDecayEnvelope::new(sample_rate, settings.decay_curve, filter_env_decay)
+                .with_attack_ms(0.5);
 
         let delay_samples = ((SLAP_DELAY_MS * 0.001) * sample_rate).round() as usize;
         let delay_samples = delay_samples.min(MAX_DELAY_SAMPLES - 1);
@@ -207,7 +209,8 @@ impl Voice for Perc1Voice {
         let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);
         let filter_env_amount = self.settings.filter_env_amount;
         let effective_freq = filter_freq + filter_env_val * filter_env_amount * 15000.0;
-        self.filter.set_cutoff(effective_freq.max(20.0).min(20000.0), self.sample_rate);
+        self.filter
+            .set_cutoff(effective_freq.max(20.0).min(20000.0), self.sample_rate);
         dry = self.filter.process(dry);
 
         // Simple mono delay
@@ -261,7 +264,8 @@ impl Voice for Perc1Voice {
         let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);
         let filter_env_amount = self.settings.filter_env_amount;
         let effective_freq = filter_freq + filter_env_val * filter_env_amount * 15000.0;
-        self.filter.set_cutoff(effective_freq.max(20.0).min(20000.0), self.sample_rate);
+        self.filter
+            .set_cutoff(effective_freq.max(20.0).min(20000.0), self.sample_rate);
         dry_l = self.filter.process(dry_l);
         dry_r = self.filter.process(dry_r);
 
@@ -314,9 +318,11 @@ impl Voice for Perc1Voice {
 
         // Update amplitude envelope via setters — do NOT recreate to preserve tail state
         self.amp_env.set_decay(settings.decay.max(0.01).min(2.0));
+        self.amp_env.set_attack_ms(settings.attack * 1000.0);
         self.amp_env.set_release(settings.release.max(0.001));
         self.amp_env.set_decay_curve(settings.decay_curve);
         self.amp_env.set_release_curve(settings.release_curve);
+        self.amp_env.set_hold(settings.hold);
 
         // Update filter envelope via setters — do NOT recreate to preserve tail state
         let filter_env_decay = settings.filter_env_decay.max(0.01).min(2.0);
@@ -389,6 +395,32 @@ mod tests {
             long > short * 2,
             "Long decay+release should produce significantly more samples than short (short={}, long={})",
             short, long
+        );
+    }
+
+    #[test]
+    fn perc1_hold_extends_active_duration() {
+        let sr = 44100.0;
+        let mut settings = VoiceSettings::perc1();
+        settings.decay = 0.01;
+        settings.release = 0.0;
+        settings.hold = 0.0;
+        settings.special[1] = 5.0;
+
+        let mut voice = Perc1Voice::new(sr, settings);
+        voice.trigger();
+        let no_hold = count_active_samples(&mut voice);
+
+        settings.hold = 0.1;
+        voice.set_settings(settings);
+        voice.trigger();
+        let with_hold = count_active_samples(&mut voice);
+
+        assert!(
+            with_hold > no_hold + (sr * 0.05) as usize,
+            "Hold should extend Perc1 active duration (no_hold={}, with_hold={})",
+            no_hold,
+            with_hold
         );
     }
 }

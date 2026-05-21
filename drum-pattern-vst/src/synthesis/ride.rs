@@ -56,7 +56,7 @@ impl RideVoice {
                 settings.release_curve,
                 settings.release,
             )
-            .with_attack_ms(2.0),
+            .with_attack_ms(settings.attack * 1000.0),
             active: false,
         }
     }
@@ -66,6 +66,7 @@ impl RideVoice {
         self.filter.set_cutoff(cutoff, self.sample_rate);
         self.filter_r.set_cutoff(cutoff, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
+        self.amp_env.set_attack_ms(self.settings.attack * 1000.0);
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
@@ -118,17 +119,21 @@ impl Voice for RideVoice {
         let (raw_l, raw_r) = match self.settings.algo {
             1 => {
                 // Bell: pure tonal, more fundamental, very little noise
-                let metallic = self.osc1.next() * 0.7
-                    + self.osc2.next() * 0.15
-                    + self.osc3.next() * 0.15;
-                (metallic + self.noise.next() * 0.1, metallic + self.noise_r.next() * 0.1)
+                let metallic =
+                    self.osc1.next() * 0.7 + self.osc2.next() * 0.15 + self.osc3.next() * 0.15;
+                (
+                    metallic + self.noise.next() * 0.1,
+                    metallic + self.noise_r.next() * 0.1,
+                )
             }
             _ => {
                 // Standard: metallic + noise shimmer
-                let metallic = self.osc1.next() * 0.5
-                    + self.osc2.next() * 0.3
-                    + self.osc3.next() * 0.2;
-                (metallic + self.noise.next() * 0.4, metallic + self.noise_r.next() * 0.4)
+                let metallic =
+                    self.osc1.next() * 0.5 + self.osc2.next() * 0.3 + self.osc3.next() * 0.2;
+                (
+                    metallic + self.noise.next() * 0.4,
+                    metallic + self.noise_r.next() * 0.4,
+                )
             }
         };
 
@@ -161,5 +166,4 @@ impl Voice for RideVoice {
             self.settings.special[index] = value;
         }
     }
-
 }

@@ -21,7 +21,9 @@ $bundleRoot = Join-Path $PSScriptRoot "build"
 $bundleDir = Join-Path $bundleRoot $vst3File
 $contentDir = Join-Path $bundleDir "Contents\x86_64-win"
 $sourceDll = Join-Path $targetDir "drum_pattern_vst.dll"
+$sourceDragHelper = Join-Path $targetDir "drum-pattern-midi-drag-helper.exe"
 $destFile = Join-Path $contentDir $vst3File
+$destDragHelper = Join-Path $contentDir "drum-pattern-midi-drag-helper.exe"
 $tempDir = Join-Path $PSScriptRoot ".codex-tmp"
 $buildId = Get-Date -Format "yyyyMMdd-HHmmss"
 
@@ -67,19 +69,27 @@ if (-not (Test-Path $sourceDll)) {
     exit 1
 }
 
+if (-not (Test-Path $sourceDragHelper)) {
+    Write-Color "Red" "ERREUR: Helper drag MIDI introuvable: $sourceDragHelper"
+    exit 1
+}
+
 Write-Color "Green" "Compilation reussie."
 Write-Host ""
 
 Write-Color "Yellow" "[3/4] Regeneration du bundle VST3..."
 New-Item -ItemType Directory -Force -Path $contentDir | Out-Null
 Copy-Item -Path $sourceDll -Destination $destFile -Force
+Copy-Item -Path $sourceDragHelper -Destination $destDragHelper -Force
 
 $dllInfo = Get-Item $sourceDll
 $bundleInfo = Get-Item $destFile
+$helperInfo = Get-Item $destDragHelper
 
 Write-Color "Green" "Bundle VST3 mis a jour."
 Write-Host "DLL source  : $($dllInfo.LastWriteTime)"
 Write-Host "Bundle VST3 : $($bundleInfo.LastWriteTime)"
+Write-Host "Drag helper : $($helperInfo.LastWriteTime)"
 Write-Host ""
 
 if ($Install) {

@@ -5,9 +5,6 @@
 
 use super::{dsp, Voice, VoiceSettings};
 
-/// Anti-click attack ramp (mimics analog VCA RC charge time).
-const OPEN_HIHAT_ATTACK_MS: f32 = 1.5;
-
 pub struct OpenHiHatVoice {
     settings: VoiceSettings,
     sample_rate: f32,
@@ -42,7 +39,7 @@ impl OpenHiHatVoice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(OPEN_HIHAT_ATTACK_MS);
+        .with_attack_ms(settings.attack * 1000.0);
         envelope.set_hold(settings.hold);
 
         Self {
@@ -135,10 +132,14 @@ impl Voice for OpenHiHatVoice {
 
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
-        self.peaking.set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
-        self.peaking_r.set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
-        self.filter.set_cutoff(settings.filter_freq, self.sample_rate);
-        self.filter_r.set_cutoff(settings.filter_freq, self.sample_rate);
+        self.peaking
+            .set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+        self.peaking_r
+            .set_peaking(settings.frequency, 2.0, 6.0, self.sample_rate);
+        self.filter
+            .set_cutoff(settings.filter_freq, self.sample_rate);
+        self.filter_r
+            .set_cutoff(settings.filter_freq, self.sample_rate);
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
             settings.decay_curve,
@@ -146,7 +147,7 @@ impl Voice for OpenHiHatVoice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(OPEN_HIHAT_ATTACK_MS);
+        .with_attack_ms(settings.attack * 1000.0);
         self.envelope.set_hold(settings.hold);
     }
 

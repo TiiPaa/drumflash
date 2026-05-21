@@ -18,8 +18,6 @@
 
 use super::{dsp, Voice, VoiceSettings};
 
-const ATTACK_MS: f32 = 1.5;
-
 pub struct Snare606Voice {
     settings: VoiceSettings,
     sample_rate: f32,
@@ -65,15 +63,12 @@ impl Snare606Voice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(ATTACK_MS);
+        .with_attack_ms(settings.attack * 1000.0);
         envelope.set_hold(settings.hold);
 
-        let filter_env = dsp::ExpDecayEnvelope::new(
-            sample_rate,
-            8.0,
-            settings.filter_env_decay.max(0.001),
-        )
-        .with_attack_ms(0.3);
+        let filter_env =
+            dsp::ExpDecayEnvelope::new(sample_rate, 8.0, settings.filter_env_decay.max(0.001))
+                .with_attack_ms(0.3);
 
         Self {
             settings,
@@ -260,9 +255,10 @@ impl Voice for Snare606Voice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(ATTACK_MS);
+        .with_attack_ms(settings.attack * 1000.0);
         self.envelope.set_hold(settings.hold);
-        self.filter_env.set_decay(settings.filter_env_decay.max(0.001));
+        self.filter_env
+            .set_decay(settings.filter_env_decay.max(0.001));
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -278,8 +274,34 @@ impl Voice for Snare606Voice {
                 let q = self.resonance_q();
                 self.resonator
                     .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
+                self.resonator_r
+                    .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
             }
         }
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stereo_mode_produces_independent_channels() {
+        let mut settings = VoiceSettings::snare606();
+        settings.stereo = 1.0;
+        let mut voice = Snare606Voice::new(44_100.0, settings);
+
+        voice.trigger();
+
+        let mut diverged = false;
+        for _ in 0..64 {
+            let (left, right) = voice.process_sample_stereo();
+            if (left - right).abs() > 1e-6 {
+                diverged = true;
+                break;
+            }
+        }
+
+        assert!(diverged, "stereo Snare606 should not duplicate mono");
+    }
 }
