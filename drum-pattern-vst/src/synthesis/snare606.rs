@@ -16,10 +16,10 @@
 //! - `settings.special[1]`      → tone mix: 0 = mostly wires, 1 = mostly body
 //! - `settings.special[2]`      → wire crispness: HP gain of the dry layer
 
-use super::{dsp, Voice, VoiceSettings};
+use super::{dsp, settings::snare606::Snare606Settings, Voice, VoiceSettings};
 
 pub struct Snare606Voice {
-    settings: VoiceSettings,
+    settings: Snare606Settings,
     sample_rate: f32,
 
     noise: dsp::WhiteNoise,
@@ -39,7 +39,7 @@ pub struct Snare606Voice {
 }
 
 impl Snare606Voice {
-    pub fn new(sample_rate: f32, settings: VoiceSettings) -> Self {
+    pub fn new(sample_rate: f32, settings: Snare606Settings) -> Self {
         let mut lp_softener = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         lp_softener.set_cutoff(settings.filter_freq.max(500.0), sample_rate);
         let mut lp_softener_r = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
@@ -51,7 +51,7 @@ impl Snare606Voice {
         wires_hp_r.set_cutoff(1500.0, sample_rate);
 
         let mut resonator = dsp::Biquad::new();
-        let q = settings.special[0].clamp(0.5, 12.0);
+        let q = settings.resonance.clamp(0.5, 12.0);
         resonator.set_bandpass(settings.frequency.max(80.0), q, sample_rate);
         let mut resonator_r = dsp::Biquad::new();
         resonator_r.set_bandpass(settings.frequency.max(80.0), q, sample_rate);
@@ -88,15 +88,15 @@ impl Snare606Voice {
     }
 
     fn resonance_q(&self) -> f32 {
-        self.settings.special[0].clamp(0.5, 12.0)
+        self.settings.resonance.clamp(0.5, 12.0)
     }
 
     fn tone_mix(&self) -> f32 {
-        self.settings.special[1].clamp(0.0, 1.0)
+        self.settings.tone.clamp(0.0, 1.0)
     }
 
     fn wire_crisp(&self) -> f32 {
-        self.settings.special[2].clamp(0.0, 1.0)
+        self.settings.snap.clamp(0.0, 1.0)
     }
 }
 
@@ -229,24 +229,25 @@ impl Voice for Snare606Voice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        let q_changed = (settings.special[0] - self.settings.special[0]).abs() > 1e-4;
-        let freq_changed = (settings.frequency - self.settings.frequency).abs() > 1e-3;
-        let lp_changed = (settings.filter_freq - self.settings.filter_freq).abs() > 1e-3;
+        let new = Snare606Settings::from(settings);
+        let q_changed = (new.resonance - self.settings.resonance).abs() > 1e-4;
+        let freq_changed = (new.frequency - self.settings.frequency).abs() > 1e-3;
+        let lp_changed = (new.filter_freq - self.settings.filter_freq).abs() > 1e-3;
 
-        self.settings = settings;
+        self.settings = new;
 
         if lp_changed {
             self.lp_softener
-                .set_cutoff(settings.filter_freq.max(500.0), self.sample_rate);
+                .set_cutoff(self.settings.filter_freq.max(500.0), self.sample_rate);
             self.lp_softener_r
-                .set_cutoff(settings.filter_freq.max(500.0), self.sample_rate);
+                .set_cutoff(self.settings.filter_freq.max(500.0), self.sample_rate);
         }
         if q_changed || freq_changed {
-            let q = settings.special[0].clamp(0.5, 12.0);
+            let q = self.settings.resonance.clamp(0.5, 12.0);
             self.resonator
-                .set_bandpass(settings.frequency.max(80.0), q, self.sample_rate);
+                .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
             self.resonator_r
-                .set_bandpass(settings.frequency.max(80.0), q, self.sample_rate);
+                .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
         }
         self.envelope = dsp::DecayReleaseEnvelope::new(
             self.sample_rate,
@@ -266,17 +267,17 @@ impl Voice for Snare606Voice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index < self.settings.special.len() {
-            self.settings.special[index] = value;
-            // Q lives in special[0] — re-tune the resonator immediately so
-            // moving the slider is audible without waiting for set_settings.
-            if index == 0 {
-                let q = self.resonance_q();
-                self.resonator
-                    .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
-                self.resonator_r
-                    .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
-            }
+        if index == 0 {
+            self.settings.resonance = value;
+            let q = self.resonance_q();
+            self.resonator
+                .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
+            self.resonator_r
+                .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
+        } else if index == 1 {
+            self.settings.tone = value;
+        } else if index == 2 {
+            self.settings.snap = value;
         }
     }
 }
@@ -289,7 +290,7 @@ mod tests {
     fn stereo_mode_produces_independent_channels() {
         let mut settings = VoiceSettings::snare606();
         settings.stereo = 1.0;
-        let mut voice = Snare606Voice::new(44_100.0, settings);
+        let mut voice = Snare606Voice::new(44_100.0, Snare606Settings::from(settings));
 
         voice.trigger();
 
