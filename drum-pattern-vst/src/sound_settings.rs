@@ -1,5 +1,5 @@
 use nih_plug::params::persist::PersistentField;
-use std::sync::atomic::{AtomicU64, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Per-voice persistent sound settings. The amplitude envelope is bi-stage
@@ -10,6 +10,7 @@ pub struct InstrumentSettingsState {
     pub decay: AtomicU32,
     pub volume: AtomicU32,
     pub filter_freq: AtomicU32,
+    pub attack: AtomicU32,
     pub release: AtomicU32,
     pub decay_curve: AtomicU32,
     pub release_curve: AtomicU32,
@@ -21,7 +22,8 @@ pub struct InstrumentSettingsState {
 }
 
 /// Number of f32 values serialized per instrument in the persisted state.
-pub const FIELDS_PER_INSTRUMENT: usize = 12;
+pub const FIELDS_PER_INSTRUMENT: usize = crate::instrument_registry::SOUND_SETTINGS_FIELD_COUNT;
+const LEGACY_FIELDS_PER_INSTRUMENT: usize = 12;
 
 impl InstrumentSettingsState {
     pub fn new(
@@ -29,6 +31,7 @@ impl InstrumentSettingsState {
         decay: f32,
         volume: f32,
         filter_freq: f32,
+        attack: f32,
         release: f32,
         decay_curve: f32,
         release_curve: f32,
@@ -43,6 +46,7 @@ impl InstrumentSettingsState {
             decay: AtomicU32::new(decay.to_bits()),
             volume: AtomicU32::new(volume.to_bits()),
             filter_freq: AtomicU32::new(filter_freq.to_bits()),
+            attack: AtomicU32::new(attack.to_bits()),
             release: AtomicU32::new(release.to_bits()),
             decay_curve: AtomicU32::new(decay_curve.to_bits()),
             release_curve: AtomicU32::new(release_curve.to_bits()),
@@ -54,12 +58,29 @@ impl InstrumentSettingsState {
         }
     }
 
-    pub fn load(&self) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) {
+    pub fn load(
+        &self,
+    ) -> (
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+        f32,
+    ) {
         (
             f32::from_bits(self.frequency.load(Ordering::Relaxed)),
             f32::from_bits(self.decay.load(Ordering::Relaxed)),
             f32::from_bits(self.volume.load(Ordering::Relaxed)),
             f32::from_bits(self.filter_freq.load(Ordering::Relaxed)),
+            f32::from_bits(self.attack.load(Ordering::Relaxed)),
             f32::from_bits(self.release.load(Ordering::Relaxed)),
             f32::from_bits(self.decay_curve.load(Ordering::Relaxed)),
             f32::from_bits(self.release_curve.load(Ordering::Relaxed)),
@@ -77,6 +98,7 @@ impl InstrumentSettingsState {
         decay: f32,
         volume: f32,
         filter_freq: f32,
+        attack: f32,
         release: f32,
         decay_curve: f32,
         release_curve: f32,
@@ -89,13 +111,19 @@ impl InstrumentSettingsState {
         self.frequency.store(frequency.to_bits(), Ordering::Relaxed);
         self.decay.store(decay.to_bits(), Ordering::Relaxed);
         self.volume.store(volume.to_bits(), Ordering::Relaxed);
-        self.filter_freq.store(filter_freq.to_bits(), Ordering::Relaxed);
+        self.filter_freq
+            .store(filter_freq.to_bits(), Ordering::Relaxed);
+        self.attack.store(attack.to_bits(), Ordering::Relaxed);
         self.release.store(release.to_bits(), Ordering::Relaxed);
-        self.decay_curve.store(decay_curve.to_bits(), Ordering::Relaxed);
-        self.release_curve.store(release_curve.to_bits(), Ordering::Relaxed);
+        self.decay_curve
+            .store(decay_curve.to_bits(), Ordering::Relaxed);
+        self.release_curve
+            .store(release_curve.to_bits(), Ordering::Relaxed);
         self.hold.store(hold.to_bits(), Ordering::Relaxed);
-        self.filter_env_amount.store(filter_env_amount.to_bits(), Ordering::Relaxed);
-        self.filter_env_decay.store(filter_env_decay.to_bits(), Ordering::Relaxed);
+        self.filter_env_amount
+            .store(filter_env_amount.to_bits(), Ordering::Relaxed);
+        self.filter_env_decay
+            .store(filter_env_decay.to_bits(), Ordering::Relaxed);
         self.analog.store(analog.to_bits(), Ordering::Relaxed);
         self.stereo.store(stereo.to_bits(), Ordering::Relaxed);
     }
@@ -108,14 +136,15 @@ pub struct SoundSettingsState {
 
 impl SoundSettingsState {
     pub fn new() -> Arc<Self> {
-        let defaults: [[f32; 12]; crate::synthesis::DrumVoice::COUNT] = std::array::from_fn(|i| {
-            crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
-        });
+        let defaults: [[f32; FIELDS_PER_INSTRUMENT]; crate::synthesis::DrumVoice::COUNT] =
+            std::array::from_fn(|i| {
+                crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
+            });
 
         Arc::new(Self {
             instruments: std::array::from_fn(|i| {
-                let [f, d, v, fl, r, dc, rc, h, fea, fed, a, s] = defaults[i];
-                InstrumentSettingsState::new(f, d, v, fl, r, dc, rc, h, fea, fed, a, s)
+                let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] = defaults[i];
+                InstrumentSettingsState::new(f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s)
             }),
             version: AtomicU64::new(0),
         })
@@ -128,40 +157,92 @@ impl SoundSettingsState {
     pub fn read_all(&self) -> Vec<f32> {
         let mut result = vec![0.0f32; self.instruments.len() * FIELDS_PER_INSTRUMENT];
         for (i, inst) in self.instruments.iter().enumerate() {
-            let (f, d, v, fl, r, dc, rc, h, fea, fed, a, s) = inst.load();
+            let (f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s) = inst.load();
             let base = i * FIELDS_PER_INSTRUMENT;
             result[base] = f;
             result[base + 1] = d;
             result[base + 2] = v;
             result[base + 3] = fl;
-            result[base + 4] = r;
-            result[base + 5] = dc;
-            result[base + 6] = rc;
-            result[base + 7] = h;
-            result[base + 8] = fea;
-            result[base + 9] = fed;
-            result[base + 10] = a;
-            result[base + 11] = s;
+            result[base + 4] = at;
+            result[base + 5] = r;
+            result[base + 6] = dc;
+            result[base + 7] = rc;
+            result[base + 8] = h;
+            result[base + 9] = fea;
+            result[base + 10] = fed;
+            result[base + 11] = a;
+            result[base + 12] = s;
         }
         result
     }
 
     pub fn write_all(&self, values: &[f32]) {
+        let legacy_len = self.instruments.len() * LEGACY_FIELDS_PER_INSTRUMENT;
+        let stride = if values.len() == legacy_len {
+            LEGACY_FIELDS_PER_INSTRUMENT
+        } else {
+            FIELDS_PER_INSTRUMENT
+        };
+
         for (i, inst) in self.instruments.iter().enumerate() {
-            let base = i * FIELDS_PER_INSTRUMENT;
+            let base = i * stride;
+            let defaults = crate::instrument_registry::INSTRUMENTS[i].sound_settings_default;
+            let value_or_default = |offset: usize| {
+                values
+                    .get(base + offset)
+                    .copied()
+                    .unwrap_or(defaults[offset])
+            };
             inst.store(
-                values.get(base).copied().unwrap_or(0.0),
-                values.get(base + 1).copied().unwrap_or(0.0),
-                values.get(base + 2).copied().unwrap_or(0.0),
-                values.get(base + 3).copied().unwrap_or(0.0),
-                values.get(base + 4).copied().unwrap_or(0.0),
-                values.get(base + 5).copied().unwrap_or(0.0),
-                values.get(base + 6).copied().unwrap_or(0.0),
-                values.get(base + 7).copied().unwrap_or(0.0),
-                values.get(base + 8).copied().unwrap_or(0.0),
-                values.get(base + 9).copied().unwrap_or(0.0),
-                values.get(base + 10).copied().unwrap_or(1.0),
-                values.get(base + 11).copied().unwrap_or(0.0),
+                value_or_default(0),
+                value_or_default(1),
+                value_or_default(2),
+                value_or_default(3),
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    defaults[4]
+                } else {
+                    value_or_default(4)
+                },
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    value_or_default(4)
+                } else {
+                    value_or_default(5)
+                },
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    value_or_default(5)
+                } else {
+                    value_or_default(6)
+                },
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    value_or_default(6)
+                } else {
+                    value_or_default(7)
+                },
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    value_or_default(7)
+                } else {
+                    value_or_default(8)
+                },
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    value_or_default(8)
+                } else {
+                    value_or_default(9)
+                },
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    value_or_default(9)
+                } else {
+                    value_or_default(10)
+                },
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    value_or_default(10)
+                } else {
+                    value_or_default(11)
+                },
+                if stride == LEGACY_FIELDS_PER_INSTRUMENT {
+                    value_or_default(11)
+                } else {
+                    value_or_default(12)
+                },
             );
         }
         self.bump_version();

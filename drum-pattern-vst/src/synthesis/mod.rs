@@ -1,36 +1,38 @@
 //! Audio synthesis module for drum sounds
 
-mod dsp;
-mod special_params;
 mod clap;
 mod cymbal;
+mod dsp;
 mod hihat;
 mod kick;
 mod kick_808;
 mod open_hihat;
+mod perc1;
 mod ride;
+mod settings;
 mod snare;
 mod snare606;
+mod special_params;
 mod tom;
-mod perc1;
 
 // `algos_for` is consumed by the editor (`ui.rs`) but not by the standalone
 // binary — allow the unused-import warning so both build configurations stay
 // clean.
 #[allow(unused_imports)]
-pub use special_params::{AlgoDef, algos_for};
+pub use special_params::{algos_for, AlgoDef};
 
 pub use clap::ClapVoice;
 pub use cymbal::CymbalVoice;
 pub use hihat::HiHatVoice;
 pub use kick::KickVoice;
+pub use settings::kick::KickSettings;
 pub use kick_808::Kick808Voice;
 pub use open_hihat::OpenHiHatVoice;
+pub use perc1::Perc1Voice;
 pub use ride::RideVoice;
 pub use snare::SnareVoice;
 pub use snare606::Snare606Voice;
 pub use tom::TomVoice;
-pub use perc1::Perc1Voice;
 
 /// Drum voice types matching the original web app
 #[allow(dead_code)]
@@ -93,6 +95,9 @@ pub struct VoiceSettings {
     pub decay: f32,
     pub volume: f32,
     pub filter_freq: f32,
+    /// Attack ramp length in seconds for the amplitude envelope. This is both
+    /// the audible attack shape and the anti-click retrigger ramp.
+    pub attack: f32,
     /// Slow release tail length in seconds. The amplitude envelope is bi-stage:
     /// `amp = max(decay_env, release_env)`. The decay_env starts at 1.0 and drops
     /// fast with `decay`; the release_env starts at a fixed shelf (~30 % of peak)
@@ -134,6 +139,7 @@ impl Default for VoiceSettings {
             decay: 0.5,
             volume: 0.8,
             filter_freq: 100.0,
+            attack: 0.0015,
             release: 0.0,
             decay_curve: 5.0,
             release_curve: 3.0,
@@ -155,6 +161,7 @@ impl VoiceSettings {
             decay: 0.5,
             volume: 0.8,
             filter_freq: 30.0,
+            attack: 0.0015,
             release: 0.5,
             decay_curve: 5.0,
             release_curve: 3.0,
@@ -174,6 +181,7 @@ impl VoiceSettings {
             decay: 0.47,
             volume: 0.6,
             filter_freq: 200.0,
+            attack: 0.0003,
             release: 0.2,
             decay_curve: 5.0,
             release_curve: 3.0,
@@ -193,6 +201,7 @@ impl VoiceSettings {
             decay: 0.36,
             volume: 0.3,
             filter_freq: 5000.0,
+            attack: 0.0003,
             release: 0.0,
             decay_curve: 8.0,
             release_curve: 3.0,
@@ -212,6 +221,7 @@ impl VoiceSettings {
             decay: 0.66,
             volume: 0.4,
             filter_freq: 8000.0,
+            attack: 0.0003,
             release: 0.4,
             decay_curve: 5.5,
             release_curve: 3.0,
@@ -231,6 +241,7 @@ impl VoiceSettings {
             decay: 0.3,
             volume: 0.5,
             filter_freq: 500.0,
+            attack: 0.0015,
             release: 0.3,
             decay_curve: 4.2,
             release_curve: 3.0,
@@ -250,6 +261,7 @@ impl VoiceSettings {
             decay: 0.4,
             volume: 0.5,
             filter_freq: 500.0,
+            attack: 0.0015,
             release: 0.4,
             decay_curve: 4.2,
             release_curve: 3.0,
@@ -269,6 +281,7 @@ impl VoiceSettings {
             decay: 0.5,
             volume: 0.5,
             filter_freq: 500.0,
+            attack: 0.0015,
             release: 0.5,
             decay_curve: 4.2,
             release_curve: 3.0,
@@ -288,6 +301,7 @@ impl VoiceSettings {
             decay: 0.03,
             volume: 0.7,
             filter_freq: 1000.0,
+            attack: 0.0015,
             release: 0.12,
             decay_curve: 6.0,
             release_curve: 3.0,
@@ -307,6 +321,7 @@ impl VoiceSettings {
             decay: 1.2,
             volume: 0.35,
             filter_freq: 10000.0,
+            attack: 0.002,
             release: 1.5,
             decay_curve: 3.5,
             release_curve: 3.0,
@@ -326,6 +341,7 @@ impl VoiceSettings {
             decay: 2.0,
             volume: 0.4,
             filter_freq: 8000.0,
+            attack: 0.002,
             release: 2.5,
             decay_curve: 2.8,
             release_curve: 3.0,
@@ -345,6 +361,7 @@ impl VoiceSettings {
             decay: 0.08,
             volume: 0.7,
             filter_freq: 3000.0,
+            attack: 0.0003,
             release: 0.15,
             decay_curve: 5.0,
             release_curve: 3.0,
@@ -367,6 +384,7 @@ impl VoiceSettings {
             decay: 0.4,
             volume: 0.9,
             filter_freq: 3000.0,
+            attack: 0.0015,
             release: 0.0,
             decay_curve: 3.0,
             release_curve: 3.0,
@@ -390,6 +408,7 @@ impl VoiceSettings {
             decay: 0.15,
             volume: 0.6,
             filter_freq: 6000.0,
+            attack: 0.0005,
             release: 0.0,
             decay_curve: 5.0,
             release_curve: 3.0,
@@ -608,7 +627,7 @@ impl DrumSynthesizer {
         // Create all 13 voices with dedicated models.
         self.voices.push(DrumVoiceKind::Kick(KickVoice::new(
             sample_rate,
-            VoiceSettings::kick(),
+            KickSettings::from(VoiceSettings::kick()),
         )));
         self.voices.push(DrumVoiceKind::Snare(SnareVoice::new(
             sample_rate,
@@ -618,10 +637,11 @@ impl DrumSynthesizer {
             sample_rate,
             VoiceSettings::hihat(),
         )));
-        self.voices.push(DrumVoiceKind::OpenHiHat(OpenHiHatVoice::new(
-            sample_rate,
-            VoiceSettings::open_hihat(),
-        )));
+        self.voices
+            .push(DrumVoiceKind::OpenHiHat(OpenHiHatVoice::new(
+                sample_rate,
+                VoiceSettings::open_hihat(),
+            )));
         self.voices.push(DrumVoiceKind::Tom(TomVoice::new(
             sample_rate,
             VoiceSettings::tom1(),
@@ -650,10 +670,11 @@ impl DrumSynthesizer {
             sample_rate,
             VoiceSettings::snare606(),
         )));
-        self.voices.push(DrumVoiceKind::BassDrum808(Kick808Voice::new(
-            sample_rate,
-            VoiceSettings::kick808(),
-        )));
+        self.voices
+            .push(DrumVoiceKind::BassDrum808(Kick808Voice::new(
+                sample_rate,
+                VoiceSettings::kick808(),
+            )));
         self.voices.push(DrumVoiceKind::Perc1(Perc1Voice::new(
             sample_rate,
             VoiceSettings::perc1(),

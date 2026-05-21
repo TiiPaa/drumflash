@@ -46,7 +46,7 @@ impl CymbalVoice {
                 settings.release_curve,
                 settings.release,
             )
-            .with_attack_ms(2.0),
+            .with_attack_ms(settings.attack * 1000.0),
             fm_phase: 0.0,
             fm_increment: 15.0 / sample_rate, // 15 Hz modulation
             active: false,
@@ -58,6 +58,7 @@ impl CymbalVoice {
         self.filter.set_cutoff(cutoff, self.sample_rate);
         self.filter_r.set_cutoff(cutoff, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
+        self.amp_env.set_attack_ms(self.settings.attack * 1000.0);
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
@@ -98,7 +99,8 @@ impl Voice for CymbalVoice {
                 self.fm_phase -= self.fm_phase.floor();
                 let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * 0.15 + 1.0;
                 let modulated_cutoff = self.settings.filter_freq * fm;
-                self.filter.set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
+                self.filter
+                    .set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
                 self.filter.process(noise)
             }
         };
@@ -169,5 +171,4 @@ impl Voice for CymbalVoice {
             self.settings.special[index] = value;
         }
     }
-
 }
