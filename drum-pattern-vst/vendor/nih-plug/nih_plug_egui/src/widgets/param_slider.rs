@@ -194,12 +194,16 @@ impl<'a, P: Param> ParamSlider<'a, P> {
                 self.reset_param();
                 response.mark_changed();
             } else if ui.input(|i| i.modifiers.alt) {
-                // Alt dragging provides an ultra-fine input method (5x finer than shift)
-                self.granular_drag(ui, response.drag_delta(), ALT_DRAG_MULTIPLIER);
+                // Alt dragging provides an ultra-fine input method (5x finer than shift).
+                // Using pointer delta instead of response.drag_delta() because the latter
+                // can be zero in some host/windowing contexts.
+                let pointer_delta = ui.input(|i| i.pointer.delta());
+                self.granular_drag(ui, pointer_delta, ALT_DRAG_MULTIPLIER);
                 response.mark_changed();
             } else if ui.input(|i| i.modifiers.shift) {
                 // And shift dragging should switch to a more granulra input method
-                self.granular_drag(ui, response.drag_delta(), GRANULAR_DRAG_MULTIPLIER);
+                let pointer_delta = ui.input(|i| i.pointer.delta());
+                self.granular_drag(ui, pointer_delta, GRANULAR_DRAG_MULTIPLIER);
                 response.mark_changed();
             } else {
                 let proportion =
