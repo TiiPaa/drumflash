@@ -182,17 +182,6 @@ impl<'a, P: Param> ParamSlider<'a, P> {
         // Handle user input
         // TODO: Optionally (since it can be annoying) add scrolling behind a builder option
 
-        // Alt+Click on the slider bar activates keyboard entry (type-in).
-        // Using clicked() instead of interact_pointer_pos() avoids the focus-release bug
-        // that occurred when releasing the mouse without moving.
-        if response.clicked()
-            && ui.input(|i| i.modifiers.alt)
-            && self.draw_value
-            && !self.keyboard_entry_active(ui)
-        {
-            self.begin_keyboard_entry(ui);
-        }
-
         if response.drag_started() {
             // When beginning a drag or dragging normally, reset the memory used to keep track of
             // our granular drag
