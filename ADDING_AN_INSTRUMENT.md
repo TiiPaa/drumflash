@@ -31,8 +31,9 @@ UI modifie des atomics (SoundSettingsState) → bump_version()
 | `src/instrument_registry.rs` | **Source unique de vérité.** Définit les 13 instruments (nom, label, MIDI note, capabilities, special params, defaults). |
 | `src/synthesis/mod.rs` | Enum `DrumVoice`, trait `Voice`, `DrumVoiceKind` (wrapper enum), `DrumSynthesizer`, `VoiceSettings`. |
 | `src/synthesis/<voice>.rs` | Implémentation du trait `Voice` pour un instrument (ex: `zap.rs`, `kick.rs`). |
+| `src/synthesis/settings/<voice>.rs` | **Typed settings struct** (`Perc2Settings`) + conversions `From/Into<VoiceSettings>`. |
 | `src/synthesis/dsp.rs` | Briques DSP réutilisables : `ExpDecayEnvelope`, `DecayReleaseEnvelope`, `OnePoleFilter`, `PitchEnvelope`, oscillateurs, etc. |
-| `src/special_params.rs` | Définitions des algorithmes par instrument (`algos_for`) pour le sélecteur d'algo UI. |
+| `src/synthesis/special_params.rs` | Définitions des algorithmes par instrument (`algos_for`) pour le sélecteur d'algo UI. |
 | `src/lib.rs` | Plugin principal. Contient `DrumFlashParams` (tous les paramètres nih-plug), `voice_settings_for()`, et la boucle `process()`. |
 | `src/ui.rs` | Grille de séquenceur, Sound Panel, plock menu. |
 | `src/sound_settings.rs` | `SoundSettingsState` + `InstrumentSettingsState` (atomiques partagées UI/audio). |
@@ -44,22 +45,61 @@ UI modifie des atomics (SoundSettingsState) → bump_version()
 
 Supposons qu'on ajoute un 14e instrument appelé **Perc2** (index 13).
 
-### Étape 1 — Voix de synthèse
+### Étape 1 — Typed settings
+
+Créer `src/synthesis/settings/perc2.rs` avec le struct typé et les conversions :
+
+```rust
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Perc2Settings {
+    pub frequency: f32,
+    pub attack: f32,
+    pub decay: f32,
+    pub decay_curve: f32,
+    pub release: f32,
+    pub release_curve: f32,
+    pub volume: f32,
+    pub filter_freq: f32,
+    pub filter_env_amount: f32,
+    pub filter_env_decay: f32,
+    pub hold: f32,
+    pub analog: f32,
+    pub stereo: f32,
+    pub algo: u8,
+    // Ajoute ici les champs spéciaux (ex: sweep, bite...) qui remplacent special[0..]
+}
+
+impl From<VoiceSettings> for Perc2Settings { ... }
+impl From<Perc2Settings> for VoiceSettings { ... }
+```
+
+> **Règle :** `VoiceSettings` reste le format de persistance (plock, presets, DAW state). La conversion vers le typed struct se fait dans `set_settings()` — zero-allocation, stack copy uniquement.
+
+### Étape 2 — Voix de synthèse
 
 Créer `src/synthesis/perc2.rs` qui implémente le trait `Voice` :
 
 ```rust
-pub struct Perc2Voice { ... }
+use super::{dsp, settings::perc2::Perc2Settings, Voice, VoiceSettings};
+
+pub struct Perc2Voice {
+    settings: Perc2Settings,  // ← typed struct, pas VoiceSettings
+    ...
+}
+
+impl Perc2Voice {
+    pub fn new(sample_rate: f32, settings: Perc2Settings) -> Self { ... }
+}
 
 impl Voice for Perc2Voice {
-    fn trigger(&mut self) { ... }
-    fn process_sample(&mut self) -> f32 { ... }
-    fn process_sample_stereo(&mut self) -> (f32, f32) { ... }
-    fn is_active(&self) -> bool { ... }
-    fn reset(&mut self) { ... }
-    fn set_settings(&mut self, settings: VoiceSettings) { ... }
-    fn set_algo(&mut self, algo: u8) { ... }
-    fn set_special_param(&mut self, index: usize, value: f32) { ... }
+    fn set_settings(&mut self, settings: VoiceSettings) {
+        self.settings = Perc2Settings::from(settings);
+        // utiliser self.settings.frequency, self.settings.decay, etc.
+    }
+    fn set_special_param(&mut self, index: usize, value: f32) {
+        // Mapper index vers champ nommé (ex: 0 => self.settings.sweep = value)
+    }
+    // ... trigger, process_sample, process_sample_stereo, is_active, reset, set_algo
 }
 ```
 
@@ -68,20 +108,28 @@ impl Voice for Perc2Voice {
 - ✅ Utiliser les **setters** existants : `.set_decay()`, `.set_curve()`, `.set_release()`, `.set_hold()`.
 - ✅ Si une enveloppe n'a pas de setter pour un paramètre dont tu as besoin, ajoute-le dans `dsp.rs` plutôt que de recréer l'enveloppe.
 
-### Étape 2 — Enregistrer la voix dans le système de synthèse
+### Étape 3 — Enregistrer la voix dans le système de synthèse
 
 Modifier `src/synthesis/mod.rs` :
 
 1. Ajouter `mod perc2;` en haut.
 2. Ajouter `pub use perc2::Perc2Voice;`
-3. Ajouter `Perc2 = 13` dans l'enum `DrumVoice`.
-4. Mettre à jour `DrumVoice::COUNT` (ex: 14).
-5. Ajouter le match arm dans `DrumVoice::from_index()`.
-6. Ajouter `DrumVoiceKind::Perc2(Perc2Voice)` dans l'enum.
-7. Ajouter le match arm dans **toutes** les méthodes de `impl Voice for DrumVoiceKind` (trigger, process_sample, process_sample_stereo, is_active, reset, set_settings, set_algo, set_special_param).
-8. Dans `DrumSynthesizer::initialize()`, pousser la nouvelle voix.
+3. Ajouter `pub use settings::perc2::Perc2Settings;`
+4. Ajouter `pub mod settings::perc2;` dans `src/synthesis/settings/mod.rs`.
+5. Ajouter `Perc2 = 13` dans l'enum `DrumVoice`.
+6. Mettre à jour `DrumVoice::COUNT` (ex: 14).
+7. Ajouter le match arm dans `DrumVoice::from_index()`.
+8. Ajouter `DrumVoiceKind::Perc2(Perc2Voice)` dans l'enum.
+9. Ajouter le match arm dans **toutes** les méthodes de `impl Voice for DrumVoiceKind`.
+10. Dans `DrumSynthesizer::new()`, pousser la nouvelle voix avec le typed settings :
+    ```rust
+    self.voices.push(DrumVoiceKind::Perc2(Perc2Voice::new(
+        sample_rate,
+        Perc2Settings::from(VoiceSettings::perc2()),
+    )));
+    ```
 
-### Étape 3 — Registry
+### Étape 4 — Registry
 
 Modifier `src/instrument_registry.rs` :
 
@@ -105,7 +153,7 @@ pub struct InstrumentCapabilities {
   release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo ]
 ```
 
-### Étape 4 — Paramètres nih-plug
+### Étape 5 — Paramètres nih-plug
 
 Modifier `src/lib.rs` dans `DrumFlashParams` :
 
@@ -115,7 +163,7 @@ Modifier `src/lib.rs` dans `DrumFlashParams` :
 4. Dans `impl DrumFlashParams`, mettre à jour **toutes** les méthodes d'accès indexé : `mutes()`, `solos()`, `mixes()`, `algos()`, `humanizes()`, etc. (ajouter le 14e élément).
 5. Dans `special_param()`, ajouter le match `(13, 0) => Some(&self.perc2_sweep), ...`
 
-### Étape 5 — voice_settings_for
+### Étape 6 — voice_settings_for
 
 Dans `src/lib.rs`, méthode `voice_settings_for()`, ajouter le match arm :
 
@@ -123,7 +171,7 @@ Dans `src/lib.rs`, méthode `voice_settings_for()`, ajouter le match arm :
 13 => self.params.algo_perc2.value() as u8,
 ```
 
-### Étape 6 — Constants diverses
+### Étape 7 — Constants diverses
 
 Dans `src/lib.rs` :
 
@@ -131,15 +179,17 @@ Dans `src/lib.rs` :
 2. `OUTPUT_PORT_NAMES` — ajouter le nom de la sortie.
 3. `MIDI_NOTE_MAP` — ajouter la note MIDI.
 
-### Étape 7 — Defaults de VoiceSettings
+### Étape 8 — Defaults de VoiceSettings
 
-Dans `src/synthesis/mod.rs`, ajouter `pub fn perc2() -> Self` dans `impl VoiceSettings`.
+Dans `src/synthesis/mod.rs` :
+1. Ajouter `pub fn perc2() -> Self` dans `impl VoiceSettings`.
+2. Vérifier que les valeurs par défaut correspondent à celles déclarées dans `instrument_registry.rs`.
 
-### Étape 8 — Special params / Algorithmes UI
+### Étape 9 — Special params / Algorithmes UI
 
-Dans `src/special_params.rs`, ajouter la définition des algorithmes pour le nouvel instrument si `algo_count > 1`.
+Dans `src/synthesis/special_params.rs`, ajouter la définition des algorithmes pour le nouvel instrument si `algo_count > 1`.
 
-### Étape 9 — Plock
+### Étape 10 — Plock
 
 Le système de plock stocke 18 fields par step/instrument :
 
@@ -150,13 +200,9 @@ Le système de plock stocke 18 fields par step/instrument :
 | 13     | algo |
 | 14-17  | special[0..3] (uniforme pour tous les instruments) |
 
-**À NOTER :** dans le commit `5ae1286`, le plock menu (`draw_plock_menu` dans `ui.rs`) contient encore du code **hardcodé** pour certains instruments (Clap index 7, 808 Kick index 11). Si tu ajoutes un instrument avec des special params, tu dois :
-- Soit refactorer `draw_plock_menu` pour qu'il lise les special params depuis `instrument_registry::special_params()` (comme le fait `draw_sound_panel`),
-- Soit ajouter manuellement les blocs `if instrument == 13 { ... }` dans le plock menu.
+Le plock menu (`draw_plock_menu` dans `ui.rs`) est **data-driven** : il lit les special params dynamiquement depuis `instrument_registry::special_params(instrument)`. Aucun hardcoding par index n'est nécessaire. Si le registry déclare correctement les `special_params`, ils apparaîtront automatiquement dans le menu plock.
 
-La **bonne pratique** est de rendre `draw_plock_menu` data-driven via le registry (comme `draw_sound_panel`), afin d'éviter tout hardcoding par instrument.
-
-### Étape 10 — UI Sound Panel
+### Étape 11 — UI Sound Panel
 
 Le Sound Panel (`draw_sound_panel` dans `ui.rs`) est **déjà data-driven** via `capabilities()`. Si tu as correctement rempli `capabilities` dans le registry, les sliders apparaîtront ou disparaîtront automatiquement. Aucune modification de `ui.rs` n'est nécessaire pour la Sound Panel.
 
@@ -171,6 +217,7 @@ Le Sound Panel (`draw_sound_panel` dans `ui.rs`) est **déjà data-driven** via 
 | **Oublier un match arm dans `DrumVoiceKind`** | Rust t'aidera (exhaustiveness check), mais vérifie bien toutes les méthodes du trait `Voice`. |
 | **Oublier `special_param()` dans `lib.rs`** | Le paramètre special apparaîtra dans l'UI mais sa valeur sera toujours 0 dans le moteur audio. |
 | **Hardcoder des comportements par index** | Évite `if instrument == 7` dans l'UI ou le plock. Préfère `instrument_registry::special_params(instrument)` et des boucles data-driven. |
+| **Oublier le typed settings struct** | Le compiler le rappellera (type mismatch), mais vérifie bien que `src/synthesis/settings/<voice>.rs` existe et est réexporté dans `settings/mod.rs`. |
 | **Mauvais ordre dans `sound_settings_default`** | L'ordre est strict : `[freq, decay, vol, filter_freq, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]`. |
 | **VST3 cache** | Studio One (et autres DAWs) mettent en cache le bundle VST3. Après un `build.ps1 -Install`, ferme complètement la DAW avant de rouvrir le plugin, sinon tu testes l'ancienne version. |
 
@@ -181,15 +228,17 @@ Le Sound Panel (`draw_sound_panel` dans `ui.rs`) est **déjà data-driven** via 
 ```
 Nouvel instrument "Perc2"
 │
-├─> src/synthesis/perc2.rs          (trait Voice — NE PAS recréer les env dans set_settings)
-├─> src/synthesis/mod.rs            (DrumVoice::Perc2, DrumVoiceKind::Perc2, COUNT, initialize())
+├─> src/synthesis/settings/perc2.rs (Perc2Settings : typed struct + From/Into<VoiceSettings>)
+├─> src/synthesis/perc2.rs          (trait Voice — typed settings, NE PAS recréer les env)
+├─> src/synthesis/mod.rs            (DrumVoice::Perc2, DrumVoiceKind::Perc2, COUNT, new())
+├─> src/synthesis/settings/mod.rs   (pub mod perc2; + pub use)
 ├─> src/instrument_registry.rs      (entry INSTRUMENTS[13] avec capabilities & defaults)
 ├─> src/lib.rs                      (DrumFlashParams : humanize/mute/mix/solo/algo/specials)
 ├─> src/lib.rs                      (voice_settings_for() algo arm, special_param() match)
 ├─> src/lib.rs                      (OUTPUT_PORT_NAMES, MIDI_NOTE_MAP, AUX_OUT_COUNT)
 ├─> src/synthesis/mod.rs            (VoiceSettings::perc2() default)
-├─> src/special_params.rs           (algos_for Perc2 si algo_count > 1)
-└─> src/ui.rs / src/plock.rs        (vérifier que le plock menu lit bien les specials)
+├─> src/synthesis/special_params.rs (algos_for Perc2 si algo_count > 1)
+└─> src/ui.rs / src/plock.rs        (data-driven, aucun hardcoding nécessaire)
 ```
 
 ---
