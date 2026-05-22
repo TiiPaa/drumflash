@@ -549,18 +549,33 @@ fn draw_sound_panel(
                                         slider = slider.suffix(*s);
                                     }
                                     let slider_response = ui.add(slider);
-                                    // Alt+drag on left half of slider -> 5x finer
+                                    // Alt+drag on left half of slider -> 5x finer.
+                                    // Using is_pointer_button_down_on() instead of dragged()
+                                    // because egui::Slider does not reliably set dragged() on its Response.
                                     if ui.input(|i| i.modifiers.alt)
-                                        && slider_response.dragged()
+                                        && slider_response.is_pointer_button_down_on()
                                     {
-                                        if let Some(pointer_pos) = slider_response.interact_pointer_pos() {
+                                        if let Some(pointer_pos) = ui.input(|i| i.pointer.latest_pos()) {
                                             if pointer_pos.x < slider_response.rect.center().x {
-                                                *value = old_value + (*value - old_value) * 0.2;
+                                                let pointer_delta = ui.input(|i| i.pointer.delta().x);
+                                                let width = slider_response.rect.width().max(1.0);
+                                                let normalized_delta = pointer_delta / width;
+                                                if *logarithmic {
+                                                    let log_min = min.ln();
+                                                    let log_max = max.ln();
+                                                    let log_val = old_value.ln().clamp(log_min, log_max);
+                                                    let fine_log_delta = normalized_delta * (log_max - log_min) * 0.2;
+                                                    *value = (log_val + fine_log_delta).exp().clamp(*min, *max);
+                                                } else {
+                                                    let range_size = max - min;
+                                                    let fine_delta = normalized_delta * range_size * 0.2;
+                                                    *value = (old_value + fine_delta).clamp(*min, *max);
+                                                }
                                             }
                                         }
                                     }
                                     if slider_response.changed()
-                                        || (ui.input(|i| i.modifiers.alt) && slider_response.dragged())
+                                        || (ui.input(|i| i.modifiers.alt) && slider_response.is_pointer_button_down_on())
                                     {
                                         store_field(inst, field, *value);
                                         changed = true;
@@ -965,21 +980,38 @@ fn draw_plock_menu(
             .horizontal(|ui| {
                 ui.label(label_text);
                 let old_value = *value;
+                let min = *range.start();
+                let max = *range.end();
                 let mut slider = egui::Slider::new(value, range);
                 if log {
                     slider = slider.logarithmic(true);
                 }
                 let slider_response = ui.add(slider);
                 // Alt+drag on left half -> 5x finer
-                if ui.input(|i| i.modifiers.alt) && slider_response.dragged() {
-                    if let Some(pointer_pos) = slider_response.interact_pointer_pos() {
+                if ui.input(|i| i.modifiers.alt)
+                    && slider_response.is_pointer_button_down_on()
+                {
+                    if let Some(pointer_pos) = ui.input(|i| i.pointer.latest_pos()) {
                         if pointer_pos.x < slider_response.rect.center().x {
-                            *value = old_value + (*value - old_value) * 0.2;
+                            let pointer_delta = ui.input(|i| i.pointer.delta().x);
+                            let width = slider_response.rect.width().max(1.0);
+                            let normalized_delta = pointer_delta / width;
+                            if log {
+                                let log_min = min.ln();
+                                let log_max = max.ln();
+                                let log_val = old_value.ln().clamp(log_min, log_max);
+                                let fine_log_delta = normalized_delta * (log_max - log_min) * 0.2;
+                                *value = (log_val + fine_log_delta).exp().clamp(min, max);
+                            } else {
+                                let range_size = max - min;
+                                let fine_delta = normalized_delta * range_size * 0.2;
+                                *value = (old_value + fine_delta).clamp(min, max);
+                            }
                         }
                     }
                 }
                 let c = slider_response.changed()
-                    || (ui.input(|i| i.modifiers.alt) && slider_response.dragged());
+                    || (ui.input(|i| i.modifiers.alt) && slider_response.is_pointer_button_down_on());
                 let r = overridden && ui.small_button("↺").clicked();
                 (c, r)
             })
@@ -1166,15 +1198,30 @@ fn draw_plock_menu(
                 }
                 let slider_response = ui.add(slider);
                 // Alt+drag on left half -> 5x finer
-                if ui.input(|i| i.modifiers.alt) && slider_response.dragged() {
-                    if let Some(pointer_pos) = slider_response.interact_pointer_pos() {
+                if ui.input(|i| i.modifiers.alt)
+                    && slider_response.is_pointer_button_down_on()
+                {
+                    if let Some(pointer_pos) = ui.input(|i| i.pointer.latest_pos()) {
                         if pointer_pos.x < slider_response.rect.center().x {
-                            value = old_value + (value - old_value) * 0.2;
+                            let pointer_delta = ui.input(|i| i.pointer.delta().x);
+                            let width = slider_response.rect.width().max(1.0);
+                            let normalized_delta = pointer_delta / width;
+                            if def.min > 0.0 && def.max / def.min >= 20.0 {
+                                let log_min = def.min.ln();
+                                let log_max = def.max.ln();
+                                let log_val = old_value.ln().clamp(log_min, log_max);
+                                let fine_log_delta = normalized_delta * (log_max - log_min) * 0.2;
+                                value = (log_val + fine_log_delta).exp().clamp(def.min, def.max);
+                            } else {
+                                let range_size = def.max - def.min;
+                                let fine_delta = normalized_delta * range_size * 0.2;
+                                value = (old_value + fine_delta).clamp(def.min, def.max);
+                            }
                         }
                     }
                 }
                 let c = slider_response.changed()
-                    || (ui.input(|i| i.modifiers.alt) && slider_response.dragged());
+                    || (ui.input(|i| i.modifiers.alt) && slider_response.is_pointer_button_down_on());
                 let r = overridden && ui.small_button("↺").clicked();
                 (c, r)
             })
