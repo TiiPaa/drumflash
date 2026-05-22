@@ -540,6 +540,7 @@ fn draw_sound_panel(
                                         crate::instrument_registry::StandardField::Analog => &mut analog,
                                         crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                     };
+                                    let old_value = *value;
                                     let mut slider = egui::Slider::new(value, *min..=*max);
                                     if *logarithmic {
                                         slider = slider.logarithmic(true);
@@ -547,7 +548,25 @@ fn draw_sound_panel(
                                     if let Some(s) = suffix {
                                         slider = slider.suffix(*s);
                                     }
-                                    if ui.add(slider).changed() {
+                                    let slider_response = ui.add(slider);
+                                    // Alt+drag: ultra-fine adjustment (5x finer than normal drag)
+                                    if ui.input(|i| i.modifiers.alt) && slider_response.dragged() {
+                                        *value = old_value;
+                                        let width = slider_response.rect.width().max(1.0);
+                                        let range_size = max - min;
+                                        let normalized_delta = slider_response.drag_delta().x / width;
+                                        if *logarithmic {
+                                            let log_min = min.ln();
+                                            let log_max = max.ln();
+                                            let log_val = old_value.ln().clamp(log_min, log_max);
+                                            let fine_log_delta = normalized_delta * (log_max - log_min) * 0.2;
+                                            *value = (log_val + fine_log_delta).exp().clamp(*min, *max);
+                                        } else {
+                                            let fine_delta = normalized_delta * range_size * 0.2;
+                                            *value = (old_value + fine_delta).clamp(*min, *max);
+                                        }
+                                    }
+                                    if slider_response.changed() || (ui.input(|i| i.modifiers.alt) && slider_response.dragged()) {
                                         store_field(inst, field, *value);
                                         changed = true;
                                     }
@@ -950,11 +969,31 @@ fn draw_plock_menu(
         let (changed, reset) = ui
             .horizontal(|ui| {
                 ui.label(label_text);
+                let old_value = *value;
+                let min = *range.start();
+                let max = *range.end();
                 let mut slider = egui::Slider::new(value, range);
                 if log {
                     slider = slider.logarithmic(true);
                 }
-                let c = ui.add(slider).changed();
+                let slider_response = ui.add(slider);
+                // Alt+drag: ultra-fine adjustment
+                if ui.input(|i| i.modifiers.alt) && slider_response.dragged() {
+                    let width = slider_response.rect.width().max(1.0);
+                    let normalized_delta = slider_response.drag_delta().x / width;
+                    if log {
+                        let log_min = min.ln();
+                        let log_max = max.ln();
+                        let log_val = old_value.ln().clamp(log_min, log_max);
+                        let fine_log_delta = normalized_delta * (log_max - log_min) * 0.2;
+                        *value = (log_val + fine_log_delta).exp().clamp(min, max);
+                    } else {
+                        let range_size = max - min;
+                        let fine_delta = normalized_delta * range_size * 0.2;
+                        *value = (old_value + fine_delta).clamp(min, max);
+                    }
+                }
+                let c = slider_response.changed() || (ui.input(|i| i.modifiers.alt) && slider_response.dragged());
                 let r = overridden && ui.small_button("↺").clicked();
                 (c, r)
             })
@@ -1134,11 +1173,29 @@ fn draw_plock_menu(
         let (changed, reset) = ui
             .horizontal(|ui| {
                 ui.label(label_text);
+                let old_value = value;
                 let mut slider = egui::Slider::new(&mut value, def.min..=def.max);
                 if def.min > 0.0 && def.max / def.min >= 20.0 {
                     slider = slider.logarithmic(true);
                 }
-                let c = ui.add(slider).changed();
+                let slider_response = ui.add(slider);
+                // Alt+drag: ultra-fine adjustment
+                if ui.input(|i| i.modifiers.alt) && slider_response.dragged() {
+                    let width = slider_response.rect.width().max(1.0);
+                    let normalized_delta = slider_response.drag_delta().x / width;
+                    if def.min > 0.0 && def.max / def.min >= 20.0 {
+                        let log_min = def.min.ln();
+                        let log_max = def.max.ln();
+                        let log_val = old_value.ln().clamp(log_min, log_max);
+                        let fine_log_delta = normalized_delta * (log_max - log_min) * 0.2;
+                        value = (log_val + fine_log_delta).exp().clamp(def.min, def.max);
+                    } else {
+                        let range_size = def.max - def.min;
+                        let fine_delta = normalized_delta * range_size * 0.2;
+                        value = (old_value + fine_delta).clamp(def.min, def.max);
+                    }
+                }
+                let c = slider_response.changed() || (ui.input(|i| i.modifiers.alt) && slider_response.dragged());
                 let r = overridden && ui.small_button("↺").clicked();
                 (c, r)
             })
