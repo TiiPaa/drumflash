@@ -540,43 +540,70 @@ fn draw_sound_panel(
                                         crate::instrument_registry::StandardField::Analog => &mut analog,
                                         crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                     };
-                                    let old_value = *value;
-                                    let mut slider = egui::Slider::new(value, *min..=*max);
-                                    if *logarithmic {
-                                        slider = slider.logarithmic(true);
-                                    }
-                                    if let Some(s) = suffix {
-                                        slider = slider.suffix(*s);
-                                    }
-                                    let slider_response = ui.add(slider);
-                                    // Alt+drag on left half of slider -> 5x finer.
-                                    // Using is_pointer_button_down_on() instead of dragged()
-                                    // because egui::Slider does not reliably set dragged() on its Response.
-                                    if ui.input(|i| i.modifiers.alt)
-                                        && slider_response.is_pointer_button_down_on()
-                                    {
-                                        if let Some(pointer_pos) = ui.input(|i| i.pointer.latest_pos()) {
-                                            if pointer_pos.x < slider_response.rect.center().x {
-                                                let pointer_delta = ui.input(|i| i.pointer.delta().x);
-                                                let width = slider_response.rect.width().max(1.0);
-                                                let normalized_delta = pointer_delta / width;
-                                                if *logarithmic {
-                                                    let log_min = min.ln();
-                                                    let log_max = max.ln();
-                                                    let log_val = old_value.ln().clamp(log_min, log_max);
-                                                    let fine_log_delta = normalized_delta * (log_max - log_min) * 0.2;
-                                                    *value = (log_val + fine_log_delta).exp().clamp(*min, *max);
-                                                } else {
-                                                    let range_size = max - min;
-                                                    let fine_delta = normalized_delta * range_size * 0.2;
-                                                    *value = (old_value + fine_delta).clamp(*min, *max);
-                                                }
-                                            }
+                                    let mut slider_changed = false;
+
+                                    // ---- Visual bar (interactive) ----
+                                    let bar_height = ui.spacing().interact_size.y * 0.6;
+                                    let bar_size = egui::vec2(80.0, bar_height);
+                                    let (bar_rect, bar_response) = ui.allocate_at_least(bar_size, egui::Sense::click_and_drag());
+
+                                    let proportion = ((*value - *min) / (*max - *min)).clamp(0.0, 1.0);
+                                    let bg_color = ui.visuals().widgets.inactive.bg_fill;
+                                    let fill_color = ui.visuals().selection.bg_fill;
+                                    ui.painter().rect_filled(bar_rect, 2.0, bg_color);
+                                    let mut fill_rect = bar_rect;
+                                    fill_rect.set_width(bar_rect.width() * proportion);
+                                    ui.painter().rect_filled(fill_rect, 2.0, fill_color);
+
+                                    // Click on bar -> jump to position
+                                    if let Some(click_pos) = bar_response.interact_pointer_pos() {
+                                        let prop = (click_pos.x - bar_rect.left()) / bar_rect.width();
+                                        if *logarithmic {
+                                            let log_min = (*min).ln();
+                                            let log_max = (*max).ln();
+                                            *value = (log_min + prop * (log_max - log_min)).exp().clamp(*min, *max);
+                                        } else {
+                                            *value = (*min + prop * (*max - *min)).clamp(*min, *max);
                                         }
+                                        slider_changed = true;
                                     }
-                                    if slider_response.changed()
-                                        || (ui.input(|i| i.modifiers.alt) && slider_response.is_pointer_button_down_on())
-                                    {
+
+                                    // Alt+drag on bar -> ultra-fine mode
+                                    if ui.input(|i| i.modifiers.alt) && bar_response.dragged() {
+                                        let pointer_delta = ui.input(|i| i.pointer.delta().x);
+                                        let normalized_delta = pointer_delta / bar_rect.width().max(1.0);
+                                        if *logarithmic {
+                                            let log_min = (*min).ln();
+                                            let log_max = (*max).ln();
+                                            let log_val = (*value).ln().clamp(log_min, log_max);
+                                            let fine_log_delta = normalized_delta * (log_max - log_min) * 0.2;
+                                            *value = (log_val + fine_log_delta).exp().clamp(*min, *max);
+                                        } else {
+                                            let range_size = *max - *min;
+                                            let fine_delta = normalized_delta * range_size * 0.2;
+                                            *value = (*value + fine_delta).clamp(*min, *max);
+                                        }
+                                        slider_changed = true;
+                                    }
+
+                                    // ---- DragValue for text + type-in ----
+                                    let speed = if ui.input(|i| i.modifiers.alt) {
+                                        (*max - *min) / 500.0
+                                    } else {
+                                        (*max - *min) / 100.0
+                                    };
+                                    let mut drag = egui::DragValue::new(value)
+                                        .speed(speed)
+                                        .range(*min..=*max);
+                                    if let Some(s) = suffix {
+                                        drag = drag.suffix(*s);
+                                    }
+                                    let drag_response = ui.add(drag);
+                                    if drag_response.changed() {
+                                        slider_changed = true;
+                                    }
+
+                                    if slider_changed {
                                         store_field(inst, field, *value);
                                         changed = true;
                                     }
