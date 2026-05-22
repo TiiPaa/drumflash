@@ -540,6 +540,7 @@ fn draw_sound_panel(
                                         crate::instrument_registry::StandardField::Analog => &mut analog,
                                         crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                     };
+                                    let old_value = *value;
                                     let mut slider = egui::Slider::new(value, *min..=*max);
                                     if *logarithmic {
                                         slider = slider.logarithmic(true);
@@ -547,7 +548,20 @@ fn draw_sound_panel(
                                     if let Some(s) = suffix {
                                         slider = slider.suffix(*s);
                                     }
-                                    if ui.add(slider).changed() {
+                                    let slider_response = ui.add(slider);
+                                    // Alt+drag on left half of slider -> 5x finer
+                                    if ui.input(|i| i.modifiers.alt)
+                                        && slider_response.dragged()
+                                    {
+                                        if let Some(pointer_pos) = slider_response.interact_pointer_pos() {
+                                            if pointer_pos.x < slider_response.rect.center().x {
+                                                *value = old_value + (*value - old_value) * 0.2;
+                                            }
+                                        }
+                                    }
+                                    if slider_response.changed()
+                                        || (ui.input(|i| i.modifiers.alt) && slider_response.dragged())
+                                    {
                                         store_field(inst, field, *value);
                                         changed = true;
                                     }
@@ -950,11 +964,22 @@ fn draw_plock_menu(
         let (changed, reset) = ui
             .horizontal(|ui| {
                 ui.label(label_text);
+                let old_value = *value;
                 let mut slider = egui::Slider::new(value, range);
                 if log {
                     slider = slider.logarithmic(true);
                 }
-                let c = ui.add(slider).changed();
+                let slider_response = ui.add(slider);
+                // Alt+drag on left half -> 5x finer
+                if ui.input(|i| i.modifiers.alt) && slider_response.dragged() {
+                    if let Some(pointer_pos) = slider_response.interact_pointer_pos() {
+                        if pointer_pos.x < slider_response.rect.center().x {
+                            *value = old_value + (*value - old_value) * 0.2;
+                        }
+                    }
+                }
+                let c = slider_response.changed()
+                    || (ui.input(|i| i.modifiers.alt) && slider_response.dragged());
                 let r = overridden && ui.small_button("↺").clicked();
                 (c, r)
             })
@@ -1134,11 +1159,22 @@ fn draw_plock_menu(
         let (changed, reset) = ui
             .horizontal(|ui| {
                 ui.label(label_text);
+                let old_value = value;
                 let mut slider = egui::Slider::new(&mut value, def.min..=def.max);
                 if def.min > 0.0 && def.max / def.min >= 20.0 {
                     slider = slider.logarithmic(true);
                 }
-                let c = ui.add(slider).changed();
+                let slider_response = ui.add(slider);
+                // Alt+drag on left half -> 5x finer
+                if ui.input(|i| i.modifiers.alt) && slider_response.dragged() {
+                    if let Some(pointer_pos) = slider_response.interact_pointer_pos() {
+                        if pointer_pos.x < slider_response.rect.center().x {
+                            value = old_value + (value - old_value) * 0.2;
+                        }
+                    }
+                }
+                let c = slider_response.changed()
+                    || (ui.input(|i| i.modifiers.alt) && slider_response.dragged());
                 let r = overridden && ui.small_button("↺").clicked();
                 (c, r)
             })
