@@ -98,7 +98,7 @@
   - [x] Généraliser aux 12 autres instruments (Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
 - [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
-- [x] [54] Saisie clavier de valeurs précises + Alt+mouse pour affiner les sliders de paramètres
+- [ ] [54] Saisie clavier de valeurs précises + Alt+mouse pour affiner les sliders de paramètres
   - ParamSlider : Alt+clic → type-in (bug focus fixé), Alt+drag → ultra-fin (0.0003, 5× plus fin que Shift)
   - egui::Slider (Sound Panel + Plock) : Alt+drag wrapper pour linéaire et logarithmique
   - Double-clic type-in natif déjà fonctionnel sur egui::Slider
