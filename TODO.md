@@ -99,9 +99,9 @@
 - [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
 - [ ] [54] Saisie clavier de valeurs précises + Alt+mouse pour affiner les sliders de paramètres
-  - ParamSlider : Alt+clic → type-in (bug focus fixé), Alt+drag → ultra-fin (0.0003, 5× plus fin que Shift)
-  - egui::Slider (Sound Panel + Plock) : Alt+drag wrapper pour linéaire et logarithmique
-  - Double-clic type-in natif déjà fonctionnel sur egui::Slider
+  - ParamSlider : tentative Alt+drag via `pointer.delta()` + `granular_drag` — fonctionne sur master/track params
+  - egui::Slider (Sound Panel) : **impossible à wrapper proprement** — widget fermé qui consomme tous les événements en interne. Custom bar+DragValue a cassé l'UX. **Requis : créer un widget custom from scratch** qui sépare barre (drag) et valeur texte (type-in).
+  - Double-clic type-in natif fonctionne sur egui::Slider
 
 ## Dette technique & Documentation
 
