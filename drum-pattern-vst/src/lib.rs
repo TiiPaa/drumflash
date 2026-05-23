@@ -358,6 +358,17 @@ pub struct DrumFlashParams {
     pub snare606_tone: FloatParam,
     #[id = "sn606_snap"]
     pub snare606_snap: FloatParam,
+    // Snare 606 saturation parameters
+    #[id = "sn606_sat_type"]
+    pub snare606_saturation_type: FloatParam,
+    #[id = "sn606_sat_amt"]
+    pub snare606_saturation_amount: FloatParam,
+    #[id = "sn606_sat_mix"]
+    pub snare606_saturation_mix: FloatParam,
+    #[id = "sn606_sat_out"]
+    pub snare606_saturation_output_gain: FloatParam,
+    #[id = "sn606_sat_pre"]
+    pub snare606_saturation_pre_filter: FloatParam,
 
     // Perc1 special parameters
     #[id = "perc1_sweep"]
@@ -779,7 +790,7 @@ impl Default for DrumFlashParams {
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
             hihat_chokes_oh: BoolParam::new("HiHat Chokes OpenHH", true),
-            auto_edit: BoolParam::new("Auto Edit", false),
+            auto_edit: BoolParam::new("Auto Edit", true),
 
             clap_echo: FloatParam::new("Clap Echo", 1.0, FloatRange::Linear { min: 0.0, max: 3.0 })
                 .with_smoother(SmoothingStyle::Linear(10.0)),
@@ -802,6 +813,37 @@ impl Default for DrumFlashParams {
             snare606_snap: FloatParam::new(
                 "Snare 606 Snap",
                 0.3,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare606_saturation_type: FloatParam::new(
+                "Snare 606 Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            snare606_saturation_amount: FloatParam::new(
+                "Snare 606 Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare606_saturation_mix: FloatParam::new(
+                "Snare 606 Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare606_saturation_output_gain: FloatParam::new(
+                "Snare 606 Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare606_saturation_pre_filter: FloatParam::new(
+                "Snare 606 Saturation Pre-Filter",
+                0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
@@ -982,6 +1024,11 @@ impl DrumFlashParams {
             (10, 0) => Some(&self.snare606_resonance),
             (10, 1) => Some(&self.snare606_tone),
             (10, 2) => Some(&self.snare606_snap),
+            (10, 3) => Some(&self.snare606_saturation_type),
+            (10, 4) => Some(&self.snare606_saturation_amount),
+            (10, 5) => Some(&self.snare606_saturation_mix),
+            (10, 6) => Some(&self.snare606_saturation_output_gain),
+            (10, 7) => Some(&self.snare606_saturation_pre_filter),
             (11, 0) => Some(&self.bassdrum808_accent),
             (11, 1) => Some(&self.bassdrum808_snap),
             (11, 2) => Some(&self.bassdrum808_pitch_drop),
