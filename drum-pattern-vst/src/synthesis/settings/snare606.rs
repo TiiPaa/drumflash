@@ -18,6 +18,11 @@ pub struct Snare606Settings {
     pub resonance: f32,
     pub tone: f32,
     pub snap: f32,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
     pub algo: u8,
 }
 
@@ -40,6 +45,11 @@ impl From<VoiceSettings> for Snare606Settings {
             resonance: v.special[0],
             tone: v.special[1],
             snap: v.special[2],
+            saturation_type: v.special[3] as u8,
+            saturation_amount: v.special[4],
+            saturation_mix: v.special[5],
+            saturation_output_gain: v.special[6],
+            saturation_pre_filter: v.special[7],
             algo: v.algo,
         }
     }
@@ -51,6 +61,11 @@ impl From<Snare606Settings> for VoiceSettings {
         special[0] = s.resonance;
         special[1] = s.tone;
         special[2] = s.snap;
+        special[3] = s.saturation_type as f32;
+        special[4] = s.saturation_amount;
+        special[5] = s.saturation_mix;
+        special[6] = s.saturation_output_gain;
+        special[7] = s.saturation_pre_filter;
         Self {
             frequency: s.frequency,
             attack: s.attack,

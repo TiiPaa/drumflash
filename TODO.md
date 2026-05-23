@@ -1,5 +1,9 @@
 ## Court terme (Stabilisation V1 — En cours)
 
+- [x] [55] Ameliorer le rendu Snare 606 (plus percutant, plus proche TR-606)
+  - raw noise excite le resonator directement
+  - snap envelope ultra-court (0.2ms attack, 3ms decay)
+  - defaults ajustes : decay 0.25s, filter_freq 8000Hz, tone 0.4, snap 0.6
 - [x] [1] Corriger la double instanciation du `Sequencer` dans `lib.rs` (lignes 250 + 256)
 - [x] [2] Revalider dans Studio One la sauvegarde/reouverture d'une song avec grille modifiee (build `20260511-091259`)
 - [x] [3] Tester un projet Studio One neuf : insertion, sorties Kick/Snare/HH/Open HH/Toms, audio sur chaque bus, sauvegarde/reouverture
@@ -74,6 +78,13 @@
   - exposer/finir les toggles stéréo pour les voix où la largeur apporte une vraie valeur : Snare, HiHat, OpenHH, Clap, Ride, Cymbal, Snare606, Perc1
   - garder Kick, B8 et Toms mono par défaut pour préserver le centre et la compatibilité mono
   - priorité technique : finir stereo Snare606 et vérifier que les toggles UI ne sont visibles que sur les voix concernées
+- [x] [55] Saturation / distortion par instrument (Snare 606 v1)
+  - Module `saturation.rs` avec 5 algorithmes distincts (SoftClip, Valve, Transistor, HardClip, Tape)
+  - Paramètres exposés dans le Sound Panel : Type, Amount, Mix, Output Gain, Pre-Filter
+  - Drive d'entrée mappé 1×..20× pour effet audible
+  - Pre-Filter comme checkbox toggle (post-filter par défaut)
+  - Intégration dans `Snare606Voice::process_sample()` et `process_sample_stereo()`
+  - Auto-edit activé par défaut
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
