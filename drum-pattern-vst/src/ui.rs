@@ -573,7 +573,15 @@ fn draw_sound_panel(
                         if let Some(param) = params.special_param(state.selected_instrument, def.special_index) {
                             ui.horizontal(|ui| {
                                 ui.label(def.label);
-                                ui.add(widgets::ParamSlider::for_param(param, setter).with_width(120.0));
+                                // Boolean toggle for on/off switches (min=0, max=1)
+                                if def.min == 0.0 && def.max == 1.0 && def.label.to_lowercase().contains("pre-filter") {
+                                    let mut checked = param.value() >= 0.5;
+                                    if ui.checkbox(&mut checked, "").changed() {
+                                        setter.set_parameter(param, if checked { 1.0 } else { 0.0 });
+                                    }
+                                } else {
+                                    ui.add(widgets::ParamSlider::for_param(param, setter).with_width(120.0));
+                                }
                             });
                         }
                     }
