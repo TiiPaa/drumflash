@@ -13,9 +13,6 @@ use super::util;
 /// When shift+dragging a parameter, one pixel dragged corresponds to this much change in the
 /// noramlized parameter.
 const GRANULAR_DRAG_MULTIPLIER: f32 = 0.0015;
-/// When alt+dragging a parameter, one pixel dragged corresponds to this much change.
-/// Five times finer than shift-drag for ultra-precise adjustments.
-const ALT_DRAG_MULTIPLIER: f32 = 0.0003;
 
 static DRAG_NORMALIZED_START_VALUE_MEMORY_ID: LazyLock<egui::Id> =
     LazyLock::new(|| egui::Id::new((file!(), 0)));
@@ -133,7 +130,7 @@ impl<'a, P: Param> ParamSlider<'a, P> {
             .set_parameter(self.param, self.param.default_plain_value());
     }
 
-    fn granular_drag(&self, ui: &Ui, drag_delta: Vec2, multiplier: f32) {
+    fn granular_drag(&self, ui: &Ui, drag_delta: Vec2) {
         // Remember the intial position when we started with the granular drag. This value gets
         // reset whenever we have a normal itneraction with the slider.
         let start_value = if Self::get_drag_amount_memory(ui) == 0.0 {
@@ -147,7 +144,7 @@ impl<'a, P: Param> ParamSlider<'a, P> {
         Self::set_drag_amount_memory(ui, total_drag_distance);
 
         self.set_normalized_value(
-            (start_value + (total_drag_distance * multiplier)).clamp(0.0, 1.0),
+            (start_value + (total_drag_distance * GRANULAR_DRAG_MULTIPLIER)).clamp(0.0, 1.0),
         );
     }
 
@@ -181,7 +178,6 @@ impl<'a, P: Param> ParamSlider<'a, P> {
     fn slider_ui(&self, ui: &Ui, response: &mut Response) {
         // Handle user input
         // TODO: Optionally (since it can be annoying) add scrolling behind a builder option
-
         if response.drag_started() {
             // When beginning a drag or dragging normally, reset the memory used to keep track of
             // our granular drag
@@ -193,17 +189,15 @@ impl<'a, P: Param> ParamSlider<'a, P> {
                 // Like double clicking, Ctrl+Click should reset the parameter
                 self.reset_param();
                 response.mark_changed();
-            } else if ui.input(|i| i.modifiers.alt) {
-                // Alt dragging provides an ultra-fine input method (5x finer than shift).
-                // Using pointer delta instead of response.drag_delta() because the latter
-                // can be zero in some host/windowing contexts.
-                let pointer_delta = ui.input(|i| i.pointer.delta());
-                self.granular_drag(ui, pointer_delta, ALT_DRAG_MULTIPLIER);
-                response.mark_changed();
+            // // FIXME: This releases the focus again when you release the mouse button without
+            // //        moving the mouse a bit for some reason
+            // } else if ui.input().modifiers.alt && self.draw_value {
+            //     // Allow typing in the value on an Alt+Click. Right now this is shown as part of the
+            //     // value field, so it only makes sense when we're drawing that.
+            //     self.begin_keyboard_entry(ui);
             } else if ui.input(|i| i.modifiers.shift) {
                 // And shift dragging should switch to a more granulra input method
-                let pointer_delta = ui.input(|i| i.pointer.delta());
-                self.granular_drag(ui, pointer_delta, GRANULAR_DRAG_MULTIPLIER);
+                self.granular_drag(ui, response.drag_delta());
                 response.mark_changed();
             } else {
                 let proportion =
