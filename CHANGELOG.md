@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-05-23 — Session : revert [54], docs update
+
+**Build:** `20260523-092208`  
+**Commits:** `520e6d8`, `b604ae8`
+
+### Changes
+- Update `ADDING_AN_INSTRUMENT.md` for typed settings ([39] generalization).
+- Attempt [54] Alt+mouse precision input on ParamSlider + egui::Slider.
+- Revert [54] : egui::Slider is a closed widget, cannot reliably intercept Alt+drag. Custom bar+DragValue replacement broke UX.
+- Decision : [54] requires a custom widget built from scratch (separate bar + value text).
+
+---
+
 ## 2026-05-21 — [39] Typed per-instrument settings (all 13 voices)
 
 **Build:** `20260521-213022`  
