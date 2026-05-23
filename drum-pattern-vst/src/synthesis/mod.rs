@@ -4,6 +4,7 @@ mod clap;
 mod cymbal;
 mod dsp;
 mod hihat;
+mod saturation;
 mod kick;
 mod kick_808;
 mod open_hihat;

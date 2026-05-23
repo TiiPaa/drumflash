@@ -189,6 +189,33 @@ const FULL_STD: &[StandardParamDef] = &[
         Some(" s"),
     ),
     s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Hold,
+        "Hold",
+        ParamFamily::Env,
+        0.0,
+        2.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Release,
+        "Release",
+        ParamFamily::Env,
+        0.0,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
         StandardField::ReleaseCurve,
         "Release Curve",
         ParamFamily::Env,
@@ -214,24 +241,6 @@ const FULL_STD: &[StandardParamDef] = &[
         20000.0,
         true,
         Some(" Hz"),
-    ),
-    s(
-        StandardField::FilterEnvAmount,
-        "Filter Env",
-        ParamFamily::Filter,
-        0.0,
-        1.0,
-        false,
-        None,
-    ),
-    s(
-        StandardField::FilterEnvDecay,
-        "Filter Decay",
-        ParamFamily::Filter,
-        0.001,
-        2.0,
-        false,
-        Some(" s"),
     ),
     s(
         StandardField::Analog,
@@ -519,7 +528,7 @@ const TOM_STD: &[StandardParamDef] = &[
     ),
 ];
 
-/// Snare606: no hold, no filter env, stereo-capable.
+/// Snare606: hold, no filter env, stereo-capable.
 const SNARE606_STD: &[StandardParamDef] = &[
     s(
         StandardField::Freq,
@@ -556,6 +565,15 @@ const SNARE606_STD: &[StandardParamDef] = &[
         20.0,
         false,
         None,
+    ),
+    s(
+        StandardField::Hold,
+        "Hold",
+        ParamFamily::Env,
+        0.0,
+        2.0,
+        false,
+        Some(" s"),
     ),
     s(
         StandardField::Release,
@@ -925,8 +943,53 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 special_index: 2,
                 family: ParamFamily::Osc,
             },
+            SpecialParamDef {
+                name: "snare606_saturation_type",
+                label: "Saturation Type",
+                default: 0.0,
+                min: 0.0,
+                max: 5.0,
+                special_index: 3,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "snare606_saturation_amount",
+                label: "Saturation Amount",
+                default: 0.0,
+                min: 0.0,
+                max: 1.0,
+                special_index: 4,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "snare606_saturation_mix",
+                label: "Saturation Mix",
+                default: 1.0,
+                min: 0.0,
+                max: 1.0,
+                special_index: 5,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "snare606_saturation_output_gain",
+                label: "Saturation Output Gain",
+                default: 1.0,
+                min: 0.5,
+                max: 2.0,
+                special_index: 6,
+                family: ParamFamily::Output,
+            },
+            SpecialParamDef {
+                name: "snare606_saturation_pre_filter",
+                label: "Saturation Pre-Filter",
+                default: 0.0,
+                min: 0.0,
+                max: 1.0,
+                special_index: 7,
+                family: ParamFamily::Osc,
+            },
         ],
-        // Snare606: no hold, no filter env, stereo-capable
+        // Snare606: hold, no filter env, stereo-capable
         sound_settings_default: [
             220.0, 0.08, 0.7, 3000.0, 0.0003, 0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
         ],

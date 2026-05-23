@@ -16,7 +16,7 @@
 //! - `settings.special[1]`      → tone mix: 0 = mostly wires, 1 = mostly body
 //! - `settings.special[2]`      → wire crispness: HP gain of the dry layer
 
-use super::{dsp, settings::snare606::Snare606Settings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::snare606::Snare606Settings, Voice, VoiceSettings};
 
 pub struct Snare606Voice {
     settings: Snare606Settings,
@@ -34,6 +34,8 @@ pub struct Snare606Voice {
     envelope: dsp::DecayReleaseEnvelope,
     /// Filter envelope that closes the LP softener after the trigger.
     filter_env: dsp::ExpDecayEnvelope,
+    /// Saturation stage for analog character.
+    saturation: saturation::SaturationConfig,
 
     active: bool,
 }
@@ -70,6 +72,15 @@ impl Snare606Voice {
             dsp::ExpDecayEnvelope::new(sample_rate, 8.0, settings.filter_env_decay.max(0.001))
                 .with_attack_ms(0.3);
 
+        // Saturation stage — initialized with defaults (disabled)
+        let saturation = saturation::SaturationConfig {
+            saturation_type: saturation::SaturationType::None,
+            amount: 0.0,
+            mix: 1.0,
+            output_gain: 1.0,
+            pre_filter: false,
+        };
+
         Self {
             settings,
             sample_rate,
@@ -83,6 +94,7 @@ impl Snare606Voice {
             resonator_r,
             envelope,
             filter_env,
+            saturation,
             active: false,
         }
     }
@@ -157,7 +169,12 @@ impl Voice for Snare606Voice {
         let body_gain = 0.4 + tone * 0.6; // 0.4 .. 1.0
         let wires_gain = (1.0 - tone) * 0.5 + crisp * 0.4;
 
-        (body * body_gain + wires_raw * wires_gain) * self.settings.volume
+        let mut mixed = (body * body_gain + wires_raw * wires_gain) * self.settings.volume;
+        
+        // Apply saturation (post-filter by default)
+        mixed = self.saturation.process(mixed);
+        
+        mixed
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -206,10 +223,14 @@ impl Voice for Snare606Voice {
         let wires_gain = (1.0 - tone) * 0.5 + crisp * 0.4;
         let vol = self.settings.volume;
 
-        (
-            (body_l * body_gain + wires_l * wires_gain) * vol,
-            (body_r * body_gain + wires_r * wires_gain) * vol,
-        )
+        let mut left = (body_l * body_gain + wires_l * wires_gain) * vol;
+        let mut right = (body_r * body_gain + wires_r * wires_gain) * vol;
+        
+        // Apply saturation (post-filter by default)
+        left = self.saturation.process(left);
+        right = self.saturation.process(right);
+        
+        (left, right)
     }
 
     fn is_active(&self) -> bool {
@@ -260,6 +281,13 @@ impl Voice for Snare606Voice {
         self.envelope.set_hold(settings.hold);
         self.filter_env
             .set_decay(settings.filter_env_decay.max(0.001));
+        
+        // Update saturation config
+        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -278,6 +306,21 @@ impl Voice for Snare606Voice {
             self.settings.tone = value;
         } else if index == 2 {
             self.settings.snap = value;
+        } else if index == 3 {
+            self.settings.saturation_type = value as u8;
+            self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        } else if index == 4 {
+            self.settings.saturation_amount = value;
+            self.saturation.amount = value;
+        } else if index == 5 {
+            self.settings.saturation_mix = value;
+            self.saturation.mix = value;
+        } else if index == 6 {
+            self.settings.saturation_output_gain = value;
+            self.saturation.output_gain = value;
+        } else if index == 7 {
+            self.settings.saturation_pre_filter = value;
+            self.saturation.pre_filter = value > 0.5;
         }
     }
 }

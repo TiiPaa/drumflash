@@ -1,5 +1,87 @@
 # Changelog
 
+## 2026-05-23 — Saturation / distortion per instrument (Snare 606)
+
+**Build:** `20260523-211642`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **New saturation module** (`saturation.rs`) with 5 distinct algorithms:
+  - **SoftClip** — smooth tanh, warm and musical
+  - **Valve** — strong asymmetry, tube glow, even harmonics
+  - **Transistor** — germanium grit, crunchy, emphasizes highs (+35% positive side)
+  - **HardClip** — brutal digital clipping, aggressive and square
+  - **Tape** — soft compression "glue", smooth transient taming
+- **Saturation exposed in Sound Panel** for Snare 606 (S6):
+  - Saturation Type (0-5, step 1)
+  - Saturation Amount (0-1, drive mapped 1×..20×)
+  - Saturation Mix (0-1, dry/wet)
+  - Saturation Output Gain (0.5-2.0, makeup)
+  - Saturation Pre-Filter ☑ (checkbox toggle, post-filter by default)
+- **Auto-edit enabled by default** (`BoolParam::new("Auto Edit", true)`)
+- **Hold parameter restored** on Snare 606 (was missing from `SNARE606_STD`)
+- Special params use slots 3-7 of `special[8]` for saturation (indices 0-2 remain resonance/tone/snap)
+
+---
+
+## 2026-05-23 — Snare 606 body enhancement (v4)
+
+**Build:** `20260523-154654`  
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Hold parameter exposed** in the Sound Panel UI (ENV group). Default 8 ms for a thicker body; user can tweak from 0 to 0.5 s.
+- (Retains v3 changes: user-controllable hold, body oscillator, boosted body gain, raw noise excitation, snap envelope, revised mix, tuned defaults.)
+- All 43 tests pass; `cargo check --all-targets` clean.
+
+---
+
+## 2026-05-23 — Snare 606 body enhancement (v3)
+
+**Build:** `20260523-102533`  
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Hold now user-controllable** via the Hold parameter (default 8 ms for thicker body). The envelope stays at peak for `hold` seconds before decay starts.
+- **Default hold increased** from 0 ms to 8 ms to give a thicker, more rounded body out of the box.
+- (Retains v2 changes: body oscillator, boosted body gain, raw noise excitation, snap envelope, revised mix, tuned defaults.)
+- All 43 tests pass; `cargo check --all-targets` clean.
+
+---
+
+## 2026-05-23 — Snare 606 body enhancement (v2)
+
+**Build:** `20260523-100824`  
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Body oscillator added**: pure `SineOsc` at resonator frequency mixed with raw noise as excitation (`excitation = noise + sine * 0.6`). Gives the resonator a tonal fundamental to resonate with — much closer to the real TR-606 VCO+bridged-T topology.
+- **Body gain boosted**: `tone * 1.2` (was `tone * 0.7`). More weight when tone is up.
+- (Retains v1 changes: raw noise excitation, snap envelope, revised mix, tuned defaults.)
+- All 43 tests pass; `cargo check --all-targets` clean.
+
+---
+
+## 2026-05-23 — Snare 606 punch overhaul (v1)
+
+**Build:** `20260523-095847`  
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Snare 606 signal chain rework** for more punch and closer TR-606 character:
+  - **Raw noise excitation**: the bridged-T resonator is now driven by unfiltered white noise (previously the noise was softened by a LP before hitting the resonator, smearing the transient).
+  - **Dedicated snap envelope**: ultra-short burst (0.2 ms attack, 3 ms decay) on raw noise for the percussive attack that defines the 606 snare.
+  - **Revised mix architecture**: body (resonator) + wires (HP-filtered softened noise) + snap (raw noise burst), each with independent gain.
+  - **Body gain now scales 0..0.7** (was 0.4..1.0), so tone=0 gives a pure wires+snap sound.
+- **Defaults tuned** for a tighter, more aggressive sound:
+  - decay 0.7 s → 0.25 s
+  - filter_freq 3000 Hz → 8000 Hz
+  - tone 0.55 → 0.4
+  - snap 0.3 → 0.6
+- All 43 tests pass; `cargo check --all-targets` clean.
+
+---
+
 ## 2026-05-23 — Session : revert [54], docs update
 
 **Build:** `20260523-092208`  
