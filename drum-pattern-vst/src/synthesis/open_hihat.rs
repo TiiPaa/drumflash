@@ -3,7 +3,7 @@
 //! Similar to the closed hi-hat but with a longer decay and a brighter tail.
 //! Peaking filter controlled by settings.frequency adds a pitched metallic peak.
 
-use super::{dsp, saturation, settings::open_hihat::OpenHiHatSettings, Voice, VoiceSettings};
+use super::{dsp, settings::open_hihat::OpenHiHatSettings, Voice, VoiceSettings};
 
 pub struct OpenHiHatVoice {
     settings: OpenHiHatSettings,
@@ -16,7 +16,6 @@ pub struct OpenHiHatVoice {
     filter: dsp::OnePoleFilter,
     filter_r: dsp::OnePoleFilter,
     envelope: dsp::DecayReleaseEnvelope,
-    saturation: saturation::SaturationConfig,
     active: bool,
     samples_elapsed: usize,
 }
@@ -53,13 +52,6 @@ impl OpenHiHatVoice {
             filter,
             filter_r,
             envelope,
-            saturation: saturation::SaturationConfig {
-                saturation_type: saturation::SaturationType::None,
-                amount: 0.0,
-                mix: 1.0,
-                output_gain: 1.0,
-                pre_filter: false,
-            },
             active: false,
             samples_elapsed: 0,
         }
@@ -93,7 +85,7 @@ impl Voice for OpenHiHatVoice {
             return 0.0;
         }
 
-        self.saturation.process(output)
+        output
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -122,10 +114,7 @@ impl Voice for OpenHiHatVoice {
             return (0.0, 0.0);
         }
 
-        (
-            self.saturation.process(filtered_l * vol),
-            self.saturation.process(filtered_r * vol),
-        )
+        (filtered_l * vol, filtered_r * vol)
     }
 
     fn is_active(&self) -> bool {
@@ -160,35 +149,13 @@ impl Voice for OpenHiHatVoice {
         )
         .with_attack_ms(self.settings.attack * 1000.0);
         self.envelope.set_hold(self.settings.hold);
-        self.saturation.saturation_type =
-            saturation::SaturationType::from(self.settings.saturation_type);
-        self.saturation.amount = self.settings.saturation_amount;
-        self.saturation.mix = self.settings.saturation_mix;
-        self.saturation.output_gain = self.settings.saturation_output_gain;
-        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, index: usize, value: f32) {
-        if index == 0 {
-            self.settings.saturation_type = value as u8;
-            self.saturation.saturation_type =
-                saturation::SaturationType::from(self.settings.saturation_type);
-        } else if index == 1 {
-            self.settings.saturation_amount = value;
-            self.saturation.amount = value;
-        } else if index == 2 {
-            self.settings.saturation_mix = value;
-            self.saturation.mix = value;
-        } else if index == 3 {
-            self.settings.saturation_output_gain = value;
-            self.saturation.output_gain = value;
-        } else if index == 4 {
-            self.settings.saturation_pre_filter = value;
-            self.saturation.pre_filter = value > 0.5;
-        }
+    fn set_special_param(&mut self, _index: usize, _value: f32) {
+        // OpenHiHat has no special parameters
     }
 }

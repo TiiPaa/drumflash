@@ -151,15 +151,8 @@ impl Voice for Snare606Voice {
         let raw = self.noise.next();
         let softened = self.lp_softener.process(raw);
 
-        // Apply saturation pre-filter (on the softened noise before resonator/wires)
-        let saturated_softened = if self.saturation.pre_filter {
-            self.saturation.process(softened)
-        } else {
-            softened
-        };
-
         // Stage 3: Swing-VCA — envelope-shaped excitation.
-        let excitation = saturated_softened * env;
+        let excitation = softened * env;
 
         // Stage 4: bridged-T resonator (Biquad bandpass) — the drum head's
         // pseudo-tonal body. Excited by enveloped noise, it gives the kick of
@@ -168,7 +161,7 @@ impl Voice for Snare606Voice {
 
         // Stage 5: dry wires layer — softened noise filtered through a HP
         // so it sits on top of the body without muddying the lows.
-        let wires_raw = self.wires_hp.process(saturated_softened) * env;
+        let wires_raw = self.wires_hp.process(softened) * env;
 
         // Mix: tone_mix blends body vs wires; wire_crisp boosts wires HP component.
         let tone = self.tone_mix();
@@ -178,10 +171,8 @@ impl Voice for Snare606Voice {
 
         let mut mixed = (body * body_gain + wires_raw * wires_gain) * self.settings.volume;
         
-        // Apply saturation post-filter (after the full signal chain)
-        if !self.saturation.pre_filter {
-            mixed = self.saturation.process(mixed);
-        }
+        // Apply saturation (post-filter by default)
+        mixed = self.saturation.process(mixed);
         
         mixed
     }
@@ -213,24 +204,17 @@ impl Voice for Snare606Voice {
         let softened_l = self.lp_softener.process(self.noise.next());
         let softened_r = self.lp_softener_r.process(self.noise_r.next());
 
-        // Apply saturation pre-filter (on the softened noise before resonator/wires)
-        let (saturated_l, saturated_r) = if self.saturation.pre_filter {
-            (self.saturation.process(softened_l), self.saturation.process(softened_r))
-        } else {
-            (softened_l, softened_r)
-        };
-
         // Stage 3: envelope-shaped excitation.
-        let excitation_l = saturated_l * env;
-        let excitation_r = saturated_r * env;
+        let excitation_l = softened_l * env;
+        let excitation_r = softened_r * env;
 
         // Stage 4: bridged-T resonator per channel.
         let body_l = self.resonator.process(excitation_l);
         let body_r = self.resonator_r.process(excitation_r);
 
         // Stage 5: dry wires layer per channel.
-        let wires_l = self.wires_hp.process(saturated_l) * env;
-        let wires_r = self.wires_hp_r.process(saturated_r) * env;
+        let wires_l = self.wires_hp.process(softened_l) * env;
+        let wires_r = self.wires_hp_r.process(softened_r) * env;
 
         // Mix.
         let tone = self.tone_mix();
@@ -242,11 +226,9 @@ impl Voice for Snare606Voice {
         let mut left = (body_l * body_gain + wires_l * wires_gain) * vol;
         let mut right = (body_r * body_gain + wires_r * wires_gain) * vol;
         
-        // Apply saturation post-filter (after the full signal chain)
-        if !self.saturation.pre_filter {
-            left = self.saturation.process(left);
-            right = self.saturation.process(right);
-        }
+        // Apply saturation (post-filter by default)
+        left = self.saturation.process(left);
+        right = self.saturation.process(right);
         
         (left, right)
     }
