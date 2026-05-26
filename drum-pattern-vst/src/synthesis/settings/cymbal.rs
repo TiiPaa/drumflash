@@ -13,6 +13,11 @@ pub struct CymbalSettings {
     pub analog: f32,
     pub stereo: f32,
     pub algo: u8,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
 }
 
 impl From<VoiceSettings> for CymbalSettings {
@@ -29,6 +34,11 @@ impl From<VoiceSettings> for CymbalSettings {
             analog: v.analog,
             stereo: v.stereo,
             algo: v.algo,
+            saturation_type: v.special[0] as u8,
+            saturation_amount: v.special[1],
+            saturation_mix: v.special[2],
+            saturation_output_gain: v.special[3],
+            saturation_pre_filter: v.special[4],
         }
     }
 }
@@ -50,7 +60,16 @@ impl From<CymbalSettings> for VoiceSettings {
             analog: c.analog,
             stereo: c.stereo,
             algo: c.algo,
-            special: [0.0; 8],
+            special: [
+                c.saturation_type as f32,
+                c.saturation_amount,
+                c.saturation_mix,
+                c.saturation_output_gain,
+                c.saturation_pre_filter,
+                0.0,
+                0.0,
+                0.0,
+            ],
         }
     }
 }

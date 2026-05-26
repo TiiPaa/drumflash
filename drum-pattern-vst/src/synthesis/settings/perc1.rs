@@ -19,6 +19,11 @@ pub struct Perc1Settings {
     pub speed: f32,
     pub bite: f32,
     pub width: f32,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
     pub algo: u8,
 }
 
@@ -42,6 +47,11 @@ impl From<VoiceSettings> for Perc1Settings {
             speed: v.special[1],
             bite: v.special[2],
             width: v.special[3],
+            saturation_type: v.special[4] as u8,
+            saturation_amount: v.special[5],
+            saturation_mix: v.special[6],
+            saturation_output_gain: v.special[7],
+            saturation_pre_filter: 0.0,
             algo: v.algo,
         }
     }
@@ -54,6 +64,10 @@ impl From<Perc1Settings> for VoiceSettings {
         special[1] = p.speed;
         special[2] = p.bite;
         special[3] = p.width;
+        special[4] = p.saturation_type as f32;
+        special[5] = p.saturation_amount;
+        special[6] = p.saturation_mix;
+        special[7] = p.saturation_output_gain;
         Self {
             frequency: p.frequency,
             attack: p.attack,

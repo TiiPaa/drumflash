@@ -78,12 +78,14 @@
   - exposer/finir les toggles stéréo pour les voix où la largeur apporte une vraie valeur : Snare, HiHat, OpenHH, Clap, Ride, Cymbal, Snare606, Perc1
   - garder Kick, B8 et Toms mono par défaut pour préserver le centre et la compatibilité mono
   - priorité technique : finir stereo Snare606 et vérifier que les toggles UI ne sont visibles que sur les voix concernées
-- [x] [55] Saturation / distortion par instrument (Snare 606 v1)
+- [x] [55] Saturation / distortion par instrument (tous les 13 voix)
   - Module `saturation.rs` avec 5 algorithmes distincts (SoftClip, Valve, Transistor, HardClip, Tape)
   - Paramètres exposés dans le Sound Panel : Type, Amount, Mix, Output Gain, Pre-Filter
   - Drive d'entrée mappé 1×..20× pour effet audible
   - Pre-Filter comme checkbox toggle (post-filter par défaut)
-  - Intégration dans `Snare606Voice::process_sample()` et `process_sample_stereo()`
+  - Section SAT dédiée dans le Sound Panel (ParamFamily::Saturation)
+  - Combobox affichant les noms d'algorithmes (SoftClip, Valve, etc.)
+  - Saturation appliquée sur les 13 instruments (Kick, Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
   - Auto-edit activé par défaut
 
 ## Fonctionnalites P3 (Avancees / Complexes)

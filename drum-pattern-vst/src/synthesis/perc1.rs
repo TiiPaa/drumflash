@@ -11,7 +11,7 @@
 //! - 0 Sine: clean "pew-pew" cartoon laser
 //! - 1 Saw: aggressive sci-fi blaster
 
-use super::{dsp, settings::perc1::Perc1Settings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::perc1::Perc1Settings, Voice, VoiceSettings};
 
 const MAX_DELAY_SAMPLES: usize = 8192;
 const SLAP_DELAY_MS: f32 = 100.0;
@@ -80,6 +80,8 @@ pub struct Perc1Voice {
     delay_pos: usize,
     delay_samples: usize,
 
+    saturation: saturation::SaturationConfig,
+
     active: bool,
 }
 
@@ -136,6 +138,13 @@ impl Perc1Voice {
             delay_buf_r: [0.0; MAX_DELAY_SAMPLES],
             delay_pos: 0,
             delay_samples,
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::None,
+                amount: 0.0,
+                mix: 1.0,
+                output_gain: 1.0,
+                pre_filter: false,
+            },
             active: false,
         }
     }
@@ -222,7 +231,8 @@ impl Voice for Perc1Voice {
         }
 
         let width = self.settings.width.clamp(0.0, 1.0);
-        dry + wet * width * 0.5
+        let output = dry + wet * width * 0.5;
+        self.saturation.process(output)
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -280,7 +290,10 @@ impl Voice for Perc1Voice {
         }
 
         let delay_mix = width * 0.5;
-        (dry_l + wet_l * delay_mix, dry_r + wet_r * delay_mix)
+        (
+            self.saturation.process(dry_l + wet_l * delay_mix),
+            self.saturation.process(dry_r + wet_r * delay_mix),
+        )
     }
 
     fn is_active(&self) -> bool {
@@ -333,6 +346,13 @@ impl Voice for Perc1Voice {
         // Update filter cutoff
         let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);
         self.filter.set_cutoff(filter_freq, self.sample_rate);
+
+        // Update saturation config
+        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -357,6 +377,26 @@ impl Voice for Perc1Voice {
             1 => self.settings.speed = value,
             2 => self.settings.bite = value,
             3 => self.settings.width = value,
+            4 => {
+                self.settings.saturation_type = value as u8;
+                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+            }
+            5 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            6 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            7 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
+            8 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
+            }
             _ => {}
         }
     }
