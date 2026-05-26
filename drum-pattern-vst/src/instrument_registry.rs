@@ -20,6 +20,8 @@ pub enum ParamFamily {
     Env,
     /// Filter parameters: cutoff, filter envelope amount/decay.
     Filter,
+    /// Saturation / distortion parameters: type, amount, mix, output gain, pre/post filter.
+    Saturation,
     /// Output / routing parameters: volume, mix, stereo, analog drift.
     Output,
 }
@@ -30,6 +32,7 @@ impl ParamFamily {
             ParamFamily::Osc => "OSC",
             ParamFamily::Env => "ENV",
             ParamFamily::Filter => "FILTER",
+            ParamFamily::Saturation => "SAT",
             ParamFamily::Output => "OUTPUT",
         }
     }
@@ -717,15 +720,62 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         midi_note: 36,
         algo_count: 3,
         standard_params: KICK_STD,
-        special_params: &[SpecialParamDef {
-            name: "kick_click",
-            label: "Click Level",
-            default: 0.5,
-            min: 0.0,
-            max: 1.0,
-            special_index: 0,
-            family: ParamFamily::Osc,
-        }],
+        special_params: &[
+            SpecialParamDef {
+                name: "kick_click",
+                label: "Click Level",
+                default: 0.5,
+                min: 0.0,
+                max: 1.0,
+                special_index: 0,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "kick_saturation_type",
+                label: "Saturation Type",
+                default: 0.0,
+                min: 0.0,
+                max: 5.0,
+                special_index: 1,
+                family: ParamFamily::Saturation,
+            },
+            SpecialParamDef {
+                name: "kick_saturation_amount",
+                label: "Saturation Amount",
+                default: 0.0,
+                min: 0.0,
+                max: 1.0,
+                special_index: 2,
+                family: ParamFamily::Saturation,
+            },
+            SpecialParamDef {
+                name: "kick_saturation_mix",
+                label: "Saturation Mix",
+                default: 1.0,
+                min: 0.0,
+                max: 1.0,
+                special_index: 3,
+                family: ParamFamily::Saturation,
+            },
+            SpecialParamDef {
+                name: "kick_saturation_output_gain",
+                label: "Saturation Output Gain",
+                default: 1.0,
+                min: 0.5,
+                max: 2.0,
+                special_index: 4,
+                family: ParamFamily::Saturation,
+            },
+            SpecialParamDef {
+                name: "kick_saturation_pre_filter",
+                label: "Saturation Pre-Filter",
+                default: 0.0,
+                min: 0.0,
+                max: 1.0,
+                special_index: 5,
+                family: ParamFamily::Saturation,
+            },
+        ],
         // Kick-like: no hold, no filter env, no stereo
         sound_settings_default: [
             60.0, 0.5, 0.8, 30.0, 0.0015, 0.5, 5.0, 3.0, 0.0, 1.0, 0.05, 1.0, 0.0,
@@ -950,7 +1000,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 min: 0.0,
                 max: 5.0,
                 special_index: 3,
-                family: ParamFamily::Osc,
+                family: ParamFamily::Saturation,
             },
             SpecialParamDef {
                 name: "snare606_saturation_amount",
@@ -959,7 +1009,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 min: 0.0,
                 max: 1.0,
                 special_index: 4,
-                family: ParamFamily::Osc,
+                family: ParamFamily::Saturation,
             },
             SpecialParamDef {
                 name: "snare606_saturation_mix",
@@ -968,7 +1018,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 min: 0.0,
                 max: 1.0,
                 special_index: 5,
-                family: ParamFamily::Osc,
+                family: ParamFamily::Saturation,
             },
             SpecialParamDef {
                 name: "snare606_saturation_output_gain",
@@ -977,7 +1027,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 min: 0.5,
                 max: 2.0,
                 special_index: 6,
-                family: ParamFamily::Output,
+                family: ParamFamily::Saturation,
             },
             SpecialParamDef {
                 name: "snare606_saturation_pre_filter",
@@ -986,7 +1036,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 min: 0.0,
                 max: 1.0,
                 special_index: 7,
-                family: ParamFamily::Osc,
+                family: ParamFamily::Saturation,
             },
         ],
         // Snare606: hold, no filter env, stereo-capable

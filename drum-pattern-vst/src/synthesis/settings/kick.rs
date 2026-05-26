@@ -20,6 +20,11 @@ pub struct KickSettings {
     pub filter_env_decay: f32,
     pub analog: f32,
     pub click_level: f32,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
     pub algo: u8,
 }
 
@@ -46,6 +51,11 @@ impl From<VoiceSettings> for KickSettings {
             filter_env_decay: v.filter_env_decay,
             analog: v.analog,
             click_level: v.special[0],
+            saturation_type: v.special[1] as u8,
+            saturation_amount: v.special[2],
+            saturation_mix: v.special[3],
+            saturation_output_gain: v.special[4],
+            saturation_pre_filter: v.special[5],
             algo: v.algo,
         }
     }
@@ -55,6 +65,11 @@ impl From<KickSettings> for VoiceSettings {
     fn from(k: KickSettings) -> Self {
         let mut special = [0.0f32; 8];
         special[0] = k.click_level;
+        special[1] = k.saturation_type as f32;
+        special[2] = k.saturation_amount;
+        special[3] = k.saturation_mix;
+        special[4] = k.saturation_output_gain;
+        special[5] = k.saturation_pre_filter;
         Self {
             frequency: k.frequency,
             attack: k.attack,

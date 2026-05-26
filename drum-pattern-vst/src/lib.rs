@@ -177,6 +177,17 @@ pub struct DrumFlashParams {
 
     #[id = "kick_click"]
     pub kick_click: FloatParam,
+    // Kick saturation parameters
+    #[id = "kick_sat_type"]
+    pub kick_saturation_type: FloatParam,
+    #[id = "kick_sat_amt"]
+    pub kick_saturation_amount: FloatParam,
+    #[id = "kick_sat_mix"]
+    pub kick_saturation_mix: FloatParam,
+    #[id = "kick_sat_out"]
+    pub kick_saturation_output_gain: FloatParam,
+    #[id = "kick_sat_pre"]
+    pub kick_saturation_pre_filter: FloatParam,
 
     #[id = "tom_stick"]
     pub tom_stick: FloatParam,
@@ -671,6 +682,37 @@ impl Default for DrumFlashParams {
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
+            kick_saturation_type: FloatParam::new(
+                "Kick Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            kick_saturation_amount: FloatParam::new(
+                "Kick Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            kick_saturation_mix: FloatParam::new(
+                "Kick Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            kick_saturation_output_gain: FloatParam::new(
+                "Kick Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            kick_saturation_pre_filter: FloatParam::new(
+                "Kick Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
 
             tom_stick: FloatParam::new(
                 "Tom Stick Attack",
@@ -1018,6 +1060,11 @@ impl DrumFlashParams {
     pub fn special_param(&self, instrument: usize, special_idx: usize) -> Option<&FloatParam> {
         match (instrument, special_idx) {
             (0, 0) => Some(&self.kick_click),
+            (0, 1) => Some(&self.kick_saturation_type),
+            (0, 2) => Some(&self.kick_saturation_amount),
+            (0, 3) => Some(&self.kick_saturation_mix),
+            (0, 4) => Some(&self.kick_saturation_output_gain),
+            (0, 5) => Some(&self.kick_saturation_pre_filter),
             (1, 0) => Some(&self.snare_snap),
             (4 | 5 | 6, 0) => Some(&self.tom_stick),
             (7, 0) => Some(&self.clap_echo),
