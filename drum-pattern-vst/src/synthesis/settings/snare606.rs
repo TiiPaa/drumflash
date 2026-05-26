@@ -57,7 +57,7 @@ impl From<VoiceSettings> for Snare606Settings {
 
 impl From<Snare606Settings> for VoiceSettings {
     fn from(s: Snare606Settings) -> Self {
-        let mut special = [0.0f32; 8];
+        let mut special = [0.0f32; 32];
         special[0] = s.resonance;
         special[1] = s.tone;
         special[2] = s.snap;

@@ -51,7 +51,7 @@ impl From<VoiceSettings> for Perc1Settings {
             saturation_amount: v.special[5],
             saturation_mix: v.special[6],
             saturation_output_gain: v.special[7],
-            saturation_pre_filter: 0.0,
+            saturation_pre_filter: v.special[8],
             algo: v.algo,
         }
     }
@@ -59,7 +59,7 @@ impl From<VoiceSettings> for Perc1Settings {
 
 impl From<Perc1Settings> for VoiceSettings {
     fn from(p: Perc1Settings) -> Self {
-        let mut special = [0.0f32; 8];
+        let mut special = [0.0f32; 32];
         special[0] = p.sweep;
         special[1] = p.speed;
         special[2] = p.bite;
@@ -68,6 +68,7 @@ impl From<Perc1Settings> for VoiceSettings {
         special[5] = p.saturation_amount;
         special[6] = p.saturation_mix;
         special[7] = p.saturation_output_gain;
+        special[8] = p.saturation_pre_filter;
         Self {
             frequency: p.frequency,
             attack: p.attack,

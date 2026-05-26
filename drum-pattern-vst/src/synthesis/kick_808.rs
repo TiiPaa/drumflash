@@ -37,7 +37,7 @@ pub struct Kick808Voice {
     freq_smoother: dsp::OnePoleSmoother,
     // DC blocker to kill offset clicks on asymmetric retriggers
     dc_blocker: dsp::DcBlocker,
-    /// Saturation stage for analog character.
+    // Saturation stage
     saturation: saturation::SaturationConfig,
 
     active: bool,
@@ -198,12 +198,10 @@ impl Voice for Kick808Voice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = Kick808Settings::from(settings);
         self.update_derived_params();
-        // Update saturation config
         self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
-        self.saturation.pre_filter = false; // no slot available in special[8]
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -218,8 +216,7 @@ impl Voice for Kick808Voice {
             3 => self.settings.click_tone = value,
             4 => {
                 self.settings.saturation_type = value as u8;
-                self.saturation.saturation_type =
-                    saturation::SaturationType::from(self.settings.saturation_type);
+                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
             }
             5 => {
                 self.settings.saturation_amount = value;

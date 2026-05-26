@@ -19,7 +19,6 @@ pub struct Kick808Settings {
     pub saturation_amount: f32,
     pub saturation_mix: f32,
     pub saturation_output_gain: f32,
-    pub saturation_pre_filter: f32,
     pub algo: u8,
 }
 
@@ -43,7 +42,6 @@ impl From<VoiceSettings> for Kick808Settings {
             saturation_amount: v.special[5],
             saturation_mix: v.special[6],
             saturation_output_gain: v.special[7],
-            saturation_pre_filter: 0.0,
             algo: v.algo,
         }
     }
@@ -51,7 +49,7 @@ impl From<VoiceSettings> for Kick808Settings {
 
 impl From<Kick808Settings> for VoiceSettings {
     fn from(k: Kick808Settings) -> Self {
-        let mut special = [0.0f32; 8];
+        let mut special = [0.0f32; 32];
         special[0] = k.accent;
         special[1] = k.snap;
         special[2] = k.pitch_drop;

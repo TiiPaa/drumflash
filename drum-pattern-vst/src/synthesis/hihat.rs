@@ -5,7 +5,7 @@
 //! - Highpass filter (metallic sound)
 //! - Short exponential decay (closed hi-hat)
 
-use super::{dsp, saturation, settings::hihat::HiHatSettings, Voice, VoiceSettings};
+use super::{dsp, settings::hihat::HiHatSettings, Voice, VoiceSettings};
 
 /// Hi-Hat voice using filtered white noise
 pub struct HiHatVoice {
@@ -33,9 +33,6 @@ pub struct HiHatVoice {
 
     // Active state
     active: bool,
-
-    // Saturation
-    saturation: saturation::SaturationConfig,
 }
 
 impl HiHatVoice {
@@ -77,13 +74,6 @@ impl HiHatVoice {
             )
             .with_attack_ms(0.3),
             active: false,
-            saturation: saturation::SaturationConfig {
-                saturation_type: saturation::SaturationType::from(settings.saturation_type),
-                amount: settings.saturation_amount,
-                mix: settings.saturation_mix,
-                output_gain: settings.saturation_output_gain,
-                pre_filter: settings.saturation_pre_filter > 0.5,
-            },
         }
     }
 }
@@ -142,7 +132,7 @@ impl Voice for HiHatVoice {
             return 0.0;
         }
 
-        self.saturation.process(output)
+        output
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -193,10 +183,7 @@ impl Voice for HiHatVoice {
         }
 
         let vol = env * self.settings.volume;
-        (
-            self.saturation.process(left * vol),
-            self.saturation.process(right * vol),
-        )
+        (left * vol, right * vol)
     }
 
     fn is_active(&self) -> bool {
@@ -233,43 +220,14 @@ impl Voice for HiHatVoice {
         self.envelope.set_hold(self.settings.hold);
         self.filter_env
             .set_decay(self.settings.filter_env_decay.max(0.001));
-        self.saturation.saturation_type =
-            saturation::SaturationType::from(self.settings.saturation_type);
-        self.saturation.amount = self.settings.saturation_amount;
-        self.saturation.mix = self.settings.saturation_mix;
-        self.saturation.output_gain = self.settings.saturation_output_gain;
-        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => {
-                self.settings.saturation_type = value as u8;
-                self.saturation.saturation_type =
-                    saturation::SaturationType::from(self.settings.saturation_type);
-            }
-            1 => {
-                self.settings.saturation_amount = value;
-                self.saturation.amount = value;
-            }
-            2 => {
-                self.settings.saturation_mix = value;
-                self.saturation.mix = value;
-            }
-            3 => {
-                self.settings.saturation_output_gain = value;
-                self.saturation.output_gain = value;
-            }
-            4 => {
-                self.settings.saturation_pre_filter = value;
-                self.saturation.pre_filter = value > 0.5;
-            }
-            _ => {}
-        }
+    fn set_special_param(&mut self, _index: usize, _value: f32) {
+        // HiHat has no special parameters
     }
 }
 
@@ -309,7 +267,7 @@ mod tests {
             analog: 1.0,
             stereo: 0.0,
             algo: 0,
-            special: [0.0; 8],
+            special: [0.0; 32],
         };
         let mut hihat = HiHatVoice::new(44100.0, HiHatSettings::from(settings));
 
