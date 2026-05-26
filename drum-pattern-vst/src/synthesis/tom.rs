@@ -7,7 +7,7 @@
 //! - Exponential amplitude envelope
 //! - Optional stick attack (short noise burst) for realism
 
-use super::{dsp, settings::tom::TomSettings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::tom::TomSettings, Voice, VoiceSettings};
 
 pub struct TomVoice {
     settings: TomSettings,
@@ -22,6 +22,7 @@ pub struct TomVoice {
     // Filter envelope for natural "bouum" decay.
     filter_env: dsp::ExpDecayEnvelope,
     stick_attack: dsp::ClickGenerator,
+    saturation: saturation::SaturationConfig,
 
     active: bool,
 }
@@ -56,6 +57,13 @@ impl TomVoice {
             )
             .with_attack_ms(0.5),
             stick_attack: dsp::ClickGenerator::new(sample_rate, 8.0, 0.5, 0.6),
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::from(settings.saturation_type),
+                amount: settings.saturation_amount,
+                mix: settings.saturation_mix,
+                output_gain: settings.saturation_output_gain,
+                pre_filter: settings.saturation_pre_filter > 0.5,
+            },
             active: false,
         };
         voice.update_derived_params();
@@ -143,7 +151,12 @@ impl Voice for TomVoice {
                     }
                 };
                 self.filter.set_cutoff(modulated_cutoff, self.sample_rate);
-                let filtered = self.filter.process(body);
+                let saturated_body = if self.saturation.pre_filter {
+                    self.saturation.process(body)
+                } else {
+                    body
+                };
+                let filtered = self.filter.process(saturated_body);
                 tone = filtered * env * self.settings.volume;
             }
         }
@@ -155,7 +168,12 @@ impl Voice for TomVoice {
             0.0
         };
 
-        tone + attack
+        let out = tone + attack;
+        if self.saturation.pre_filter {
+            out
+        } else {
+            self.saturation.process(out)
+        }
     }
 
     fn is_active(&self) -> bool {
@@ -172,6 +190,11 @@ impl Voice for TomVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = TomSettings::from(settings);
         self.update_derived_params();
+        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -182,6 +205,21 @@ impl Voice for TomVoice {
     fn set_special_param(&mut self, index: usize, value: f32) {
         if index == 0 {
             self.settings.stick_attack = value;
+        } else if index == 1 {
+            self.settings.saturation_type = value as u8;
+            self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        } else if index == 2 {
+            self.settings.saturation_amount = value;
+            self.saturation.amount = value;
+        } else if index == 3 {
+            self.settings.saturation_mix = value;
+            self.saturation.mix = value;
+        } else if index == 4 {
+            self.settings.saturation_output_gain = value;
+            self.saturation.output_gain = value;
+        } else if index == 5 {
+            self.settings.saturation_pre_filter = value;
+            self.saturation.pre_filter = value > 0.5;
         }
     }
 }

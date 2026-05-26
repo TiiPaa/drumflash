@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-05-26 — Saturation generalised to all 13 instruments
+
+**Build:** `20260526-101659`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Saturation on all 13 voices**: Kick, Snare, HiHat, OpenHiHat, Tom1-3, Clap, Ride, Cymbal, Snare606, BassDrum808, Perc1
+- **Dedicated SAT section** in Sound Panel (`ParamFamily::Saturation`) — no longer mixed in OSC/OUTPUT
+- **Algorithm names displayed** in combobox (SoftClip, Valve, Transistor, HardClip, Tape) instead of numbers
+- **Pre-Filter checkbox** now functional — routes saturation before or after the filter chain
+- **Per-instrument special params** using saturation slots in `special[8]` array
+  - Instruments with existing specials (Snap, Echo, Stick, etc.) append saturation after
+  - Instruments without specials use indices 0-4
+  - BassDrum808 limited to 4 saturation params (no Pre-Filter slot due to 8-element array)
+- **65 new FloatParam** declarations in `DrumFlashParams` (5 params × 13 instruments)
+
+---
+
 ## 2026-05-23 — Saturation / distortion per instrument (Snare 606)
 
 **Build:** `20260523-211642`

@@ -192,6 +192,39 @@ pub struct DrumFlashParams {
     #[id = "tom_stick"]
     pub tom_stick: FloatParam,
 
+    #[id = "tom1_sat_type"]
+    pub tom1_saturation_type: FloatParam,
+    #[id = "tom1_sat_amt"]
+    pub tom1_saturation_amount: FloatParam,
+    #[id = "tom1_sat_mix"]
+    pub tom1_saturation_mix: FloatParam,
+    #[id = "tom1_sat_out"]
+    pub tom1_saturation_output_gain: FloatParam,
+    #[id = "tom1_sat_pre"]
+    pub tom1_saturation_pre_filter: FloatParam,
+
+    #[id = "tom2_sat_type"]
+    pub tom2_saturation_type: FloatParam,
+    #[id = "tom2_sat_amt"]
+    pub tom2_saturation_amount: FloatParam,
+    #[id = "tom2_sat_mix"]
+    pub tom2_saturation_mix: FloatParam,
+    #[id = "tom2_sat_out"]
+    pub tom2_saturation_output_gain: FloatParam,
+    #[id = "tom2_sat_pre"]
+    pub tom2_saturation_pre_filter: FloatParam,
+
+    #[id = "tom3_sat_type"]
+    pub tom3_saturation_type: FloatParam,
+    #[id = "tom3_sat_amt"]
+    pub tom3_saturation_amount: FloatParam,
+    #[id = "tom3_sat_mix"]
+    pub tom3_saturation_mix: FloatParam,
+    #[id = "tom3_sat_out"]
+    pub tom3_saturation_output_gain: FloatParam,
+    #[id = "tom3_sat_pre"]
+    pub tom3_saturation_pre_filter: FloatParam,
+
     // 808 Bass Drum special parameters
     #[id = "b8_accent"]
     pub bassdrum808_accent: FloatParam,
@@ -204,6 +237,15 @@ pub struct DrumFlashParams {
 
     #[id = "b8_click_tone"]
     pub bassdrum808_click_tone: FloatParam,
+
+    #[id = "b8_sat_type"]
+    pub b8_saturation_type: FloatParam,
+    #[id = "b8_sat_amt"]
+    pub b8_saturation_amount: FloatParam,
+    #[id = "b8_sat_mix"]
+    pub b8_saturation_mix: FloatParam,
+    #[id = "b8_sat_out"]
+    pub b8_saturation_output_gain: FloatParam,
 
     #[id = "mute_kick"]
     pub mute_kick: BoolParam,
@@ -349,9 +391,42 @@ pub struct DrumFlashParams {
     #[id = "snare_snap"]
     pub snare_snap: FloatParam,
 
+    #[id = "snare_sat_type"]
+    pub snare_saturation_type: FloatParam,
+    #[id = "snare_sat_amt"]
+    pub snare_saturation_amount: FloatParam,
+    #[id = "snare_sat_mix"]
+    pub snare_saturation_mix: FloatParam,
+    #[id = "snare_sat_out"]
+    pub snare_saturation_output_gain: FloatParam,
+    #[id = "snare_sat_pre"]
+    pub snare_saturation_pre_filter: FloatParam,
+
     // Hi-hat chokes open hi-hat when triggered
     #[id = "hihat_chokes_oh"]
     pub hihat_chokes_oh: BoolParam,
+
+    #[id = "hihat_sat_type"]
+    pub hihat_saturation_type: FloatParam,
+    #[id = "hihat_sat_amt"]
+    pub hihat_saturation_amount: FloatParam,
+    #[id = "hihat_sat_mix"]
+    pub hihat_saturation_mix: FloatParam,
+    #[id = "hihat_sat_out"]
+    pub hihat_saturation_output_gain: FloatParam,
+    #[id = "hihat_sat_pre"]
+    pub hihat_saturation_pre_filter: FloatParam,
+
+    #[id = "openhh_sat_type"]
+    pub openhh_saturation_type: FloatParam,
+    #[id = "openhh_sat_amt"]
+    pub openhh_saturation_amount: FloatParam,
+    #[id = "openhh_sat_mix"]
+    pub openhh_saturation_mix: FloatParam,
+    #[id = "openhh_sat_out"]
+    pub openhh_saturation_output_gain: FloatParam,
+    #[id = "openhh_sat_pre"]
+    pub openhh_saturation_pre_filter: FloatParam,
 
     // Auto-edit: clicking a step in the grid automatically selects its instrument
     #[id = "auto_edit"]
@@ -361,6 +436,39 @@ pub struct DrumFlashParams {
     // 0 = collapse to a single burst, 1 = default 12 ms spread, 2 = wider.
     #[id = "clap_echo"]
     pub clap_echo: FloatParam,
+
+    #[id = "clap_sat_type"]
+    pub clap_saturation_type: FloatParam,
+    #[id = "clap_sat_amt"]
+    pub clap_saturation_amount: FloatParam,
+    #[id = "clap_sat_mix"]
+    pub clap_saturation_mix: FloatParam,
+    #[id = "clap_sat_out"]
+    pub clap_saturation_output_gain: FloatParam,
+    #[id = "clap_sat_pre"]
+    pub clap_saturation_pre_filter: FloatParam,
+
+    #[id = "ride_sat_type"]
+    pub ride_saturation_type: FloatParam,
+    #[id = "ride_sat_amt"]
+    pub ride_saturation_amount: FloatParam,
+    #[id = "ride_sat_mix"]
+    pub ride_saturation_mix: FloatParam,
+    #[id = "ride_sat_out"]
+    pub ride_saturation_output_gain: FloatParam,
+    #[id = "ride_sat_pre"]
+    pub ride_saturation_pre_filter: FloatParam,
+
+    #[id = "cymbal_sat_type"]
+    pub cymbal_saturation_type: FloatParam,
+    #[id = "cymbal_sat_amt"]
+    pub cymbal_saturation_amount: FloatParam,
+    #[id = "cymbal_sat_mix"]
+    pub cymbal_saturation_mix: FloatParam,
+    #[id = "cymbal_sat_out"]
+    pub cymbal_saturation_output_gain: FloatParam,
+    #[id = "cymbal_sat_pre"]
+    pub cymbal_saturation_pre_filter: FloatParam,
 
     // Snare 606 specials: bridged-T resonator fine-tuning.
     #[id = "sn606_res"]
@@ -390,6 +498,17 @@ pub struct DrumFlashParams {
     pub perc1_bite: FloatParam,
     #[id = "perc1_width"]
     pub perc1_width: FloatParam,
+
+    #[id = "perc1_sat_type"]
+    pub perc1_saturation_type: FloatParam,
+    #[id = "perc1_sat_amt"]
+    pub perc1_saturation_amount: FloatParam,
+    #[id = "perc1_sat_mix"]
+    pub perc1_saturation_mix: FloatParam,
+    #[id = "perc1_sat_out"]
+    pub perc1_saturation_output_gain: FloatParam,
+    #[id = "perc1_sat_pre"]
+    pub perc1_saturation_pre_filter: FloatParam,
 }
 
 impl Default for DrumFlashParams {
@@ -721,6 +840,102 @@ impl Default for DrumFlashParams {
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
+            tom1_saturation_type: FloatParam::new(
+                "Tom 1 Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            tom1_saturation_amount: FloatParam::new(
+                "Tom 1 Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom1_saturation_mix: FloatParam::new(
+                "Tom 1 Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom1_saturation_output_gain: FloatParam::new(
+                "Tom 1 Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom1_saturation_pre_filter: FloatParam::new(
+                "Tom 1 Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            tom2_saturation_type: FloatParam::new(
+                "Tom 2 Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            tom2_saturation_amount: FloatParam::new(
+                "Tom 2 Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom2_saturation_mix: FloatParam::new(
+                "Tom 2 Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom2_saturation_output_gain: FloatParam::new(
+                "Tom 2 Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom2_saturation_pre_filter: FloatParam::new(
+                "Tom 2 Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            tom3_saturation_type: FloatParam::new(
+                "Tom 3 Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            tom3_saturation_amount: FloatParam::new(
+                "Tom 3 Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom3_saturation_mix: FloatParam::new(
+                "Tom 3 Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom3_saturation_output_gain: FloatParam::new(
+                "Tom 3 Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            tom3_saturation_pre_filter: FloatParam::new(
+                "Tom 3 Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
             bassdrum808_accent: FloatParam::new(
                 "808 Accent",
                 0.0,
@@ -749,6 +964,32 @@ impl Default for DrumFlashParams {
                     min: 100.0,
                     max: 8000.0,
                 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            b8_saturation_type: FloatParam::new(
+                "808 Kick Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            b8_saturation_amount: FloatParam::new(
+                "808 Kick Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            b8_saturation_mix: FloatParam::new(
+                "808 Kick Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            b8_saturation_output_gain: FloatParam::new(
+                "808 Kick Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
@@ -831,11 +1072,204 @@ impl Default for DrumFlashParams {
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
+            snare_saturation_type: FloatParam::new(
+                "Snare Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            snare_saturation_amount: FloatParam::new(
+                "Snare Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare_saturation_mix: FloatParam::new(
+                "Snare Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare_saturation_output_gain: FloatParam::new(
+                "Snare Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            snare_saturation_pre_filter: FloatParam::new(
+                "Snare Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
             hihat_chokes_oh: BoolParam::new("HiHat Chokes OpenHH", true),
+
+            hihat_saturation_type: FloatParam::new(
+                "HiHat Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            hihat_saturation_amount: FloatParam::new(
+                "HiHat Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            hihat_saturation_mix: FloatParam::new(
+                "HiHat Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            hihat_saturation_output_gain: FloatParam::new(
+                "HiHat Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            hihat_saturation_pre_filter: FloatParam::new(
+                "HiHat Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            openhh_saturation_type: FloatParam::new(
+                "OpenHH Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            openhh_saturation_amount: FloatParam::new(
+                "OpenHH Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            openhh_saturation_mix: FloatParam::new(
+                "OpenHH Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            openhh_saturation_output_gain: FloatParam::new(
+                "OpenHH Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            openhh_saturation_pre_filter: FloatParam::new(
+                "OpenHH Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
             auto_edit: BoolParam::new("Auto Edit", true),
 
             clap_echo: FloatParam::new("Clap Echo", 1.0, FloatRange::Linear { min: 0.0, max: 3.0 })
                 .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            clap_saturation_type: FloatParam::new(
+                "Clap Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            clap_saturation_amount: FloatParam::new(
+                "Clap Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            clap_saturation_mix: FloatParam::new(
+                "Clap Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            clap_saturation_output_gain: FloatParam::new(
+                "Clap Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            clap_saturation_pre_filter: FloatParam::new(
+                "Clap Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            ride_saturation_type: FloatParam::new(
+                "Ride Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            ride_saturation_amount: FloatParam::new(
+                "Ride Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            ride_saturation_mix: FloatParam::new(
+                "Ride Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            ride_saturation_output_gain: FloatParam::new(
+                "Ride Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            ride_saturation_pre_filter: FloatParam::new(
+                "Ride Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            cymbal_saturation_type: FloatParam::new(
+                "Cymbal Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            cymbal_saturation_amount: FloatParam::new(
+                "Cymbal Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            cymbal_saturation_mix: FloatParam::new(
+                "Cymbal Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            cymbal_saturation_output_gain: FloatParam::new(
+                "Cymbal Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            cymbal_saturation_pre_filter: FloatParam::new(
+                "Cymbal Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
 
             snare606_resonance: FloatParam::new(
                 "Snare 606 Resonance",
@@ -917,6 +1351,38 @@ impl Default for DrumFlashParams {
             .with_smoother(SmoothingStyle::Linear(10.0)),
             perc1_width: FloatParam::new(
                 "Perc1 Width",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            perc1_saturation_type: FloatParam::new(
+                "Perc1 Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            perc1_saturation_amount: FloatParam::new(
+                "Perc1 Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            perc1_saturation_mix: FloatParam::new(
+                "Perc1 Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            perc1_saturation_output_gain: FloatParam::new(
+                "Perc1 Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            perc1_saturation_pre_filter: FloatParam::new(
+                "Perc1 Saturation Pre-Filter",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -1066,8 +1532,53 @@ impl DrumFlashParams {
             (0, 4) => Some(&self.kick_saturation_output_gain),
             (0, 5) => Some(&self.kick_saturation_pre_filter),
             (1, 0) => Some(&self.snare_snap),
+            (1, 1) => Some(&self.snare_saturation_type),
+            (1, 2) => Some(&self.snare_saturation_amount),
+            (1, 3) => Some(&self.snare_saturation_mix),
+            (1, 4) => Some(&self.snare_saturation_output_gain),
+            (1, 5) => Some(&self.snare_saturation_pre_filter),
+            (2, 0) => Some(&self.hihat_saturation_type),
+            (2, 1) => Some(&self.hihat_saturation_amount),
+            (2, 2) => Some(&self.hihat_saturation_mix),
+            (2, 3) => Some(&self.hihat_saturation_output_gain),
+            (2, 4) => Some(&self.hihat_saturation_pre_filter),
+            (3, 0) => Some(&self.openhh_saturation_type),
+            (3, 1) => Some(&self.openhh_saturation_amount),
+            (3, 2) => Some(&self.openhh_saturation_mix),
+            (3, 3) => Some(&self.openhh_saturation_output_gain),
+            (3, 4) => Some(&self.openhh_saturation_pre_filter),
             (4 | 5 | 6, 0) => Some(&self.tom_stick),
+            (4, 1) => Some(&self.tom1_saturation_type),
+            (4, 2) => Some(&self.tom1_saturation_amount),
+            (4, 3) => Some(&self.tom1_saturation_mix),
+            (4, 4) => Some(&self.tom1_saturation_output_gain),
+            (4, 5) => Some(&self.tom1_saturation_pre_filter),
+            (5, 1) => Some(&self.tom2_saturation_type),
+            (5, 2) => Some(&self.tom2_saturation_amount),
+            (5, 3) => Some(&self.tom2_saturation_mix),
+            (5, 4) => Some(&self.tom2_saturation_output_gain),
+            (5, 5) => Some(&self.tom2_saturation_pre_filter),
+            (6, 1) => Some(&self.tom3_saturation_type),
+            (6, 2) => Some(&self.tom3_saturation_amount),
+            (6, 3) => Some(&self.tom3_saturation_mix),
+            (6, 4) => Some(&self.tom3_saturation_output_gain),
+            (6, 5) => Some(&self.tom3_saturation_pre_filter),
             (7, 0) => Some(&self.clap_echo),
+            (7, 1) => Some(&self.clap_saturation_type),
+            (7, 2) => Some(&self.clap_saturation_amount),
+            (7, 3) => Some(&self.clap_saturation_mix),
+            (7, 4) => Some(&self.clap_saturation_output_gain),
+            (7, 5) => Some(&self.clap_saturation_pre_filter),
+            (8, 0) => Some(&self.ride_saturation_type),
+            (8, 1) => Some(&self.ride_saturation_amount),
+            (8, 2) => Some(&self.ride_saturation_mix),
+            (8, 3) => Some(&self.ride_saturation_output_gain),
+            (8, 4) => Some(&self.ride_saturation_pre_filter),
+            (9, 0) => Some(&self.cymbal_saturation_type),
+            (9, 1) => Some(&self.cymbal_saturation_amount),
+            (9, 2) => Some(&self.cymbal_saturation_mix),
+            (9, 3) => Some(&self.cymbal_saturation_output_gain),
+            (9, 4) => Some(&self.cymbal_saturation_pre_filter),
             (10, 0) => Some(&self.snare606_resonance),
             (10, 1) => Some(&self.snare606_tone),
             (10, 2) => Some(&self.snare606_snap),
@@ -1080,10 +1591,19 @@ impl DrumFlashParams {
             (11, 1) => Some(&self.bassdrum808_snap),
             (11, 2) => Some(&self.bassdrum808_pitch_drop),
             (11, 3) => Some(&self.bassdrum808_click_tone),
+            (11, 4) => Some(&self.b8_saturation_type),
+            (11, 5) => Some(&self.b8_saturation_amount),
+            (11, 6) => Some(&self.b8_saturation_mix),
+            (11, 7) => Some(&self.b8_saturation_output_gain),
             (12, 0) => Some(&self.perc1_sweep),
             (12, 1) => Some(&self.perc1_speed),
             (12, 2) => Some(&self.perc1_bite),
             (12, 3) => Some(&self.perc1_width),
+            (12, 4) => Some(&self.perc1_saturation_type),
+            (12, 5) => Some(&self.perc1_saturation_amount),
+            (12, 6) => Some(&self.perc1_saturation_mix),
+            (12, 7) => Some(&self.perc1_saturation_output_gain),
+            (12, 8) => Some(&self.perc1_saturation_pre_filter),
             _ => None,
         }
     }

@@ -14,6 +14,11 @@ pub struct TomSettings {
     pub filter_env_decay: f32,
     pub analog: f32,
     pub stick_attack: f32,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
     pub algo: u8,
 }
 
@@ -32,6 +37,11 @@ impl From<VoiceSettings> for TomSettings {
             filter_env_decay: v.filter_env_decay,
             analog: v.analog,
             stick_attack: v.special[0],
+            saturation_type: v.special[1] as u8,
+            saturation_amount: v.special[2],
+            saturation_mix: v.special[3],
+            saturation_output_gain: v.special[4],
+            saturation_pre_filter: v.special[5],
             algo: v.algo,
         }
     }
@@ -41,6 +51,11 @@ impl From<TomSettings> for VoiceSettings {
     fn from(t: TomSettings) -> Self {
         let mut special = [0.0f32; 8];
         special[0] = t.stick_attack;
+        special[1] = t.saturation_type as f32;
+        special[2] = t.saturation_amount;
+        special[3] = t.saturation_mix;
+        special[4] = t.saturation_output_gain;
+        special[5] = t.saturation_pre_filter;
         Self {
             frequency: t.frequency,
             attack: t.attack,

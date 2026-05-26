@@ -16,6 +16,11 @@ pub struct SnareSettings {
     pub analog: f32,
     pub stereo: f32,
     pub snap: f32,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
     pub algo: u8,
 }
 
@@ -36,6 +41,11 @@ impl From<VoiceSettings> for SnareSettings {
             analog: v.analog,
             stereo: v.stereo,
             snap: v.special[0],
+            saturation_type: v.special[1] as u8,
+            saturation_amount: v.special[2],
+            saturation_mix: v.special[3],
+            saturation_output_gain: v.special[4],
+            saturation_pre_filter: v.special[5],
             algo: v.algo,
         }
     }
@@ -45,6 +55,11 @@ impl From<SnareSettings> for VoiceSettings {
     fn from(s: SnareSettings) -> Self {
         let mut special = [0.0f32; 8];
         special[0] = s.snap;
+        special[1] = s.saturation_type as f32;
+        special[2] = s.saturation_amount;
+        special[3] = s.saturation_mix;
+        special[4] = s.saturation_output_gain;
+        special[5] = s.saturation_pre_filter;
         Self {
             frequency: s.frequency,
             attack: s.attack,
