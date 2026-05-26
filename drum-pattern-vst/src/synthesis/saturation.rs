@@ -36,6 +36,18 @@ impl From<SaturationType> for u8 {
     }
 }
 
+/// ## Paramètres de saturation
+/// 
+/// - **Amount** (0-1) : Contrôle le gain d'entrée envoyé dans l'algorithme de saturation.
+///   0 = pas de saturation (drive 1×), 1 = saturation maximale (drive 20×).
+///   C'est le « bouton de distorsion » principal — plus il est haut, plus le signal est écrasé.
+///
+/// - **Mix** (0-1) : Balance dry/wet. 0% = son original pur, 100% = son saturé pur.
+///   À 50% tu mixes les deux — idéal pour ajouter de la chaleur sans dénaturer.
+///
+/// - **Output Gain** (0.5-2.0) : Gain de compensation (makeup) après saturation.
+///   La saturation compresse le signal (limite les crêtes), donc le volume baisse.
+///   Monte ce paramètre pour récupérer le niveau perdu.
 #[derive(Clone, Copy, Debug)]
 pub struct SaturationConfig {
     pub saturation_type: SaturationType,

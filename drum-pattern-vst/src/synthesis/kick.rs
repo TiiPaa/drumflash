@@ -20,7 +20,7 @@
 //! keep their character: `base_freq = freq * 0.3`, `pitch_peak = freq * 0.7`,
 //! giving the same start→end sweep as the legacy multiplicative `PitchEnvelope`.
 
-use super::{dsp, settings::kick::KickSettings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::kick::KickSettings, Voice, VoiceSettings};
 
 const PITCH_DECAY_SECONDS: f32 = 0.04; // ≈ 40 ms — matches the legacy ~0.12 s
                                        // exponential sweep with curve 5.0.
@@ -54,6 +54,8 @@ pub struct KickVoice {
 
     // Attack transient (the audible "click"), kept fully separate.
     click: dsp::ClickGenerator,
+    /// Saturation stage for analog character.
+    saturation: saturation::SaturationConfig,
 
     active: bool,
 }
@@ -103,6 +105,13 @@ impl KickVoice {
             .with_attack_ms(0.5),
             dc_block: dsp::DcBlocker::default(),
             click: dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0),
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::None,
+                amount: 0.0,
+                mix: 1.0,
+                output_gain: 1.0,
+                pre_filter: false,
+            },
             active: false,
         }
     }
@@ -204,7 +213,9 @@ impl Voice for KickVoice {
             0.0
         };
 
-        self.dc_block.process(body + click)
+        let out = self.dc_block.process(body + click);
+        // Apply saturation (post-filter by default)
+        self.saturation.process(out)
     }
 
     fn is_active(&self) -> bool {
@@ -223,6 +234,12 @@ impl Voice for KickVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = KickSettings::from(settings);
         self.update_derived_params();
+        // Update saturation config
+        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -233,6 +250,21 @@ impl Voice for KickVoice {
     fn set_special_param(&mut self, index: usize, value: f32) {
         if index == 0 {
             self.settings.click_level = value;
+        } else if index == 1 {
+            self.settings.saturation_type = value as u8;
+            self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        } else if index == 2 {
+            self.settings.saturation_amount = value;
+            self.saturation.amount = value;
+        } else if index == 3 {
+            self.settings.saturation_mix = value;
+            self.saturation.mix = value;
+        } else if index == 4 {
+            self.settings.saturation_output_gain = value;
+            self.saturation.output_gain = value;
+        } else if index == 5 {
+            self.settings.saturation_pre_filter = value;
+            self.saturation.pre_filter = value > 0.5;
         }
     }
 }
