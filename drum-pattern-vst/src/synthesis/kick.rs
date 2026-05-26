@@ -192,12 +192,19 @@ impl Voice for KickVoice {
                 }
             };
 
+            // Apply saturation pre-filter (on the raw oscillator before LP filter)
+            let saturated_raw = if self.saturation.pre_filter {
+                self.saturation.process(raw)
+            } else {
+                raw
+            };
+
             let filter_env_val = self.filter_env.next();
             let modulated_cutoff = self.settings.filter_freq
                 * (1.0 + filter_env_val * self.settings.filter_env_amount * 8.0);
             self.filter
                 .set_cutoff(modulated_cutoff.max(20.0), self.sample_rate);
-            let filtered = self.filter.process(raw);
+            let filtered = self.filter.process(saturated_raw);
 
             let env = self.amp_env.next();
             if env <= 0.0 {
@@ -214,8 +221,12 @@ impl Voice for KickVoice {
         };
 
         let out = self.dc_block.process(body + click);
-        // Apply saturation (post-filter by default)
-        self.saturation.process(out)
+        // Apply saturation post-filter (after the full signal chain + click)
+        if self.saturation.pre_filter {
+            out
+        } else {
+            self.saturation.process(out)
+        }
     }
 
     fn is_active(&self) -> bool {

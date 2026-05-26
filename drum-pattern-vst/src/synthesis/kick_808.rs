@@ -8,7 +8,7 @@
 //! - Tone: one-pole LP filter on the output.
 //! - Accent: short impulse burst mixed at the attack.
 
-use super::{dsp, settings::kick_808::Kick808Settings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::kick_808::Kick808Settings, Voice, VoiceSettings};
 
 const SNAP_DECAY_SECONDS: f32 = 0.006; // ~6 ms
 const SNAP_CURVE: f32 = 8.0;
@@ -37,6 +37,8 @@ pub struct Kick808Voice {
     freq_smoother: dsp::OnePoleSmoother,
     // DC blocker to kill offset clicks on asymmetric retriggers
     dc_blocker: dsp::DcBlocker,
+    /// Saturation stage for analog character.
+    saturation: saturation::SaturationConfig,
 
     active: bool,
 }
@@ -76,6 +78,13 @@ impl Kick808Voice {
                 settings.frequency.max(10.0),
             ),
             dc_blocker: dsp::DcBlocker::default(),
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::None,
+                amount: 0.0,
+                mix: 1.0,
+                output_gain: 1.0,
+                pre_filter: false,
+            },
             active: false,
         }
     }
@@ -170,7 +179,8 @@ impl Voice for Kick808Voice {
             0.0
         };
 
-        self.dc_blocker.process(body + click)
+        let out = self.dc_blocker.process(body + click);
+        self.saturation.process(out)
     }
 
     fn is_active(&self) -> bool {
@@ -188,6 +198,12 @@ impl Voice for Kick808Voice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = Kick808Settings::from(settings);
         self.update_derived_params();
+        // Update saturation config
+        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = false; // no slot available in special[8]
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -200,6 +216,23 @@ impl Voice for Kick808Voice {
             1 => self.settings.snap = value,
             2 => self.settings.pitch_drop = value,
             3 => self.settings.click_tone = value,
+            4 => {
+                self.settings.saturation_type = value as u8;
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
+            }
+            5 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            6 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            7 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
             _ => {}
         }
     }
