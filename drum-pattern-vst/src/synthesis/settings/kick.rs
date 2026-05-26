@@ -63,7 +63,7 @@ impl From<VoiceSettings> for KickSettings {
 
 impl From<KickSettings> for VoiceSettings {
     fn from(k: KickSettings) -> Self {
-        let mut special = [0.0f32; 8];
+        let mut special = [0.0f32; 32];
         special[0] = k.click_level;
         special[1] = k.saturation_type as f32;
         special[2] = k.saturation_amount;

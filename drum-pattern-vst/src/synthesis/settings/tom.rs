@@ -49,7 +49,7 @@ impl From<VoiceSettings> for TomSettings {
 
 impl From<TomSettings> for VoiceSettings {
     fn from(t: TomSettings) -> Self {
-        let mut special = [0.0f32; 8];
+        let mut special = [0.0f32; 32];
         special[0] = t.stick_attack;
         special[1] = t.saturation_type as f32;
         special[2] = t.saturation_amount;

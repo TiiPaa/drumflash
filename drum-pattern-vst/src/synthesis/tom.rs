@@ -22,6 +22,7 @@ pub struct TomVoice {
     // Filter envelope for natural "bouum" decay.
     filter_env: dsp::ExpDecayEnvelope,
     stick_attack: dsp::ClickGenerator,
+    // Saturation stage
     saturation: saturation::SaturationConfig,
 
     active: bool,
@@ -58,11 +59,11 @@ impl TomVoice {
             .with_attack_ms(0.5),
             stick_attack: dsp::ClickGenerator::new(sample_rate, 8.0, 0.5, 0.6),
             saturation: saturation::SaturationConfig {
-                saturation_type: saturation::SaturationType::from(settings.saturation_type),
-                amount: settings.saturation_amount,
-                mix: settings.saturation_mix,
-                output_gain: settings.saturation_output_gain,
-                pre_filter: settings.saturation_pre_filter > 0.5,
+                saturation_type: saturation::SaturationType::None,
+                amount: 0.0,
+                mix: 1.0,
+                output_gain: 1.0,
+                pre_filter: false,
             },
             active: false,
         };
@@ -151,12 +152,7 @@ impl Voice for TomVoice {
                     }
                 };
                 self.filter.set_cutoff(modulated_cutoff, self.sample_rate);
-                let saturated_body = if self.saturation.pre_filter {
-                    self.saturation.process(body)
-                } else {
-                    body
-                };
-                let filtered = self.filter.process(saturated_body);
+                let filtered = self.filter.process(body);
                 tone = filtered * env * self.settings.volume;
             }
         }
@@ -168,12 +164,7 @@ impl Voice for TomVoice {
             0.0
         };
 
-        let out = tone + attack;
-        if self.saturation.pre_filter {
-            out
-        } else {
-            self.saturation.process(out)
-        }
+        self.saturation.process(tone + attack)
     }
 
     fn is_active(&self) -> bool {
@@ -203,23 +194,17 @@ impl Voice for TomVoice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index == 0 {
-            self.settings.stick_attack = value;
-        } else if index == 1 {
-            self.settings.saturation_type = value as u8;
-            self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
-        } else if index == 2 {
-            self.settings.saturation_amount = value;
-            self.saturation.amount = value;
-        } else if index == 3 {
-            self.settings.saturation_mix = value;
-            self.saturation.mix = value;
-        } else if index == 4 {
-            self.settings.saturation_output_gain = value;
-            self.saturation.output_gain = value;
-        } else if index == 5 {
-            self.settings.saturation_pre_filter = value;
-            self.saturation.pre_filter = value > 0.5;
+        match index {
+            0 => self.settings.stick_attack = value,
+            1 => {
+                self.settings.saturation_type = value as u8;
+                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+            }
+            2 => { self.settings.saturation_amount = value; self.saturation.amount = value; }
+            3 => { self.settings.saturation_mix = value; self.saturation.mix = value; }
+            4 => { self.settings.saturation_output_gain = value; self.saturation.output_gain = value; }
+            5 => { self.settings.saturation_pre_filter = value; self.saturation.pre_filter = value > 0.5; }
+            _ => {}
         }
     }
 }
