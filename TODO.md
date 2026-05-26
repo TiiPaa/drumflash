@@ -24,7 +24,7 @@
   - sauts de volume initialement suspectes : RMS du plugin mesure stable a ~0.4 dB pres
   - confirme reproduit avec un autre plugin dans Reaper → pb driver audio, plugin innocent
 - [x] [10a] Corriger les defaults de decay (snare 0.47, hihat 0.36, open_hh 0.66)
-- [x] [10b] Ajouter option Hi-Hat Choke (cut Open HH quand Closed HH trigger)
+- [ ] [10b] Corriger le choke qui ne fonctionne plus
 - [x] [10c] Corriger les step skips rares (sync_to_host moins agressif)
 - [x] [10d] Remplacer sliders par checkbox/combobox pour paramètres bool/enum/algos
 - [x] [13] Verifier la precision du timing du sequencer (compteur d'echantillons vs transport hote, correction continue)
@@ -74,7 +74,7 @@
   - Sound Panel regroupé par familles data-driven (OSC/ENV/FILTER/OUTPUT)
   - Visualisations interactives d'enveloppe (Amp AHDSR + Filter Env)
   - Layout horizontal : params à gauche, graph à droite
-- [x] [26l] Stereo ciblée par instrument, pas systématique
+- [ ] [26l] Corriger le toggle stereo pour certains instruments
   - exposer/finir les toggles stéréo pour les voix où la largeur apporte une vraie valeur : Snare, HiHat, OpenHH, Clap, Ride, Cymbal, Snare606, Perc1
   - garder Kick, B8 et Toms mono par défaut pour préserver le centre et la compatibilité mono
   - priorité technique : finir stereo Snare606 et vérifier que les toggles UI ne sont visibles que sur les voix concernées
@@ -85,7 +85,10 @@
   - Pre-Filter comme checkbox toggle (post-filter par défaut)
   - Section SAT dédiée dans le Sound Panel (ParamFamily::Saturation)
   - Combobox affichant les noms d'algorithmes (SoftClip, Valve, etc.)
-  - Saturation appliquée sur les 13 instruments (Kick, Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
+  - Saturation appliquée sur 8/13 instruments : Kick, Snare, Snare606, B8, Tom1-3, Perc1
+  - ~~Saturation sur les 5 restants (HiHat, OpenHH, Clap, Ride, Cymbal)~~ — pas prioritaire
+  - Special params augmentés de 8 à 32 slots (`special: [f32; 32]`)
+  - Plock field masks passés de u32 à u64 (46 fields total, 32 special params plockables)
   - Auto-edit activé par défaut
 
 ## Fonctionnalites P3 (Avancees / Complexes)
@@ -111,10 +114,10 @@
   - [x] Généraliser aux 12 autres instruments (Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
 - [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
 - [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
-- [ ] [54] Saisie clavier de valeurs précises + Alt+mouse pour affiner les sliders de paramètres
-  - ParamSlider : tentative Alt+drag via `pointer.delta()` + `granular_drag` — fonctionne sur master/track params
-  - egui::Slider (Sound Panel) : **impossible à wrapper proprement** — widget fermé qui consomme tous les événements en interne. Custom bar+DragValue a cassé l'UX. **Requis : créer un widget custom from scratch** qui sépare barre (drag) et valeur texte (type-in).
-  - Double-clic type-in natif fonctionne sur egui::Slider
+- [x] [54] Saisie clavier de valeurs précises + Shift+mouse pour affiner les sliders de paramètres
+  - LocalParamSlider créé pour remplacer egui::Slider dans les plocks et paramètres spéciaux
+  - Shift+drag implémenté pour le fine-tuning sur tous les sliders
+  - Hauteurs de sliders harmonisées pour une expérience visuelle cohérente
 
 ## Dette technique & Documentation
 

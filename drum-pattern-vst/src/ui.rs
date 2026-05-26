@@ -25,7 +25,9 @@ use crate::{
 };
 
 mod envelope_viz;
+mod local_param_slider;
 use envelope_viz::{draw_amp_envelope, draw_filter_envelope};
+use local_param_slider::LocalParamSlider;
 
 // Instrument labels and names are sourced from instrument_registry::INSTRUMENTS
 
@@ -374,7 +376,10 @@ fn draw_grid(
 
                 // Mute / Solo / Test
                 draw_bool_toggle(ui, setter, row.mute, "M", "Mute");
-                draw_bool_toggle(ui, setter, row.solo, "S", "Solo");
+                let solo_clicked = draw_bool_toggle(ui, setter, row.solo, "S", "Solo");
+                if solo_clicked && params.auto_edit.value() {
+                    state.selected_instrument = inst;
+                }
                 if ui.button("T").on_hover_text("Test").clicked() {
                     voice_test_triggers[inst].store(true, Ordering::Relaxed);
                 }
@@ -541,12 +546,12 @@ fn draw_sound_panel(
                                         crate::instrument_registry::StandardField::Analog => &mut analog,
                                         crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                     };
-                                    let mut slider = egui::Slider::new(value, *min..=*max);
-                                    if *logarithmic {
-                                        slider = slider.logarithmic(true);
-                                    }
+                                    let slider = LocalParamSlider::new(value, *min..=*max)
+                                        .logarithmic(*logarithmic)
+                                        .with_width(120.0);
                                     if let Some(s) = suffix {
-                                        slider = slider.suffix(*s);
+                                        // Note: LocalParamSlider doesn't support suffix in the same way
+                                        // We'll add it to the label or handle it separately if needed
                                     }
                                     if ui.add(slider).changed() {
                                         store_field(inst, field, *value);
@@ -785,7 +790,7 @@ fn draw_bool_toggle(
     param: &BoolParam,
     short_label: &str,
     hover_label: &str,
-) {
+) -> bool {
     let enabled = param.value();
     let button = egui::Button::new(short_label)
         .min_size(Vec2::new(24.0, 20.0))
@@ -796,11 +801,13 @@ fn draw_bool_toggle(
         });
 
     let response = ui.add(button).on_hover_text(hover_label);
-    if response.clicked() {
+    let clicked = response.clicked();
+    if clicked {
         setter.begin_set_parameter(param);
         setter.set_parameter(param, !enabled);
         setter.end_set_parameter(param);
     }
+    clicked
 }
 
 fn export_midi_to_documents(
@@ -909,7 +916,7 @@ fn draw_plock_menu(
             plock.masks.set_active(instrument, step, true);
         }
         if ui.button("📸 Snapshot current settings").clicked() {
-            let mut special = [0.0f32; 8];
+            let mut special = [0.0f32; 32];
             for def in crate::instrument_registry::special_params(instrument) {
                 if def.special_index < special.len() {
                     special[def.special_index] = params
@@ -943,10 +950,10 @@ fn draw_plock_menu(
 
     // ── Mode indicator ──
     let mask = plock.field_masks.get(instrument, step);
-    let all_bits = if FIELD_COUNT >= 32 {
-        0xFFFFFFFF
+    let all_bits = if FIELD_COUNT >= 64 {
+        0xFFFFFFFFFFFFFFFFu64
     } else {
-        (1u32 << FIELD_COUNT) - 1
+        (1u64 << FIELD_COUNT) - 1
     };
     let mode_text = if mask == 0 {
         "🔗 Linked to global"
@@ -961,10 +968,10 @@ fn draw_plock_menu(
     // ── Helpers ──
     let draw_slider = |ui: &mut egui::Ui,
                        label: &str,
-                       value: &mut f32,
-                       range: std::ops::RangeInclusive<f32>,
-                       log: bool,
-                       field: usize| {
+                        value: &mut f32,
+                        range: std::ops::RangeInclusive<f32>,
+                        log: bool,
+                        field: usize| {
         let overridden = plock.field_masks.is_set(instrument, step, field);
         let label_text = if overridden {
             RichText::new(label).strong()
@@ -974,11 +981,11 @@ fn draw_plock_menu(
         let (changed, reset) = ui
             .horizontal(|ui| {
                 ui.label(label_text);
-                let mut slider = egui::Slider::new(value, range);
-                if log {
-                    slider = slider.logarithmic(true);
-                }
-                let c = ui.add(slider).changed();
+                let slider = LocalParamSlider::new(value, range.clone())
+                    .logarithmic(log)
+                    .with_width(120.0);
+                let response = ui.add(slider);
+                let c = response.changed();
                 let r = overridden && ui.small_button("↺").clicked();
                 (c, r)
             })
@@ -1119,14 +1126,20 @@ fn draw_plock_menu(
     } else {
         RichText::new("Algo").weak()
     };
+    let mut algo_val_f32 = algo_val as f32;
     let (algo_changed, algo_reset) = ui
         .horizontal(|ui| {
             ui.label(algo_label);
-            let c = ui.add(egui::Slider::new(&mut algo_val, 0u8..=3)).changed();
+            let slider = LocalParamSlider::new(&mut algo_val_f32, 0.0..=3.0)
+                .with_width(120.0);
+            let c = ui.add(slider).changed();
             let r = algo_overridden && ui.small_button("↺").clicked();
             (c, r)
         })
         .inner;
+    if algo_changed {
+        algo_val = algo_val_f32.round() as u8;
+    }
     if algo_changed {
         plock.set_field(instrument, step, 13, algo_val as f32);
     }
@@ -1158,10 +1171,10 @@ fn draw_plock_menu(
         let (changed, reset) = ui
             .horizontal(|ui| {
                 ui.label(label_text);
-                let mut slider = egui::Slider::new(&mut value, def.min..=def.max);
-                if def.min > 0.0 && def.max / def.min >= 20.0 {
-                    slider = slider.logarithmic(true);
-                }
+                let log = def.min > 0.0 && def.max / def.min >= 20.0;
+                let slider = LocalParamSlider::new(&mut value, def.min..=def.max)
+                    .logarithmic(log)
+                    .with_width(120.0);
                 let c = ui.add(slider).changed();
                 let r = overridden && ui.small_button("↺").clicked();
                 (c, r)

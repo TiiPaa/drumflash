@@ -115,10 +115,12 @@ impl Voice for SnareVoice {
         self.filter_r
             .set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
 
-        let raw = match self.settings.algo {
+        let output = match self.settings.algo {
             1 => {
                 // Noise: pure white noise, no oscillator
-                self.noise.next() * 0.5
+                let mixed = self.noise.next() * 0.5;
+                let filtered = self.filter.process(mixed);
+                filtered * env * self.settings.volume
             }
             2 => {
                 // Layered: fundamental + overtone + noise
@@ -126,7 +128,8 @@ impl Voice for SnareVoice {
                 let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.3;
                 let osc = (fundamental + overtone) * snap * 0.5;
                 let noise = self.noise.next() * (1.0 - snap) * 0.5;
-                osc + noise
+                let filtered = self.filter.process(osc + noise);
+                filtered * env * self.settings.volume
             }
             _ => {
                 // Synth: triangle osc + noise (ratio controlled by snap)
@@ -134,24 +137,10 @@ impl Voice for SnareVoice {
                 let noise_gain = (1.0 - snap) * 0.5;
                 let osc = self.osc.next() * osc_gain;
                 let noise = self.noise.next() * noise_gain;
-                osc + noise
+                let filtered = self.filter.process(osc + noise);
+                filtered * env * self.settings.volume
             }
         };
-
-        // Apply saturation pre-filter (on the raw source before filtering)
-        let saturated_raw = if self.saturation.pre_filter {
-            self.saturation.process(raw)
-        } else {
-            raw
-        };
-
-        let filtered = self.filter.process(saturated_raw);
-        let mut output = filtered * env * self.settings.volume;
-
-        // Apply saturation post-filter (after the full signal chain)
-        if !self.saturation.pre_filter {
-            output = self.saturation.process(output);
-        }
 
         // Stop when envelope is too low
         if !self.envelope.is_active() {
@@ -159,7 +148,7 @@ impl Voice for SnareVoice {
             return 0.0;
         }
 
-        output
+        self.saturation.process(output)
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -182,10 +171,14 @@ impl Voice for SnareVoice {
         self.filter_r
             .set_cutoff(modulated_cutoff.max(50.0), self.sample_rate);
 
-        let (raw_l, raw_r) = match self.settings.algo {
+        let (left, right) = match self.settings.algo {
             1 => {
                 // Noise: pure white noise, no oscillator
-                (self.noise.next() * 0.5, self.noise_r.next() * 0.5)
+                let mixed_l = self.noise.next() * 0.5;
+                let mixed_r = self.noise_r.next() * 0.5;
+                let filtered_l = self.filter.process(mixed_l);
+                let filtered_r = self.filter_r.process(mixed_r);
+                (filtered_l, filtered_r)
             }
             2 => {
                 // Layered: fundamental + overtone + noise
@@ -194,7 +187,9 @@ impl Voice for SnareVoice {
                 let osc = (fundamental + overtone) * snap * 0.5;
                 let noise_l = self.noise.next() * (1.0 - snap) * 0.5;
                 let noise_r = self.noise_r.next() * (1.0 - snap) * 0.5;
-                (osc + noise_l, osc + noise_r)
+                let filtered_l = self.filter.process(osc + noise_l);
+                let filtered_r = self.filter_r.process(osc + noise_r);
+                (filtered_l, filtered_r)
             }
             _ => {
                 // Synth: triangle osc + noise (ratio controlled by snap)
@@ -203,19 +198,11 @@ impl Voice for SnareVoice {
                 let osc = self.osc.next() * osc_gain;
                 let noise_l = self.noise.next() * noise_gain;
                 let noise_r = self.noise_r.next() * noise_gain;
-                (osc + noise_l, osc + noise_r)
+                let filtered_l = self.filter.process(osc + noise_l);
+                let filtered_r = self.filter_r.process(osc + noise_r);
+                (filtered_l, filtered_r)
             }
         };
-
-        // Apply saturation pre-filter (on the raw source before filtering)
-        let (saturated_l, saturated_r) = if self.saturation.pre_filter {
-            (self.saturation.process(raw_l), self.saturation.process(raw_r))
-        } else {
-            (raw_l, raw_r)
-        };
-
-        let filtered_l = self.filter.process(saturated_l);
-        let filtered_r = self.filter_r.process(saturated_r);
 
         if !self.envelope.is_active() {
             self.active = false;
@@ -223,16 +210,9 @@ impl Voice for SnareVoice {
         }
 
         let vol = env * self.settings.volume;
-        let mut left = filtered_l * vol;
-        let mut right = filtered_r * vol;
-
-        // Apply saturation post-filter (after the full signal chain)
-        if !self.saturation.pre_filter {
-            left = self.saturation.process(left);
-            right = self.saturation.process(right);
-        }
-
-        (left, right)
+        let l = self.saturation.process(left * vol);
+        let r = self.saturation.process(right * vol);
+        (l, r)
     }
 
     fn is_active(&self) -> bool {
@@ -265,8 +245,6 @@ impl Voice for SnareVoice {
         self.envelope.set_hold(self.settings.hold);
         self.filter_env
             .set_decay(self.settings.filter_env_decay.max(0.001));
-
-        // Update saturation config
         self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
@@ -279,23 +257,29 @@ impl Voice for SnareVoice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index == 0 {
-            self.settings.snap = value;
-        } else if index == 1 {
-            self.settings.saturation_type = value as u8;
-            self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
-        } else if index == 2 {
-            self.settings.saturation_amount = value;
-            self.saturation.amount = value;
-        } else if index == 3 {
-            self.settings.saturation_mix = value;
-            self.saturation.mix = value;
-        } else if index == 4 {
-            self.settings.saturation_output_gain = value;
-            self.saturation.output_gain = value;
-        } else if index == 5 {
-            self.settings.saturation_pre_filter = value;
-            self.saturation.pre_filter = value > 0.5;
+        match index {
+            0 => self.settings.snap = value,
+            1 => {
+                self.settings.saturation_type = value as u8;
+                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+            }
+            2 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            3 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            4 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
+            5 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
+            }
+            _ => {}
         }
     }
 }

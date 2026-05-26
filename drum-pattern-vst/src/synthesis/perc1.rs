@@ -79,7 +79,7 @@ pub struct Perc1Voice {
     delay_buf_r: [f32; MAX_DELAY_SAMPLES],
     delay_pos: usize,
     delay_samples: usize,
-
+    // Saturation stage
     saturation: saturation::SaturationConfig,
 
     active: bool,
@@ -231,8 +231,7 @@ impl Voice for Perc1Voice {
         }
 
         let width = self.settings.width.clamp(0.0, 1.0);
-        let output = dry + wet * width * 0.5;
-        self.saturation.process(output)
+        self.saturation.process(dry + wet * width * 0.5)
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -290,10 +289,9 @@ impl Voice for Perc1Voice {
         }
 
         let delay_mix = width * 0.5;
-        (
-            self.saturation.process(dry_l + wet_l * delay_mix),
-            self.saturation.process(dry_r + wet_r * delay_mix),
-        )
+        let l = self.saturation.process(dry_l + wet_l * delay_mix);
+        let r = self.saturation.process(dry_r + wet_r * delay_mix);
+        (l, r)
     }
 
     fn is_active(&self) -> bool {
@@ -347,7 +345,7 @@ impl Voice for Perc1Voice {
         let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);
         self.filter.set_cutoff(filter_freq, self.sample_rate);
 
-        // Update saturation config
+        // Update saturation
         self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
@@ -381,22 +379,10 @@ impl Voice for Perc1Voice {
                 self.settings.saturation_type = value as u8;
                 self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
             }
-            5 => {
-                self.settings.saturation_amount = value;
-                self.saturation.amount = value;
-            }
-            6 => {
-                self.settings.saturation_mix = value;
-                self.saturation.mix = value;
-            }
-            7 => {
-                self.settings.saturation_output_gain = value;
-                self.saturation.output_gain = value;
-            }
-            8 => {
-                self.settings.saturation_pre_filter = value;
-                self.saturation.pre_filter = value > 0.5;
-            }
+            5 => { self.settings.saturation_amount = value; self.saturation.amount = value; }
+            6 => { self.settings.saturation_mix = value; self.saturation.mix = value; }
+            7 => { self.settings.saturation_output_gain = value; self.saturation.output_gain = value; }
+            8 => { self.settings.saturation_pre_filter = value; self.saturation.pre_filter = value > 0.5; }
             _ => {}
         }
     }

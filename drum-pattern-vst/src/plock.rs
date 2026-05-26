@@ -11,19 +11,19 @@
 //!   fields follow live global values.
 
 use nih_plug::params::persist::PersistentField;
-use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::sequencer::pattern::INSTRUMENT_COUNT;
 use crate::synthesis::VoiceSettings;
 
 pub const STEP_COUNT: usize = 16;
-pub const FIELD_COUNT: usize = 19;
+pub const FIELD_COUNT: usize = 46;  // 13 standard + 1 algo + 32 special
 const LEGACY_FIELD_COUNT: usize = 18;
 const LEGACY_CLAP_ECHO_FIELD: usize = 12;
 const ALGO_FIELD: usize = 13;
 pub const SPECIAL_FIELD_START: usize = 14;
-pub const SPECIAL_FIELD_COUNT: usize = 4;
+pub const SPECIAL_FIELD_COUNT: usize = 32;
 const ATTACK_FIELD: usize = 18;
 
 /// Active-bit mask: one u16 per instrument (bit = step has a plock).
@@ -65,41 +65,41 @@ impl PlockMasks {
 /// `values[instrument][step][field]` is a f32 bitcast.
 /// Only meaningful when the corresponding bit in `PlockMasks` is set.
 pub struct PlockValues {
-    pub values: [[[AtomicU32; FIELD_COUNT]; STEP_COUNT]; INSTRUMENT_COUNT],
+    pub values: [[[AtomicU64; FIELD_COUNT]; STEP_COUNT]; INSTRUMENT_COUNT],
 }
 
 impl PlockValues {
     pub fn new() -> Self {
         Self {
             values: std::array::from_fn(|_| {
-                std::array::from_fn(|_| std::array::from_fn(|_| AtomicU32::new(0)))
+                std::array::from_fn(|_| std::array::from_fn(|_| AtomicU64::new(0)))
             }),
         }
     }
 
     pub fn get(&self, instrument: usize, step: usize, field: usize) -> f32 {
-        f32::from_bits(self.values[instrument][step][field].load(Ordering::Relaxed))
+        f32::from_bits(self.values[instrument][step][field].load(Ordering::Relaxed) as u32)
     }
 
     pub fn set(&self, instrument: usize, step: usize, field: usize, value: f32) {
-        self.values[instrument][step][field].store(value.to_bits(), Ordering::Relaxed);
+        self.values[instrument][step][field].store(value.to_bits() as u64, Ordering::Relaxed);
     }
 }
 
 /// Per-field modification mask: one u32 per instrument × step.
 /// Bit `1 << field` is set when that field has been explicitly overridden.
 pub struct PlockFieldMasks {
-    masks: [[AtomicU32; STEP_COUNT]; INSTRUMENT_COUNT],
+    masks: [[AtomicU64; STEP_COUNT]; INSTRUMENT_COUNT],
 }
 
 impl PlockFieldMasks {
     pub fn new() -> Self {
         Self {
-            masks: std::array::from_fn(|_| std::array::from_fn(|_| AtomicU32::new(0))),
+            masks: std::array::from_fn(|_| std::array::from_fn(|_| AtomicU64::new(0))),
         }
     }
 
-    pub fn get(&self, instrument: usize, step: usize) -> u32 {
+    pub fn get(&self, instrument: usize, step: usize) -> u64 {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return 0;
         }
@@ -107,41 +107,41 @@ impl PlockFieldMasks {
     }
 
     pub fn set(&self, instrument: usize, step: usize, field: usize) {
-        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT || field >= 32 {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT || field >= 64 {
             return;
         }
         let mask = self.masks[instrument][step].load(Ordering::Relaxed);
-        self.masks[instrument][step].store(mask | (1u32 << field), Ordering::Relaxed);
+        self.masks[instrument][step].store(mask | (1u64 << field), Ordering::Relaxed);
     }
 
     pub fn clear(&self, instrument: usize, step: usize, field: usize) {
-        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT || field >= 32 {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT || field >= 64 {
             return;
         }
         let mask = self.masks[instrument][step].load(Ordering::Relaxed);
-        self.masks[instrument][step].store(mask & !(1u32 << field), Ordering::Relaxed);
+        self.masks[instrument][step].store(mask & !(1u64 << field), Ordering::Relaxed);
     }
 
     pub fn is_set(&self, instrument: usize, step: usize, field: usize) -> bool {
-        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT || field >= 32 {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT || field >= 64 {
             return false;
         }
         let mask = self.masks[instrument][step].load(Ordering::Relaxed);
-        (mask & (1u32 << field)) != 0
+        (mask & (1u64 << field)) != 0
     }
 
     pub fn set_all(&self, instrument: usize, step: usize) {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.masks[instrument][step].store((1u32 << FIELD_COUNT) - 1, Ordering::Relaxed);
+        self.masks[instrument][step].store((1u64 << FIELD_COUNT) - 1, Ordering::Relaxed);
     }
 
     pub fn set_legacy_snapshot(&self, instrument: usize, step: usize) {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.masks[instrument][step].store((1u32 << LEGACY_FIELD_COUNT) - 1, Ordering::Relaxed);
+        self.masks[instrument][step].store((1u64 << LEGACY_FIELD_COUNT) - 1, Ordering::Relaxed);
     }
 
     pub fn clear_all(&self, instrument: usize, step: usize) {
@@ -151,11 +151,11 @@ impl PlockFieldMasks {
         self.masks[instrument][step].store(0, Ordering::Relaxed);
     }
 
-    pub fn get_raw(&self, instrument: usize, step: usize) -> u32 {
+    pub fn get_raw(&self, instrument: usize, step: usize) -> u64 {
         self.get(instrument, step)
     }
 
-    pub fn set_raw(&self, instrument: usize, step: usize, mask: u32) {
+    pub fn set_raw(&self, instrument: usize, step: usize, mask: u64) {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
@@ -244,17 +244,15 @@ impl PlockState {
             result.attack = v.get(instrument, step, ATTACK_FIELD);
         }
 
-        if mask & (1 << 14) != 0 {
-            result.special[0] = v.get(instrument, step, SPECIAL_FIELD_START + 0);
-        }
-        if mask & (1 << 15) != 0 {
-            result.special[1] = v.get(instrument, step, SPECIAL_FIELD_START + 1);
-        }
-        if mask & (1 << 16) != 0 {
-            result.special[2] = v.get(instrument, step, SPECIAL_FIELD_START + 2);
-        }
-        if mask & (1 << 17) != 0 {
-            result.special[3] = v.get(instrument, step, SPECIAL_FIELD_START + 3);
+        for i in 0..SPECIAL_FIELD_COUNT {
+            let field = SPECIAL_FIELD_START + i;
+            // Skip attack field — it's already read above
+            if field == ATTACK_FIELD {
+                continue;
+            }
+            if mask & (1u64 << field) != 0 {
+                result.special[i] = v.get(instrument, step, field);
+            }
         }
 
         // Legacy clap echo fallback (old presets stored echo in field 12)
@@ -290,10 +288,15 @@ impl PlockState {
         }
         v.set(instrument, step, ALGO_FIELD, settings.algo as f32);
         for index in 0..SPECIAL_FIELD_COUNT.min(settings.special.len()) {
+            let field = SPECIAL_FIELD_START + index;
+            // Skip attack field to avoid overwriting it with special params
+            if field == ATTACK_FIELD {
+                continue;
+            }
             v.set(
                 instrument,
                 step,
-                SPECIAL_FIELD_START + index,
+                field,
                 settings.special[index],
             );
         }
@@ -338,7 +341,7 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
         let expected_values = INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4;
         let legacy_expected_values = INSTRUMENT_COUNT * STEP_COUNT * LEGACY_FIELD_COUNT * 4;
         let expected_masks = INSTRUMENT_COUNT * 2;
-        let expected_field_masks = INSTRUMENT_COUNT * STEP_COUNT * 4;
+        let expected_field_masks = INSTRUMENT_COUNT * STEP_COUNT * 8;
         let value_field_count = if new_value.len() >= expected_values + expected_masks {
             FIELD_COUNT
         } else if new_value.len() >= legacy_expected_values + expected_masks {
@@ -379,10 +382,14 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
                         new_value[offset + 1],
                         new_value[offset + 2],
                         new_value[offset + 3],
+                        new_value[offset + 4],
+                        new_value[offset + 5],
+                        new_value[offset + 6],
+                        new_value[offset + 7],
                     ];
-                    let mask = u32::from_le_bytes(bytes);
+                    let mask = u64::from_le_bytes(bytes);
                     self.state.field_masks.set_raw(inst, step, mask);
-                    offset += 4;
+                    offset += 8;
                 }
             }
         } else {
@@ -409,7 +416,7 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
         let mut result = Vec::with_capacity(
             INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4
                 + INSTRUMENT_COUNT * 2
-                + INSTRUMENT_COUNT * STEP_COUNT * 4,
+                + INSTRUMENT_COUNT * STEP_COUNT * 8,
         );
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
@@ -455,7 +462,7 @@ mod tests {
             analog: 1.0,
             stereo: 0.0,
             algo: 1,
-            special: [0.0; 8],
+            special: [0.0; 32],
         }
     }
 

@@ -53,7 +53,7 @@ impl From<VoiceSettings> for SnareSettings {
 
 impl From<SnareSettings> for VoiceSettings {
     fn from(s: SnareSettings) -> Self {
-        let mut special = [0.0f32; 8];
+        let mut special = [0.0f32; 32];
         special[0] = s.snap;
         special[1] = s.saturation_type as f32;
         special[2] = s.saturation_amount;
