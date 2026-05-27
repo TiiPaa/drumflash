@@ -362,7 +362,7 @@ impl VoiceSettings {
             analog: 1.0,
             stereo: 1.0,
             algo: 0,
-            special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         }
     }
 
@@ -738,13 +738,6 @@ impl DrumSynthesizer {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn set_special_param(&mut self, voice_idx: usize, index: usize, value: f32) {
-        if let Some(v) = self.voices.get_mut(voice_idx) {
-            v.set_special_param(index, value);
-        }
-    }
-
     pub fn set_algo(&mut self, voice_idx: usize, algo: u8) {
         if let Some(v) = self.voices.get_mut(voice_idx) {
             v.set_algo(algo);
@@ -755,5 +748,259 @@ impl DrumSynthesizer {
         if let Some(v) = self.voices.get_mut(voice_idx) {
             v.reset();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: sum absolute output of a single voice after triggering it.
+    fn sum_voice_output(synth: &mut DrumSynthesizer, voice_idx: usize, samples: usize) -> f32 {
+        let mut sum = 0.0f32;
+        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        for _ in 0..samples {
+            synth.process_voice_samples_stereo(&mut outputs);
+            sum += outputs[voice_idx][0].abs() + outputs[voice_idx][1].abs();
+        }
+        sum
+    }
+
+    #[test]
+    fn bassdrum808_produces_sound_after_cymbal_settings_change() {
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let b8_idx = DrumVoice::BassDrum808 as usize;
+        let cy_idx = DrumVoice::Cymbal as usize;
+
+        // 1. Trigger B8 and verify it produces sound
+        synth.trigger(b8_idx, 1.0);
+        let out1 = sum_voice_output(&mut synth, b8_idx, 100);
+        assert!(out1 > 0.0, "B8 should produce sound on first trigger: {}", out1);
+
+        // 2. Change Cymbal settings while B8 is potentially still ringing
+        let mut cymbal_settings = VoiceSettings::cymbal();
+        cymbal_settings.decay = 1.0;
+        cymbal_settings.volume = 0.5;
+        synth.set_voice_settings(DrumVoice::Cymbal, cymbal_settings);
+
+        // 3. Trigger B8 again and verify it STILL produces sound
+        synth.trigger(b8_idx, 1.0);
+        let out2 = sum_voice_output(&mut synth, b8_idx, 100);
+        assert!(out2 > 0.0, "B8 should still produce sound after Cymbal set_voice_settings: {}", out2);
+    }
+
+    #[test]
+    fn bassdrum808_produces_sound_after_all_voice_settings_change() {
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let b8_idx = DrumVoice::BassDrum808 as usize;
+
+        // 1. Trigger B8 and verify it produces sound
+        synth.trigger(b8_idx, 1.0);
+        let out1 = sum_voice_output(&mut synth, b8_idx, 100);
+        assert!(out1 > 0.0, "B8 should produce sound on first trigger: {}", out1);
+
+        // 2. Call set_voice_settings on ALL voices (like lib.rs does when sound_settings_state.version changes)
+        let all_settings = [
+            (DrumVoice::Kick, VoiceSettings::kick()),
+            (DrumVoice::Snare, VoiceSettings::snare()),
+            (DrumVoice::HiHat, VoiceSettings::hihat()),
+            (DrumVoice::OpenHiHat, VoiceSettings::open_hihat()),
+            (DrumVoice::Tom1, VoiceSettings::tom1()),
+            (DrumVoice::Tom2, VoiceSettings::tom2()),
+            (DrumVoice::Tom3, VoiceSettings::tom3()),
+            (DrumVoice::Clap, VoiceSettings::clap()),
+            (DrumVoice::Ride, VoiceSettings::ride()),
+            (DrumVoice::Cymbal, VoiceSettings::cymbal()),
+            (DrumVoice::Snare606, VoiceSettings::snare606()),
+            (DrumVoice::BassDrum808, VoiceSettings::kick808()),
+            (DrumVoice::Perc1, VoiceSettings::perc1()),
+        ];
+
+        for (voice, settings) in all_settings.iter() {
+            synth.set_voice_settings(*voice, *settings);
+        }
+
+        // 3. Trigger B8 again and verify it STILL produces sound
+        synth.trigger(b8_idx, 1.0);
+        let out2 = sum_voice_output(&mut synth, b8_idx, 100);
+        assert!(out2 > 0.0, "B8 should still produce sound after all set_voice_settings: {}", out2);
+    }
+
+    #[test]
+    fn bassdrum808_does_not_go_silent_when_cymbal_triggered_and_settings_changed() {
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let b8_idx = DrumVoice::BassDrum808 as usize;
+        let cy_idx = DrumVoice::Cymbal as usize;
+
+        // Trigger Cymbal first
+        synth.trigger(cy_idx, 1.0);
+
+        // Trigger B8 while Cymbal is ringing
+        synth.trigger(b8_idx, 1.0);
+        let out1 = sum_voice_output(&mut synth, b8_idx, 50);
+        assert!(out1 > 0.0, "B8 should produce sound when triggered alongside Cymbal: {}", out1);
+
+        // Now modify Cymbal settings while both are active
+        let mut cymbal_settings = VoiceSettings::cymbal();
+        cymbal_settings.decay = 0.5;
+        cymbal_settings.filter_freq = 6000.0;
+        synth.set_voice_settings(DrumVoice::Cymbal, cymbal_settings);
+
+        // Trigger B8 again
+        synth.trigger(b8_idx, 1.0);
+        let out2 = sum_voice_output(&mut synth, b8_idx, 100);
+        assert!(out2 > 0.0, "B8 should still produce sound after Cymbal settings changed while active: {}", out2);
+    }
+
+    /// Helper: checks whether any sample in the output is NaN.
+    fn contains_nan(synth: &mut DrumSynthesizer, voice_idx: usize, samples: usize) -> bool {
+        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        for _ in 0..samples {
+            synth.process_voice_samples_stereo(&mut outputs);
+            if outputs[voice_idx][0].is_nan() || outputs[voice_idx][1].is_nan() {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn bassdrum808_never_produces_nan_after_cymbal_or_all_settings_changed() {
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let b8_idx = DrumVoice::BassDrum808 as usize;
+
+        // Trigger B8
+        synth.trigger(b8_idx, 1.0);
+        assert!(!contains_nan(&mut synth, b8_idx, 10), "B8 should not produce NaN initially");
+
+        // Change Cymbal with extreme values
+        let mut cy_settings = VoiceSettings::cymbal();
+        cy_settings.attack = 0.0;
+        cy_settings.decay = 0.001;
+        cy_settings.release = 0.001;
+        cy_settings.decay_curve = 0.1;
+        cy_settings.release_curve = 0.1;
+        synth.set_voice_settings(DrumVoice::Cymbal, cy_settings);
+
+        // Trigger B8 again
+        synth.trigger(b8_idx, 1.0);
+        assert!(!contains_nan(&mut synth, b8_idx, 200), "B8 should not produce NaN after Cymbal extreme settings");
+
+        // Now change ALL voices with edge-case values while B8 is active
+        let edge = VoiceSettings {
+            frequency: 20.0,
+            decay: 0.001,
+            volume: 1.5,
+            filter_freq: 20000.0,
+            attack: 0.0,
+            release: 0.001,
+            decay_curve: 0.1,
+            release_curve: 0.1,
+            hold: 0.0,
+            filter_env_amount: 1.0,
+            filter_env_decay: 0.001,
+            analog: 0.0,
+            stereo: 1.0,
+            algo: 1,
+            special: [1.0; 32],
+        };
+
+        for voice in [
+            DrumVoice::Kick, DrumVoice::Snare, DrumVoice::HiHat,
+            DrumVoice::OpenHiHat, DrumVoice::Tom1, DrumVoice::Tom2,
+            DrumVoice::Tom3, DrumVoice::Clap, DrumVoice::Ride,
+            DrumVoice::Cymbal, DrumVoice::Snare606, DrumVoice::BassDrum808,
+            DrumVoice::Perc1,
+        ].iter() {
+            synth.set_voice_settings(*voice, edge);
+        }
+
+        synth.trigger(b8_idx, 1.0);
+        assert!(!contains_nan(&mut synth, b8_idx, 200), "B8 should not produce NaN after all edge-case settings");
+    }
+
+    #[test]
+    fn bassdrum808_stays_audible_when_settings_changed_mid_envelope() {
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let b8_idx = DrumVoice::BassDrum808 as usize;
+
+        // Trigger B8 and let it reach the middle of its decay
+        synth.trigger(b8_idx, 1.0);
+        let _ = sum_voice_output(&mut synth, b8_idx, 500); // ~11ms into decay
+
+        // Now change Cymbal settings (should not affect B8)
+        let mut cy = VoiceSettings::cymbal();
+        cy.decay = 3.0;
+        cy.volume = 0.2;
+        synth.set_voice_settings(DrumVoice::Cymbal, cy);
+
+        // Continue processing B8 tail
+        let tail = sum_voice_output(&mut synth, b8_idx, 500);
+        assert!(tail > 0.0, "B8 tail should remain audible after Cymbal set_voice_settings: {}", tail);
+
+        // Trigger B8 again after the tail
+        synth.trigger(b8_idx, 1.0);
+        let after = sum_voice_output(&mut synth, b8_idx, 100);
+        assert!(after > 0.0, "B8 retrigger should still produce sound: {}", after);
+    }
+
+    /// Test the specific attack_time=0 envelope corruption scenario.
+    /// If attack_time is set to 0 while attack_remaining > 0, the envelope
+    /// value becomes -inf. On the next trigger with normal attack_time,
+    /// the envelope value becomes NaN and stays NaN forever.
+    #[test]
+    fn bassdrum808_attack_time_zero_during_attack_causes_nan() {
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let b8_idx = DrumVoice::BassDrum808 as usize;
+
+        // 1. Trigger B8 with normal attack
+        synth.trigger(b8_idx, 1.0);
+        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        // Process just a few samples (still in attack ramp)
+        for _ in 0..5 {
+            synth.process_voice_samples_stereo(&mut outputs);
+        }
+        assert!(outputs[b8_idx][0].is_finite(), "B8 should produce finite output during attack");
+
+        // 2. WHILE B8 is in attack phase, change its attack to 0.0
+        // This simulates what would happen if set_voice_settings is called
+        // with attack=0 while the envelope is attacking.
+        let mut b8_zero_attack = VoiceSettings::kick808();
+        b8_zero_attack.attack = 0.0;
+        synth.set_voice_settings(DrumVoice::BassDrum808, b8_zero_attack);
+
+        // Process a few more samples — the envelope should now be corrupted
+        for _ in 0..10 {
+            synth.process_voice_samples_stereo(&mut outputs);
+        }
+
+        // 3. Now set attack back to normal and trigger again
+        let mut b8_normal = VoiceSettings::kick808();
+        b8_normal.attack = 0.0015;
+        synth.set_voice_settings(DrumVoice::BassDrum808, b8_normal);
+        synth.trigger(b8_idx, 1.0);
+
+        // 4. Check if B8 is permanently silent (NaN or 0)
+        let mut has_finite_output = false;
+        for _ in 0..100 {
+            synth.process_voice_samples_stereo(&mut outputs);
+            if outputs[b8_idx][0].is_finite() && outputs[b8_idx][0].abs() > 0.0001 {
+                has_finite_output = true;
+                break;
+            }
+        }
+        assert!(has_finite_output, "B8 should recover and produce finite output after attack corruption");
     }
 }

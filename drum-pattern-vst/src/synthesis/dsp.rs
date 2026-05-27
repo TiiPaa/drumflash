@@ -29,6 +29,108 @@ impl WhiteNoise {
     }
 }
 
+// ── Pink Noise (Voss-McCartney approximation) ───────────────────────────────
+
+/// Deterministic pink-noise generator using the Voss-McCartney algorithm
+/// with 8 rows of random values and a running sum.
+#[derive(Clone, Copy, Debug)]
+pub struct PinkNoise {
+    rows: [f32; 8],
+    index: u8,
+    white: WhiteNoise,
+}
+
+impl PinkNoise {
+    pub fn new(seed: u32) -> Self {
+        let mut white = WhiteNoise::new(seed);
+        Self {
+            rows: std::array::from_fn(|_| white.next()),
+            index: 0,
+            white,
+        }
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> f32 {
+        // Count trailing zeros of index to pick which row to update
+        let tz = (self.index.trailing_zeros() as usize).min(7);
+        self.rows[tz] = self.white.next();
+        self.index = self.index.wrapping_add(1);
+        let sum: f32 = self.rows.iter().sum();
+        // Normalise approximativement vers [-1, 1]
+        sum * 0.25
+    }
+
+    pub fn reseed(&mut self, seed: u32) {
+        self.white.reseed(seed);
+        for r in self.rows.iter_mut() {
+            *r = self.white.next();
+        }
+        self.index = 0;
+    }
+}
+
+// ── Brown Noise (1/f², integration of white) ────────────────────────────────
+
+/// Brown/red noise: integration of white noise with a gentle leak.
+#[derive(Clone, Copy, Debug)]
+pub struct BrownNoise {
+    integrator: f32,
+    white: WhiteNoise,
+}
+
+impl BrownNoise {
+    pub fn new(seed: u32) -> Self {
+        Self {
+            integrator: 0.0,
+            white: WhiteNoise::new(seed),
+        }
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> f32 {
+        self.integrator += self.white.next() * 0.05;
+        // Gentle leak to prevent DC runaway
+        self.integrator *= 0.995;
+        self.integrator
+    }
+
+    pub fn reseed(&mut self, seed: u32) {
+        self.white.reseed(seed);
+        self.integrator = 0.0;
+    }
+}
+
+// ── Blue Noise (+3 dB/octave, differentiation of white) ─────────────────────
+
+/// Blue/violet noise: differentiation of white noise.
+#[derive(Clone, Copy, Debug)]
+pub struct BlueNoise {
+    prev: f32,
+    white: WhiteNoise,
+}
+
+impl BlueNoise {
+    pub fn new(seed: u32) -> Self {
+        let mut white = WhiteNoise::new(seed);
+        let first = white.next();
+        Self { prev: first, white }
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> f32 {
+        let current = self.white.next();
+        let diff = current - self.prev;
+        self.prev = current;
+        diff * 0.5
+    }
+
+    pub fn reseed(&mut self, seed: u32) {
+        self.white.reseed(seed);
+        self.prev = self.white.next();
+    }
+}
+
 // ── One-Pole Filter ─────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -243,6 +345,12 @@ impl ExpDecayEnvelope {
 
     pub fn set_attack_ms(&mut self, ms: f32) {
         self.attack_time = ms.max(0.0) / 1000.0;
+        // If attack was shortened to zero while a ramp is still in progress,
+        // snap immediately to peak so we never divide by zero in next().
+        if self.attack_time == 0.0 && self.attack_remaining > 0.0 {
+            self.attack_remaining = 0.0;
+            self.value = self.attack_peak;
+        }
     }
 
     /// Set the hold time in seconds. After the attack ramp completes, the

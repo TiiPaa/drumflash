@@ -24,7 +24,7 @@
   - sauts de volume initialement suspectes : RMS du plugin mesure stable a ~0.4 dB pres
   - confirme reproduit avec un autre plugin dans Reaper → pb driver audio, plugin innocent
 - [x] [10a] Corriger les defaults de decay (snare 0.47, hihat 0.36, open_hh 0.66)
-- [ ] [10b] Corriger le choke qui ne fonctionne plus
+- [x] [10b] Corriger le choke qui ne fonctionne plus
 - [x] [10c] Corriger les step skips rares (sync_to_host moins agressif)
 - [x] [10d] Remplacer sliders par checkbox/combobox pour paramètres bool/enum/algos
 - [x] [13] Verifier la precision du timing du sequencer (compteur d'echantillons vs transport hote, correction continue)
@@ -74,7 +74,7 @@
   - Sound Panel regroupé par familles data-driven (OSC/ENV/FILTER/OUTPUT)
   - Visualisations interactives d'enveloppe (Amp AHDSR + Filter Env)
   - Layout horizontal : params à gauche, graph à droite
-- [ ] [26l] Corriger le toggle stereo pour certains instruments
+- [x] [26l] Corriger le toggle stereo pour certains instruments
   - exposer/finir les toggles stéréo pour les voix où la largeur apporte une vraie valeur : Snare, HiHat, OpenHH, Clap, Ride, Cymbal, Snare606, Perc1
   - garder Kick, B8 et Toms mono par défaut pour préserver le centre et la compatibilité mono
   - priorité technique : finir stereo Snare606 et vérifier que les toggles UI ne sont visibles que sur les voix concernées
@@ -90,6 +90,14 @@
   - Special params augmentés de 8 à 32 slots (`special: [f32; 32]`)
   - Plock field masks passés de u32 à u64 (46 fields total, 32 special params plockables)
   - Auto-edit activé par défaut
+- [x] [62] Cymbal : retirer frequency inutilisé, ajouter Shimmer Freq + Noise Type
+  - `frequency` retiré du Sound Panel (paramètre inutilisé sur un bruit)
+  - `Shimmer Freq` (1-50 Hz) : module la fréquence du FM shimmer (était hardcodé à 15 Hz)
+  - `Noise Type` : White / Pink / Brown / Blue — générateurs Voss-McCartney dans dsp.rs
+  - Combobox UI pour sélectionner le type de bruit
+- [x] [63] Bug B8 se coupe quand on modifie CY : corrigé division par zéro dans `ExpDecayEnvelope::set_attack_ms`
+  - Quand attack_time passe à 0 pendant un ramp actif → snap à peak immédiat pour éviter NaN
+  - Bouton "T" (Test) : appelle maintenant `set_voice_settings` avant `trigger`
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
@@ -103,6 +111,53 @@
 - [x] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
   - 14 champs plockables (12 sound settings + clap_echo + algo)
   - special params (accent/snap/pitch_drop) propagés uniquement au trigger (fix echo perdu)
+
+## Nouveaux éléments (À prioriser)
+
+- [ ] [56] Ajouter une percussion de type Tom Simmons (Complexité: Moyenne, 3-5 jours)
+  - Créer un nouveau module de synthèse
+  - Ajouter l'instrument dans le registre des instruments
+  - Créer les paramètres spécifiques et l'interface utilisateur
+  - Intégrer dans le système de mixage et de sortie audio
+
+- [ ] [57] Créer un séquencer modulaire avec instruments dynamiques (Complexité: Élevée, 4-6 semaines)
+  - Refonte majeure de l'architecture du séquencer
+  - Système de plugins/instruments dynamiques
+  - Gestion de l'ajout/suppression d'instruments à chaud
+  - Interface utilisateur pour la configuration modulaire
+  - Système de sauvegarde/restoration des configurations
+
+- [ ] [58] Gestion des patterns et song (Complexité: Moyenne-Élevée, 3-5 semaines)
+  - Système de gestion de plusieurs patterns
+  - Organisation en songs (chaînes de patterns)
+  - Interface de navigation et d'édition
+  - Système de sauvegarde/restoration
+
+- [ ] [59] Gestion des plocks de type séquenceur (Complexité: Moyenne, 2-3 semaines)
+  - Implémentation d'un système de modes de plock (ex: mode "step", mode "sequenceur")
+  - Logique de basculement entre les modes
+  - Système de couleurs pour différencier visuellement les types de plock
+  - Intégration avec l'interface utilisateur existante
+  - Sauvegarde/restoration de l'état du mode
+
+- [ ] [60] Désactivation du séquenceur interne et pilotage MIDI depuis le DAW (Complexité: Moyenne, 1-2 semaines)
+  - Ajout d'un paramètre pour activer/désactiver le séquenceur interne
+  - Implémentation d'un mode "MIDI thru" où le plugin transmet simplement les notes MIDI aux instruments
+  - Gestion des canaux MIDI et mapping des instruments
+  - Interface utilisateur pour la configuration MIDI
+  - Système de routage MIDI flexible
+
+- [x] [61] Pour les BD, ajouter un switch de tuning entre Hz et Notes (Complexité: Faible, 2-3 jours)
+  - Ajouter un paramètre booléen pour basculer entre les modes de tuning
+  - Implémenter la conversion Hz ↔ Notes (standard MIDI)
+  - Mettre à jour l'interface utilisateur pour afficher le bon format
+  - S'assurer que la valeur est correctement sauvegardée/restaurée
+  - Appliquer aux instruments Kick et B8 (et potentiellement autres bass drums)
+- [ ] [61b] Ajouter copier/coller un plock dans le menu bouton droit
+  - Stocker le plock copié dans l'état de l'éditeur (EditorUIState)
+  - Afficher "Copier plock" / "Coller plock" dans le menu contextuel
+  - Coller doit écraser le plock existant sur la step cible
+  - Support multi-instrument (on ne colle que si le type d'instrument correspond)
 - [x] [29a] Refactor plock UI data-driven depuis `instrument_registry`
   - remplacer les branches hardcodees par instrument dans `draw_plock_menu`
   - exposer automatiquement les `special_params` de Clap, Snare606, B8, Perc1 et futurs instruments

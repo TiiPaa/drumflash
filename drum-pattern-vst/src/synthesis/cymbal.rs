@@ -1,10 +1,10 @@
 //! Crash cymbal synthesizer.
 //!
 //! Architecture:
-//! - Dense white noise
+//! - Dense coloured noise (white / pink / brown / blue)
 //! - Highpass filter for brightness and "wash"
 //! - Very long exponential decay
-//! - Slight pitch modulation (FM) for the shimmering wash effect
+//! - Pitch modulation (FM) for the shimmering wash effect
 
 use super::{dsp, settings::cymbal::CymbalSettings, Voice, VoiceSettings};
 
@@ -12,15 +12,21 @@ pub struct CymbalVoice {
     settings: CymbalSettings,
     sample_rate: f32,
 
-    noise: dsp::WhiteNoise,
-    noise_r: dsp::WhiteNoise,
+    white_noise: dsp::WhiteNoise,
+    pink_noise: dsp::PinkNoise,
+    brown_noise: dsp::BrownNoise,
+    blue_noise: dsp::BlueNoise,
+    white_noise_r: dsp::WhiteNoise,
+    pink_noise_r: dsp::PinkNoise,
+    brown_noise_r: dsp::BrownNoise,
+    blue_noise_r: dsp::BlueNoise,
+
     filter: dsp::OnePoleFilter,
     filter_r: dsp::OnePoleFilter,
     amp_env: dsp::DecayReleaseEnvelope,
 
     // FM shimmer state
     fm_phase: f32,
-    fm_increment: f32,
 
     active: bool,
 }
@@ -35,8 +41,14 @@ impl CymbalVoice {
         Self {
             settings,
             sample_rate,
-            noise: dsp::WhiteNoise::new(0xDEAD_BEEF),
-            noise_r: dsp::WhiteNoise::new(0xCAFE_BABE),
+            white_noise: dsp::WhiteNoise::new(0xDEAD_BEEF),
+            pink_noise: dsp::PinkNoise::new(0xDEAD_BEEF),
+            brown_noise: dsp::BrownNoise::new(0xDEAD_BEEF),
+            blue_noise: dsp::BlueNoise::new(0xDEAD_BEEF),
+            white_noise_r: dsp::WhiteNoise::new(0xCAFE_BABE),
+            pink_noise_r: dsp::PinkNoise::new(0xCAFE_BABE),
+            brown_noise_r: dsp::BrownNoise::new(0xCAFE_BABE),
+            blue_noise_r: dsp::BlueNoise::new(0xCAFE_BABE),
             filter,
             filter_r,
             amp_env: dsp::DecayReleaseEnvelope::new(
@@ -48,8 +60,30 @@ impl CymbalVoice {
             )
             .with_attack_ms(settings.attack * 1000.0),
             fm_phase: 0.0,
-            fm_increment: 15.0 / sample_rate, // 15 Hz modulation
             active: false,
+        }
+    }
+
+    fn fm_increment(&self) -> f32 {
+        let freq = self.settings.shimmer_freq.max(0.1);
+        freq / self.sample_rate
+    }
+
+    fn next_noise_l(&mut self) -> f32 {
+        match self.settings.noise_type {
+            1 => self.pink_noise.next(),
+            2 => self.brown_noise.next(),
+            3 => self.blue_noise.next(),
+            _ => self.white_noise.next(),
+        }
+    }
+
+    fn next_noise_r(&mut self) -> f32 {
+        match self.settings.noise_type {
+            1 => self.pink_noise_r.next(),
+            2 => self.brown_noise_r.next(),
+            3 => self.blue_noise_r.next(),
+            _ => self.white_noise_r.next(),
         }
     }
 
@@ -83,7 +117,7 @@ impl Voice for CymbalVoice {
             return 0.0;
         }
 
-        let noise = self.noise.next();
+        let noise = self.next_noise_l();
         let filtered = match self.settings.algo {
             1 => {
                 // Dark: no FM shimmer, lower cutoff, darker wash
@@ -95,7 +129,7 @@ impl Voice for CymbalVoice {
             }
             _ => {
                 // Standard: FM shimmer for bright wash
-                self.fm_phase += self.fm_increment;
+                self.fm_phase += self.fm_increment();
                 self.fm_phase -= self.fm_phase.floor();
                 let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * 0.15 + 1.0;
                 let modulated_cutoff = self.settings.filter_freq * fm;
@@ -123,8 +157,8 @@ impl Voice for CymbalVoice {
             return (0.0, 0.0);
         }
 
-        let noise_l = self.noise.next();
-        let noise_r = self.noise_r.next();
+        let noise_l = self.next_noise_l();
+        let noise_r = self.next_noise_r();
 
         let (cutoff_l, cutoff_r) = match self.settings.algo {
             1 => {
@@ -132,7 +166,7 @@ impl Voice for CymbalVoice {
                 (c, c)
             }
             _ => {
-                self.fm_phase += self.fm_increment;
+                self.fm_phase += self.fm_increment();
                 self.fm_phase -= self.fm_phase.floor();
                 let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * 0.15 + 1.0;
                 let c = (self.settings.filter_freq * fm).max(1000.0);
@@ -166,7 +200,199 @@ impl Voice for CymbalVoice {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, _index: usize, _value: f32) {
-        // Cymbal has no special parameters
+    fn set_special_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.settings.shimmer_freq = value,
+            1 => self.settings.noise_type = value as u8,
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shimmer_produces_varying_filter_cutoff() {
+        let sample_rate = 44100.0;
+
+        let mut settings_fast = CymbalSettings::from(VoiceSettings::cymbal());
+        settings_fast.shimmer_freq = 15.0;
+        settings_fast.stereo = 1.0;
+
+        let mut settings_slow = settings_fast;
+        settings_slow.shimmer_freq = 0.1;
+
+        let mut voice_fast = CymbalVoice::new(sample_rate, settings_fast);
+        let mut voice_slow = CymbalVoice::new(sample_rate, settings_slow);
+
+        voice_fast.trigger();
+        voice_slow.trigger();
+
+        // Process enough samples for 15 Hz to complete several cycles
+        // while 0.1 Hz barely moves.
+        let samples = 3000;
+        let mut diff_count = 0usize;
+        for _ in 0..samples {
+            let (l_fast, r_fast) = voice_fast.process_sample_stereo();
+            let (l_slow, r_slow) = voice_slow.process_sample_stereo();
+            if (l_fast - l_slow).abs() > 0.0001 || (r_fast - r_slow).abs() > 0.0001 {
+                diff_count += 1;
+            }
+        }
+
+        // With identical noise seeds and envelopes, the only difference is
+        // the filter cutoff modulation.  At 15 Hz there should be plenty of
+        // divergence; at 0.1 Hz the cutoff is essentially static, so the two
+        // voices should track each other closely.
+        assert!(
+            diff_count > samples / 4,
+            "Expected significant output divergence with fast shimmer (got {} diffs in {} samples)",
+            diff_count,
+            samples
+        );
+    }
+
+    #[test]
+    fn shimmer_freq_zero_is_effectively_static() {
+        let sample_rate = 44100.0;
+
+        let mut settings_a = CymbalSettings::from(VoiceSettings::cymbal());
+        settings_a.shimmer_freq = 0.1;
+        settings_a.stereo = 1.0;
+
+        let settings_b = settings_a;
+        // Both use 0.1 Hz – the minimum enforced by fm_increment().
+
+        let mut voice_a = CymbalVoice::new(sample_rate, settings_a);
+        let mut voice_b = CymbalVoice::new(sample_rate, settings_b);
+
+        voice_a.trigger();
+        voice_b.trigger();
+
+        let samples = 3000;
+        let mut diff_count = 0usize;
+        for _ in 0..samples {
+            let (la, ra) = voice_a.process_sample_stereo();
+            let (lb, rb) = voice_b.process_sample_stereo();
+            if (la - lb).abs() > 0.0001 || (ra - rb).abs() > 0.0001 {
+                diff_count += 1;
+            }
+        }
+
+        assert_eq!(
+            diff_count, 0,
+            "Two cymbals with identical settings should produce identical output (got {} diffs)",
+            diff_count
+        );
+    }
+
+    /// Regression test: verify that set_settings properly propagates shimmer_freq
+    /// and that a voice produces different output when shimmer_freq changes.
+    #[test]
+    fn set_settings_updates_shimmer_freq() {
+        let sample_rate = 44100.0;
+        let mut voice = CymbalVoice::new(
+            sample_rate,
+            CymbalSettings::from(VoiceSettings::cymbal()),
+        );
+
+        // First trigger with fast shimmer
+        let mut settings_fast = VoiceSettings::cymbal();
+        settings_fast.special[0] = 15.0;
+        settings_fast.stereo = 1.0;
+        voice.set_settings(settings_fast);
+        voice.trigger();
+
+        let mut out_fast = Vec::with_capacity(10000);
+        for _ in 0..10000 {
+            let (l, _r) = voice.process_sample_stereo();
+            out_fast.push(l);
+        }
+
+        // Reset and retrigger with slow shimmer
+        voice.reset();
+        let mut settings_slow = VoiceSettings::cymbal();
+        settings_slow.special[0] = 0.1;
+        settings_slow.stereo = 1.0;
+        voice.set_settings(settings_slow);
+        voice.trigger();
+
+        let mut out_slow = Vec::with_capacity(10000);
+        for _ in 0..10000 {
+            let (l, _r) = voice.process_sample_stereo();
+            out_slow.push(l);
+        }
+
+        // The two outputs must differ because the filter cutoff modulation rate differs
+        let diffs: usize = out_fast
+            .iter()
+            .zip(out_slow.iter())
+            .filter(|(a, b)| (*a - *b).abs() > 0.0001)
+            .count();
+        assert!(
+            diffs > out_fast.len() / 4,
+            "Expected significant divergence after set_settings with different shimmer_freq (got {} diffs in {} samples)",
+            diffs,
+            out_fast.len()
+        );
+    }
+
+    /// Verify that the default VoiceSettings::cymbal() carries the expected shimmer_freq.
+    #[test]
+    fn default_cymbal_settings_have_shimmer_15hz() {
+        let settings = CymbalSettings::from(VoiceSettings::cymbal());
+        assert!(
+            (settings.shimmer_freq - 15.0).abs() < 0.001,
+            "Default cymbal shimmer_freq should be ~15.0 Hz, got {}",
+            settings.shimmer_freq
+        );
+    }
+
+    /// Integration test: simulate the full DrumSynthesizer path for cymbal.
+    #[test]
+    fn cymbal_shimmer_through_drum_synthesizer() {
+        use crate::synthesis::{DrumSynthesizer, DrumVoice};
+
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let cy_idx = DrumVoice::Cymbal as usize;
+
+        // Trigger with default settings (should have 15 Hz shimmer)
+        synth.trigger(cy_idx, 1.0);
+
+        let mut samples_fast = vec![0.0f32; 10000];
+        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        for i in 0..10000 {
+            synth.process_voice_samples_stereo(&mut outputs);
+            samples_fast[i] = outputs[cy_idx][0];
+        }
+
+        // Change to slow shimmer and retrigger
+        let mut settings_slow = VoiceSettings::cymbal();
+        settings_slow.special[0] = 0.1;
+        settings_slow.stereo = 1.0;
+        synth.set_voice_settings(DrumVoice::Cymbal, settings_slow);
+        synth.trigger(cy_idx, 1.0);
+
+        let mut samples_slow = vec![0.0f32; 10000];
+        for i in 0..10000 {
+            synth.process_voice_samples_stereo(&mut outputs);
+            samples_slow[i] = outputs[cy_idx][0];
+        }
+
+        let diffs = samples_fast
+            .iter()
+            .zip(samples_slow.iter())
+            .filter(|(a, b)| (*a - *b).abs() > 0.0001)
+            .count();
+
+        assert!(
+            diffs > samples_fast.len() / 4,
+            "DrumSynthesizer cymbal should diverge with different shimmer_freq (got {} diffs)",
+            diffs
+        );
     }
 }
