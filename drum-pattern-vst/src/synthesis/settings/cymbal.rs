@@ -13,6 +13,10 @@ pub struct CymbalSettings {
     pub analog: f32,
     pub stereo: f32,
     pub algo: u8,
+    /// FM shimmer modulation frequency in Hz.
+    pub shimmer_freq: f32,
+    /// Noise colour: 0=white, 1=pink, 2=brown, 3=blue.
+    pub noise_type: u8,
 }
 
 impl From<VoiceSettings> for CymbalSettings {
@@ -29,12 +33,17 @@ impl From<VoiceSettings> for CymbalSettings {
             analog: v.analog,
             stereo: v.stereo,
             algo: v.algo,
+            shimmer_freq: v.special[0],
+            noise_type: v.special[1] as u8,
         }
     }
 }
 
 impl From<CymbalSettings> for VoiceSettings {
     fn from(c: CymbalSettings) -> Self {
+        let mut special = [0.0f32; 32];
+        special[0] = c.shimmer_freq;
+        special[1] = c.noise_type as f32;
         Self {
             frequency: c.frequency,
             attack: c.attack,
@@ -50,7 +59,7 @@ impl From<CymbalSettings> for VoiceSettings {
             analog: c.analog,
             stereo: c.stereo,
             algo: c.algo,
-            special: [0.0; 32],
+            special,
         }
     }
 }

@@ -29,6 +29,25 @@ mod local_param_slider;
 use envelope_viz::{draw_amp_envelope, draw_filter_envelope};
 use local_param_slider::LocalParamSlider;
 
+// ─────────────────────────────────────
+// Frequency / Note conversion utilities
+// ─────────────────────────────────────
+fn freq_to_note(freq: f32) -> f32 {
+    69.0 + 12.0 * (freq / 440.0).log2()
+}
+
+fn note_to_freq(note: f32) -> f32 {
+    440.0 * 2.0f32.powf((note - 69.0) / 12.0)
+}
+
+fn note_name(note: f32) -> String {
+    let note = note.round() as i32;
+    let octave = (note / 12) - 1;
+    let note_idx = note % 12;
+    let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    format!("{}{}", names[note_idx as usize], octave)
+}
+
 // Instrument labels and names are sourced from instrument_registry::INSTRUMENTS
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -434,7 +453,7 @@ fn draw_grid(
                         }
                     }
                     response.context_menu(|ui| {
-                        draw_plock_menu(ui, plock, sound_settings, params, inst, step, state);
+                        draw_plock_menu(ui, plock, sound_settings, params, setter, inst, step, state);
                     });
                 }
 
@@ -521,41 +540,95 @@ fn draw_sound_panel(
                 ui.vertical(|ui| {
                     // Standard params for this family
                     for def in standard_defs.iter().filter(|d| d.family == family) {
-                        ui.horizontal(|ui| {
-                            let label_text = if def.field == crate::instrument_registry::StandardField::FilterFreq {
-                                let ft = crate::instrument_registry::filter_type_label(state.selected_instrument);
-                                format!("{} ({})", def.label, ft)
-                            } else {
-                                def.label.to_string()
-                            };
-                            ui.label(label_text);
-                            match (&def.widget, def.field) {
-                                (crate::instrument_registry::ParamWidget::Slider { min, max, logarithmic, suffix }, field) => {
-                                    let value: &mut f32 = match field {
-                                        crate::instrument_registry::StandardField::Freq => &mut freq,
-                                        crate::instrument_registry::StandardField::Decay => &mut decay,
-                                        crate::instrument_registry::StandardField::Volume => &mut vol,
-                                        crate::instrument_registry::StandardField::FilterFreq => &mut filt,
-                                        crate::instrument_registry::StandardField::Attack => &mut attack,
-                                        crate::instrument_registry::StandardField::Release => &mut release,
-                                        crate::instrument_registry::StandardField::DecayCurve => &mut decay_curve,
-                                        crate::instrument_registry::StandardField::ReleaseCurve => &mut release_curve,
-                                        crate::instrument_registry::StandardField::Hold => &mut hold,
-                                        crate::instrument_registry::StandardField::FilterEnvAmount => &mut filter_env_amount,
-                                        crate::instrument_registry::StandardField::FilterEnvDecay => &mut filter_env_decay,
-                                        crate::instrument_registry::StandardField::Analog => &mut analog,
-                                        crate::instrument_registry::StandardField::Stereo => &mut stereo,
+                            ui.horizontal(|ui| {
+                                let label_text = if def.field == crate::instrument_registry::StandardField::FilterFreq {
+                                    let ft = crate::instrument_registry::filter_type_label(state.selected_instrument);
+                                    format!("{} ({})", def.label, ft)
+                                } else {
+                                    def.label.to_string()
+                                };
+                                ui.label(label_text);
+                                
+                                // Frequency display mode switch for Kick and B8
+                                let is_bass_drum = state.selected_instrument == 0 || state.selected_instrument == 11;
+                                if def.field == crate::instrument_registry::StandardField::Freq && is_bass_drum {
+                                    let freq_mode_param = if state.selected_instrument == 0 {
+                                        &params.freq_mode_kick
+                                    } else {
+                                        &params.freq_mode_bassdrum808
                                     };
-                                    let slider = LocalParamSlider::new(value, *min..=*max)
-                                        .logarithmic(*logarithmic)
-                                        .with_width(120.0);
-                                    if let Some(s) = suffix {
-                                        // Note: LocalParamSlider doesn't support suffix in the same way
-                                        // We'll add it to the label or handle it separately if needed
+                                    let mut freq_in_notes = freq_mode_param.value();
+                                    if ui.checkbox(&mut freq_in_notes, "Notes").changed() {
+                                        setter.set_parameter(freq_mode_param, freq_in_notes);
+                                        // Snap frequency to exact note when switching to Notes mode
+                                        if freq_in_notes {
+                                            let ratio = instrument.freq_display_ratio;
+                                            let snapped_note = freq_to_note(freq * ratio).round();
+                                            freq = note_to_freq(snapped_note) / ratio;
+                                            store_field(inst, crate::instrument_registry::StandardField::Freq, freq);
+                                            changed = true;
+                                        }
                                     }
-                                    if ui.add(slider).changed() {
-                                        store_field(inst, field, *value);
-                                        changed = true;
+                                }
+                                
+                                // Check if we're in note display mode for bass drums
+                                let freq_in_notes = if is_bass_drum && def.field == crate::instrument_registry::StandardField::Freq {
+                                    let freq_mode_param = if state.selected_instrument == 0 {
+                                        &params.freq_mode_kick
+                                    } else {
+                                        &params.freq_mode_bassdrum808
+                                    };
+                                    freq_mode_param.value()
+                                } else {
+                                    false
+                                };
+                                
+                                match (&def.widget, def.field) {
+                                (crate::instrument_registry::ParamWidget::Slider { min, max, logarithmic, suffix }, field) => {
+                                    // Special case: frequency in note mode for bass drums
+                                    if freq_in_notes && field == crate::instrument_registry::StandardField::Freq {
+                                        let ratio = instrument.freq_display_ratio;
+                                        let note_val = freq_to_note(freq * ratio).round();
+                                        ui.label(RichText::new(note_name(note_val)).monospace().size(14.0));
+                                        if ui.button("-").clicked() {
+                                            let new_note = (note_val - 1.0).max(0.0);
+                                            freq = note_to_freq(new_note) / ratio;
+                                            store_field(inst, field, freq);
+                                            changed = true;
+                                        }
+                                        if ui.button("+").clicked() {
+                                            let new_note = (note_val + 1.0).min(127.0);
+                                            freq = note_to_freq(new_note) / ratio;
+                                            store_field(inst, field, freq);
+                                            changed = true;
+                                        }
+                                    } else {
+                                        let value: &mut f32 = match field {
+                                            crate::instrument_registry::StandardField::Freq => &mut freq,
+                                            crate::instrument_registry::StandardField::Decay => &mut decay,
+                                            crate::instrument_registry::StandardField::Volume => &mut vol,
+                                            crate::instrument_registry::StandardField::FilterFreq => &mut filt,
+                                            crate::instrument_registry::StandardField::Attack => &mut attack,
+                                            crate::instrument_registry::StandardField::Release => &mut release,
+                                            crate::instrument_registry::StandardField::DecayCurve => &mut decay_curve,
+                                            crate::instrument_registry::StandardField::ReleaseCurve => &mut release_curve,
+                                            crate::instrument_registry::StandardField::Hold => &mut hold,
+                                            crate::instrument_registry::StandardField::FilterEnvAmount => &mut filter_env_amount,
+                                            crate::instrument_registry::StandardField::FilterEnvDecay => &mut filter_env_decay,
+                                            crate::instrument_registry::StandardField::Analog => &mut analog,
+                                            crate::instrument_registry::StandardField::Stereo => &mut stereo,
+                                        };
+                                        let slider = LocalParamSlider::new(value, *min..=*max)
+                                            .logarithmic(*logarithmic)
+                                            .with_width(120.0);
+                                        if let Some(s) = suffix {
+                                            // Note: LocalParamSlider doesn't support suffix in the same way
+                                            // We'll add it to the label or handle it separately if needed
+                                        }
+                                        if ui.add(slider).changed() {
+                                            store_field(inst, field, *value);
+                                            changed = true;
+                                        }
                                     }
                                 }
                                 (crate::instrument_registry::ParamWidget::Checkbox, field) => {
@@ -590,6 +663,21 @@ fn draw_sound_panel(
                                     let current_val = param.value() as i32;
                                     let type_names = ["None", "SoftClip", "Valve", "Transistor", "HardClip", "Tape"];
                                     let current_name = type_names.get(current_val as usize).unwrap_or(&"None");
+                                    egui::ComboBox::from_id_salt(def.name)
+                                        .width(100.0)
+                                        .selected_text(*current_name)
+                                        .show_ui(ui, |ui| {
+                                            for (idx, name) in type_names.iter().enumerate() {
+                                                if ui.selectable_label(idx as i32 == current_val, *name).clicked() {
+                                                    setter.set_parameter(param, idx as f32);
+                                                }
+                                            }
+                                        });
+                                // Cymbal Noise Type: show combobox with names
+                                } else if def.label.to_lowercase().contains("noise type") {
+                                    let current_val = param.value() as i32;
+                                    let type_names = ["White", "Pink", "Brown", "Blue"];
+                                    let current_name = type_names.get(current_val as usize).unwrap_or(&"White");
                                     egui::ComboBox::from_id_salt(def.name)
                                         .width(100.0)
                                         .selected_text(*current_name)
@@ -888,6 +976,7 @@ fn draw_plock_menu(
     plock: &PlockState,
     sound_settings: &SoundSettingsState,
     params: &DrumFlashParams,
+    setter: &ParamSetter,
     instrument: usize,
     step: usize,
     _state: &mut EditorUIState,
@@ -999,119 +1088,119 @@ fn draw_plock_menu(
     };
 
     // ── Standard fields ──
-    let mut freq = if plock.field_masks.is_set(instrument, step, 0) {
-        plock.values.get(instrument, step, 0)
-    } else {
-        global.0
+    let get_global_value = |field: crate::instrument_registry::StandardField| -> f32 {
+        match field {
+            crate::instrument_registry::StandardField::Freq => global.0,
+            crate::instrument_registry::StandardField::Decay => global.1,
+            crate::instrument_registry::StandardField::Volume => global.2,
+            crate::instrument_registry::StandardField::FilterFreq => global.3,
+            crate::instrument_registry::StandardField::Attack => global.4,
+            crate::instrument_registry::StandardField::Release => global.5,
+            crate::instrument_registry::StandardField::DecayCurve => global.6,
+            crate::instrument_registry::StandardField::ReleaseCurve => global.7,
+            crate::instrument_registry::StandardField::Hold => global.8,
+            crate::instrument_registry::StandardField::FilterEnvAmount => global.9,
+            crate::instrument_registry::StandardField::FilterEnvDecay => global.10,
+            crate::instrument_registry::StandardField::Analog => global.11,
+            crate::instrument_registry::StandardField::Stereo => global.12,
+        }
     };
-    draw_slider(ui, "Freq", &mut freq, 20.0..=12000.0, true, 0);
 
-    let mut decay = if plock.field_masks.is_set(instrument, step, 1) {
-        plock.values.get(instrument, step, 1)
+    let is_bass_drum_plock = instrument == 0 || instrument == 11;
+    let freq_in_notes_plock = if is_bass_drum_plock {
+        let freq_mode_param = if instrument == 0 {
+            &params.freq_mode_kick
+        } else {
+            &params.freq_mode_bassdrum808
+        };
+        freq_mode_param.value()
     } else {
-        global.1
+        false
     };
-    draw_slider(ui, "Decay", &mut decay, 0.01..=2.0, false, 1);
 
-    let mut vol = if plock.field_masks.is_set(instrument, step, 2) {
-        plock.values.get(instrument, step, 2)
-    } else {
-        global.2
-    };
-    draw_slider(ui, "Vol", &mut vol, 0.0..=1.5, false, 2);
-
-    let mut filt = if plock.field_masks.is_set(instrument, step, 3) {
-        plock.values.get(instrument, step, 3)
-    } else {
-        global.3
-    };
-    draw_slider(ui, "Filter", &mut filt, 20.0..=15000.0, true, 3);
-
-    let mut attack = if plock.field_masks.is_set(instrument, step, 18) {
-        plock.values.get(instrument, step, 18)
-    } else {
-        global.4
-    };
-    draw_slider(ui, "Attack", &mut attack, 0.0..=0.2, false, 18);
-
-    let mut release = if plock.field_masks.is_set(instrument, step, 4) {
-        plock.values.get(instrument, step, 4)
-    } else {
-        global.5
-    };
-    draw_slider(ui, "Release", &mut release, 0.0..=5.0, false, 4);
-
-    let mut decay_curve = if plock.field_masks.is_set(instrument, step, 5) {
-        plock.values.get(instrument, step, 5)
-    } else {
-        global.6
-    };
-    draw_slider(ui, "DecCurve", &mut decay_curve, 2.0..=10.0, false, 5);
-
-    let mut release_curve = if plock.field_masks.is_set(instrument, step, 6) {
-        plock.values.get(instrument, step, 6)
-    } else {
-        global.7
-    };
-    draw_slider(ui, "RelCurve", &mut release_curve, 2.0..=10.0, false, 6);
-
-    let mut hold = if plock.field_masks.is_set(instrument, step, 7) {
-        plock.values.get(instrument, step, 7)
-    } else {
-        global.8
-    };
-    draw_slider(ui, "Hold", &mut hold, 0.0..=0.5, false, 7);
-
-    let mut filter_env_amount = if plock.field_masks.is_set(instrument, step, 8) {
-        plock.values.get(instrument, step, 8)
-    } else {
-        global.9
-    };
-    draw_slider(ui, "FiltEnv", &mut filter_env_amount, 0.0..=1.0, false, 8);
-
-    let mut filter_env_decay = if plock.field_masks.is_set(instrument, step, 9) {
-        plock.values.get(instrument, step, 9)
-    } else {
-        global.10
-    };
-    draw_slider(ui, "FiltDec", &mut filter_env_decay, 0.001..=0.2, false, 9);
-
-    let mut analog = if plock.field_masks.is_set(instrument, step, 10) {
-        plock.values.get(instrument, step, 10)
-    } else {
-        global.11
-    };
-    draw_slider(ui, "Analog", &mut analog, 0.0..=1.0, false, 10);
-
-    // Stereo is a checkbox, not a slider
-    let mut stereo_val = if plock.field_masks.is_set(instrument, step, 11) {
-        plock.values.get(instrument, step, 11)
-    } else {
-        global.12
-    };
-    let stereo_overridden = plock.field_masks.is_set(instrument, step, 11);
-    let stereo_label = if stereo_overridden {
-        RichText::new("Stereo").strong()
-    } else {
-        RichText::new("Stereo").weak()
-    };
-    let (stereo_changed, stereo_reset) = ui
-        .horizontal(|ui| {
-            ui.label(stereo_label);
-            let mut checked = stereo_val >= 0.5;
-            let c = ui.add(egui::Checkbox::new(&mut checked, "")).changed();
-            if c {
-                stereo_val = if checked { 1.0 } else { 0.0 };
-            }
-            let r = stereo_overridden && ui.small_button("↺").clicked();
-            (c, r)
-        })
-        .inner;
-    if stereo_changed {
-        plock.set_field(instrument, step, 11, stereo_val);
+    // Note display toggle for bass drums in plock
+    if is_bass_drum_plock {
+        let freq_mode_param = if instrument == 0 {
+            &params.freq_mode_kick
+        } else {
+            &params.freq_mode_bassdrum808
+        };
+        let mut freq_in_notes = freq_mode_param.value();
+        if ui.checkbox(&mut freq_in_notes, "Notes").changed() {
+            setter.set_parameter(freq_mode_param, freq_in_notes);
+        }
     }
-    if stereo_reset {
-        plock.field_masks.clear(instrument, step, 11);
+
+    // Data-driven standard params
+    let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
+    for def in inst_def.standard_params {
+        let field_index = def.field.plock_field_index();
+        let mut value = if plock.field_masks.is_set(instrument, step, field_index) {
+            plock.values.get(instrument, step, field_index)
+        } else {
+            get_global_value(def.field)
+        };
+
+        // Special case: frequency in note mode for bass drums
+        if def.field == crate::instrument_registry::StandardField::Freq && freq_in_notes_plock {
+            let ratio = inst_def.freq_display_ratio;
+            let overridden = plock.field_masks.is_set(instrument, step, field_index);
+            let note_val = freq_to_note(value * ratio).round();
+            let label_text = if overridden {
+                RichText::new(format!("{}: {}", def.label, note_name(note_val))).strong()
+            } else {
+                RichText::new(format!("{}: {}", def.label, note_name(note_val))).weak()
+            };
+            ui.horizontal(|ui| {
+                ui.label(label_text);
+                if ui.button("-").clicked() {
+                    let new_note = (note_val - 1.0).max(0.0);
+                    value = note_to_freq(new_note) / ratio;
+                    plock.set_field(instrument, step, field_index, value);
+                }
+                if ui.button("+").clicked() {
+                    let new_note = (note_val + 1.0).min(127.0);
+                    value = note_to_freq(new_note) / ratio;
+                    plock.set_field(instrument, step, field_index, value);
+                }
+                if overridden && ui.small_button("↺").clicked() {
+                    plock.field_masks.clear(instrument, step, field_index);
+                }
+            });
+            continue;
+        }
+
+        match &def.widget {
+            crate::instrument_registry::ParamWidget::Slider { min, max, logarithmic, .. } => {
+                draw_slider(ui, def.label, &mut value, *min..=*max, *logarithmic, field_index);
+            }
+            crate::instrument_registry::ParamWidget::Checkbox => {
+                let overridden = plock.field_masks.is_set(instrument, step, field_index);
+                let label_text = if overridden {
+                    RichText::new(def.label).strong()
+                } else {
+                    RichText::new(def.label).weak()
+                };
+                let (changed, reset) = ui
+                    .horizontal(|ui| {
+                        ui.label(label_text);
+                        let mut checked = value >= 0.5;
+                        let c = ui.add(egui::Checkbox::new(&mut checked, "")).changed();
+                        if c {
+                            value = if checked { 1.0 } else { 0.0 };
+                        }
+                        let r = overridden && ui.small_button("↺").clicked();
+                        (c, r)
+                    })
+                    .inner;
+                if changed {
+                    plock.set_field(instrument, step, field_index, value);
+                }
+                if reset {
+                    plock.field_masks.clear(instrument, step, field_index);
+                }
+            }
+        }
     }
 
     // ── Algo ──

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-05-27 — Bugfix B8 + Cymbal shimmer & noise colour
+
+**Build:** `20260527-202249`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Bugfix B8 silent after CY param change** (`ExpDecayEnvelope::set_attack_ms`)
+  - Division-by-zero when `attack_time` shortened to 0 during active ramp → permanently corrupted envelope with NaN
+  - Fix: snap immediately to `attack_peak` and clear `attack_remaining` when zeroed mid-ramp
+  - Test button "T" now calls `set_voice_settings` before `trigger` (was using stale params)
+- **Cymbal Sound Panel refactor**
+  - Removed unused `frequency` parameter (noise-based voice, no oscillator)
+  - Added `Shimmer Freq` (1–50 Hz, default 15 Hz) — modulates FM shimmer LFO rate
+  - Added `Noise Type` combobox: White / Pink / Brown / Blue
+    - `PinkNoise` (Voss-McCartney), `BrownNoise` (integrator), `BlueNoise` (differentiator) in `dsp.rs`
+    - Independent L/R generators for stereo mode, no shared state
+  - `CymbalSettings` now stores `shimmer_freq` and `noise_type` via `special[0..1]`
+  - Retro-compatibility: old plock snapshots saved `special[0]=0.5` → now interpreted as 0.5 Hz shimmer (slow, nearly static)
+
+### Tests
+- 54 lib tests pass, 41 standalone tests pass
+- New: `shimmer_produces_varying_filter_cutoff`, `set_settings_updates_shimmer_freq`, `cymbal_shimmer_through_drum_synthesizer`
+
+---
+
 ## 2026-05-26 — Saturation generalised to all 13 instruments
 
 **Build:** `20260526-101659`

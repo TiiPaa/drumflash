@@ -97,8 +97,11 @@ impl Voice for RideVoice {
             return 0.0;
         }
 
-        let (l, r) = self.process_sample_stereo();
-        (l + r) * 0.5
+        // Direct mono processing without calling stereo version
+        let metallic = self.osc1.next() * 0.5 + self.osc2.next() * 0.3 + self.osc3.next() * 0.2;
+        let raw = metallic + self.noise.next() * 0.4;
+        let filtered = self.filter.process(raw);
+        filtered * env * self.settings.volume
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -160,7 +163,7 @@ impl Voice for RideVoice {
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
-
+    
     fn set_special_param(&mut self, _index: usize, _value: f32) {
         // Ride has no special parameters
     }

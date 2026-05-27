@@ -207,7 +207,7 @@ impl Voice for Kick808Voice {
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
-
+    
     fn set_special_param(&mut self, index: usize, value: f32) {
         match index {
             0 => self.settings.accent = value,
