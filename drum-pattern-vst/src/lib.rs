@@ -365,6 +365,12 @@ pub struct DrumFlashParams {
     #[id = "algo_perc1"]
     pub algo_perc1: IntParam,
 
+    // Frequency display mode per bass drum (false = Hz, true = Notes)
+    #[id = "freq_mode_kick"]
+    pub freq_mode_kick: BoolParam,
+    #[id = "freq_mode_b8"]
+    pub freq_mode_bassdrum808: BoolParam,
+
     // Special parameters per instrument
     #[id = "snare_snap"]
     pub snare_snap: FloatParam,
@@ -432,6 +438,12 @@ pub struct DrumFlashParams {
     pub perc1_saturation_output_gain: FloatParam,
     #[id = "perc1_sat_pre"]
     pub perc1_saturation_pre_filter: FloatParam,
+
+    // Cymbal special parameters
+    #[id = "cy_shimmer"]
+    pub cymbal_shimmer_freq: FloatParam,
+    #[id = "cy_noise"]
+    pub cymbal_noise_type: FloatParam,
 }
 
 impl Default for DrumFlashParams {
@@ -922,6 +934,9 @@ impl Default for DrumFlashParams {
             ),
             algo_perc1: IntParam::new("Perc1 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
 
+            freq_mode_kick: BoolParam::new("Kick Freq in Notes", false),
+            freq_mode_bassdrum808: BoolParam::new("808 Kick Freq in Notes", false),
+
             snare_snap: FloatParam::new(
                 "Snare Snap",
                 0.5,
@@ -1081,6 +1096,22 @@ impl Default for DrumFlashParams {
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            cymbal_shimmer_freq: FloatParam::new(
+                "Cymbal Shimmer Freq",
+                15.0,
+                FloatRange::Linear { min: 1.0, max: 50.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_unit(" Hz"),
+
+            cymbal_noise_type: FloatParam::new(
+                "Cymbal Noise Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 3.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
         }
     }
 }
@@ -1263,6 +1294,8 @@ impl DrumFlashParams {
             (12, 6) => Some(&self.perc1_saturation_mix),
             (12, 7) => Some(&self.perc1_saturation_output_gain),
             (12, 8) => Some(&self.perc1_saturation_pre_filter),
+            (9, 0) => Some(&self.cymbal_shimmer_freq),
+            (9, 1) => Some(&self.cymbal_noise_type),
             _ => None,
         }
     }
@@ -1355,6 +1388,36 @@ impl DrumFlashVst {
             },
             special,
         }
+    }
+
+    /// Build the final VoiceSettings for a voice at the current sequencer step,
+    /// merging global settings with any per-step plock override.
+    fn voice_settings_at_step(&self, voice_idx: usize, step: usize) -> synthesis::VoiceSettings {
+        let inst = &self.sound_settings_state.instruments[voice_idx];
+        let (
+            freq,
+            decay,
+            vol,
+            filt,
+            attack,
+            release,
+            dc,
+            rc,
+            hold,
+            fea,
+            fed,
+            analog,
+            stereo,
+        ) = inst.load();
+        let global = self.voice_settings_for(
+            voice_idx, freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed, analog,
+            stereo,
+        );
+        self.params
+            .plock_state
+            .state
+            .get_settings(voice_idx, step, &global)
+            .unwrap_or(global)
     }
 }
 
@@ -1549,35 +1612,7 @@ impl Plugin for DrumFlashVst {
                         continue;
                     };
 
-                    // Build global settings, then merge with plock if present
-                    let global_settings = {
-                        let inst = &self.sound_settings_state.instruments[voice_idx];
-                        let (
-                            freq,
-                            decay,
-                            vol,
-                            filt,
-                            attack,
-                            release,
-                            dc,
-                            rc,
-                            hold,
-                            fea,
-                            fed,
-                            analog,
-                            stereo,
-                        ) = inst.load();
-                        self.voice_settings_for(
-                            voice_idx, freq, decay, vol, filt, attack, release, dc, rc, hold, fea,
-                            fed, analog, stereo,
-                        )
-                    };
-                    let settings = self
-                        .params
-                        .plock_state
-                        .state
-                        .get_settings(voice_idx, current_steps[voice_idx], &global_settings)
-                        .unwrap_or(global_settings);
+                    let settings = self.voice_settings_at_step(voice_idx, current_steps[voice_idx]);
                     self.synthesizer.set_voice_settings(voice, settings);
 
                     self.synthesizer.trigger(voice_idx, *velocity);
@@ -1607,6 +1642,11 @@ impl Plugin for DrumFlashVst {
 
             for (voice_idx, trigger) in self.voice_test_triggers.iter().enumerate() {
                 if trigger.swap(false, Ordering::Relaxed) {
+                    let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+                        continue;
+                    };
+                    let settings = self.voice_settings_at_step(voice_idx, current_steps[voice_idx]);
+                    self.synthesizer.set_voice_settings(voice, settings);
                     self.synthesizer.trigger(voice_idx, 0.8);
                 }
             }
@@ -1775,5 +1815,34 @@ mod tests {
         assert_eq!(masks[0], 0);
         assert_eq!(masks[1], 0x7f);
         assert_eq!(masks[2], 0);
+    }
+
+    #[test]
+    fn cymbal_shimmer_freq_propagates_through_voice_settings_for() {
+        let vst = DrumFlashVst::default();
+        let cy_idx = DrumVoice::Cymbal as usize;
+
+        let settings = vst.voice_settings_for(
+            cy_idx,
+            6000.0, // freq
+            2.0,    // decay
+            0.4,    // volume
+            8000.0, // filter_freq
+            0.002,  // attack
+            2.5,    // release
+            2.8,    // decay_curve
+            3.0,    // release_curve
+            0.0,    // hold
+            0.0,    // filter_env_amount
+            0.05,   // filter_env_decay
+            1.0,    // analog
+            1.0,    // stereo
+        );
+
+        assert!(
+            (settings.special[0] - 15.0).abs() < 0.001,
+            "cymbal_shimmer_freq should propagate to special[0], expected ~15.0 got {}",
+            settings.special[0]
+        );
     }
 }

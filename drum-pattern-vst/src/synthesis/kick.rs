@@ -246,7 +246,7 @@ impl Voice for KickVoice {
         self.settings.algo = algo;
         self.update_derived_params();
     }
-
+    
     fn set_special_param(&mut self, index: usize, value: f32) {
         if index == 0 {
             self.settings.click_level = value;

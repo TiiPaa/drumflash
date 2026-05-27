@@ -190,9 +190,8 @@ impl Voice for TomVoice {
 
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
-        self.update_derived_params();
     }
-
+    
     fn set_special_param(&mut self, index: usize, value: f32) {
         match index {
             0 => self.settings.stick_attack = value,

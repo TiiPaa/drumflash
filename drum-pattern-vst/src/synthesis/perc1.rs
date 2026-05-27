@@ -238,6 +238,10 @@ impl Voice for Perc1Voice {
         if !self.active {
             return (0.0, 0.0);
         }
+        if self.settings.stereo < 0.5 {
+            let m = self.process_sample();
+            return (m, m);
+        }
 
         let amp = self.amp_env.next();
         if amp <= 0.0 && !self.sweep_env.is_active() {
@@ -354,21 +358,9 @@ impl Voice for Perc1Voice {
     }
 
     fn set_algo(&mut self, algo: u8) {
-        if self.settings.algo == algo {
-            return;
-        }
         self.settings.algo = algo;
-        let base_freq = self.settings.frequency.max(20.0);
-        self.osc_a_l = Perc1Osc::new(self.sample_rate, algo);
-        self.osc_a_r = Perc1Osc::new(self.sample_rate, algo);
-        self.osc_b_l = Perc1Osc::new(self.sample_rate, algo);
-        self.osc_b_r = Perc1Osc::new(self.sample_rate, algo);
-        self.osc_a_l.set_freq(base_freq);
-        self.osc_a_r.set_freq(base_freq);
-        self.osc_b_l.set_freq(base_freq * 1.5);
-        self.osc_b_r.set_freq(base_freq * 1.5);
     }
-
+    
     fn set_special_param(&mut self, index: usize, value: f32) {
         match index {
             0 => self.settings.sweep = value,
