@@ -56,6 +56,29 @@ pub enum StandardField {
     Stereo = 12,
 }
 
+impl StandardField {
+    /// Returns the plock field index used in `PlockState`.
+    /// This mapping aligns with how `PlockState::get_settings` and `set_settings`
+    /// store values internally (see `plock.rs`).
+    pub const fn plock_field_index(self) -> usize {
+        match self {
+            StandardField::Freq => 0,
+            StandardField::Decay => 1,
+            StandardField::Volume => 2,
+            StandardField::FilterFreq => 3,
+            StandardField::Release => 4,
+            StandardField::DecayCurve => 5,
+            StandardField::ReleaseCurve => 6,
+            StandardField::Hold => 7,
+            StandardField::FilterEnvAmount => 8,
+            StandardField::FilterEnvDecay => 9,
+            StandardField::Analog => 10,
+            StandardField::Stereo => 11,
+            StandardField::Attack => 18,
+        }
+    }
+}
+
 /// Widget kind for a standard parameter.
 #[derive(Clone, Copy, Debug)]
 pub enum ParamWidget {
@@ -100,6 +123,9 @@ pub struct InstrumentDef {
     pub special_params: &'static [SpecialParamDef],
     pub sound_settings_default: [f32; SOUND_SETTINGS_FIELD_COUNT],
     pub filter_type_label: &'static str,
+    /// Ratio applied to the frequency value before displaying as note.
+    /// e.g. 0.3 for Kick because the sustain freq is 0.3× the setting.
+    pub freq_display_ratio: f32,
 }
 
 // ── Helpers to build standard param lists per instrument ────────────────────
@@ -353,6 +379,83 @@ const NO_HOLD_NO_FILTENV_STD: &[StandardParamDef] = &[
         true,
         None,
     ),
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.001,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Release,
+        "Release",
+        ParamFamily::Env,
+        0.0,
+        5.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Release Curve",
+        ParamFamily::Env,
+        0.1,
+        20.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        1.5,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Output,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
+    cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
+];
+
+/// Cymbal-specific: no frequency (noise-based), no hold, no filter env.
+const CYMBAL_STD: &[StandardParamDef] = &[
     s(
         StandardField::Attack,
         "Attack",
@@ -780,6 +883,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             60.0, 0.5, 0.8, 30.0, 0.0015, 0.5, 5.0, 3.0, 0.0, 1.0, 0.05, 1.0, 0.0,
         ],
+        freq_display_ratio: 0.3,
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -850,6 +954,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             200.0, 0.47, 0.6, 200.0, 0.0003, 0.2, 5.0, 3.0, 0.0, 1.0, 0.03, 1.0, 1.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -865,6 +970,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             8000.0, 0.36, 0.3, 5000.0, 0.0003, 0.0, 8.0, 3.0, 0.0, 1.0, 0.04, 1.0, 1.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -876,10 +982,11 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         algo_count: 2,
         standard_params: NO_HOLD_NO_FILTENV_STD,
         special_params: &[],
-        // No hold, no filter env, no stereo
+        // No hold, no filter env, stereo-capable
         sound_settings_default: [
             6000.0, 0.66, 0.4, 8000.0, 0.0003, 0.4, 5.5, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -950,6 +1057,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             300.0, 0.3, 0.5, 500.0, 0.0015, 0.3, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -1020,6 +1128,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             200.0, 0.4, 0.5, 500.0, 0.0015, 0.4, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -1090,6 +1199,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             120.0, 0.5, 0.5, 500.0, 0.0015, 0.5, 4.2, 3.0, 0.0, 1.0, 0.06, 1.0, 0.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -1113,6 +1223,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             1200.0, 0.03, 0.7, 1000.0, 0.0015, 0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -1124,10 +1235,11 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         algo_count: 2,
         standard_params: NO_HOLD_NO_FILTENV_STD,
         special_params: &[],
-        // No hold, no filter env, stereo
+        // No hold, no filter env, stereo (default mono for stability)
         sound_settings_default: [
-            8000.0, 1.2, 0.35, 10000.0, 0.002, 1.5, 3.5, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0,
+            8000.0, 1.2, 0.35, 10000.0, 0.002, 1.5, 3.5, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -1137,12 +1249,32 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         full_name: "Cymbal",
         midi_note: 49,
         algo_count: 2,
-        standard_params: NO_HOLD_NO_FILTENV_STD,
-        special_params: &[],
-        // No hold, no filter env, stereo
-        sound_settings_default: [
-            6000.0, 2.0, 0.4, 8000.0, 0.002, 2.5, 2.8, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0,
+        standard_params: CYMBAL_STD,
+        special_params: &[
+            SpecialParamDef {
+                name: "cymbal_shimmer_freq",
+                label: "Shimmer Freq",
+                default: 15.0,
+                min: 1.0,
+                max: 50.0,
+                special_index: 0,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
+                name: "cymbal_noise_type",
+                label: "Noise Type",
+                default: 0.0,
+                min: 0.0,
+                max: 3.0,
+                special_index: 1,
+                family: ParamFamily::Osc,
+            },
         ],
+        // No hold, no filter env, stereo (default mono for stability)
+        sound_settings_default: [
+            6000.0, 2.0, 0.4, 8000.0, 0.002, 2.5, 2.8, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
+        ],
+        freq_display_ratio: 1.0,
         filter_type_label: "HP",
     },
     InstrumentDef {
@@ -1231,6 +1363,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             220.0, 0.08, 0.7, 3000.0, 0.0003, 0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -1319,6 +1452,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             50.0, 0.4, 0.9, 3000.0, 0.0015, 0.0, 3.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "LP",
     },
     InstrumentDef {
@@ -1416,6 +1550,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         sound_settings_default: [
             2000.0, 0.15, 0.6, 6000.0, 0.0005, 0.0, 5.0, 3.0, 0.0, 0.7, 0.03, 0.3, 1.0,
         ],
+        freq_display_ratio: 1.0,
         filter_type_label: "LP",
     },
 ];

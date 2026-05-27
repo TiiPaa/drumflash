@@ -171,7 +171,9 @@ Modifier `src/synthesis/mod.rs` :
 Modifier `src/instrument_registry.rs` :
 
 1. Ajouter une entrée `InstrumentDef` dans le tableau `INSTRUMENTS` (à l'index 13).
-2. Remplir : `index`, `name`, `label` (2-3 caractères max), `full_name`, `midi_note`, `algo_count`, `standard_params`, `special_params`, `sound_settings_default` (13 valeurs f32), `filter_type_label`.
+2. Remplir : `index`, `name`, `label` (2-3 caractères max), `full_name`, `midi_note`, `algo_count`, `standard_params`, `special_params`, `sound_settings_default` (13 valeurs f32), `filter_type_label`, **`freq_display_ratio`**.
+
+**`freq_display_ratio`** : ratio appliqué à la fréquence avant affichage en mode Notes (plock uniquement). Pour un Kick dont la fréquence de sustain est `0.3×` la valeur du slider, mettre `0.3`. Pour les autres instruments, mettre `1.0`.
 
 **Standard params :**
 Le Sound Panel est **data-driven**. Tu choisis un tableau prédéfini (`FULL_STD`, `KICK_STD`, `NO_HOLD_NO_FILTENV_STD`, `TOM_STD`, `SNARE606_STD`, `MINIMAL_STD`) selon les capacités de l'instrument, ou tu en crées un nouveau. Chaque `StandardParamDef` lie un `StandardField` à une famille (`Osc`, `Env`, `Filter`, `Output`).
@@ -234,20 +236,48 @@ special_params: &[
   release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo ]
 ```
 
-### Étape 5 — Paramètres nih-plug
+### Étape 5 — Plock field mapping
+
+Le menu plock est **data-driven** : il lit `instrument.standard_params` et affiche uniquement les champs déclarés. Chaque `StandardField` a un `plock_field_index()` qui mappe vers l'index interne du plock :
+
+| `StandardField` | Index plock | Valeur globale |
+|----------------|-------------|----------------|
+| `Freq` | 0 | `global.0` |
+| `Decay` | 1 | `global.1` |
+| `Volume` | 2 | `global.2` |
+| `FilterFreq` | 3 | `global.3` |
+| `Release` | 4 | `global.5` |
+| `DecayCurve` | 5 | `global.6` |
+| `ReleaseCurve` | 6 | `global.7` |
+| `Hold` | 7 | `global.8` |
+| `FilterEnvAmount` | 8 | `global.9` |
+| `FilterEnvDecay` | 9 | `global.10` |
+| `Analog` | 10 | `global.11` |
+| `Stereo` | 11 | `global.12` |
+| `Attack` | 18 | `global.4` |
+
+> **Important :** `Attack` est à l'index 18 (pas 4) pour éviter un conflit historique avec les special params. Ne pas modifier ce mapping sans mettre à jour `plock.rs`.
+
+### Étape 6 — Paramètres nih-plug
 
 Modifier `src/lib.rs` dans `DrumFlashParams` :
 
 1. Ajouter les paramètres `humanize_perc2`, `push_perc2`, `length_perc2`, `mute_perc2`, `mix_perc2`, `solo_perc2` (suivre le pattern existant).
 2. Ajouter l'algo param : `algo_perc2: IntParam`.
-3. Ajouter les special params **avec des `#[id = "..."]` uniques** :
+3. **Si l'instrument est une bass drum** (fréquence de sustain différente du slider), ajouter un paramètre `freq_mode` :
+   ```rust
+   #[id = "freq_mode_perc2"]
+   pub freq_mode_perc2: BoolParam,
+   ```
+   Cela permet le switch Hz/Notes dans le Sound Panel et le plock.
+4. Ajouter les special params **avec des `#[id = "..."]` uniques** :
    - `perc2_sweep: FloatParam` (special[0])
    - `perc2_saturation_type: FloatParam` (special[1])
    - `perc2_saturation_amount: FloatParam` (special[2])
    - etc.
-4. Dans `impl Default for DrumFlashParams`, instancier chaque nouveau paramètre avec `FloatParam::new(...)`.
-5. Dans `impl DrumFlashParams`, mettre à jour **toutes** les méthodes d'accès indexé : `mutes()`, `solos()`, `mixes()`, `algos()`, `humanizes()`, etc. (ajouter le 14e élément).
-6. Dans **`special_param()`**, ajouter impérativement les match arms — **sans ça les paramètres apparaissent dans l'UI mais valent toujours 0 dans le moteur audio** :
+5. Dans `impl Default for DrumFlashParams`, instancier chaque nouveau paramètre avec `FloatParam::new(...)`.
+6. Dans `impl DrumFlashParams`, mettre à jour **toutes** les méthodes d'accès indexé : `mutes()`, `solos()`, `mixes()`, `algos()`, `humanizes()`, etc. (ajouter le 14e élément).
+7. Dans **`special_param()`**, ajouter impérativement les match arms — **sans ça les paramètres apparaissent dans l'UI mais valent toujours 0 dans le moteur audio** :
 ```rust
 (13, 0) => Some(&self.perc2_sweep),
 (13, 1) => Some(&self.perc2_saturation_type),
@@ -257,7 +287,7 @@ Modifier `src/lib.rs` dans `DrumFlashParams` :
 (13, 5) => Some(&self.perc2_saturation_pre_filter),
 ```
 
-### Étape 6 — voice_settings_for
+### Étape 7 — voice_settings_for
 
 Dans `src/lib.rs`, méthode `voice_settings_for()`, ajouter le match arm pour l'algo :
 
@@ -265,9 +295,9 @@ Dans `src/lib.rs`, méthode `voice_settings_for()`, ajouter le match arm pour l'
 13 => self.params.algo_perc2.value() as u8,
 ```
 
-> **Pas besoin de toucher les special params ici** : `voice_settings_for()` boucle déjà sur `instrument_registry::INSTRUMENTS[voice_idx].special_params` et lit chaque paramètre via `self.params.special_param()`. Tant que tu as ajouté les match arms dans `special_param()` (Étape 5), les valeurs seront injectées automatiquement dans `VoiceSettings.special[]`.
+> **Pas besoin de toucher les special params ici** : `voice_settings_for()` boucle déjà sur `instrument_registry::INSTRUMENTS[voice_idx].special_params` et lit chaque paramètre via `self.params.special_param()`. Tant que tu as ajouté les match arms dans `special_param()` (Étape 6), les valeurs seront injectées automatiquement dans `VoiceSettings.special[]`.
 
-### Étape 7 — Constants diverses
+### Étape 8 — Constants diverses
 
 Dans `src/lib.rs` :
 
@@ -275,17 +305,17 @@ Dans `src/lib.rs` :
 2. `OUTPUT_PORT_NAMES` — ajouter le nom de la sortie.
 3. `MIDI_NOTE_MAP` — ajouter la note MIDI.
 
-### Étape 8 — Defaults de VoiceSettings
+### Étape 9 — Defaults de VoiceSettings
 
 Dans `src/synthesis/mod.rs` :
 1. Ajouter `pub fn perc2() -> Self` dans `impl VoiceSettings`.
 2. Vérifier que les valeurs par défaut correspondent à celles déclarées dans `instrument_registry.rs`.
 
-### Étape 9 — Special params / Algorithmes UI
+### Étape 10 — Special params / Algorithmes UI
 
 Dans `src/synthesis/special_params.rs`, ajouter la définition des algorithmes pour le nouvel instrument si `algo_count > 1`.
 
-### Étape 10 — Plock
+### Étape 11 — Plock
 
 Le système de plock stocke 18 fields par step/instrument :
 
@@ -297,11 +327,20 @@ Le système de plock stocke 18 fields par step/instrument :
 
 > **Note :** le plock stocke 18 fields, mais `VoiceSettings.special` contient 8 slots. Les special params de saturation (index 1-5) sont stockés dans `VoiceSettings.special[1..6]` et remontés dans le plock via le `special_param()` data-driven.
 
-Le plock menu (`draw_plock_menu` dans `ui.rs`) est **data-driven** : il lit les special params dynamiquement depuis `instrument_registry::special_params(instrument)`. Aucun hardcoding par index n'est nécessaire. Si le registry déclare correctement les `special_params`, ils apparaîtront automatiquement dans le menu plock.
+Le plock menu (`draw_plock_menu` dans `ui.rs`) est **data-driven** : il lit `instrument.standard_params` et n'affiche que les champs déclarés pour cet instrument. Si le Kick n'a pas `Stereo` dans ses `standard_params`, le plock ne l'affichera pas. Les special params sont aussi data-driven via `instrument_registry::special_params(instrument)`.
 
-### Étape 11 — UI Sound Panel
+**Mode Notes dans le plock :**
+Si l'instrument est une bass drum (`freq_display_ratio != 1.0`), le plock affiche un checkbox "Notes". Quand activé :
+- La fréquence est affichée comme nom de note (ex: "C2")
+- Les boutons `+`/`-` changent par demi-ton
+- Le `freq_display_ratio` est appliqué : `note = freq_to_note(freq * ratio)` et `freq = note_to_freq(note) / ratio`
+
+### Étape 12 — UI Sound Panel
 
 Le Sound Panel (`draw_sound_panel` dans `ui.rs`) est **déjà data-driven** via `instrument_registry::INSTRUMENTS[].standard_params` et `special_params`. Si tu as correctement rempli le registry avec les bonnes `ParamFamily`, les sliders apparaîtront groupés par famille (OSC, ENV, FILTER, SAT, OUTPUT). Aucune modification de `ui.rs` n'est nécessaire pour la Sound Panel.
+
+**Mode Notes dans le Sound Panel :**
+Pour les bass drums (Kick, B8, etc.), un checkbox "Notes" apparaît à côté du slider Freq. Le comportement est identique au plock : conversion via `freq_display_ratio`, snap à la note juste au toggle, ajustement par demi-tons.
 
 ---
 
@@ -318,6 +357,8 @@ Le Sound Panel (`draw_sound_panel` dans `ui.rs`) est **déjà data-driven** via 
 | **Mauvais ordre dans `sound_settings_default`** | L'ordre est strict : `[freq, decay, vol, filter_freq, attack, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]`. |
 | **Saturation non branchée** | Si tu ajoutes des `SpecialParamDef` de type `Saturation` dans le registry mais que tu n'instancies pas les `FloatParam` correspondants dans `DrumFlashParams`, les sliders apparaîtront dans l'UI mais ne feront rien. Il faut aussi implémenter `set_special_param()` dans la voix pour mapper l'index vers `saturation::SaturationConfig`. |
 | **VST3 cache** | Studio One (et autres DAWs) mettent en cache le bundle VST3. Après un `build.ps1 -Install`, ferme complètement la DAW avant de rouvrir le plugin, sinon tu testes l'ancienne version. |
+| **`freq_display_ratio` oublié** | Si l'instrument est une bass drum et que tu mets `freq_display_ratio: 1.0`, le mode Notes affichera une note fausse (la fréquence du slider au lieu de la fréquence réelle de sustain). |
+| **Plock data-driven** | Le plock menu ne montre que les champs listés dans `instrument.standard_params`. Si tu retires un champ du tableau (ex: `Stereo` du Kick), il disparaît aussi du plock — c'est le comportement attendu. |
 
 ---
 
@@ -335,14 +376,17 @@ Nouvel instrument "Perc2"
 ├─> src/synthesis/settings/mod.rs   (pub mod perc2; + pub use)
 ├─> src/instrument_registry.rs      (entry INSTRUMENTS[13] avec standard_params + special_params)
 │                                    ↳ special_params incluant saturation (family=Saturation)
+│                                    ↳ freq_display_ratio: 1.0 (ou 0.3 pour bass drum)
+├─> src/instrument_registry.rs      (StandardField::plock_field_index() si nouveau champ)
 ├─> src/lib.rs                      (DrumFlashParams : humanize/mute/mix/solo/algo/specials)
 │                                    ↳ FloatParam pour chaque special (saturation comprise)
 │                                    ↳ special_param() : match (13, 0..5)
+│                                    ↳ freq_mode_perc2: BoolParam (si bass drum)
 ├─> src/lib.rs                      (voice_settings_for() algo arm — special auto-injectés)
 ├─> src/lib.rs                      (OUTPUT_PORT_NAMES, MIDI_NOTE_MAP, AUX_OUT_COUNT)
 ├─> src/synthesis/mod.rs            (VoiceSettings::perc2() default)
 ├─> src/synthesis/special_params.rs (algos_for Perc2 si algo_count > 1)
-└─> src/ui.rs / src/plock.rs        (data-driven, aucun hardcoding nécessaire)
+└─> src/ui.rs / src/plock.rs        (data-driven, mode Notes si freq_display_ratio != 1.0)
 ```
 
 ---
@@ -361,4 +405,5 @@ Puis dans Studio One : insérer le plugin, vérifier que :
 3. Les special params apparaissent groupés par famille (OSC, ENV, FILTER, **SAT**, OUTPUT),
 4. Le son ne coupe pas quand on bouge un slider (pas de recréation d'enveloppes),
 5. Le plock menu permet de verrouiller les special params (y compris la saturation),
-6. Si la saturation est activée (type > 0, amount > 0), le son change réellement.
+6. Si la saturation est activée (type > 0, amount > 0), le son change réellement,
+7. Si `freq_display_ratio != 1.0`, le mode Notes dans Sound Panel et plock affiche la bonne note et les boutons `+`/`-` changent par demi-ton juste.
