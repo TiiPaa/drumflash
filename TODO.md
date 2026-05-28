@@ -71,7 +71,7 @@
   - `standard_params` data-driven avec ranges UI (min/max, log, suffix, checkbox)
   - Ranges corrigés pour éviter le clamp involontaire (ex: Ride decay 1.2s > slider 0.5s)
 - [x] [51] Ajouter un paramètre Attack réglable par instrument (graphique AHDSR complet A-H-D-R)
-- [ ] [66] Presets d'instruments — sauvegarder/charger des réglages de synthese par voix (Complexité: Moyenne, P2)
+- [ ] **REPRENDRE ICI** [66] Presets d'instruments — sauvegarder/charger des réglages de synthese par voix (Complexité: Moyenne, P2)
 - [ ] [52] Ajouter un paramètre Sustain level pour un vrai ADSR séquentiel — non prio
 - [x] [26k] Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit)
   - Sound Panel regroupé par familles data-driven (OSC/ENV/FILTER/OUTPUT)
