@@ -26,6 +26,10 @@ pub struct TrackState {
     pub track_length: usize,
     pub push_pull_ms: f32,
     pub humanize_amount: f32,
+    /// Independent step counter for true polyrhythm.
+    /// Increments by 1 on every master-step transition.
+    /// current_step = step_counter % track_length.
+    pub step_counter: usize,
     /// Simple LCG RNG state for deterministic per-track randomness.
     rng_state: u32,
 }
@@ -38,6 +42,7 @@ impl Default for TrackState {
             track_length: 16,
             push_pull_ms: 0.0,
             humanize_amount: 0.0,
+            step_counter: 0,
             rng_state: 0xACE1_0000,
         }
     }
@@ -113,13 +118,14 @@ impl Sequencer {
             // Re-compute master step for this track's shifted timeline.
             let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
 
-            // Polyrhythm: each track loops on its own length.
-            let current_step = shifted_master % track.track_length.max(1);
-
             // Trigger on master step transition.
             // Using shifted_master (not current_step) fixes the track_length=1 bug
             // where current_step never changes (always 0).
             if shifted_master != track.previous_shifted_master {
+                // True polyrhythm: each track advances its own independent counter.
+                track.step_counter = track.step_counter.wrapping_add(1);
+                let current_step = track.step_counter % track.track_length.max(1);
+
                 let step_mask = self.pattern.load_step_mask(current_step);
                 let active = (step_mask & (1 << instrument)) != 0 && !self.mutes[instrument];
 
@@ -145,12 +151,15 @@ impl Sequencer {
 
     pub fn sync_to_host(&mut self, position_beats: f64, bpm: f32, _sample_rate: f32) {
         self.beat_position = position_beats.rem_euclid(4.0);
+        // Reconstruct total master steps elapsed so polyrhythms keep their phase.
+        let total_master_steps = (position_beats * 4.0) as usize;
         for track in self.tracks.iter_mut() {
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
             let shifted_beat = (self.beat_position - push_pull_beats).rem_euclid(4.0);
             let shifted_master = groove::beat_to_step(shifted_beat, self.swing, self.groove_type);
             track.previous_shifted_master = shifted_master;
-            track.previous_step = shifted_master % track.track_length.max(1);
+            track.step_counter = total_master_steps;
+            track.previous_step = track.step_counter % track.track_length.max(1);
         }
     }
 
@@ -159,6 +168,7 @@ impl Sequencer {
         for track in self.tracks.iter_mut() {
             track.previous_step = 15;
             track.previous_shifted_master = 15;
+            track.step_counter = 0;
         }
         self.is_playing = false;
     }
@@ -210,7 +220,8 @@ impl Sequencer {
         let master_step = groove::beat_to_step(self.beat_position, self.swing, self.groove_type);
         for track in self.tracks.iter_mut() {
             track.previous_shifted_master = master_step;
-            track.previous_step = master_step % track.track_length.max(1);
+            track.step_counter = master_step;
+            track.previous_step = track.step_counter % track.track_length.max(1);
         }
     }
 
@@ -226,10 +237,9 @@ impl Sequencer {
 
     /// Returns per-track current step for UI highlighting.
     pub fn current_steps(&self) -> [usize; DrumVoice::COUNT] {
-        let master_step = groove::beat_to_step(self.beat_position, self.swing, self.groove_type);
         let mut steps = [0usize; DrumVoice::COUNT];
         for (i, track) in self.tracks.iter().enumerate() {
-            steps[i] = master_step % track.track_length.max(1);
+            steps[i] = track.step_counter % track.track_length.max(1);
         }
         steps
     }
