@@ -165,25 +165,25 @@ impl MusicalTemplate {
                     candidate_prob: 0.05,
                     exclusions: &[],
                 },
-                // Snare 606 (no auto-generation — user-only)
+                // Snare 606: tight backbeat layer, lighter than main snare
                 RhythmicRole {
                     anchors: &[],
+                    candidates: &[4, 12, 6, 10],
+                    candidate_prob: 0.35,
+                    exclusions: &[0, 8],
+                },
+                // 808 Kick: sub-bass reinforcement on downbeats only
+                RhythmicRole {
+                    anchors: &[0, 8],
                     candidates: &[],
                     candidate_prob: 0.0,
                     exclusions: &[],
                 },
-                // 808 Kick: plays like a secondary kick
-                RhythmicRole {
-                    anchors: &[0, 8],
-                    candidates: &[4, 12, 2, 6, 10, 14],
-                    candidate_prob: 0.15,
-                    exclusions: &[1, 3, 5, 7, 9, 11, 13, 15],
-                },
-                // Perc1: occasional fill / effect
+                // Perc1: crash/FX accents and downbeat emphasis
                 RhythmicRole {
                     anchors: &[],
-                    candidates: &[14, 15],
-                    candidate_prob: 0.15,
+                    candidates: &[0, 14, 15, 7, 11],
+                    candidate_prob: 0.2,
                     exclusions: &[],
                 },
             ],
