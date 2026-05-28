@@ -198,7 +198,7 @@
 
 ## Bugs a corriger
 
-- [ ] [64] Revoir l'algo de polyrythmie (lane length) — comportement bizarre, longueurs mal synchronisées (Complexité: Moyenne, P1)
+- [x] [64] Revoir l'algo de polyrythmie (lane length) — comportement bizarre, longueurs mal synchronisées (Complexité: Moyenne, P1)
 - [ ] [65] Revoir les algos de generation pattern avec les nouveaux instruments (13 voix) — certains générateurs hardcodés à 10/12 instruments (Complexité: Moyenne, P2)
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé
