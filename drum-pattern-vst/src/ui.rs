@@ -345,31 +345,45 @@ fn draw_grid(
     egui::Grid::new("pattern-grid")
         .spacing(Vec2::new(4.0, 4.0))
         .show(ui, |ui| {
-            // Header row
-            ui.label("");
-            ui.label(RichText::new("M").strong().size(10.0));
-            ui.label(RichText::new("S").strong().size(10.0));
-            ui.label(RichText::new("T").strong().size(10.0));
-            for step in 0..16 {
-                let is_current = (current_step.load(Ordering::Relaxed) as usize) == step;
-                let text = if step % 4 == 0 {
-                    RichText::new(format!("{}", step + 1)).strong().size(10.0)
-                } else {
-                    RichText::new(format!("{}", step + 1)).size(10.0)
-                };
-                let label = if is_current {
-                    RichText::new(text.text())
-                        .strong()
-                        .color(Color32::YELLOW)
-                        .size(10.0)
-                } else {
-                    text
-                };
-                ui.label(label);
-            }
-            ui.label(RichText::new("Hum").strong().size(10.0));
-            ui.label(RichText::new("Push").strong().size(10.0));
-            ui.label(RichText::new("Len").strong().size(10.0));
+            // Header row — use exact same widths as instrument rows below
+            let header_item = |ui: &mut egui::Ui, text: &str, width: f32| {
+                ui.add_sized(
+                    Vec2::new(width, 20.0),
+                    egui::Label::new(RichText::new(text).strong().size(10.0)),
+                );
+            };
+            header_item(ui, "", 32.0);        // instrument label
+            header_item(ui, "Vol", 40.0);     // volume slider
+            header_item(ui, "M", 24.0);       // mute
+            header_item(ui, "S", 24.0);       // solo
+            header_item(ui, "T", 24.0);       // test
+            // Steps container with tighter spacing
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                for step in 0..16 {
+                    let is_current = (current_step.load(Ordering::Relaxed) as usize) == step;
+                    let text = if step % 4 == 0 {
+                        RichText::new(format!("{}", step + 1)).strong().size(10.0)
+                    } else {
+                        RichText::new(format!("{}", step + 1)).size(10.0)
+                    };
+                    let label = if is_current {
+                        RichText::new(text.text())
+                            .strong()
+                            .color(Color32::YELLOW)
+                            .size(10.0)
+                    } else {
+                        text
+                    };
+                    ui.add_sized(
+                        Vec2::new(20.0, 20.0),
+                        egui::Label::new(label),
+                    );
+                }
+            });
+            header_item(ui, "Hum", 40.0);
+            header_item(ui, "Push", 45.0);
+            header_item(ui, "Len", 35.0);
             ui.end_row();
 
             // Instrument rows
@@ -383,7 +397,7 @@ fn draw_grid(
                         .monospace()
                         .size(11.0),
                 )
-                .min_size(Vec2::new(28.0, 22.0))
+                .min_size(Vec2::new(32.0, 22.0))
                 .fill(if state.selected_instrument == inst {
                     Color32::from_rgb(56, 132, 255)
                 } else {
@@ -396,7 +410,9 @@ fn draw_grid(
                 // Volume par lane
                 let inst_state = &sound_settings.instruments[inst];
                 let mut lane_vol = f32::from_bits(inst_state.volume.load(Ordering::Relaxed));
-                let vol_slider = LocalParamSlider::new(&mut lane_vol, 0.0..=2.0).with_width(40.0);
+                let vol_slider = LocalParamSlider::new(&mut lane_vol, 0.0..=2.0)
+                    .with_width(40.0)
+                    .without_value();
                 if ui.add(vol_slider).changed() {
                     inst_state.volume.store(lane_vol.to_bits(), Ordering::Relaxed);
                     sound_settings.bump_version();
@@ -408,12 +424,15 @@ fn draw_grid(
                 if solo_clicked && params.auto_edit.value() {
                     state.selected_instrument = inst;
                 }
-                if ui.button("T").on_hover_text("Test").clicked() {
+                let test_btn = egui::Button::new("T").min_size(Vec2::new(24.0, 20.0));
+                if ui.add(test_btn).on_hover_text("Test").clicked() {
                     voice_test_triggers[inst].store(true, Ordering::Relaxed);
                 }
 
-                // 16 steps
-                for step in 0..16 {
+                // 16 steps (tight horizontal container)
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    for step in 0..16 {
                     let active = pattern.is_active(step, inst);
                     let is_current = current_steps[inst].load(Ordering::Relaxed) as usize == step;
                     let beyond_len = step >= track_len;
@@ -481,6 +500,7 @@ fn draw_grid(
                         });
                     }
                 }
+                });
 
                 // Hum / Push / Len (compact sliders)
                 ui.add(widgets::ParamSlider::for_param(hums[inst], setter).with_width(40.0));

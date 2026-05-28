@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-05-28 — Session: UI polish + polyrhythm fix + generator roles
+
+**Build:** `20260528-175015`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Volume at top of Sound Editor** (`ui.rs`)
+  - Dedicated group with separator before OSC/ENV/FILTER/SAT/OUTPUT families
+  - Large slider (0.0–2.0) right under "Sound Editor" heading
+- **Per-lane volume in pattern grid** (`ui.rs`)
+  - Compact 40px slider before Mute/Solo/Test buttons
+  - Reads/writes `sound_settings.instruments[inst].volume` directly
+- **Plock colour coding** (`ui.rs`)
+  - **Orange** (255, 140, 0) → Link mode or mixed plock
+  - **Red** (220, 50, 50) → Full snapshot
+  - Darker variants for inactive steps
+- **True polyrhythm** (`sequencer/mod.rs`)
+  - Independent `step_counter` per track, incremented on master-step transition
+  - Fixes identical bars bug with `master_step % length`
+  - Tracks resync at LCM(master, track_length)
+- **Steps beyond lane_length erased** (`ui.rs`)
+  - Complete visual removal (no button, no background) for clarity
+- **Pattern generator roles enriched** (`generator/styles.rs`)
+  - Rock style: Snare 606 backbeat layer, 808 Kick downbeat reinforcement, Perc1 crash/FX accents
+  - All 13 instruments now have musically meaningful roles
+- **Grid spacing** (`ui.rs`)
+  - Steps in horizontal containers with 6px spacing
+  - Header labels aligned with exact column widths
+- **Bugfix: first step not read on play** (`sequencer/mod.rs`)
+  - `play()` and `force_step0_trigger()` initialise `step_counter` to `length - 1`
+- **Deployment rule added** (`AGENTS.md`)
+  - Systematic build + install after every task completion
+
+### Tests
+- 58 lib tests + 44 standalone tests pass
+- Multiple builds tested and installed throughout the session
+
+---
+
 ## 2026-05-28 — Generator roles enriched + polyrhythm fix + dimmed steps
 
 **Build:** `20260528-154125`
