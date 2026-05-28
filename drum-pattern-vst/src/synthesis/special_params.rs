@@ -66,7 +66,6 @@ pub const RIDE_ALGOS: &[AlgoDef] = &[
 
 pub const CYMBAL_ALGOS: &[AlgoDef] = &[
     AlgoDef { name: "Standard" },
-    AlgoDef { name: "Dark" },
 ];
 
 // ── 808 Bass Drum ───────────────────────────────────────────────────────────
