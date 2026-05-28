@@ -393,6 +393,15 @@ fn draw_grid(
                     state.selected_instrument = inst;
                 }
 
+                // Volume par lane
+                let inst_state = &sound_settings.instruments[inst];
+                let mut lane_vol = f32::from_bits(inst_state.volume.load(Ordering::Relaxed));
+                let vol_slider = LocalParamSlider::new(&mut lane_vol, 0.0..=2.0).with_width(40.0);
+                if ui.add(vol_slider).changed() {
+                    inst_state.volume.store(lane_vol.to_bits(), Ordering::Relaxed);
+                    sound_settings.bump_version();
+                }
+
                 // Mute / Solo / Test
                 draw_bool_toggle(ui, setter, row.mute, "M", "Mute");
                 let solo_clicked = draw_bool_toggle(ui, setter, row.solo, "S", "Solo");
@@ -410,12 +419,28 @@ fn draw_grid(
                     let beyond_len = step >= track_len;
                     let has_plock = plock.masks.is_active(inst, step);
 
+                    let plock_mask = if has_plock {
+                        plock.field_masks.get(inst, step)
+                    } else {
+                        0
+                    };
+                    let all_bits = (1u64 << crate::plock::FIELD_COUNT) - 1;
+                    let is_snapshot = has_plock && plock_mask == all_bits;
+
                     let bg = if active && has_plock {
-                        Color32::from_rgb(255, 140, 0) // orange for plock+active
+                        if is_snapshot {
+                            Color32::from_rgb(220, 50, 50) // rouge snapshot + active
+                        } else {
+                            Color32::from_rgb(255, 140, 0) // orange link/mixed + active
+                        }
                     } else if active {
                         Color32::from_rgb(56, 132, 255)
                     } else if has_plock {
-                        Color32::from_rgb(180, 100, 0) // darker orange for plock only
+                        if is_snapshot {
+                            Color32::from_rgb(160, 30, 30) // rouge foncé snapshot
+                        } else {
+                            Color32::from_rgb(180, 100, 0) // orange foncé link/mixed
+                        }
                     } else if is_current {
                         Color32::from_rgb(48, 48, 48)
                     } else {
@@ -518,6 +543,20 @@ fn draw_sound_panel(
         mut stereo,
     ) = inst.load();
     let mut changed = false;
+
+    // ── Volume global de l'instrument ──
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Volume").strong().size(14.0));
+            ui.add_space(8.0);
+            let slider = LocalParamSlider::new(&mut vol, 0.0..=2.0).with_width(180.0);
+            if ui.add(slider).changed() {
+                store_field(inst, crate::instrument_registry::StandardField::Volume, vol);
+                changed = true;
+            }
+        });
+    });
+    ui.add(egui::Separator::default().spacing(12.0));
 
     // Data-driven grouped Sound Panel
     let instrument = &crate::instrument_registry::INSTRUMENTS[state.selected_instrument];

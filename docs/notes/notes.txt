@@ -1,0 +1,6 @@
+- créer un instrument percussif à base de wavetables => faire recherches
+- revoir l'algo de polyrythmie (lane length), fonctionnement bizarre
+- revoir les algos de génération pattern avec les nouveaux instruments
+- presets d'instruments
+- position du volume en haut du sound editor + sur chaque lane
+- mettre une couleur différente pour plock link global / full snapshot (orange / rouge)
