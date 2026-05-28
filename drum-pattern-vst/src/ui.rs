@@ -427,59 +427,59 @@ fn draw_grid(
                     let all_bits = (1u64 << crate::plock::FIELD_COUNT) - 1;
                     let is_snapshot = has_plock && plock_mask == all_bits;
 
-                    let bg = if active && has_plock {
-                        if is_snapshot {
-                            Color32::from_rgb(220, 50, 50) // rouge snapshot + active
-                        } else {
-                            Color32::from_rgb(255, 140, 0) // orange link/mixed + active
-                        }
-                    } else if active {
-                        Color32::from_rgb(56, 132, 255)
-                    } else if has_plock {
-                        if is_snapshot {
-                            Color32::from_rgb(160, 30, 30) // rouge foncé snapshot
-                        } else {
-                            Color32::from_rgb(180, 100, 0) // orange foncé link/mixed
-                        }
-                    } else if is_current {
-                        Color32::from_rgb(48, 48, 48)
+                    if beyond_len {
+                        ui.allocate_space(Vec2::new(20.0, 20.0));
                     } else {
-                        Color32::from_rgb(28, 28, 28)
-                    };
-
-                    let block_color = if step < 4 {
-                        Color32::from_rgb(32, 32, 32)
-                    } else if step < 8 {
-                        Color32::from_rgb(40, 40, 40)
-                    } else if step < 12 {
-                        Color32::from_rgb(32, 32, 32)
-                    } else {
-                        Color32::from_rgb(40, 40, 40)
-                    };
-
-                    let btn = egui::Button::new(if active { "X" } else { "." })
-                        .min_size(Vec2::new(20.0, 20.0))
-                        .fill(if active || is_current || has_plock {
-                            bg
+                        let bg = if active && has_plock {
+                            if is_snapshot {
+                                Color32::from_rgb(220, 50, 50) // rouge snapshot + active
+                            } else {
+                                Color32::from_rgb(255, 140, 0) // orange link/mixed + active
+                            }
+                        } else if active {
+                            Color32::from_rgb(56, 132, 255)
+                        } else if has_plock {
+                            if is_snapshot {
+                                Color32::from_rgb(160, 30, 30) // rouge foncé snapshot
+                            } else {
+                                Color32::from_rgb(180, 100, 0) // orange foncé link/mixed
+                            }
+                        } else if is_current {
+                            Color32::from_rgb(48, 48, 48)
                         } else {
-                            block_color
-                        })
-                        .stroke(if beyond_len && !active && !has_plock {
-                            egui::Stroke::new(1.0, Color32::from_rgb(60, 60, 60))
+                            Color32::from_rgb(28, 28, 28)
+                        };
+
+                        let block_color = if step < 4 {
+                            Color32::from_rgb(32, 32, 32)
+                        } else if step < 8 {
+                            Color32::from_rgb(40, 40, 40)
+                        } else if step < 12 {
+                            Color32::from_rgb(32, 32, 32)
                         } else {
-                            egui::Stroke::NONE
+                            Color32::from_rgb(40, 40, 40)
+                        };
+
+                        let btn = egui::Button::new(if active { "X" } else { "." })
+                            .min_size(Vec2::new(20.0, 20.0))
+                            .fill(if active || is_current || has_plock {
+                                bg
+                            } else {
+                                block_color
+                            })
+                            .stroke(egui::Stroke::NONE);
+
+                        let response = ui.add(btn);
+                        if response.clicked() {
+                            toggle_step_for_ui(pattern, step, inst);
+                            if params.auto_edit.value() {
+                                state.selected_instrument = inst;
+                            }
+                        }
+                        response.context_menu(|ui| {
+                            draw_plock_menu(ui, plock, sound_settings, params, setter, inst, step, state);
                         });
-
-                    let response = ui.add(btn);
-                    if response.clicked() {
-                        toggle_step_for_ui(pattern, step, inst);
-                        if params.auto_edit.value() {
-                            state.selected_instrument = inst;
-                        }
                     }
-                    response.context_menu(|ui| {
-                        draw_plock_menu(ui, plock, sound_settings, params, setter, inst, step, state);
-                    });
                 }
 
                 // Hum / Push / Len (compact sliders)

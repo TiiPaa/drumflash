@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-05-28 — Generator roles enriched + polyrhythm fix + dimmed steps
+
+**Build:** `20260528-154125`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Pattern generator roles enriched for Rock style** (`styles.rs`)
+  - Snare 606: backbeat layer (steps 4, 12, 6, 10) with 35% probability
+  - 808 Kick: sub-bass reinforcement on downbeats 0 and 8 only
+  - Perc1: crash/FX accents (steps 0, 14, 15, 7, 11) with 20% probability
+  - All 13 instruments now have musically meaningful roles (no more user-only)
+- **True polyrhythm with independent step counters** (`sequencer/mod.rs`)
+  - Each track maintains its own `step_counter` incremented on master-step transition
+  - Fixes the bug where `current_step = master_step % length` repeated identically every bar
+  - Tracks now cycle independently and resync at LCM(master, track_length)
+- **Dimmed steps beyond track length** (`ui.rs`)
+  - Steps beyond `lane_length` are completely erased (no button, no background)
+  - Active steps beyond length shown in dark blue for clarity
+
+### Tests
+- 58 lib tests + 44 standalone tests pass
+- Build OK, bundle generated, installed to system VST3 folder
+
+---
+
 ## 2026-05-28 — UI improvements: per-lane volume & plock colour coding
 
 **Build:** `20260528-142648`

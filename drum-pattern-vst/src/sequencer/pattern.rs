@@ -13,7 +13,7 @@ pub const STEP_COUNT: usize = 16;
 /// A single step in a pattern containing trigger states for all instruments.
 #[derive(Clone, Debug)]
 pub struct Step {
-    /// 7 instruments: Kick, Snare, HiHat, OpenHiHat, Tom1, Tom2, Tom3.
+    ///  instruments: Kick, Snare, HiHat, OpenHiHat, Tom1, Tom2, Tom3, Clap, Ride, Cymbal, Snare606, BassDrum808, Zap.
     pub instruments: [bool; INSTRUMENT_COUNT],
 }
 
@@ -42,7 +42,7 @@ impl Step {
 /// A 16-step pattern for drum sequencing.
 #[derive(Clone, Debug)]
 pub struct Pattern {
-    /// 16 steps, each with 7 instrument triggers.
+    ///  steps, each with  instrument triggers.
     pub steps: [Step; STEP_COUNT],
     pub name: String,
 }

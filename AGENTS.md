@@ -23,6 +23,15 @@ Authoritative product docs: `TODO.md` (active priorities), `drum-pattern-vst/REA
 
 When changing product behavior, prioritize the Rust plugin unless the task is explicitly about the PoC.
 
+## Deployment Rule
+
+After every task completion, **systematically build and install** the VST3 plugin. Do not mark a task as done until the build is installed and ready to test in Studio One.
+
+- Run `build.ps1 -Install`
+- If the build fails, fix before marking done
+- If Studio One is open and locks the DLL, close it before installing
+- Update CHANGELOG.md with the build ID and changes
+
 Use the web files mainly to:
 - confirm instrument mapping
 - confirm preset content
