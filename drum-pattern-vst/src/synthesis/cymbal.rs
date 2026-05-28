@@ -118,26 +118,13 @@ impl Voice for CymbalVoice {
         }
 
         let noise = self.next_noise_l();
-        let filtered = match self.settings.algo {
-            1 => {
-                // Dark: no FM shimmer, lower cutoff, darker wash
-                self.filter.set_cutoff(
-                    (self.settings.filter_freq * 0.6).max(1000.0),
-                    self.sample_rate,
-                );
-                self.filter.process(noise)
-            }
-            _ => {
-                // Standard: FM shimmer for bright wash
-                self.fm_phase += self.fm_increment();
-                self.fm_phase -= self.fm_phase.floor();
-                let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * 0.15 + 1.0;
-                let modulated_cutoff = self.settings.filter_freq * fm;
-                self.filter
-                    .set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
-                self.filter.process(noise)
-            }
-        };
+        self.fm_phase += self.fm_increment();
+        self.fm_phase -= self.fm_phase.floor();
+        let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * self.settings.shimmer_amount + 1.0;
+        let modulated_cutoff = self.settings.filter_freq * fm;
+        self.filter
+            .set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
+        let filtered = self.filter.process(noise);
 
         filtered * env * self.settings.volume
     }
@@ -160,22 +147,12 @@ impl Voice for CymbalVoice {
         let noise_l = self.next_noise_l();
         let noise_r = self.next_noise_r();
 
-        let (cutoff_l, cutoff_r) = match self.settings.algo {
-            1 => {
-                let c = (self.settings.filter_freq * 0.6).max(1000.0);
-                (c, c)
-            }
-            _ => {
-                self.fm_phase += self.fm_increment();
-                self.fm_phase -= self.fm_phase.floor();
-                let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * 0.15 + 1.0;
-                let c = (self.settings.filter_freq * fm).max(1000.0);
-                (c, c)
-            }
-        };
-
-        self.filter.set_cutoff(cutoff_l, self.sample_rate);
-        self.filter_r.set_cutoff(cutoff_r, self.sample_rate);
+        self.fm_phase += self.fm_increment();
+        self.fm_phase -= self.fm_phase.floor();
+        let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * self.settings.shimmer_amount + 1.0;
+        let c = (self.settings.filter_freq * fm).max(1000.0);
+        self.filter.set_cutoff(c, self.sample_rate);
+        self.filter_r.set_cutoff(c, self.sample_rate);
         let filtered_l = self.filter.process(noise_l);
         let filtered_r = self.filter_r.process(noise_r);
         let vol = env * self.settings.volume;
@@ -204,6 +181,7 @@ impl Voice for CymbalVoice {
         match index {
             0 => self.settings.shimmer_freq = value,
             1 => self.settings.noise_type = value as u8,
+            2 => self.settings.shimmer_amount = value,
             _ => {}
         }
     }

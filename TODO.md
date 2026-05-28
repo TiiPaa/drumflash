@@ -1,5 +1,7 @@
 ## Court terme (Stabilisation V1 — En cours)
 
+- [x] [67] Positionner le volume en haut du sound editor + ajouter un controle de volume sur chaque lane de la grille (Complexité: Faible, P1)
+- [x] [68] Couleurs differentes pour plock link global vs full snapshot (orange / rouge) pour distinguer visuellement les modes (Complexité: Faible, P1)
 - [x] [55] Ameliorer le rendu Snare 606 (plus percutant, plus proche TR-606)
   - raw noise excite le resonator directement
   - snap envelope ultra-court (0.2ms attack, 3ms decay)
@@ -69,6 +71,7 @@
   - `standard_params` data-driven avec ranges UI (min/max, log, suffix, checkbox)
   - Ranges corrigés pour éviter le clamp involontaire (ex: Ride decay 1.2s > slider 0.5s)
 - [x] [51] Ajouter un paramètre Attack réglable par instrument (graphique AHDSR complet A-H-D-R)
+- [ ] [66] Presets d'instruments — sauvegarder/charger des réglages de synthese par voix (Complexité: Moyenne, P2)
 - [ ] [52] Ajouter un paramètre Sustain level pour un vrai ADSR séquentiel — non prio
 - [x] [26k] Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit)
   - Sound Panel regroupé par familles data-driven (OSC/ENV/FILTER/OUTPUT)
@@ -101,6 +104,7 @@
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
+- [ ] [69] Creer un instrument percussif a base de wavetables — phase recherche et prototypage (Complexité: Élevée, 2-4 semaines, P3)
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
 - [x] [28] Drag & drop MIDI directement vers le DAW — helper externe validé dans Studio One
   - [x] remplacer l'ancien `dnd_set_drag_payload(bytes)` interne egui par un drag fichier OS natif Windows (`CF_HDROP` via OLE `DoDragDrop`)
@@ -194,6 +198,8 @@
 
 ## Bugs a corriger
 
+- [ ] [64] Revoir l'algo de polyrythmie (lane length) — comportement bizarre, longueurs mal synchronisées (Complexité: Moyenne, P1)
+- [ ] [65] Revoir les algos de generation pattern avec les nouveaux instruments (13 voix) — certains générateurs hardcodés à 10/12 instruments (Complexité: Moyenne, P2)
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé
 - [x] [47] Refaire Perc1 proprement : ne pas recréer les enveloppes dans `set_settings`

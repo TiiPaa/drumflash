@@ -89,7 +89,7 @@ impl BrownNoise {
 
     #[inline]
     pub fn next(&mut self) -> f32 {
-        self.integrator += self.white.next() * 0.05;
+        self.integrator += self.white.next() * 0.12;
         // Gentle leak to prevent DC runaway
         self.integrator *= 0.995;
         self.integrator
@@ -122,7 +122,7 @@ impl BlueNoise {
         let current = self.white.next();
         let diff = current - self.prev;
         self.prev = current;
-        diff * 0.5
+        diff * 0.8
     }
 
     pub fn reseed(&mut self, seed: u32) {

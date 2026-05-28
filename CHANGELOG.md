@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-05-28 — UI improvements: per-lane volume & plock colour coding
+
+**Build:** `20260528-142648`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Volume moved to top of Sound Editor** (`draw_sound_panel`)
+  - Large `LocalParamSlider` (0.0–2.0) displayed right under the "Sound Editor" heading
+  - No longer buried inside the Output family group
+- **Per-lane volume control in pattern grid** (`draw_grid`)
+  - Compact 40 px slider next to each instrument label (before Mute/Solo/Test)
+  - Reads/writes `sound_settings.instruments[inst].volume` directly
+  - Calls `bump_version()` on change so the audio thread picks it up
+- **Plock colour coding: link vs snapshot** (`draw_grid`)
+  - **Orange** (255, 140, 0) → Link mode or mixed plock (`field_mask == 0` or partial)
+  - **Red** (220, 50, 50) → Full snapshot (`field_mask == all_bits`)
+  - Darker variants for inactive steps with plock only
+  - Makes it immediately obvious which steps are fully frozen vs. following globals
+
+### Tests
+- Build OK, bundle generated, installed to system VST3 folder
+- 0 new compiler errors (5 pre-existing warnings only)
+
+---
+
 ## 2026-05-27 — Bugfix B8 + Cymbal shimmer & noise colour
 
 **Build:** `20260527-202249`
