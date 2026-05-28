@@ -444,6 +444,8 @@ pub struct DrumFlashParams {
     pub cymbal_shimmer_freq: FloatParam,
     #[id = "cy_noise"]
     pub cymbal_noise_type: FloatParam,
+    #[id = "cy_shimmer_amt"]
+    pub cymbal_shimmer_amount: FloatParam,
 }
 
 impl Default for DrumFlashParams {
@@ -922,7 +924,7 @@ impl Default for DrumFlashParams {
             algo_tom3: IntParam::new("Tom3 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
             algo_clap: IntParam::new("Clap Algo", 0, IntRange::Linear { min: 0, max: 1 }),
             algo_ride: IntParam::new("Ride Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_cymbal: IntParam::new("Cymbal Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_cymbal: IntParam::new("Cymbal Algo", 0, IntRange::Linear { min: 0, max: 0 }),
             // max=1 (not 0) even though there is only one algo today — nih-plug normalizes
             // params as (value - min) / (max - min), which divides by zero when min==max
             // and crashes the host at instantiation.
@@ -1112,6 +1114,15 @@ impl Default for DrumFlashParams {
             )
             .with_smoother(SmoothingStyle::Linear(10.0))
             .with_step_size(1.0),
+
+            cymbal_shimmer_amount: FloatParam::new(
+                "Cymbal Shimmer Amount",
+                0.15,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_unit(" %")
+            .with_value_to_string(formatters::v2s_f32_percentage(2)),
         }
     }
 }
@@ -1296,6 +1307,7 @@ impl DrumFlashParams {
             (12, 8) => Some(&self.perc1_saturation_pre_filter),
             (9, 0) => Some(&self.cymbal_shimmer_freq),
             (9, 1) => Some(&self.cymbal_noise_type),
+            (9, 2) => Some(&self.cymbal_shimmer_amount),
             _ => None,
         }
     }
