@@ -178,6 +178,7 @@ impl Sequencer {
         for track in self.tracks.iter_mut() {
             track.previous_step = 15; // Force trigger on next step 0
             track.previous_shifted_master = 15;
+            track.step_counter = track.track_length.wrapping_sub(1);
         }
     }
 
@@ -187,6 +188,7 @@ impl Sequencer {
         for track in self.tracks.iter_mut() {
             track.previous_step = 15;
             track.previous_shifted_master = 15;
+            track.step_counter = track.track_length.wrapping_sub(1);
         }
     }
 
