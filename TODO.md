@@ -199,7 +199,7 @@
 ## Bugs a corriger
 
 - [x] [64] Revoir l'algo de polyrythmie (lane length) — comportement bizarre, longueurs mal synchronisées (Complexité: Moyenne, P1)
-- [ ] [65] Revoir les algos de generation pattern avec les nouveaux instruments (13 voix) — certains générateurs hardcodés à 10/12 instruments (Complexité: Moyenne, P2)
+- [x] [65] Revoir les algos de generation pattern avec les nouveaux instruments (13 voix) — tous les générateurs gèrent 13 instruments; rôles musicaux enrichis pour Snare 606, B8, Perc1 dans le style Rock (démonstration)
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé
 - [x] [47] Refaire Perc1 proprement : ne pas recréer les enveloppes dans `set_settings`
