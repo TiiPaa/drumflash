@@ -727,6 +727,11 @@ impl SineOsc {
     pub fn set_freq(&mut self, freq: f32) {
         self.phase_increment = freq / self.sample_rate;
     }
+    
+    /// Get current phase (for crossfade purposes)
+    pub fn phase(&self) -> f32 {
+        self.phase
+    }
 
     #[inline]
     pub fn next(&mut self) -> f32 {
@@ -761,6 +766,11 @@ impl SquareOsc {
 
     pub fn reset_phase(&mut self) {
         self.phase = 0.0;
+    }
+    
+    /// Get current phase (for crossfade purposes)
+    pub fn phase(&self) -> f32 {
+        self.phase
     }
 
     #[inline]
