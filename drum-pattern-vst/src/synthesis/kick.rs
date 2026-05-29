@@ -33,31 +33,40 @@ pub struct KickVoice {
     settings: KickSettings,
     sample_rate: f32,
 
-    osc_sine: dsp::SineOsc,
-    osc_square: dsp::SquareOsc,
-    fm_carrier: dsp::SineOsc,
-    fm_mod: dsp::SineOsc,
-    // LowPass filter — cutoff opens then closes after trigger for extra punch.
-    // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 8.0)
-    filter: dsp::OnePoleFilter,
+     osc_sine: dsp::SineOsc,
+     osc_square: dsp::SquareOsc,
+     fm_carrier: dsp::SineOsc,
+     fm_mod: dsp::SineOsc,
+     // LowPass filter — cutoff opens then closes after trigger for extra punch.
+     // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 8.0)
+     filter: dsp::OnePoleFilter,
 
-    // Additive Δ-Hz envelope: target_freq = base_freq + pitch_env.next().
-    pitch_env: dsp::ExpDecayEnvelope,
-    // Smooths sub-sample frequency jumps caused by pitch_env retriggering.
-    freq_smoother: dsp::OnePoleSmoother,
-    // Body amplitude (decay + release stages), with 1.5 ms attack ramp.
-    amp_env: dsp::DecayReleaseEnvelope,
-    // Filter envelope: modulates cutoff for extra punch.
-    filter_env: dsp::ExpDecayEnvelope,
-    // Removes DC drift accumulated by asymmetric retriggers.
-    dc_block: dsp::DcBlocker,
+     // Additive Δ-Hz envelope: target_freq = base_freq + pitch_env.next().
+     pitch_env: dsp::ExpDecayEnvelope,
+     // Smooths sub-sample frequency jumps caused by pitch_env retriggering.
+     freq_smoother: dsp::OnePoleSmoother,
+     // Body amplitude (decay + release stages), with 1.5 ms attack ramp.
+     amp_env: dsp::DecayReleaseEnvelope,
+     // Filter envelope: modulates cutoff for extra punch.
+     filter_env: dsp::ExpDecayEnvelope,
+     // Removes DC drift accumulated by asymmetric retriggers.
+     dc_block: dsp::DcBlocker,
 
-    // Attack transient (the audible "click"), kept fully separate.
-    click: dsp::ClickGenerator,
-    /// Saturation stage for analog character.
-    saturation: saturation::SaturationConfig,
+     // Attack transient (the audible "click"), kept fully separate.
+     click: dsp::ClickGenerator,
+     /// Saturation stage for analog character.
+     saturation: saturation::SaturationConfig,
 
-    active: bool,
+     active: bool,
+     /// Crossfade counter for digital mode retriggers. When > 0, we're in the
+     /// first few samples after a digital trigger and need to crossfade from the
+     /// previous oscillator state to the new zero-phase state to avoid clicks.
+     crossfade_samples: u32,
+     /// Previous oscillator phases before digital reset, used for crossfade
+     old_sine_phase: f32,
+     old_square_phase: f32,
+     old_fm_carrier_phase: f32,
+     old_fm_mod_phase: f32,
 }
 
 impl KickVoice {
@@ -79,41 +88,46 @@ impl KickVoice {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
 
-        Self {
-            settings,
-            sample_rate,
-            osc_sine,
-            osc_square,
-            fm_carrier,
-            fm_mod,
-            filter,
-            pitch_env: dsp::ExpDecayEnvelope::new(sample_rate, PITCH_CURVE, PITCH_DECAY_SECONDS),
-            freq_smoother: dsp::OnePoleSmoother::new(sample_rate, FREQ_SMOOTH_MS, base_freq),
-            amp_env: dsp::DecayReleaseEnvelope::new(
-                sample_rate,
-                settings.decay_curve,
-                settings.decay,
-                settings.release_curve,
-                settings.release,
-            )
-            .with_attack_ms(settings.attack * 1000.0),
-            filter_env: dsp::ExpDecayEnvelope::new(
-                sample_rate,
-                8.0,
-                settings.filter_env_decay.max(0.001),
-            )
-            .with_attack_ms(0.5),
-            dc_block: dsp::DcBlocker::default(),
-            click: dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0),
-            saturation: saturation::SaturationConfig {
-                saturation_type: saturation::SaturationType::None,
-                amount: 0.0,
-                mix: 1.0,
-                output_gain: 1.0,
-                pre_filter: false,
-            },
-            active: false,
-        }
+         Self {
+             settings,
+             sample_rate,
+             osc_sine,
+             osc_square,
+             fm_carrier,
+             fm_mod,
+             filter,
+             pitch_env: dsp::ExpDecayEnvelope::new(sample_rate, PITCH_CURVE, PITCH_DECAY_SECONDS),
+             freq_smoother: dsp::OnePoleSmoother::new(sample_rate, FREQ_SMOOTH_MS, base_freq),
+             amp_env: dsp::DecayReleaseEnvelope::new(
+                 sample_rate,
+                 settings.decay_curve,
+                 settings.decay,
+                 settings.release_curve,
+                 settings.release,
+             )
+             .with_attack_ms(settings.attack * 1000.0),
+             filter_env: dsp::ExpDecayEnvelope::new(
+                 sample_rate,
+                 8.0,
+                 settings.filter_env_decay.max(0.001),
+             )
+             .with_attack_ms(0.5),
+             dc_block: dsp::DcBlocker::default(),
+             click: dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0),
+             saturation: saturation::SaturationConfig {
+                 saturation_type: saturation::SaturationType::None,
+                 amount: 0.0,
+                 mix: 1.0,
+                 output_gain: 1.0,
+                 pre_filter: false,
+             },
+             active: false,
+             crossfade_samples: 0,
+             old_sine_phase: 0.0,
+             old_square_phase: 0.0,
+             old_fm_carrier_phase: 0.0,
+             old_fm_mod_phase: 0.0,
+         }
     }
 
     fn base_freq(&self) -> f32 {
@@ -155,11 +169,26 @@ impl Voice for KickVoice {
             // Digital stable: reset pitch envelope and oscillator phases for
             // identical sound on every hit.
             self.pitch_env.trigger();
+            // Store current oscillator states for crossfade
+            self.old_sine_phase = self.osc_sine.phase();
+            self.old_square_phase = self.osc_square.phase();
+            self.old_fm_carrier_phase = self.fm_carrier.phase();
+            self.old_fm_mod_phase = self.fm_mod.phase();
+            
+            // Reset to zero phase for digital stability
             self.osc_sine.phase = 0.0;
             self.osc_square.reset_phase();
             self.fm_carrier.phase = 0.0;
             self.fm_mod.phase = 0.0;
-            self.filter.reset();
+            
+            // Set up crossfade over 2 samples
+            self.crossfade_samples = 2;
+            
+            // Note: We intentionally do NOT reset the filter to avoid click parasites
+            // when retriggering during a long release tail. The filter state carries
+            // over, preserving continuity while oscillators restart from zero phase.
+            // Reset frequency smoother to avoid click from frequency discontinuity
+            self.freq_smoother.reset(self.base_freq() + self.pitch_peak_hz());
         }
         self.amp_env.trigger();
         self.filter_env.trigger();
@@ -178,17 +207,37 @@ impl Voice for KickVoice {
             let raw = match self.settings.algo {
                 1 => {
                     self.osc_square.set_freq(freq);
-                    self.osc_square.next()
+                    let mut square_sample = self.osc_square.next();
+                    if self.crossfade_samples > 0 {
+                        // Crossfade from old phase to new zero phase
+                        let crossfade_ratio = self.crossfade_samples as f32 / 2.0;
+                        let old_square = (self.old_square_phase * 2.0 * std::f32::consts::PI).sin();
+                        square_sample = old_square * (1.0 - crossfade_ratio) + square_sample * crossfade_ratio;
+                    }
+                    square_sample
                 }
                 2 => {
                     self.fm_mod.set_freq(freq * 0.5);
                     let mod_val = self.fm_mod.next();
                     self.fm_carrier.set_freq(freq * (1.0 + mod_val * 0.8));
-                    self.fm_carrier.next()
+                    let mut carrier_sample = self.fm_carrier.next();
+                    if self.crossfade_samples > 0 {
+                        let crossfade_ratio = self.crossfade_samples as f32 / 2.0;
+                        let old_carrier = (self.old_fm_carrier_phase * 2.0 * std::f32::consts::PI).sin();
+                        carrier_sample = old_carrier * (1.0 - crossfade_ratio) + carrier_sample * crossfade_ratio;
+                    }
+                    carrier_sample
                 }
                 _ => {
                     self.osc_sine.set_freq(freq);
-                    self.osc_sine.next()
+                    let mut sine_sample = self.osc_sine.next();
+                    if self.crossfade_samples > 0 {
+                        // Crossfade from old phase to new zero phase
+                        let crossfade_ratio = self.crossfade_samples as f32 / 2.0;
+                        let old_sine = (self.old_sine_phase * 2.0 * std::f32::consts::PI).sin();
+                        sine_sample = old_sine * (1.0 - crossfade_ratio) + sine_sample * crossfade_ratio;
+                    }
+                    sine_sample
                 }
             };
 
@@ -204,6 +253,11 @@ impl Voice for KickVoice {
                 self.active = false;
             } else {
                 body = filtered * env * self.settings.volume;
+            }
+            
+            // Decrement crossfade counter if active
+            if self.crossfade_samples > 0 {
+                self.crossfade_samples -= 1;
             }
         }
 
@@ -349,28 +403,60 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_kick_dense_retriggers_stay_finite() {
-        // Stress test inspired by `resources/roland-kick-rust`: fire bursts of
-        // closely-spaced retriggers and verify the output stays bounded and
-        // free of NaN/Inf.
-        let sr = 44100.0;
-        let mut kick = KickVoice::new(sr, KickSettings::default_at(sr));
-        let triggers = [0usize, 2_400, 4_800, 4_960, 9_600, 9_840];
-        let mut idx = 0usize;
-        let mut peak = 0.0f32;
-        for n in 0..12_000 {
-            if idx < triggers.len() && triggers[idx] == n {
-                kick.trigger();
-                idx += 1;
-            }
-            let s = kick.process_sample();
-            assert!(s.is_finite(), "non-finite sample at n={}: {}", n, s);
-            peak = peak.max(s.abs());
-        }
-        assert!(peak > 0.01);
-        assert!(peak < 4.0, "output peak runaway: {}", peak);
-    }
+     #[test]
+     fn test_kick_dense_retriggers_stay_finite() {
+         // Stress test inspired by `resources/roland-kick-rust`: fire bursts of
+         // closely-spaced retriggers and verify the output stays bounded and
+         // free of NaN/Inf.
+         let sr = 44100.0;
+         let mut kick = KickVoice::new(sr, KickSettings::default_at(sr));
+         let triggers = [0usize, 2_400, 4_800, 4_960, 9_600, 9_840];
+         let mut idx = 0usize;
+         let mut peak = 0.0f32;
+         for n in 0..12_000 {
+             if idx < triggers.len() && triggers[idx] == n {
+                 kick.trigger();
+                 idx += 1;
+             }
+             let s = kick.process_sample();
+             assert!(s.is_finite(), "non-finite sample at n={}: {}", n, s);
+             peak = peak.max(s.abs());
+         }
+         assert!(peak > 0.01);
+         assert!(peak < 4.0, "output peak runaway: {}", peak);
+     }
+
+     #[test]
+     fn test_kick_no_frequency_click_on_retrigger() {
+         // Verify that frequency smoother reset eliminates the click parasite
+         // that occurred when freq_smoother.current was not reset to the new
+         // target frequency, causing a discontinuity in the first sample after trigger.
+         let mut settings = KickSettings::default_at(44100.0);
+         settings.analog = 0.0; // Digital mode
+         settings.click_level = 0.0; // Disable click to isolate body discontinuities
+         
+         let mut kick = KickVoice::new(44100.0, settings);
+         
+         // First trigger
+         kick.trigger();
+         // Run for a while to let the tail develop
+         for _ in 0..2000 {
+             kick.process_sample();
+         }
+         
+         // Second trigger - this is where the click parasite would occur
+         kick.trigger();
+         let first_sample = kick.process_sample();
+         let second_sample = kick.process_sample();
+         
+         // The discontinuity should be small (no abrupt frequency jump)
+         let step = (second_sample - first_sample).abs();
+         assert!(
+             step < 0.05,
+             "Frequency discontinuity too large: first={}, second={}, step={}",
+             first_sample, second_sample, step
+         );
+     }
 
     #[test]
     fn test_kick_decay() {
