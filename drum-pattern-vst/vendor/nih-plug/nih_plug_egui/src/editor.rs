@@ -1,4 +1,4 @@
-//! An [`Editor`] implementation for egui.
+﻿//! An [`Editor`] implementation for egui.
 
 use crate::egui::Vec2;
 use crate::egui::ViewportCommand;
@@ -14,6 +14,359 @@ use parking_lot::RwLock;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+
+
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicPtr, Ordering as AtomicOrdering};
+#[cfg(target_os = "windows")]
+pub static PLUGIN_HWND: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+#[cfg(target_os = "windows")]
+pub mod win_keyboard {
+    //! Windows keyboard input routing for VST plugins.
+    //!
+    //! Studio One, REAPER, Ableton Live etc. swallow `WM_KEYDOWN`/`WM_CHAR` destined for
+    //! plugin child windows via `TranslateAccelerator` and `IsDialogMessage`. The fix used
+    //! by `plugin-things` (ilmai) and adapted here:
+    //!
+    //! 1. A separate child window (`message window`) is registered with its own class and
+    //!    `WS_EX_NOACTIVATE`. Because it lives outside the host's dialog tree, neither
+    //!    `TranslateAccelerator` nor `IsDialogMessage` consume messages for it.
+    //! 2. When egui needs keyboard focus, `set_keyboard_focus(true)` redirects Win32
+    //!    focus to the message window. Otherwise focus stays on the baseview window
+    //!    (which forwards naturally to its parent's accelerator loop).
+    //! 3. The message window's `WndProc` intercepts `WM_KEYDOWN`/`WM_KEYUP`/`WM_CHAR`
+    //!    (and SYS variants) and re-posts them to the baseview HWND with `WM_APP+N` IDs.
+    //!    Custom messages in the `WM_APP` range are never filtered by host accelerator
+    //!    handling.
+    //! 4. The subclassed `WndProc` on the baseview HWND translates `WM_APP+N` back to the
+    //!    original `WM_KEY*`/`WM_CHAR` IDs before forwarding to baseview's original
+    //!    `WndProc`, so baseview's keyboard handling sees the events as if they came in
+    //!    normally.
+
+    use std::ffi::c_void;
+    use std::ptr::{null, null_mut};
+    use std::sync::atomic::{AtomicPtr, AtomicU16, Ordering};
+
+    type WndProcFn = unsafe extern "system" fn(*mut c_void, u32, usize, isize) -> isize;
+
+    #[repr(C)]
+    struct WNDCLASSW {
+        style: u32,
+        lpfn_wnd_proc: Option<WndProcFn>,
+        cb_cls_extra: i32,
+        cb_wnd_extra: i32,
+        h_instance: *mut c_void,
+        h_icon: *mut c_void,
+        h_cursor: *mut c_void,
+        hbr_background: *mut c_void,
+        lpsz_menu_name: *const u16,
+        lpsz_class_name: *const u16,
+    }
+
+    #[repr(C)]
+    struct MSG {
+        hwnd: *mut c_void,
+        message: u32,
+        wparam: usize,
+        lparam: isize,
+        time: u32,
+        pt_x: i32,
+        pt_y: i32,
+        private: u32,
+    }
+
+    const PM_NOREMOVE: u32 = 0x0000;
+    const SCAN_MASK: isize = 0x01FF_0000;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowLongPtrW(hwnd: *mut c_void, n_index: i32, new_long: isize) -> isize;
+        fn CallWindowProcW(
+            prev: WndProcFn,
+            hwnd: *mut c_void,
+            msg: u32,
+            wparam: usize,
+            lparam: isize,
+        ) -> isize;
+        fn SetPropW(hwnd: *mut c_void, lp_string: *const u16, h_data: *mut c_void) -> i32;
+        fn GetPropW(hwnd: *mut c_void, lp_string: *const u16) -> *mut c_void;
+        fn DefWindowProcW(hwnd: *mut c_void, msg: u32, wparam: usize, lparam: isize) -> isize;
+        fn RegisterClassW(wc: *const WNDCLASSW) -> u16;
+        fn CreateWindowExW(
+            ex_style: u32,
+            class_name: *const u16,
+            window_name: *const u16,
+            style: u32,
+            x: i32,
+            y: i32,
+            width: i32,
+            height: i32,
+            parent: *mut c_void,
+            menu: *mut c_void,
+            instance: *mut c_void,
+            param: *mut c_void,
+        ) -> *mut c_void;
+        fn PostMessageW(hwnd: *mut c_void, msg: u32, wparam: usize, lparam: isize) -> i32;
+        fn PeekMessageW(
+            msg: *mut MSG,
+            hwnd: *mut c_void,
+            msg_filter_min: u32,
+            msg_filter_max: u32,
+            remove_msg: u32,
+        ) -> i32;
+        fn GetParent(hwnd: *mut c_void) -> *mut c_void;
+        fn IsWindow(hwnd: *mut c_void) -> i32;
+        fn SetFocus(hwnd: *mut c_void) -> *mut c_void;
+        fn GetFocus() -> *mut c_void;
+        fn GetForegroundWindow() -> *mut c_void;
+        fn GetWindowThreadProcessId(hwnd: *mut c_void, process_id: *mut u32) -> u32;
+        fn GetCurrentThreadId() -> u32;
+        fn AttachThreadInput(id_attach: u32, id_attach_to: u32, f_attach: i32) -> i32;
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetModuleHandleW(lp_module_name: *const u16) -> *mut c_void;
+    }
+
+    const GWLP_WNDPROC: i32 = -4;
+    const WM_GETDLGCODE: u32 = 0x0087;
+    const DLGC_WANTARROWS: isize = 0x0001;
+    const DLGC_WANTTAB: isize = 0x0002;
+    const DLGC_WANTALLKEYS: isize = 0x0004;
+    const DLGC_WANTCHARS: isize = 0x0080;
+
+    const WM_KEYDOWN: u32 = 0x0100;
+    const WM_KEYUP: u32 = 0x0101;
+    const WM_CHAR: u32 = 0x0102;
+    const WM_SYSKEYDOWN: u32 = 0x0104;
+    const WM_SYSKEYUP: u32 = 0x0105;
+    const WM_SYSCHAR: u32 = 0x0106;
+
+    const WM_APP: u32 = 0x8000;
+    const WM_APP_KEY_DOWN: u32 = WM_APP + 1;
+    const WM_APP_KEY_UP: u32 = WM_APP + 2;
+    const WM_APP_CHAR: u32 = WM_APP + 3;
+    const WM_APP_SYSKEY_DOWN: u32 = WM_APP + 4;
+    const WM_APP_SYSKEY_UP: u32 = WM_APP + 5;
+    const WM_APP_SYSCHAR: u32 = WM_APP + 6;
+
+    const WS_CHILD: u32 = 0x40000000;
+    const WS_EX_NOACTIVATE: u32 = 0x08000000;
+
+    // UTF-16 null-terminated "NihPlugEguiOrigWndProc".
+    const PROP_NAME: &[u16] = &[
+        0x004E, 0x0069, 0x0068, 0x0050, 0x006C, 0x0075, 0x0067, 0x0045, 0x0067, 0x0075, 0x0069,
+        0x004F, 0x0072, 0x0069, 0x0067, 0x0057, 0x006E, 0x0064, 0x0050, 0x0072, 0x006F, 0x0063,
+        0x0000,
+    ];
+
+    // UTF-16 null-terminated "NihPlugEguiKbdMsg".
+    const MSG_CLASS_NAME: &[u16] = &[
+        0x004E, 0x0069, 0x0068, 0x0050, 0x006C, 0x0075, 0x0067, 0x0045, 0x0067, 0x0075, 0x0069,
+        0x004B, 0x0062, 0x0064, 0x004D, 0x0073, 0x0067, 0x0000,
+    ];
+
+    /// Message window's HWND, accessed by `set_keyboard_focus`. Single global since the
+    /// plugin is expected to host at most one editor window at a time per process.
+    static MESSAGE_HWND: AtomicPtr<c_void> = AtomicPtr::new(null_mut());
+
+    /// Atom returned by `RegisterClassW`. Registered once per DLL load.
+    static MSG_CLASS_ATOM: AtomicU16 = AtomicU16::new(0);
+
+    /// WndProc installed on the message window. Forwards keyboard messages back to the
+    /// parent (baseview) HWND via custom `WM_APP+N` IDs that hosts don't filter.
+    /// Returns true if a `WM_CHAR`/`WM_SYSCHAR` with a matching scan code is queued at
+    /// `hwnd`. Mirrors baseview's `is_last_message` so we drop the `WM_KEYDOWN` when a
+    /// `WM_CHAR` is coming next: otherwise baseview would produce two events (one from
+    /// each), leading to duplicated text.
+    unsafe fn has_pending_char(hwnd: *mut c_void, msg: u32, lparam: isize) -> bool {
+        let expected = match msg {
+            WM_KEYDOWN | WM_CHAR => WM_CHAR,
+            WM_SYSKEYDOWN | WM_SYSCHAR => WM_SYSCHAR,
+            _ => return false,
+        };
+        let mut next: MSG = std::mem::zeroed();
+        let avail = PeekMessageW(&mut next, hwnd, expected, expected, PM_NOREMOVE);
+        avail != 0 && (next.lparam & SCAN_MASK) == (lparam & SCAN_MASK)
+    }
+
+    unsafe extern "system" fn msg_wnd_proc(
+        hwnd: *mut c_void,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> isize {
+        // Drop the keydown if a matching char is queued: baseview's keyboard logic
+        // merges them, but only if it can see the WM_CHAR via PeekMessageW. Since we
+        // forward as WM_APP+N, baseview's peek won't find it and would emit two events.
+        // Dropping the keydown here makes the single WM_CHAR carry the final event.
+        if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && has_pending_char(hwnd, msg, lparam) {
+            return 0;
+        }
+
+        let forward_as = match msg {
+            WM_KEYDOWN => Some(WM_APP_KEY_DOWN),
+            WM_KEYUP => Some(WM_APP_KEY_UP),
+            WM_CHAR => Some(WM_APP_CHAR),
+            WM_SYSKEYDOWN => Some(WM_APP_SYSKEY_DOWN),
+            WM_SYSKEYUP => Some(WM_APP_SYSKEY_UP),
+            WM_SYSCHAR => Some(WM_APP_SYSCHAR),
+            _ => None,
+        };
+        if let Some(app_msg) = forward_as {
+            let parent = GetParent(hwnd);
+            if !parent.is_null() {
+                PostMessageW(parent, app_msg, wparam, lparam);
+            }
+            return 0;
+        }
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+
+    /// WndProc subclass installed on the baseview HWND. Two jobs:
+    /// - On `WM_GETDLGCODE`, claim all keyboard input so that hosts using
+    ///   `IsDialogMessage` (some older / less common code paths) don't filter keys.
+    /// - On `WM_APP+N` messages posted by `msg_wnd_proc`, translate them back to their
+    ///   real `WM_KEY*`/`WM_CHAR` IDs and dispatch to baseview's original WndProc.
+    unsafe extern "system" fn subclass_proc(
+        hwnd: *mut c_void,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> isize {
+        if msg == WM_GETDLGCODE {
+            return DLGC_WANTALLKEYS | DLGC_WANTCHARS | DLGC_WANTARROWS | DLGC_WANTTAB;
+        }
+        let translated_msg = match msg {
+            WM_APP_KEY_DOWN => WM_KEYDOWN,
+            WM_APP_KEY_UP => WM_KEYUP,
+            WM_APP_CHAR => WM_CHAR,
+            WM_APP_SYSKEY_DOWN => WM_SYSKEYDOWN,
+            WM_APP_SYSKEY_UP => WM_SYSKEYUP,
+            WM_APP_SYSCHAR => WM_SYSCHAR,
+            other => other,
+        };
+        let original = GetPropW(hwnd, PROP_NAME.as_ptr());
+        if original.is_null() {
+            return DefWindowProcW(hwnd, translated_msg, wparam, lparam);
+        }
+        let original_fn: WndProcFn = std::mem::transmute(original);
+        CallWindowProcW(original_fn, hwnd, translated_msg, wparam, lparam)
+    }
+
+    fn install_subclass(hwnd: *mut c_void) {
+        if hwnd.is_null() {
+            return;
+        }
+        unsafe {
+            if !GetPropW(hwnd, PROP_NAME.as_ptr()).is_null() {
+                return;
+            }
+            let original =
+                SetWindowLongPtrW(hwnd, GWLP_WNDPROC, subclass_proc as *const () as isize);
+            if original != 0 {
+                SetPropW(hwnd, PROP_NAME.as_ptr(), original as *mut c_void);
+            }
+        }
+    }
+
+    fn ensure_msg_class() -> u16 {
+        let existing = MSG_CLASS_ATOM.load(Ordering::Acquire);
+        if existing != 0 {
+            return existing;
+        }
+        unsafe {
+            let h_inst = GetModuleHandleW(null());
+            let wc = WNDCLASSW {
+                style: 0,
+                lpfn_wnd_proc: Some(msg_wnd_proc),
+                cb_cls_extra: 0,
+                cb_wnd_extra: 0,
+                h_instance: h_inst,
+                h_icon: null_mut(),
+                h_cursor: null_mut(),
+                hbr_background: null_mut(),
+                lpsz_menu_name: null(),
+                lpsz_class_name: MSG_CLASS_NAME.as_ptr(),
+            };
+            let atom = RegisterClassW(&wc);
+            // If RegisterClassW returned 0 the class might already be registered (eg the
+            // editor was opened, closed and reopened). Treat both cases as "ready to use"
+            // by storing a non-zero marker; CreateWindowExW with the class name will work
+            // either way.
+            let marker = if atom == 0 { 1 } else { atom };
+            MSG_CLASS_ATOM.store(marker, Ordering::Release);
+            marker
+        }
+    }
+
+    fn create_message_window(parent: *mut c_void) -> *mut c_void {
+        let _ = ensure_msg_class();
+        unsafe {
+            let h_inst = GetModuleHandleW(null());
+            CreateWindowExW(
+                WS_EX_NOACTIVATE,
+                MSG_CLASS_NAME.as_ptr(),
+                null(),
+                WS_CHILD,
+                0,
+                0,
+                0,
+                0,
+                parent,
+                null_mut(),
+                h_inst,
+                null_mut(),
+            )
+        }
+    }
+
+    /// Install the subclass on the plugin HWND and create the auxiliary message window.
+    /// Called once per editor `spawn`.
+    pub fn install(plugin_hwnd: *mut c_void) {
+        if plugin_hwnd.is_null() {
+            return;
+        }
+        install_subclass(plugin_hwnd);
+        let msg_hwnd = create_message_window(plugin_hwnd);
+        MESSAGE_HWND.store(msg_hwnd, Ordering::Release);
+    }
+
+    /// Move keyboard focus between the message window (when egui wants input) and the
+    /// baseview window (when it doesn't). Uses `AttachThreadInput` so `SetFocus` works
+    /// even when the calling thread doesn't own the host's input queue.
+    pub fn set_keyboard_focus(focused: bool) {
+        let plugin = super::PLUGIN_HWND.load(Ordering::Acquire);
+        let msg = MESSAGE_HWND.load(Ordering::Acquire);
+        if plugin.is_null() {
+            return;
+        }
+        unsafe {
+            if !msg.is_null() && IsWindow(msg) == 0 {
+                MESSAGE_HWND.store(null_mut(), Ordering::Release);
+                return;
+            }
+            let target = if focused && !msg.is_null() { msg } else { plugin };
+            if GetFocus() == target {
+                return;
+            }
+            let fg = GetForegroundWindow();
+            if !fg.is_null() {
+                let fg_thread = GetWindowThreadProcessId(fg, null_mut());
+                let my_thread = GetCurrentThreadId();
+                if fg_thread != 0 && fg_thread != my_thread {
+                    AttachThreadInput(my_thread, fg_thread, 1);
+                    SetFocus(target);
+                    AttachThreadInput(my_thread, fg_thread, 0);
+                    return;
+                }
+            }
+            SetFocus(target);
+        }
+    }
+}
 
 /// An [`Editor`] implementation that calls an egui draw loop.
 pub(crate) struct EguiEditor<T> {
@@ -131,6 +484,15 @@ where
                 (update)(egui_ctx, &setter, &mut state.write());
             },
         );
+
+        #[cfg(target_os = "windows")]
+        {
+            use raw_window_handle::HasRawWindowHandle;
+            if let RawWindowHandle::Win32(handle) = window.raw_window_handle() {
+                PLUGIN_HWND.store(handle.hwnd, AtomicOrdering::Release);
+                win_keyboard::install(handle.hwnd);
+            }
+        }
 
         self.egui_state.open.store(true, Ordering::Release);
         Box::new(EguiEditorHandle {

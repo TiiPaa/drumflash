@@ -16,6 +16,7 @@ use std::{
 };
 
 use crate::{
+    preset_dumps,
     generator, midi_export,
     plock::PlockState,
     sequencer::{Pattern, SharedPattern},
@@ -56,6 +57,7 @@ struct EditorUIState {
     selected_pattern_slot: usize,
     last_midi_export_path: Option<String>,
     last_midi_export_error: Option<String>,
+    dump_name_input: String,
 }
 
 pub fn create_editor(
@@ -80,6 +82,8 @@ pub fn create_editor(
         EditorUIState::default(),
         |_egui_ctx, _state| {},
         move |egui_ctx, setter, state| {
+            #[cfg(target_os = "windows")]
+            nih_plug_egui::set_keyboard_focus(egui_ctx.wants_keyboard_input());
             ResizableWindow::new("drum-pattern-generator")
                 .min_size(Vec2::new(1200.0, 720.0))
                 .show(egui_ctx, editor_state.as_ref(), |ui| {
@@ -563,6 +567,79 @@ fn draw_sound_panel(
         mut stereo,
     ) = inst.load();
     let mut changed = false;
+
+    // ── Dev Tools: Preset Dumps ──
+    ui.collapsing("Dev: Preset Dumps", |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Name:");
+            ui.text_edit_singleline(&mut state.dump_name_input);
+            if ui.button("Dump").clicked() {
+                let instrument = &crate::instrument_registry::INSTRUMENTS[state.selected_instrument];
+                let mut specials = Vec::new();
+                for def in instrument.special_params {
+                    if let Some(param) = params.special_param(state.selected_instrument, def.special_index) {
+                        specials.push(param.value());
+                    } else {
+                        specials.push(0.0);
+                    }
+                }
+                let algo = params.algos()[state.selected_instrument].value() as u8;
+                let dump = preset_dumps::PresetDump {
+                    name: state.dump_name_input.clone(),
+                    instrument_idx: state.selected_instrument,
+                    instrument_label: instrument.label.to_string(),
+                    standards: [freq, decay, vol, filt, attack, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo],
+                    algo,
+                    specials,
+                };
+                if let Err(e) = preset_dumps::dump_preset(&dump) {
+                    eprintln!("Dump failed: {}", e);
+                }
+            }
+        });
+        let dumps = preset_dumps::list_dumps();
+        if !dumps.is_empty() {
+            ui.label("Existing dumps:");
+            for info in dumps {
+                ui.horizontal(|ui| {
+                    ui.label(format!("{} - {}", info.instrument_label, info.name));
+                    if ui.button("Load").clicked() {
+                        if let Ok(dump) = preset_dumps::load_dump(&info.path) {
+                            state.selected_instrument = dump.instrument_idx;
+                            let target_inst = &sound_settings.instruments[dump.instrument_idx];
+                            store_field(target_inst, crate::instrument_registry::StandardField::Freq, dump.standards[0]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::Decay, dump.standards[1]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::Volume, dump.standards[2]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::FilterFreq, dump.standards[3]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::Attack, dump.standards[4]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::Release, dump.standards[5]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::DecayCurve, dump.standards[6]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::ReleaseCurve, dump.standards[7]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::Hold, dump.standards[8]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::FilterEnvAmount, dump.standards[9]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::FilterEnvDecay, dump.standards[10]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::Analog, dump.standards[11]);
+                            store_field(target_inst, crate::instrument_registry::StandardField::Stereo, dump.standards[12]);
+                            let algo_param = params.algos()[dump.instrument_idx];
+                            setter.set_parameter(algo_param, dump.algo as i32);
+                            let inst_def = &crate::instrument_registry::INSTRUMENTS[dump.instrument_idx];
+                            for (i, def) in inst_def.special_params.iter().enumerate() {
+                                if let Some(param) = params.special_param(dump.instrument_idx, def.special_index) {
+                                    if i < dump.specials.len() {
+                                        setter.set_parameter(param, dump.specials[i]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if ui.button("Delete").clicked() {
+                        let _ = preset_dumps::delete_dump(&info.path);
+                    }
+                });
+            }
+        }
+    });
+    ui.add(egui::Separator::default().spacing(8.0));
 
     // ── Volume global de l'instrument ──
     ui.group(|ui| {
