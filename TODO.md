@@ -226,8 +226,39 @@
 - [ ] [71] Longueur globale du pattern ajustable 1 => 64 avec 4 pages de 16 steps max. Prevoir un switch de follow de la lecture ou pas (Complexite: Moyenne-Elevee, 1-2 semaines, P1)
 - [ ] [72] Probleme d'affichage du volume : slider en haut de l'editor (1.5 max) et en bas (1) et dans la lane (1.5) — incoherence de range a uniformiser (Complexite: Faible, 1-2 jours, P1)
 - [x] [73] caracteres esoteriques ont remplace aleatoirement les caracteres normaux dans les boutons/texte UI — CORRIGE (restauration UTF-8 via script Python) — build 20260529-174106 (Complexite: Faible, 1 jour, P1)
-- [ ] [74] Proposer 3 types de clicks pour la BD (Kick) : soft/medium/hard ou impulse/noise/transient (Complexite: Moyenne, 3-5 jours, P2)
+- [x] [74] Proposer 3 types de clicks pour la BD (Kick) : soft/medium/hard ou impulse/noise/transient (Complexite: Moyenne, 3-5 jours, P2)
 
 ## Tests avances (Post-V1)
 
 - [ ] [12] Ajouter un test de stress du sequencer (longue session, stabilite du timing)
+**REPRENDRE ICI**
+
+## Analyse Technique (Reference)
+
+### Mode Analog vs Digital - Comportement par Instrument
+
+**Fonctionnement du mode Analog (`analog >= 0.5`)** :
+- Oscillateurs conservent leur phase actuelle
+- Enveloppes relancées depuis leur valeur actuelle
+- Son organique et continu, comme un vrai circuit analogique
+- Retriggers pendant une queue ajoutent de l'énergie plutôt que de réinitialiser
+
+**Mode Digital (`analog < 0.5`)** :
+- Oscillateurs réinitialisés à phase = 0.0
+- Enveloppes repartent de zéro
+- Son propre et répétable
+- Chaque hit sonne identique
+
+**Instruments avec mode Analog/Digital** :
+- Kick : Phase continue (analog) vs réinitialisée (digital) - Défaut: Analog (1.0)
+- Kick 808 : Phase continue vs réinitialisée (cold start) - Défaut: Analog (1.0)
+- Snare : Phase continue vs réinitialisée + noise reseed - Défaut: Analog (1.0)
+- Snare 606 : Phase continue vs réinitialisée + noise reseed - Défaut: Analog (1.0)
+- Tom : Phase continue vs réinitialisée - Défaut: Analog (1.0)
+
+**Instruments SANS mode Analog/Digital** (toujours "analog") :
+- Clap, HiHat, OpenHiHat, Ride, Cymbal, Perc1 (défaut 0.3), Zap (défaut 0.0)
+
+**Quand utiliser chaque mode** :
+- Analog : Sons organiques, patterns denses, caractère vintage
+- Digital : Sons propres, patterns clairsemés, caractère moderne

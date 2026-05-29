@@ -20,14 +20,28 @@
 
 ---
 
-## 2026-05-29 — Session: Fix click de retrigger sur le Kick
+## 2026-05-29 — Session: Fix click parasite et analyse mode analog/digital
 
-**Build:** `20260529-172133`
-**Commits:** `XXXXXXX`
+**Build:** `20260529-203919`
+**Commits:** `a5a514f` et suivants
 
 ### Changes
-- **Fix retrigger click sur Kick** (kick.rs)
-  - Le ClickGenerator était retriggeré à chaque hit, même pendant la queue du précédent
+- **Fix click parasite en mode digital** (kick.rs, dsp.rs)
+  - Implémentation d'un système de crossfade sur 2 samples pour les retriggers en mode digital
+  - Ajout de méthodes `phase()` pour `SineOsc` et `SquareOsc` pour récupérer l'état avant réinitialisation
+  - Crossfade progressif depuis l'ancienne phase vers la nouvelle phase zéro
+  - Conservation de la réinitialisation du freq_smoother et suppression du filter.reset()
+  - Tous les tests passent : 7/7 tests kick + 44/44 tests standalone
+
+- **Analyse complète mode Analog vs Digital** (documentée dans TODO.md)
+  - 5 instruments utilisent le mode analog/digital (Kick, Kick808, Snare, Snare606, Tom)
+  - 7 instruments toujours en mode "analog" (Clap, HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap)
+  - Documentation des comportements et recommandations d'utilisation
+
+### Tests
+- 58 lib tests + 44 standalone tests pass
+- Build installé et prêt pour test dans Studio One
+- Vérification spécifique des retriggers avec long release
   - Cela créait un pic de amplitude massif (step de 0.468) superposé à la tail
   - Fix : ne retrigger le click que sur un cold start (!was_active), pas sur un retrigger
   - Les tests confirment : max step passe de 0.468 à 0.0036 avec le fix
