@@ -18,6 +18,7 @@ mod sequencer;
 mod sound_settings;
 mod synthesis;
 mod ui;
+mod preset_dumps;
 
 use generator::{GeneratorType, Style};
 use plock::PersistentPlockState;

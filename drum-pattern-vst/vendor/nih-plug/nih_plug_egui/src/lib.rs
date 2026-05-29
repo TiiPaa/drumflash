@@ -1,4 +1,4 @@
-//! [egui](https://github.com/emilk/egui) editor support for NIH plug.
+﻿//! [egui](https://github.com/emilk/egui) editor support for NIH plug.
 //!
 //! TODO: Proper usage example, for now check out the gain_gui example
 
@@ -89,6 +89,27 @@ impl<'a> PersistentField<'a, EguiState> for Arc<EguiState> {
         f(self)
     }
 }
+
+
+/// Route Win32 keyboard focus between the message window (when egui wants typed input)
+/// and the plugin's main window (when it doesn't). Call this every frame with
+/// `egui_ctx.wants_keyboard_input()` as argument.
+///
+/// On Windows, plugin hosts (Studio One, REAPER, Live, etc.) swallow `WM_KEYDOWN`/
+/// `WM_CHAR` aimed at the plugin's child HWND via `TranslateAccelerator` and
+/// `IsDialogMessage`. To bypass that, `nih_plug_egui` creates a second child window
+/// with a unique class (`WS_EX_NOACTIVATE`) whose messages the host doesn't filter.
+/// When focus is on that window, keys are forwarded back to the plugin's egui via
+/// custom `WM_APP+N` messages. See `editor::win_keyboard` for the full architecture.
+///
+/// On non-Windows targets this is a no-op.
+#[cfg(target_os = "windows")]
+pub fn set_keyboard_focus(focused: bool) {
+    editor::win_keyboard::set_keyboard_focus(focused);
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn set_keyboard_focus(_focused: bool) {}
 
 impl EguiState {
     /// Initialize the GUI's state. This value can be passed to [`create_egui_editor()`]. The window
