@@ -4,7 +4,18 @@
       "Bash(git *)",
       "Bash(sort -t'\"' -k2)",
       "Bash(uniq -d -f1)",
-      "Bash(cargo check *)"
+      "Bash(cargo check *)",
+      "Bash(cargo build *)",
+      "PowerShell(& \"e:\\\\Dev\\\\Projets\\\\Drum Flash\\\\drum-pattern-vst\\\\build.ps1\" -Install)",
+      "PowerShell(& \"e:\\\\Dev\\\\Projets\\\\Drum Flash\\\\drum-pattern-vst\\\\build.ps1\" -Install 2>&1 | Select-Object -Last 30)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(gh issue *)",
+      "WebFetch(domain:forum.juce.com)",
+      "Bash(gh api *)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f['name'], f['size']\\) for f in d]\")",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "PowerShell(Copy-Item *)"
     ]
   }
 }
