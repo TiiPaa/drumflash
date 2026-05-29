@@ -1,6 +1,109 @@
-# Changelog
+﻿# Changelog
 
-## 2026-05-28 — Session: UI polish + polyrhythm fix + generator roles
+## 2026-05-29 — Session: Correction corruption UTF-8 dans l'interface
+
+**Build:** `20260529-174106`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Fix caractères ésotériques dans l'UI** (ui.rs, lib.rs)
+  - 49 occurrences de caractères corrompus remplacés par les bons caractères Unicode
+  - Émojis restaurés : ◀, ▶, 🎲, 🔗, 📸, 🔀, ↺, 🗑
+  - Caractères accentués restaurés : é, è, à, ç, ê, ô, ù, î, ï
+  - Séparateurs et flèches restaurés : —, →, ─, ■
+  - Cause : manipulations PowerShell précédentes en encodage Windows-1252 au lieu d'UTF-8
+  - Fix via script Python avec mapping byte UTF-8 explicite
+
+### Tests
+- 58 lib tests + 44 standalone tests pass
+- Build installé
+
+---
+
+## 2026-05-29 — Session: Fix click de retrigger sur le Kick
+
+**Build:** `20260529-172133`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Fix retrigger click sur Kick** (kick.rs)
+  - Le ClickGenerator était retriggeré à chaque hit, même pendant la queue du précédent
+  - Cela créait un pic de amplitude massif (step de 0.468) superposé à la tail
+  - Fix : ne retrigger le click que sur un cold start (!was_active), pas sur un retrigger
+  - Les tests confirment : max step passe de 0.468 à 0.0036 avec le fix
+  - Tous les tests existants passent (6 kick tests + 52 autres)
+
+### Tests
+- 58 lib tests + 44 standalone tests pass
+- Build installé et prêt à tester
+
+---
+
+## 2026-05-29 — Session: Correction focus clavier Windows (solution officielle)
+
+**Build:** `20260529-135735`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Correction focus clavier** (Windows uniquement) — Solution officielle egui-baseview
+  - Problème connu : les événements clavier sont capturés par le DAW parent au lieu de la fenêtre enfant du plugin
+  - Référence : [baseview#192](https://github.com/RustAudio/baseview/issues/192), [egui-baseview#20](https://github.com/BillyDM/egui-baseview/issues/20)
+  - Solution : activation de la feature windows_keyboard_workaround dans egui-baseview
+  - Cette feature appelle window.focus() automatiquement quand des événements de saisie sont détectés
+  - Modification : endor/nih-plug/nih_plug_egui/Cargo.toml — ajout de la feature aux features par défaut
+
+### Tests
+- Build installé et prêt à tester dans Studio One / Reaper
+
+---
+
+## 2026-05-29 — Session: Correction focus clavier Windows + Preset dumps Phase 1a
+
+**Build:** `20260529-124136`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Correction focus clavier** (Windows uniquement)
+  - Le DAW capturait les événements clavier et ne les transmettait pas au plugin
+  - SetFocus appelé automatiquement sur le HWND de la fenêtre du plugin à chaque frame
+  - PLUGIN_HWND stocké dans une variable statique publique (
+ih_plug_egui::editor.rs)
+  - Fonction publique 
+ih_plug_egui::ensure_window_focus() exposée
+  - Appel systématique dans ui.rs::update callback via ensure_keyboard_focus()
+- **Preset dump dev tools** (Phase 1a)
+  - Section "Dev: Preset Dumps" dans le Sound Panel
+  - Dump/Load/Delete de presets JSON dans Documents/Drum Flash/preset_dumps/
+  - serde_json ajouté aux dépendances
+
+### Tests
+- 58 lib tests + 44 standalone tests pass
+- Build installé et prêt à tester
+
+---
+
+## 2026-05-29 — Session: Dev tools preset dumps (Phase 1a)
+
+**Build:** `20260529-095403`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Preset dump dev tools** (preset_dumps.rs, ui.rs)
+  - Collapsible "Dev: Preset Dumps" section in Sound Panel
+  - **Dump** : captures current instrument settings (13 standards + algo + specials) to JSON
+  - **Load** : restores dumped settings + switches to target instrument tab
+  - **Delete** : removes dump file
+  - Files stored in Documents/Drum Flash/preset_dumps/
+- **New dependency** : serde_json = "1.0" (Cargo.toml)
+- **New module** : src/preset_dumps.rs (dump/list/load/delete preset JSONs)
+
+### Tests
+- 58 lib tests + 44 standalone tests pass
+- Build installed and ready for factory preset authoring
+
+---
+
+## 2026-05-28 â€” Session: UI polish + polyrhythm fix + generator roles
 
 **Build:** `20260528-175015`
 **Commits:** `XXXXXXX`
@@ -8,13 +111,13 @@
 ### Changes
 - **Volume at top of Sound Editor** (`ui.rs`)
   - Dedicated group with separator before OSC/ENV/FILTER/SAT/OUTPUT families
-  - Large slider (0.0–2.0) right under "Sound Editor" heading
+  - Large slider (0.0â€“2.0) right under "Sound Editor" heading
 - **Per-lane volume in pattern grid** (`ui.rs`)
   - Compact 40px slider before Mute/Solo/Test buttons
   - Reads/writes `sound_settings.instruments[inst].volume` directly
 - **Plock colour coding** (`ui.rs`)
-  - **Orange** (255, 140, 0) → Link mode or mixed plock
-  - **Red** (220, 50, 50) → Full snapshot
+  - **Orange** (255, 140, 0) â†’ Link mode or mixed plock
+  - **Red** (220, 50, 50) â†’ Full snapshot
   - Darker variants for inactive steps
 - **True polyrhythm** (`sequencer/mod.rs`)
   - Independent `step_counter` per track, incremented on master-step transition
@@ -39,7 +142,7 @@
 
 ---
 
-## 2026-05-28 — Generator roles enriched + polyrhythm fix + dimmed steps
+## 2026-05-28 â€” Generator roles enriched + polyrhythm fix + dimmed steps
 
 **Build:** `20260528-154125`
 **Commits:** `XXXXXXX`
@@ -64,22 +167,22 @@
 
 ---
 
-## 2026-05-28 — UI improvements: per-lane volume & plock colour coding
+## 2026-05-28 â€” UI improvements: per-lane volume & plock colour coding
 
 **Build:** `20260528-142648`
 **Commits:** `XXXXXXX`
 
 ### Changes
 - **Volume moved to top of Sound Editor** (`draw_sound_panel`)
-  - Large `LocalParamSlider` (0.0–2.0) displayed right under the "Sound Editor" heading
+  - Large `LocalParamSlider` (0.0â€“2.0) displayed right under the "Sound Editor" heading
   - No longer buried inside the Output family group
 - **Per-lane volume control in pattern grid** (`draw_grid`)
   - Compact 40 px slider next to each instrument label (before Mute/Solo/Test)
   - Reads/writes `sound_settings.instruments[inst].volume` directly
   - Calls `bump_version()` on change so the audio thread picks it up
 - **Plock colour coding: link vs snapshot** (`draw_grid`)
-  - **Orange** (255, 140, 0) → Link mode or mixed plock (`field_mask == 0` or partial)
-  - **Red** (220, 50, 50) → Full snapshot (`field_mask == all_bits`)
+  - **Orange** (255, 140, 0) â†’ Link mode or mixed plock (`field_mask == 0` or partial)
+  - **Red** (220, 50, 50) â†’ Full snapshot (`field_mask == all_bits`)
   - Darker variants for inactive steps with plock only
   - Makes it immediately obvious which steps are fully frozen vs. following globals
 
@@ -89,24 +192,24 @@
 
 ---
 
-## 2026-05-27 — Bugfix B8 + Cymbal shimmer & noise colour
+## 2026-05-27 â€” Bugfix B8 + Cymbal shimmer & noise colour
 
 **Build:** `20260527-202249`
 **Commits:** `XXXXXXX`
 
 ### Changes
 - **Bugfix B8 silent after CY param change** (`ExpDecayEnvelope::set_attack_ms`)
-  - Division-by-zero when `attack_time` shortened to 0 during active ramp → permanently corrupted envelope with NaN
+  - Division-by-zero when `attack_time` shortened to 0 during active ramp â†’ permanently corrupted envelope with NaN
   - Fix: snap immediately to `attack_peak` and clear `attack_remaining` when zeroed mid-ramp
   - Test button "T" now calls `set_voice_settings` before `trigger` (was using stale params)
 - **Cymbal Sound Panel refactor**
   - Removed unused `frequency` parameter (noise-based voice, no oscillator)
-  - Added `Shimmer Freq` (1–50 Hz, default 15 Hz) — modulates FM shimmer LFO rate
+  - Added `Shimmer Freq` (1â€“50 Hz, default 15 Hz) â€” modulates FM shimmer LFO rate
   - Added `Noise Type` combobox: White / Pink / Brown / Blue
     - `PinkNoise` (Voss-McCartney), `BrownNoise` (integrator), `BlueNoise` (differentiator) in `dsp.rs`
     - Independent L/R generators for stereo mode, no shared state
   - `CymbalSettings` now stores `shimmer_freq` and `noise_type` via `special[0..1]`
-  - Retro-compatibility: old plock snapshots saved `special[0]=0.5` → now interpreted as 0.5 Hz shimmer (slow, nearly static)
+  - Retro-compatibility: old plock snapshots saved `special[0]=0.5` â†’ now interpreted as 0.5 Hz shimmer (slow, nearly static)
 
 ### Tests
 - 54 lib tests pass, 41 standalone tests pass
@@ -114,49 +217,49 @@
 
 ---
 
-## 2026-05-26 — Saturation generalised to all 13 instruments
+## 2026-05-26 â€” Saturation generalised to all 13 instruments
 
 **Build:** `20260526-101659`
 **Commits:** `XXXXXXX`
 
 ### Changes
 - **Saturation on all 13 voices**: Kick, Snare, HiHat, OpenHiHat, Tom1-3, Clap, Ride, Cymbal, Snare606, BassDrum808, Perc1
-- **Dedicated SAT section** in Sound Panel (`ParamFamily::Saturation`) — no longer mixed in OSC/OUTPUT
+- **Dedicated SAT section** in Sound Panel (`ParamFamily::Saturation`) â€” no longer mixed in OSC/OUTPUT
 - **Algorithm names displayed** in combobox (SoftClip, Valve, Transistor, HardClip, Tape) instead of numbers
-- **Pre-Filter checkbox** now functional — routes saturation before or after the filter chain
+- **Pre-Filter checkbox** now functional â€” routes saturation before or after the filter chain
 - **Per-instrument special params** using saturation slots in `special[8]` array
   - Instruments with existing specials (Snap, Echo, Stick, etc.) append saturation after
   - Instruments without specials use indices 0-4
   - BassDrum808 limited to 4 saturation params (no Pre-Filter slot due to 8-element array)
-- **65 new FloatParam** declarations in `DrumFlashParams` (5 params × 13 instruments)
+- **65 new FloatParam** declarations in `DrumFlashParams` (5 params Ã— 13 instruments)
 
 ---
 
-## 2026-05-23 — Saturation / distortion per instrument (Snare 606)
+## 2026-05-23 â€” Saturation / distortion per instrument (Snare 606)
 
 **Build:** `20260523-211642`
 **Commits:** `XXXXXXX`
 
 ### Changes
 - **New saturation module** (`saturation.rs`) with 5 distinct algorithms:
-  - **SoftClip** — smooth tanh, warm and musical
-  - **Valve** — strong asymmetry, tube glow, even harmonics
-  - **Transistor** — germanium grit, crunchy, emphasizes highs (+35% positive side)
-  - **HardClip** — brutal digital clipping, aggressive and square
-  - **Tape** — soft compression "glue", smooth transient taming
+  - **SoftClip** â€” smooth tanh, warm and musical
+  - **Valve** â€” strong asymmetry, tube glow, even harmonics
+  - **Transistor** â€” germanium grit, crunchy, emphasizes highs (+35% positive side)
+  - **HardClip** â€” brutal digital clipping, aggressive and square
+  - **Tape** â€” soft compression "glue", smooth transient taming
 - **Saturation exposed in Sound Panel** for Snare 606 (S6):
   - Saturation Type (0-5, step 1)
-  - Saturation Amount (0-1, drive mapped 1×..20×)
+  - Saturation Amount (0-1, drive mapped 1Ã—..20Ã—)
   - Saturation Mix (0-1, dry/wet)
   - Saturation Output Gain (0.5-2.0, makeup)
-  - Saturation Pre-Filter ☑ (checkbox toggle, post-filter by default)
+  - Saturation Pre-Filter â˜‘ (checkbox toggle, post-filter by default)
 - **Auto-edit enabled by default** (`BoolParam::new("Auto Edit", true)`)
 - **Hold parameter restored** on Snare 606 (was missing from `SNARE606_STD`)
 - Special params use slots 3-7 of `special[8]` for saturation (indices 0-2 remain resonance/tone/snap)
 
 ---
 
-## 2026-05-23 — Snare 606 body enhancement (v4)
+## 2026-05-23 â€” Snare 606 body enhancement (v4)
 
 **Build:** `20260523-154654`  
 **Commits:** `XXXXXXX`
@@ -168,7 +271,7 @@
 
 ---
 
-## 2026-05-23 — Snare 606 body enhancement (v3)
+## 2026-05-23 â€” Snare 606 body enhancement (v3)
 
 **Build:** `20260523-102533`  
 **Commits:** `XXXXXXX`
@@ -181,20 +284,20 @@
 
 ---
 
-## 2026-05-23 — Snare 606 body enhancement (v2)
+## 2026-05-23 â€” Snare 606 body enhancement (v2)
 
 **Build:** `20260523-100824`  
 **Commits:** `XXXXXXX`
 
 ### Changes
-- **Body oscillator added**: pure `SineOsc` at resonator frequency mixed with raw noise as excitation (`excitation = noise + sine * 0.6`). Gives the resonator a tonal fundamental to resonate with — much closer to the real TR-606 VCO+bridged-T topology.
+- **Body oscillator added**: pure `SineOsc` at resonator frequency mixed with raw noise as excitation (`excitation = noise + sine * 0.6`). Gives the resonator a tonal fundamental to resonate with â€” much closer to the real TR-606 VCO+bridged-T topology.
 - **Body gain boosted**: `tone * 1.2` (was `tone * 0.7`). More weight when tone is up.
 - (Retains v1 changes: raw noise excitation, snap envelope, revised mix, tuned defaults.)
 - All 43 tests pass; `cargo check --all-targets` clean.
 
 ---
 
-## 2026-05-23 — Snare 606 punch overhaul (v1)
+## 2026-05-23 â€” Snare 606 punch overhaul (v1)
 
 **Build:** `20260523-095847`  
 **Commits:** `XXXXXXX`
@@ -206,15 +309,15 @@
   - **Revised mix architecture**: body (resonator) + wires (HP-filtered softened noise) + snap (raw noise burst), each with independent gain.
   - **Body gain now scales 0..0.7** (was 0.4..1.0), so tone=0 gives a pure wires+snap sound.
 - **Defaults tuned** for a tighter, more aggressive sound:
-  - decay 0.7 s → 0.25 s
-  - filter_freq 3000 Hz → 8000 Hz
-  - tone 0.55 → 0.4
-  - snap 0.3 → 0.6
+  - decay 0.7 s â†’ 0.25 s
+  - filter_freq 3000 Hz â†’ 8000 Hz
+  - tone 0.55 â†’ 0.4
+  - snap 0.3 â†’ 0.6
 - All 43 tests pass; `cargo check --all-targets` clean.
 
 ---
 
-## 2026-05-23 — Session : revert [54], docs update
+## 2026-05-23 â€” Session : revert [54], docs update
 
 **Build:** `20260523-092208`  
 **Commits:** `520e6d8`, `b604ae8`
@@ -227,13 +330,13 @@
 
 ---
 
-## 2026-05-21 — [39] Typed per-instrument settings (all 13 voices)
+## 2026-05-21 â€” [39] Typed per-instrument settings (all 13 voices)
 
 **Build:** `20260521-213022`  
 **Commits:** `fcde87c`
 
 ### Changes
-- Generalize typed settings structs to all 13 instruments (Kick prototype → all voices).
+- Generalize typed settings structs to all 13 instruments (Kick prototype â†’ all voices).
 - New settings files: `SnareSettings`, `HiHatSettings`, `OpenHiHatSettings`, `TomSettings`, `ClapSettings`, `RideSettings`, `CymbalSettings`, `Snare606Settings`, `Kick808Settings`, `Perc1Settings`.
 - Each voice refactored to store its typed struct instead of `VoiceSettings` + opaque `special[N]`.
 - `VoiceSettings` remains the persistence boundary; conversions happen in `set_settings()` with zero-allocation stack copies.
@@ -241,7 +344,7 @@
 
 ---
 
-## 2026-05-21 — [39] Prototype Kick : typed per-instrument settings
+## 2026-05-21 â€” [39] Prototype Kick : typed per-instrument settings
 
 **Build:** `20260521-201743`  
 **VST3 Class ID:** `DrumFlashPlugin1`
@@ -252,7 +355,7 @@
 - `From<VoiceSettings>` and `Into<VoiceSettings>` implementations for seamless conversion at the persistence boundary.
 - `KickVoice` refactored to store `KickSettings` internally; `Voice::set_settings` wrapper handles conversion.
 - Round-trip test (`kick_settings_roundtrip_preserves_all_fields`) verifies no data loss.
-- All existing kick tests pass unchanged — confirms bit-identical behavior.
+- All existing kick tests pass unchanged â€” confirms bit-identical behavior.
 - No change to `plock-v1` format, `DrumFlashParams`, or automation IDs.
 
 ---
@@ -272,7 +375,7 @@
 
 ---
 
-## 2026-05-21 — Perc1 Hold wiring
+## 2026-05-21 â€” Perc1 Hold wiring
 
 ### Fixes
 - Wire Perc1 `hold` into its amplitude `DecayReleaseEnvelope` on creation and settings updates.
@@ -280,7 +383,7 @@
 
 ---
 
-## 2026-05-21 — Targeted stereo controls
+## 2026-05-21 â€” Targeted stereo controls
 
 ### Changes
 - Expose Stereo in the Sound Panel for Snare606 without exposing it on B8.
@@ -290,7 +393,7 @@
 
 ---
 
-## 2026-05-21 — Per-instrument Attack parameter
+## 2026-05-21 â€” Per-instrument Attack parameter
 
 ### Changes
 - Add `attack` to `VoiceSettings` and expose it in the Sound Panel ENV group for every instrument.
@@ -301,27 +404,27 @@
 
 ---
 
-## 2026-05-20 — Plock Snapshot vs Link mode
+## 2026-05-20 â€” Plock Snapshot vs Link mode
 
 **Build:** `20260520-211700`  
 **VST3 Class ID:** `DrumFlashPlugin1`
 
 ### Changes
 - **Plock per-field masks** (`PlockFieldMasks`) : each plock step now tracks which fields are explicitly overridden via an 18-bit `u32` mask.
-- **Snapshot mode** (default) : "📸 Snapshot current settings" copies all global values and locks them — previous behavior.
-- **Link mode** (new) : "🔗 Link to global" activates the plock without copying values; only fields you subsequently modify override the live global settings.
-- **`get_settings` merge** : audio thread builds global `VoiceSettings`, then merges with plock — overridden fields come from plock storage, unmodified fields fall back to globals.
+- **Snapshot mode** (default) : "ðŸ“¸ Snapshot current settings" copies all global values and locks them â€” previous behavior.
+- **Link mode** (new) : "ðŸ”— Link to global" activates the plock without copying values; only fields you subsequently modify override the live global settings.
+- **`get_settings` merge** : audio thread builds global `VoiceSettings`, then merges with plock â€” overridden fields come from plock storage, unmodified fields fall back to globals.
 - **Plock editor UI** :
-  - Mode indicator : `🔗 Linked`, `📸 Full snapshot`, or `🔀 Mixed`.
+  - Mode indicator : `ðŸ”— Linked`, `ðŸ“¸ Full snapshot`, or `ðŸ”€ Mixed`.
   - Bold labels for overridden fields, weak labels for linked fields.
-  - `↺` reset button per field to revert to global (clears the bit).
+  - `â†º` reset button per field to revert to global (clears the bit).
   - Per-field `set_field` writes only the changed field instead of rewriting the entire `VoiceSettings`.
 - **Persistence retro-compatibility** : old presets without field masks load as full snapshots (all bits set).
 - New unit tests : `link_mode_returns_global`, `merge_takes_modified_fields`, `set_field_only_sets_one_bit`, `clear_field_unlinks_without_clearing_plock`, `clear_removes_field_mask`.
 
 ---
 
-## 2026-05-20 — Sound Panel redesign (families + interactive envelope viz)
+## 2026-05-20 â€” Sound Panel redesign (families + interactive envelope viz)
 
 **Build:** `20260520-123040`  
 **VST3 Class ID:** `DrumFlashPlugin1`
@@ -330,7 +433,7 @@
 - Sound Panel fully data-driven from `instrument_registry.rs`:
   - New `ParamFamily` enum (Osc / Env / Filter / Output) with `StandardParamDef` metadata (range, log scale, suffix, checkbox).
   - Parameters grouped per family with titled frames.
-  - Removed legacy `InstrumentCapabilities` — parameter visibility is now encoded in `standard_params` slices.
+  - Removed legacy `InstrumentCapabilities` â€” parameter visibility is now encoded in `standard_params` slices.
 - Interactive envelope visualizations:
   - `draw_amp_envelope` : AHDSR-style curve with colour-coded phases (Hold=cyan, Decay=blue, Release=purple). Attack phase is hidden when no Attack parameter exists.
   - `draw_filter_envelope` : dedicated filter-env curve (orange) inside the FILTER family group.
@@ -340,25 +443,25 @@
 
 ---
 
-## 2026-05-19 — Perc1 refactor (Zap → Perc1)
+## 2026-05-19 â€” Perc1 refactor (Zap â†’ Perc1)
 
 **Build:** `20260519-191344`  
 **VST3 Class ID:** `DrumFlashPlugin1`
 
 ### Changes
-- Rename Zap → Perc1 (`perc1.rs`, `DrumVoice::Perc1`, label `"P1"`, all params `perc1_*`).
-- Migrate Perc1 `amp_env` from `ExpDecayEnvelope` to `DecayReleaseEnvelope` — Release slider is now wired.
+- Rename Zap â†’ Perc1 (`perc1.rs`, `DrumVoice::Perc1`, label `"P1"`, all params `perc1_*`).
+- Migrate Perc1 `amp_env` from `ExpDecayEnvelope` to `DecayReleaseEnvelope` â€” Release slider is now wired.
 - Fix `set_settings` anti-click invariant: use `set_decay()` / `set_release()` / `set_curve()` instead of recreating envelopes.
 - Add `filter` + `filter_env` to Perc1 with additive cutoff formula.
 - Fix latent bug in `voice_settings_for`: index 12 now correctly reads `algo_perc1`.
 - Update plock tests, MIDI export tests, generator comments, and algo registry for Perc1.
 
 ### Known issues
-- Perc1 Release and other parameters reported as non-responsive in Studio One — under investigation ([50]).
+- Perc1 Release and other parameters reported as non-responsive in Studio One â€” under investigation ([50]).
 
 ---
 
-## 2026-05-19 — Revert stable + documentation
+## 2026-05-19 â€” Revert stable + documentation
 
 **Build:** `20260519-163250`  
 **VST3 Class ID:** `DrumFlashPlugin1`
@@ -366,7 +469,7 @@
 ### Changes
 - Revert code to stable commit `5ae1286` (Zap voice) after critical bugs identified in Perc1 commit `8d56e72` (envelope recreation in `set_settings`, broken release/filter env, hardcoded plock menu).
 - Rebuild and reinstall VST3 bundle.
-- Create `ADDING_AN_INSTRUMENT.md` — complete guide for adding new synthesis voices (architecture, step-by-step checklist, anti-patterns).
+- Create `ADDING_AN_INSTRUMENT.md` â€” complete guide for adding new synthesis voices (architecture, step-by-step checklist, anti-patterns).
 - Merge `CLAUDE.md` into `AGENTS.md` for unified agent documentation.
 - Synchronize `BACKLOG_VST.md` and `TODO.md`.
 
@@ -375,35 +478,35 @@
 
 ---
 
-## 2026-05-16 — Mix Bus + plock fix + B8 + conditional params
+## 2026-05-16 â€” Mix Bus + plock fix + B8 + conditional params
 
 **Build:** `20260516-205054`  
 **VST3 Class ID:** `DrumFlashPlugin1`
 
 ### Changes
 - Per-instrument Mix Bus checkbox (route to Main Mix on/off, independent of Mute).
-- Parameter Locks format expanded: `FIELD_COUNT` 12 → 14 (fields 12 = clap_echo, 13 = algo).
+- Parameter Locks format expanded: `FIELD_COUNT` 12 â†’ 14 (fields 12 = clap_echo, 13 = algo).
 - Fix root cause of lost plock echo: `set_special_param()` removed from `process()`, special params now propagated only at trigger time.
 - Sound Panel hides inactive parameters per instrument via `InstrumentCapabilities`.
 - New instrument B8 (TR-808 Bass Drum) with accent, snap, pitch drop, analog, release, click tone.
 
 ---
 
-## 2026-05-15 — B8 click tone + plock B8 fix + anti-click
+## 2026-05-15 â€” B8 click tone + plock B8 fix + anti-click
 
 **Build:** `20260515-124610`  
 **VST3 Class ID:** `DrumFlashPlugin1`
 
 ### Changes
-- Dedicated LP filter for B8 click tone (100–8000 Hz), plockable (field 17).
-- Plock B8 fix: special params (accent/snap/pitch_drop/click_tone) stored in fields 14–17.
+- Dedicated LP filter for B8 click tone (100â€“8000 Hz), plockable (field 17).
+- Plock B8 fix: special params (accent/snap/pitch_drop/click_tone) stored in fields 14â€“17.
 - Attack ramp 1.5 ms on B8 envelope + cold-start-only phase reset + DcBlocker + freq_smoother.
 - Cross-DAW validation: plugin loads in Reaper, audio stable.
-- Warnings reduced: 17 → 0 (`cargo check --all-targets` clean).
+- Warnings reduced: 17 â†’ 0 (`cargo check --all-targets` clean).
 
 ---
 
-## 2026-05-14 — DecayReleaseEnvelope + Snare 606 + Clap rework
+## 2026-05-14 â€” DecayReleaseEnvelope + Snare 606 + Clap rework
 
 **Build:** `20260514-220658`  
 **VST3 Class ID:** `DrumFlashPlugin1`
@@ -413,13 +516,13 @@
 - Hold phase between attack and decay for Snare/HiHat/OpenHH/Snare606.
 - Analog-style continuity: no phase/filter/noise reset on retrigger.
 - Kick: additive pitch sweep + freq smoother + DcBlocker.
-- Clap rework: bandpass, snap transient, 4 bursts with irregular timing, Echo slider (0–3).
+- Clap rework: bandpass, snap transient, 4 bursts with irregular timing, Echo slider (0â€“3).
 - New instrument: Snare 606 (TR-606 grey-box) with resonance, tone, snap.
 - Fix crash on 11th voice: `IntRange` div-by-zero + index bounds + step mask hardcode.
 
 ---
 
-## 2026-05-13 — Modular synthesis + groove + generators + UI polish
+## 2026-05-13 â€” Modular synthesis + groove + generators + UI polish
 
 **Build:** `20260513-202946`  
 **VST3 Class ID:** `DrumFlashPlugin1`
@@ -433,12 +536,12 @@
 - Push/pull per instrument, humanize per instrument.
 - Pattern generators: Euclidean, Markov, Probabilistic.
 - MIDI export to `Documents/Drum Flash/exports/`.
-- UI: BoolParam → checkbox, EnumParam → combobox, algo → named combobox.
+- UI: BoolParam â†’ checkbox, EnumParam â†’ combobox, algo â†’ named combobox.
 - Sound panel per instrument with frequency, decay, volume, filter, algo, special params.
 
 ---
 
-## 2026-05-11 — Grid persistence + Studio One save/restore fix
+## 2026-05-11 â€” Grid persistence + Studio One save/restore fix
 
 **Build:** `20260511-091259`  
 **VST3 Class ID:** `DrumFlashPlugin1`  
@@ -446,7 +549,7 @@
 
 ### Changes
 - Grid persisted via `pattern-v1` field (serialized from `SharedPattern`).
-- Migration from legacy hidden params `st01`–`st16` to `pattern-v1`.
+- Migration from legacy hidden params `st01`â€“`st16` to `pattern-v1`.
 - Vendored `nih-plug` wrapper saves/restores state on both `IComponent` and `IEditController`.
 - Studio One multi-out validated: `getRoutingInfo()` maps event input to main audio output.
 - DAW sync validated: play, stop, tempo, repositionnement.

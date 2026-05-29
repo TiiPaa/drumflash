@@ -1,7 +1,7 @@
-## Court terme (Stabilisation V1 — En cours)
+﻿## Court terme (Stabilisation V1 â€” En cours)
 
-- [x] [67] Positionner le volume en haut du sound editor + ajouter un controle de volume sur chaque lane de la grille (Complexité: Faible, P1)
-- [x] [68] Couleurs differentes pour plock link global vs full snapshot (orange / rouge) pour distinguer visuellement les modes (Complexité: Faible, P1)
+- [x] [67] Positionner le volume en haut du sound editor + ajouter un controle de volume sur chaque lane de la grille (ComplexitÃ©: Faible, P1)
+- [x] [68] Couleurs differentes pour plock link global vs full snapshot (orange / rouge) pour distinguer visuellement les modes (ComplexitÃ©: Faible, P1)
 - [x] [55] Ameliorer le rendu Snare 606 (plus percutant, plus proche TR-606)
   - raw noise excite le resonator directement
   - snap envelope ultra-court (0.2ms attack, 3ms decay)
@@ -24,14 +24,14 @@
 - [x] [10] Tester le plugin dans au moins un autre DAW (Reaper recommande)
   - chargement OK dans Reaper
   - sauts de volume initialement suspectes : RMS du plugin mesure stable a ~0.4 dB pres
-  - confirme reproduit avec un autre plugin dans Reaper → pb driver audio, plugin innocent
+  - confirme reproduit avec un autre plugin dans Reaper â†’ pb driver audio, plugin innocent
 - [x] [10a] Corriger les defaults de decay (snare 0.47, hihat 0.36, open_hh 0.66)
 - [x] [10b] Corriger le choke qui ne fonctionne plus
 - [x] [10c] Corriger les step skips rares (sync_to_host moins agressif)
-- [x] [10d] Remplacer sliders par checkbox/combobox pour paramètres bool/enum/algos
+- [x] [10d] Remplacer sliders par checkbox/combobox pour paramÃ¨tres bool/enum/algos
 - [x] [13] Verifier la precision du timing du sequencer (compteur d'echantillons vs transport hote, correction continue)
 
-## Fonctionnalites P1 (Parite PoC — Impact fort)
+## Fonctionnalites P1 (Parite PoC â€” Impact fort)
 
 - [x] [14] Editer les reglages de synthese par instrument dans l'UI (frequence, decay, volume, filter)
 - [x] [15] Connecter `filter_freq` dans `SnareVoice` (actuellement ignore)
@@ -45,122 +45,122 @@
 - [x] [18] Ajouter sortie MIDI temps reel vers hardware externe
 - [x] [19] Ajouter la generation de pattern aleatoire (grille + option Random BPM + option Random Sounds)
 
-## Fonctionnalites P2 (Post-V1 — Nice to have)
-
+## Fonctionnalites P2 (Post-V1 â€” Nice to have)
+- [x] [66b] Correction focus clavier Windows (SetFocus sur HWND plugin) — build 20260529-124136\n
 - [x] [20] Ajouter swing
 - [x] [21] Ajouter un facteur de groove parametrable (Straight/Swing16/Shuffle/MPC)
 - [x] [22] Ajouter un parametre analogique pour legeres variations aleatoires (humanize per track)
 - [x] [23] Permettre un mode stereo analogique avec variation gauche/droite (push/pull per track)
-- [x] [24] Ajouter song mode (placeholder UI P1-P8, backend à câbler)
-- [x] [24a] Ajouter modularité des instruments (algos + special params)
+- [x] [24] Ajouter song mode (placeholder UI P1-P8, backend Ã  cÃ¢bler)
+- [x] [24a] Ajouter modularitÃ© des instruments (algos + special params)
 - [x] [24b] Ajouter Kick algos (Sine/Square/FM) + click transient
 - [x] [24c] Ajouter Snare algos (Synth/Noise/Layered) + snap param
 - [x] [24d] Ajouter Clap, Ride, Cymbal voices
 - [x] [25] Labels complets des instruments dans l'UI et couleurs par instrument (labels courts BD/SD/HH, couleurs blocs de 4 steps, grisage len)
-- [ ] [26] Barre de progression visuelle du pattern (0-100%) — non prio
+- [ ] [26] Barre de progression visuelle du pattern (0-100%) â€” non prio
 - [x] [26a] Per-instrument Mix Bus checkbox (exclure du Main Mix)
 - [x] [26b] Clap Echo plockable par step
-- [x] [26c] Masquer les paramètres inutiles par instrument dans le Sound Panel
+- [x] [26c] Masquer les paramÃ¨tres inutiles par instrument dans le Sound Panel
 - [x] [26d] Nouvel instrument B8 (TR-808 Bass Drum)
 - [x] [26e] Slider Analog actif pour B8
 - [x] [26f] Release fonctionnel pour B8 (DecayReleaseEnvelope)
-- [x] [26g] Attack ramp 1.5 ms sur B8 (élimine click de démarrage)
-- [x] [26h] Filtre LP dédié Click Tone sur B8 (100-8000 Hz)
-- [x] [26i] Plock B8 fix : special params (accent/snap/pitch_drop/click_tone) stockés
-- [x] [26j] Finaliser les réglages de synthèse par instrument
+- [x] [26g] Attack ramp 1.5 ms sur B8 (Ã©limine click de dÃ©marrage)
+- [x] [26h] Filtre LP dÃ©diÃ© Click Tone sur B8 (100-8000 Hz)
+- [x] [26i] Plock B8 fix : special params (accent/snap/pitch_drop/click_tone) stockÃ©s
+- [x] [26j] Finaliser les rÃ©glages de synthÃ¨se par instrument
   - `standard_params` data-driven avec ranges UI (min/max, log, suffix, checkbox)
-  - Ranges corrigés pour éviter le clamp involontaire (ex: Ride decay 1.2s > slider 0.5s)
-- [x] [51] Ajouter un paramètre Attack réglable par instrument (graphique AHDSR complet A-H-D-R)
-- [ ] **REPRENDRE ICI** [66] Presets d'instruments — sauvegarder/charger des réglages de synthese par voix (Complexité: Moyenne, P2)
-- [ ] [52] Ajouter un paramètre Sustain level pour un vrai ADSR séquentiel — non prio
-- [x] [26k] Refonte UI Phase 1 (grid intégré, sound panel ongleté, auto-edit)
-  - Sound Panel regroupé par familles data-driven (OSC/ENV/FILTER/OUTPUT)
+  - Ranges corrigÃ©s pour Ã©viter le clamp involontaire (ex: Ride decay 1.2s > slider 0.5s)
+- [x] [51] Ajouter un paramÃ¨tre Attack rÃ©glable par instrument (graphique AHDSR complet A-H-D-R)
+- [x] **[EN COURS — Phase 1a OK]** [66] Presets d'instruments â€” sauvegarder/charger des rÃ©glages de synthese par voix (ComplexitÃ©: Moyenne, P2)
+- [ ] [52] Ajouter un paramÃ¨tre Sustain level pour un vrai ADSR sÃ©quentiel â€” non prio
+- [x] [26k] Refonte UI Phase 1 (grid intÃ©grÃ©, sound panel ongletÃ©, auto-edit)
+  - Sound Panel regroupÃ© par familles data-driven (OSC/ENV/FILTER/OUTPUT)
   - Visualisations interactives d'enveloppe (Amp AHDSR + Filter Env)
-  - Layout horizontal : params à gauche, graph à droite
+  - Layout horizontal : params Ã  gauche, graph Ã  droite
 - [x] [26l] Corriger le toggle stereo pour certains instruments
-  - exposer/finir les toggles stéréo pour les voix où la largeur apporte une vraie valeur : Snare, HiHat, OpenHH, Clap, Ride, Cymbal, Snare606, Perc1
-  - garder Kick, B8 et Toms mono par défaut pour préserver le centre et la compatibilité mono
-  - priorité technique : finir stereo Snare606 et vérifier que les toggles UI ne sont visibles que sur les voix concernées
+  - exposer/finir les toggles stÃ©rÃ©o pour les voix oÃ¹ la largeur apporte une vraie valeur : Snare, HiHat, OpenHH, Clap, Ride, Cymbal, Snare606, Perc1
+  - garder Kick, B8 et Toms mono par dÃ©faut pour prÃ©server le centre et la compatibilitÃ© mono
+  - prioritÃ© technique : finir stereo Snare606 et vÃ©rifier que les toggles UI ne sont visibles que sur les voix concernÃ©es
 - [x] [55] Saturation / distortion par instrument (tous les 13 voix)
   - Module `saturation.rs` avec 5 algorithmes distincts (SoftClip, Valve, Transistor, HardClip, Tape)
-  - Paramètres exposés dans le Sound Panel : Type, Amount, Mix, Output Gain, Pre-Filter
-  - Drive d'entrée mappé 1×..20× pour effet audible
-  - Pre-Filter comme checkbox toggle (post-filter par défaut)
-  - Section SAT dédiée dans le Sound Panel (ParamFamily::Saturation)
+  - ParamÃ¨tres exposÃ©s dans le Sound Panel : Type, Amount, Mix, Output Gain, Pre-Filter
+  - Drive d'entrÃ©e mappÃ© 1Ã—..20Ã— pour effet audible
+  - Pre-Filter comme checkbox toggle (post-filter par dÃ©faut)
+  - Section SAT dÃ©diÃ©e dans le Sound Panel (ParamFamily::Saturation)
   - Combobox affichant les noms d'algorithmes (SoftClip, Valve, etc.)
-  - Saturation appliquée sur 8/13 instruments : Kick, Snare, Snare606, B8, Tom1-3, Perc1
-  - ~~Saturation sur les 5 restants (HiHat, OpenHH, Clap, Ride, Cymbal)~~ — pas prioritaire
-  - Special params augmentés de 8 à 32 slots (`special: [f32; 32]`)
-  - Plock field masks passés de u32 à u64 (46 fields total, 32 special params plockables)
-  - Auto-edit activé par défaut
-- [x] [62] Cymbal : retirer frequency inutilisé, ajouter Shimmer Freq + Noise Type
-  - `frequency` retiré du Sound Panel (paramètre inutilisé sur un bruit)
-  - `Shimmer Freq` (1-50 Hz) : module la fréquence du FM shimmer (était hardcodé à 15 Hz)
-  - `Noise Type` : White / Pink / Brown / Blue — générateurs Voss-McCartney dans dsp.rs
-  - Combobox UI pour sélectionner le type de bruit
-- [x] [63] Bug B8 se coupe quand on modifie CY : corrigé division par zéro dans `ExpDecayEnvelope::set_attack_ms`
-  - Quand attack_time passe à 0 pendant un ramp actif → snap à peak immédiat pour éviter NaN
+  - Saturation appliquÃ©e sur 8/13 instruments : Kick, Snare, Snare606, B8, Tom1-3, Perc1
+  - ~~Saturation sur les 5 restants (HiHat, OpenHH, Clap, Ride, Cymbal)~~ â€” pas prioritaire
+  - Special params augmentÃ©s de 8 Ã  32 slots (`special: [f32; 32]`)
+  - Plock field masks passÃ©s de u32 Ã  u64 (46 fields total, 32 special params plockables)
+  - Auto-edit activÃ© par dÃ©faut
+- [x] [62] Cymbal : retirer frequency inutilisÃ©, ajouter Shimmer Freq + Noise Type
+  - `frequency` retirÃ© du Sound Panel (paramÃ¨tre inutilisÃ© sur un bruit)
+  - `Shimmer Freq` (1-50 Hz) : module la frÃ©quence du FM shimmer (Ã©tait hardcodÃ© Ã  15 Hz)
+  - `Noise Type` : White / Pink / Brown / Blue â€” gÃ©nÃ©rateurs Voss-McCartney dans dsp.rs
+  - Combobox UI pour sÃ©lectionner le type de bruit
+- [x] [63] Bug B8 se coupe quand on modifie CY : corrigÃ© division par zÃ©ro dans `ExpDecayEnvelope::set_attack_ms`
+  - Quand attack_time passe Ã  0 pendant un ramp actif â†’ snap Ã  peak immÃ©diat pour Ã©viter NaN
   - Bouton "T" (Test) : appelle maintenant `set_voice_settings` avant `trigger`
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
-- [ ] [69] Creer un instrument percussif a base de wavetables — phase recherche et prototypage (Complexité: Élevée, 2-4 semaines, P3)
+- [ ] [69] Creer un instrument percussif a base de wavetables â€” phase recherche et prototypage (ComplexitÃ©: Ã‰levÃ©e, 2-4 semaines, P3)
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
-- [x] [28] Drag & drop MIDI directement vers le DAW — helper externe validé dans Studio One
+- [x] [28] Drag & drop MIDI directement vers le DAW â€” helper externe validÃ© dans Studio One
   - [x] remplacer l'ancien `dnd_set_drag_payload(bytes)` interne egui par un drag fichier OS natif Windows (`CF_HDROP` via OLE `DoDragDrop`)
   - [x] garder l'export fichier OK via bouton MIDI dans `Documents/Drum Flash/exports`
   - [x] isoler `DoDragDrop` hors process DAW via `drum-pattern-midi-drag-helper.exe`
-  - [x] réactiver le bouton `Drag` : export MIDI puis ouverture d'une petite poignée de drag externe
-  - [x] valider dans Studio One : cliquer `Drag`, puis glisser la fenêtre `Drag MIDI` vers une piste/instrument et vérifier qu'un clip MIDI est créé sans crash
-- [x] [29] Parameter locks (plocks) façon Elektron — changer un paramètre de synthese par step
+  - [x] rÃ©activer le bouton `Drag` : export MIDI puis ouverture d'une petite poignÃ©e de drag externe
+  - [x] valider dans Studio One : cliquer `Drag`, puis glisser la fenÃªtre `Drag MIDI` vers une piste/instrument et vÃ©rifier qu'un clip MIDI est crÃ©Ã© sans crash
+- [x] [29] Parameter locks (plocks) faÃ§on Elektron â€” changer un paramÃ¨tre de synthese par step
   - 14 champs plockables (12 sound settings + clap_echo + algo)
-  - special params (accent/snap/pitch_drop) propagés uniquement au trigger (fix echo perdu)
+  - special params (accent/snap/pitch_drop) propagÃ©s uniquement au trigger (fix echo perdu)
 
-## Nouveaux éléments (À prioriser)
+## Nouveaux Ã©lÃ©ments (Ã€ prioriser)
 
-- [ ] [56] Ajouter une percussion de type Tom Simmons (Complexité: Moyenne, 3-5 jours)
-  - Créer un nouveau module de synthèse
+- [ ] [56] Ajouter une percussion de type Tom Simmons (ComplexitÃ©: Moyenne, 3-5 jours)
+  - CrÃ©er un nouveau module de synthÃ¨se
   - Ajouter l'instrument dans le registre des instruments
-  - Créer les paramètres spécifiques et l'interface utilisateur
-  - Intégrer dans le système de mixage et de sortie audio
+  - CrÃ©er les paramÃ¨tres spÃ©cifiques et l'interface utilisateur
+  - IntÃ©grer dans le systÃ¨me de mixage et de sortie audio
 
-- [ ] [57] Créer un séquencer modulaire avec instruments dynamiques (Complexité: Élevée, 4-6 semaines)
-  - Refonte majeure de l'architecture du séquencer
-  - Système de plugins/instruments dynamiques
-  - Gestion de l'ajout/suppression d'instruments à chaud
+- [ ] [57] CrÃ©er un sÃ©quencer modulaire avec instruments dynamiques (ComplexitÃ©: Ã‰levÃ©e, 4-6 semaines)
+  - Refonte majeure de l'architecture du sÃ©quencer
+  - SystÃ¨me de plugins/instruments dynamiques
+  - Gestion de l'ajout/suppression d'instruments Ã  chaud
   - Interface utilisateur pour la configuration modulaire
-  - Système de sauvegarde/restoration des configurations
+  - SystÃ¨me de sauvegarde/restoration des configurations
 
-- [ ] [58] Gestion des patterns et song (Complexité: Moyenne-Élevée, 3-5 semaines)
-  - Système de gestion de plusieurs patterns
-  - Organisation en songs (chaînes de patterns)
-  - Interface de navigation et d'édition
-  - Système de sauvegarde/restoration
+- [ ] [58] Gestion des patterns et song (ComplexitÃ©: Moyenne-Ã‰levÃ©e, 3-5 semaines)
+  - SystÃ¨me de gestion de plusieurs patterns
+  - Organisation en songs (chaÃ®nes de patterns)
+  - Interface de navigation et d'Ã©dition
+  - SystÃ¨me de sauvegarde/restoration
 
-- [ ] [59] Gestion des plocks de type séquenceur (Complexité: Moyenne, 2-3 semaines)
-  - Implémentation d'un système de modes de plock (ex: mode "step", mode "sequenceur")
+- [ ] [59] Gestion des plocks de type sÃ©quenceur (ComplexitÃ©: Moyenne, 2-3 semaines)
+  - ImplÃ©mentation d'un systÃ¨me de modes de plock (ex: mode "step", mode "sequenceur")
   - Logique de basculement entre les modes
-  - Système de couleurs pour différencier visuellement les types de plock
-  - Intégration avec l'interface utilisateur existante
-  - Sauvegarde/restoration de l'état du mode
+  - SystÃ¨me de couleurs pour diffÃ©rencier visuellement les types de plock
+  - IntÃ©gration avec l'interface utilisateur existante
+  - Sauvegarde/restoration de l'Ã©tat du mode
 
-- [ ] [60] Désactivation du séquenceur interne et pilotage MIDI depuis le DAW (Complexité: Moyenne, 1-2 semaines)
-  - Ajout d'un paramètre pour activer/désactiver le séquenceur interne
-  - Implémentation d'un mode "MIDI thru" où le plugin transmet simplement les notes MIDI aux instruments
+- [ ] [60] DÃ©sactivation du sÃ©quenceur interne et pilotage MIDI depuis le DAW (ComplexitÃ©: Moyenne, 1-2 semaines)
+  - Ajout d'un paramÃ¨tre pour activer/dÃ©sactiver le sÃ©quenceur interne
+  - ImplÃ©mentation d'un mode "MIDI thru" oÃ¹ le plugin transmet simplement les notes MIDI aux instruments
   - Gestion des canaux MIDI et mapping des instruments
   - Interface utilisateur pour la configuration MIDI
-  - Système de routage MIDI flexible
+  - SystÃ¨me de routage MIDI flexible
 
-- [x] [61] Pour les BD, ajouter un switch de tuning entre Hz et Notes (Complexité: Faible, 2-3 jours)
-  - Ajouter un paramètre booléen pour basculer entre les modes de tuning
-  - Implémenter la conversion Hz ↔ Notes (standard MIDI)
-  - Mettre à jour l'interface utilisateur pour afficher le bon format
-  - S'assurer que la valeur est correctement sauvegardée/restaurée
+- [x] [61] Pour les BD, ajouter un switch de tuning entre Hz et Notes (ComplexitÃ©: Faible, 2-3 jours)
+  - Ajouter un paramÃ¨tre boolÃ©en pour basculer entre les modes de tuning
+  - ImplÃ©menter la conversion Hz â†” Notes (standard MIDI)
+  - Mettre Ã  jour l'interface utilisateur pour afficher le bon format
+  - S'assurer que la valeur est correctement sauvegardÃ©e/restaurÃ©e
   - Appliquer aux instruments Kick et B8 (et potentiellement autres bass drums)
 - [ ] [61b] Ajouter copier/coller un plock dans le menu bouton droit
-  - Stocker le plock copié dans l'état de l'éditeur (EditorUIState)
+  - Stocker le plock copiÃ© dans l'Ã©tat de l'Ã©diteur (EditorUIState)
   - Afficher "Copier plock" / "Coller plock" dans le menu contextuel
-  - Coller doit écraser le plock existant sur la step cible
+  - Coller doit Ã©craser le plock existant sur la step cible
   - Support multi-instrument (on ne colle que si le type d'instrument correspond)
 - [x] [29a] Refactor plock UI data-driven depuis `instrument_registry`
   - remplacer les branches hardcodees par instrument dans `draw_plock_menu`
@@ -168,15 +168,15 @@
   - aligner les champs plock stockes/lus (`FIELD_COUNT = 18`) avec les special params reels
   - clarifier/corriger l'incoherence Clap Echo : UI lit le champ 12 alors que `PlockState::set_settings()` stocke les specials en 14..17
   - ajouter tests unitaires sur `PlockState::set_settings/get_settings` pour Clap Echo, B8 specials et Perc1 specials
-- [ ] [39] Refactor : paramètres dédiés par instrument (au lieu du `VoiceSettings` partagé + `special[8]`). Permet labels, ranges et défauts spécifiques par voix.
-  - [x] Prototype Kick : `KickSettings` struct typée, conversion `VoiceSettings ↔ KickSettings`, tests passent
-  - [x] Généraliser aux 12 autres instruments (Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
-- [x] [40] Filter envelope (cutoff modulé par AD/ADSR) — Kick, Snare, Tom, HiHat, Snare606
-- [ ] [41] Émulation circuit-exact TR-606 (WDF, modèle non-linéaire VCA, oversampling) — vs grey-box actuelle
-- [x] [54] Saisie clavier de valeurs précises + Shift+mouse pour affiner les sliders de paramètres
-  - LocalParamSlider créé pour remplacer egui::Slider dans les plocks et paramètres spéciaux
-  - Shift+drag implémenté pour le fine-tuning sur tous les sliders
-  - Hauteurs de sliders harmonisées pour une expérience visuelle cohérente
+- [ ] [39] Refactor : paramÃ¨tres dÃ©diÃ©s par instrument (au lieu du `VoiceSettings` partagÃ© + `special[8]`). Permet labels, ranges et dÃ©fauts spÃ©cifiques par voix.
+  - [x] Prototype Kick : `KickSettings` struct typÃ©e, conversion `VoiceSettings â†” KickSettings`, tests passent
+  - [x] GÃ©nÃ©raliser aux 12 autres instruments (Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Perc1)
+- [x] [40] Filter envelope (cutoff modulÃ© par AD/ADSR) â€” Kick, Snare, Tom, HiHat, Snare606
+- [ ] [41] Ã‰mulation circuit-exact TR-606 (WDF, modÃ¨le non-linÃ©aire VCA, oversampling) â€” vs grey-box actuelle
+- [x] [54] Saisie clavier de valeurs prÃ©cises + Shift+mouse pour affiner les sliders de paramÃ¨tres
+  - LocalParamSlider crÃ©Ã© pour remplacer egui::Slider dans les plocks et paramÃ¨tres spÃ©ciaux
+  - Shift+drag implÃ©mentÃ© pour le fine-tuning sur tous les sliders
+  - Hauteurs de sliders harmonisÃ©es pour une expÃ©rience visuelle cohÃ©rente
 
 ## Dette technique & Documentation
 
@@ -197,16 +197,16 @@
   - verifier que la doc Studio One reste alignee avec Main Mix + 13 sorties aux
 
 ## Bugs a corriger
-
-- [x] [64] Revoir l'algo de polyrythmie (lane length) — comportement bizarre, longueurs mal synchronisées (Complexité: Moyenne, P1)
-- [x] [65] Revoir les algos de generation pattern avec les nouveaux instruments (13 voix) — tous les générateurs gèrent 13 instruments; rôles musicaux enrichis pour Snare 606, B8, Perc1 dans le style Rock (démonstration)
-- [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
-- [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé
-- [x] [47] Refaire Perc1 proprement : ne pas recréer les enveloppes dans `set_settings`
+- [x] [70] Kick : click de retrigger quand la queue percute l'attaque du suivant — corrigé (ne pas retrigger le click pendant la tail) — build 20260529-172133\n
+- [x] [64] Revoir l'algo de polyrythmie (lane length) â€” comportement bizarre, longueurs mal synchronisÃ©es (ComplexitÃ©: Moyenne, P1)
+- [x] [65] Revoir les algos de generation pattern avec les nouveaux instruments (13 voix) â€” tous les gÃ©nÃ©rateurs gÃ¨rent 13 instruments; rÃ´les musicaux enrichis pour Snare 606, B8, Perc1 dans le style Rock (dÃ©monstration)
+- [x] [45] Sauts de volume general dans Reaper â€” diagnostique externe (driver audio, reproduit avec d'autres plugins)
+- [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) â€” build stable rÃ©installÃ©
+- [x] [47] Refaire Perc1 proprement : ne pas recrÃ©er les enveloppes dans `set_settings`
 - [x] [48] Refaire Perc1 proprement : utiliser `DecayReleaseEnvelope` pour le slider Release
-- [x] [50] Diagnostiquer pourquoi la moitié des paramètres Perc1 ne sont pas actionnables (faux positif — tests unitaires confirment que decay/release fonctionnent)
+- [x] [50] Diagnostiquer pourquoi la moitiÃ© des paramÃ¨tres Perc1 ne sont pas actionnables (faux positif â€” tests unitaires confirment que decay/release fonctionnent)
 - [x] [49] Refaire Perc1 proprement : rendre le plock menu data-driven (plus de hardcode par index)
-- [x] [53] Plock Snapshot vs Link : choix à la création du plock (snapshot fige tout, link ne stocke que les champs modifiés)
+- [x] [53] Plock Snapshot vs Link : choix Ã  la crÃ©ation du plock (snapshot fige tout, link ne stocke que les champs modifiÃ©s)
 - [x] [35] Diagnostiquer la sauvegarde/reouverture Studio One
 - [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
@@ -216,10 +216,17 @@
   - `lib.rs::process()` utilise `DrumVoice::from_index(...).unwrap()` sur des index bornes par `DrumVoice::COUNT`
   - risque faible aujourd'hui, mais non conforme a la regle stricte "audio thread sans panic"
   - remplacer par API interne sans `Option`, ou par branche defensive sans panic
-- [x] [38a] Fusionner `CLAUDE.md` dans `AGENTS.md` (13 instruments, AUX_OUT_COUNT = 13, Zap ajouté)
-- [x] [42] Crash a l'instanciation avec 11e voix (cause: `IntRange { min:0, max:0 }` → div par zéro nih-plug)
+- [x] [38a] Fusionner `CLAUDE.md` dans `AGENTS.md` (13 instruments, AUX_OUT_COUNT = 13, Zap ajoutÃ©)
+- [x] [42] Crash a l'instanciation avec 11e voix (cause: `IntRange { min:0, max:0 }` â†’ div par zÃ©ro nih-plug)
 - [x] [43] Index out of bounds dans UI (`hums`/`pushes`/`lengths` taille 10 vs INSTRUMENT_LABELS taille 11)
-- [x] [44] Step mask hardcode `0x3ff` (10 bits) — extensible via `INSTRUMENT_COUNT`
+- [x] [44] Step mask hardcode `0x3ff` (10 bits) â€” extensible via `INSTRUMENT_COUNT`
+
+## Bugs a corriger (Nouveaux)
+
+- [ ] [71] Longueur globale du pattern ajustable 1 => 64 avec 4 pages de 16 steps max. Prevoir un switch de follow de la lecture ou pas (Complexite: Moyenne-Elevee, 1-2 semaines, P1)
+- [ ] [72] Probleme d'affichage du volume : slider en haut de l'editor (1.5 max) et en bas (1) et dans la lane (1.5) — incoherence de range a uniformiser (Complexite: Faible, 1-2 jours, P1)
+- [x] [73] caracteres esoteriques ont remplace aleatoirement les caracteres normaux dans les boutons/texte UI — CORRIGE (restauration UTF-8 via script Python) — build 20260529-174106 (Complexite: Faible, 1 jour, P1)
+- [ ] [74] Proposer 3 types de clicks pour la BD (Kick) : soft/medium/hard ou impulse/noise/transient (Complexite: Moyenne, 3-5 jours, P2)
 
 ## Tests avances (Post-V1)
 

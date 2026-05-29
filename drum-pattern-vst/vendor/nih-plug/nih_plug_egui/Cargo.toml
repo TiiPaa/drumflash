@@ -1,4 +1,4 @@
-[package]
+﻿[package]
 name = "nih_plug_egui"
 version = "0.0.0"
 edition = "2021"
