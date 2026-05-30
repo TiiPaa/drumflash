@@ -527,3 +527,7 @@ mod tests {
         );
     }
 }
+
+// Stress tests module
+#[cfg(test)]
+mod stress_tests;
