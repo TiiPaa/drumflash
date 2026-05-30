@@ -20,18 +20,22 @@
 
 ---
 
-## 2026-05-29 — Session: Fix click parasite et analyse mode analog/digital
+## 2026-05-29 — Session: Tests de stress du séquenceur et documentation
 
-**Build:** `20260529-203919`
-**Commits:** `a5a514f` et suivants
+**Build:** `20260530-154620`
+**Commits:** `7be01c1` et suivants
 
 ### Changes
-- **Fix click parasite en mode digital** (kick.rs, dsp.rs)
-  - Implémentation d'un système de crossfade sur 2 samples pour les retriggers en mode digital
-  - Ajout de méthodes `phase()` pour `SineOsc` et `SquareOsc` pour récupérer l'état avant réinitialisation
-  - Crossfade progressif depuis l'ancienne phase vers la nouvelle phase zéro
-  - Conservation de la réinitialisation du freq_smoother et suppression du filter.reset()
-  - Tous les tests passent : 7/7 tests kick + 44/44 tests standalone
+- **Tests de stress du séquenceur** (sequencer/stress_tests.rs)
+  - 6 tests de stress implémentés couvrant :
+    * `test_long_session_stability` : stabilité sur 1 minute (extensible à 1h)
+    * `test_complex_pattern_changes` : changements dynamiques de patterns
+    * `test_daw_sync_scenarios` : synchronisation play/stop/seek
+    * `test_high_cpu_load_patterns` : patterns denses à haute charge
+    * `test_groove_timing_stability` : stabilité du timing avec différents grooves
+    * `test_track_push_pull_stability` : décalages de piste (push/pull)
+  - Tous les tests passent : 6/6 nouveaux tests + 59/59 tests existants
+  - Couverture étendue : longue durée, charge CPU, synchronisation DAW
 
 - **Analyse complète mode Analog vs Digital** (documentée dans TODO.md)
   - 5 instruments utilisent le mode analog/digital (Kick, Kick808, Snare, Snare606, Tom)
@@ -39,9 +43,9 @@
   - Documentation des comportements et recommandations d'utilisation
 
 ### Tests
-- 58 lib tests + 44 standalone tests pass
-- Build installé et prêt pour test dans Studio One
-- Vérification spécifique des retriggers avec long release
+- 65 lib tests + 51 standalone tests pass (incluant les 6 nouveaux tests de stress)
+- Build prêt pour installation et test dans Studio One
+- Validation complète de la stabilité du séquenceur
   - Cela créait un pic de amplitude massif (step de 0.468) superposé à la tail
   - Fix : ne retrigger le click que sur un cold start (!was_active), pas sur un retrigger
   - Les tests confirment : max step passe de 0.468 à 0.0036 avec le fix

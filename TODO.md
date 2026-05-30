@@ -230,8 +230,7 @@
 
 ## Tests avances (Post-V1)
 
-- [ ] [12] Ajouter un test de stress du sequencer (longue session, stabilite du timing)
-**REPRENDRE ICI**
+- [x] [12] Ajouter un test de stress du sequencer (longue session, stabilite du timing) - 6 tests implémentés
 
 ## Analyse Technique (Reference)
 
