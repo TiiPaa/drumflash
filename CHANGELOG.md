@@ -1,5 +1,76 @@
 ﻿# Changelog
 
+## 2026-05-31 — Session: Vrai fix du click parasite BD + drift analogique
+
+**Build:** `20260531-155232`
+**Commits:** `XXXXXXX`
+
+### Diagnostic (mesuré, pas supposé)
+- Le « click parasite » sur changement de hauteur n'était PAS en mode analog (mesuré propre : saut au raccord ~0.001–0.003) mais dans le chemin **digital** (`analog < 0.5`) : reset de phase sur une queue sonore + un **crossfade mathématiquement faux** (snapshot de phase figé, ratio inversé, saut brutal au sample 8). Saut mesuré ~0.20 filtre ouvert.
+- Le filtre par défaut très bas (30 Hz) **masquait** le défaut → d'où l'intermittence (« revient plus ou moins fort »).
+- Le test de click existant ne mesurait que l'énergie HF 3–20 kHz → **aveugle** à une discontinuité de phase basse fréquence (sortait 0.81× la baseline).
+
+### Changes (`kick.rs`, `dsp.rs`)
+- **Suppression du reset de phase en retrigger + suppression totale du crossfade cassé.** La phase n'est jamais resetée sur une queue vivante (les oscillateurs sont des accumulateurs de phase → un changement de fréquence est sans click par nature).
+- **Reset au démarrage à froid uniquement** (`!was_active`) : phase + filtre + smoothers + dc_block remis à zéro → attaque propre même à 0 ms.
+- **Plancher anti-click sur l'attaque d'amplitude** `MIN_AMP_ATTACK_MS = 0.5` (un attack de 0 ms = une marche = un click par définition).
+- **Bug digital corrigé** : `pitch_env.trigger()` plafonnait le sweep à +1 Hz → remplacé par `trigger_reset_to(pitch_peak)`.
+- **Mode analog/digital re-rendu utile** : digital = identique au bit près à chaque coup ; analog = drift par coup (hauteur ±3.5 %, niveau ±10 %, temps d'enveloppe decay+release ±20 % — la longueur de queue varie ~624–906 ms, le plus audible).
+- `dsp.rs` : ajout `ExpDecayEnvelope::trigger_reset_to`, ré-ajout `SquareOsc::reset_phase`, retrait des getters morts du crossfade.
+
+### Tests
+- 72 lib tests pass. Nouveaux garde-fous : `test_kick_no_click_on_plock_retrigger_either_mode`, `test_kick_zero_attack_no_click`, `test_kick_analog_drifts_digital_is_stable` (mesure : digital diff 0.0, analog diff > 0), + rendu WAV digital.
+- Build installé dans le dossier VST3 système.
+
+### À suivre
+- Appliquer le même pattern anti-click + le sens analog=drift/digital=stable aux autres voix tonales : **perc1, snare, tom, snare606, hihat**.
+
+---
+
+## 2026-05-30 — Session: Fix click BD sur changement de hauteur (plock)
+
+**Build:** `20260530-195702`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Anti-click kick sur plock frequency** (`kick.rs`)
+  - `FREQ_SMOOTH_MS` : 0.1 ms → **2.0 ms** (lissage de la fréquence d'oscillateur)
+  - Crossfade digital mode : 2 → **8 échantillons** (transition de phase plus douce)
+  - Ajout d'un `filter_cutoff_smoother` pour éviter les sauts sur `filter_freq`
+  - `update_derived_params` ne touche plus le filtre directement (smoothed dans `process_sample`)
+  - Test unitaire `test_kick_plock_frequency_change_no_click` qui reproduit le scénario
+- **Fix root cause: boucle de version dans `iter_samples`** (`lib.rs`)
+  - `sound_settings_state.version` était vérifiée **à chaque échantillon** dans `process()`
+  - Si un trigger avec plock se produisait, puis la version changeait (modif UI), les settings globaux écrasaient le plock dans le même buffer → discontinuité d'un échantillon = click
+  - Déplacée **avant** `iter_samples`, exécutée une fois par buffer
+  - Test de rendu audio `test_kick_plock_click_audio_render` génère un WAV + analyse HF
+
+### Tests
+- 67 lib tests pass (2 nouveaux)
+- Build installé dans le dossier VST3 système
+
+---
+
+## 2026-05-30 — Session: Réparation ui.rs + Masquage slider Analog
+
+**Build:** `20260530-174031`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Réparation fichier ui.rs corrompu** (session précédente plantée)
+  - Suppression de ~2500 lignes dupliquées dans la section Preset Dumps
+  - Suppression du bloc `if Analog` mal formé dans le match des paramètres sliders
+  - Restauration de la structure correcte du match Slider/Checkbox depuis git
+- **Masquage du slider Analog** pour 6 instruments (HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap)
+  - Slider masqué dans le Sound Panel (remplacé par placeholder 0.0 dans les dumps)
+  - Seuls Kick, Snare, Tom, Snare606, Kick808 et B8 exposent le paramètre Analog
+
+### Tests
+- Compilation propre : 0 erreur, 6 warnings (unused_variables/methods)
+- Build installé dans le dossier VST3 système
+
+---
+
 ## 2026-05-29 — Session: Correction corruption UTF-8 dans l'interface
 
 **Build:** `20260529-174106`

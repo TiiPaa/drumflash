@@ -1611,6 +1611,54 @@ impl Plugin for DrumFlashVst {
                 .set_algo(i, self.params.algos()[i].value() as u8);
         }
 
+        // Update global sound settings once per buffer, BEFORE triggers.
+        // Previously this was inside iter_samples, which caused a click:
+        // a trigger with plock settings would be overwritten by global settings
+        // in the same buffer, creating a one-sample discontinuity.
+        let current_version = self.sound_settings_state.version.load(Ordering::Relaxed);
+        if current_version != self.last_sound_settings_version {
+            self.last_sound_settings_version = current_version;
+            for (i, inst) in self.sound_settings_state.instruments.iter().enumerate() {
+                let Some(voice) = synthesis::DrumVoice::from_index(i) else {
+                    continue;
+                };
+                let (
+                    freq,
+                    decay,
+                    vol,
+                    filt,
+                    attack,
+                    release,
+                    decay_curve,
+                    release_curve,
+                    hold,
+                    filter_env_amount,
+                    filter_env_decay,
+                    analog,
+                    stereo,
+                ) = inst.load();
+                self.synthesizer.set_voice_settings(
+                    voice,
+                    self.voice_settings_for(
+                        i,
+                        freq,
+                        decay,
+                        vol,
+                        filt,
+                        attack,
+                        release,
+                        decay_curve,
+                        release_curve,
+                        hold,
+                        filter_env_amount,
+                        filter_env_decay,
+                        analog,
+                        stereo,
+                    ),
+                );
+            }
+        }
+
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
             let swing = self.params.swing.value();
             let groove_type = self.params.groove_type.value();
@@ -1661,50 +1709,6 @@ impl Plugin for DrumFlashVst {
                     let settings = self.voice_settings_at_step(voice_idx, current_steps[voice_idx]);
                     self.synthesizer.set_voice_settings(voice, settings);
                     self.synthesizer.trigger(voice_idx, 0.8);
-                }
-            }
-
-            let current_version = self.sound_settings_state.version.load(Ordering::Relaxed);
-            if current_version != self.last_sound_settings_version {
-                self.last_sound_settings_version = current_version;
-                for (i, inst) in self.sound_settings_state.instruments.iter().enumerate() {
-                    let Some(voice) = synthesis::DrumVoice::from_index(i) else {
-                        continue;
-                    };
-                    let (
-                        freq,
-                        decay,
-                        vol,
-                        filt,
-                        attack,
-                        release,
-                        decay_curve,
-                        release_curve,
-                        hold,
-                        filter_env_amount,
-                        filter_env_decay,
-                        analog,
-                        stereo,
-                    ) = inst.load();
-                    self.synthesizer.set_voice_settings(
-                        voice,
-                        self.voice_settings_for(
-                            i,
-                            freq,
-                            decay,
-                            vol,
-                            filt,
-                            attack,
-                            release,
-                            decay_curve,
-                            release_curve,
-                            hold,
-                            filter_env_amount,
-                            filter_env_decay,
-                            analog,
-                            stereo,
-                        ),
-                    );
                 }
             }
 

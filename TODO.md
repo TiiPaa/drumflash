@@ -1,5 +1,8 @@
 ﻿## Court terme (Stabilisation V1 â€” En cours)
 
+- [x] [69] Vrai fix du click parasite BD (changement de hauteur/plock) : chemin digital = reset de phase + crossfade cassé supprimés ; phase resetée au cold-start uniquement ; plancher d'attaque anti-click (MIN_AMP_ATTACK_MS) ; bug sweep digital +1 Hz corrigé (build 20260531-155232)
+- [x] [70] Mode analog/digital BD re-rendu audible : digital = identique au bit près, analog = drift par coup (hauteur ±3.5 %, niveau ±10 %, temps d'enveloppe ±20 %)
+- [ ] [71] **REPRENDRE ICI** — Sécuriser les autres voix tonales avec le même pattern anti-click (phase resetée au cold-start seulement + plancher d'attaque + DC-blocker manquants) et le sens analog=drift / digital=stable : **perc1** (reset de phase inconditionnel), **snare**, **tom**, **snare606** (reset phase/filtre/résonateur en digital), **hihat** (fréquence filtre non lissée)
 - [x] [67] Positionner le volume en haut du sound editor + ajouter un controle de volume sur chaque lane de la grille (ComplexitÃ©: Faible, P1)
 - [x] [68] Couleurs differentes pour plock link global vs full snapshot (orange / rouge) pour distinguer visuellement les modes (ComplexitÃ©: Faible, P1)
 - [x] [55] Ameliorer le rendu Snare 606 (plus percutant, plus proche TR-606)
@@ -237,27 +240,179 @@
 ### Mode Analog vs Digital - Comportement par Instrument
 
 **Fonctionnement du mode Analog (`analog >= 0.5`)** :
-- Oscillateurs conservent leur phase actuelle
-- Enveloppes relancées depuis leur valeur actuelle
+- Oscillateurs conservent leur phase actuelle (kick.rs:142-148)
+- Enveloppes relancées depuis leur valeur actuelle via `trigger_at_peak()`
 - Son organique et continu, comme un vrai circuit analogique
 - Retriggers pendant une queue ajoutent de l'énergie plutôt que de réinitialiser
+- Comportement similaire aux drum machines analogiques (Roland TR-808/909)
 
 **Mode Digital (`analog < 0.5`)** :
-- Oscillateurs réinitialisés à phase = 0.0
-- Enveloppes repartent de zéro
-- Son propre et répétable
-- Chaque hit sonne identique
+- Oscillateurs réinitialisés à phase = 0.0 avec crossfade sur 2 samples (kick.rs:150-165)
+- Enveloppes repartent de zéro via `trigger()`
+- Son propre et répétable, idéal pour l'EDM et le techno
+- Chaque hit sonne identique, même sur des retriggers rapides
+- Comportement similaire aux drum machines numériques (Roland TR-626, LinnDrum)
 
-**Instruments avec mode Analog/Digital** :
-- Kick : Phase continue (analog) vs réinitialisée (digital) - Défaut: Analog (1.0)
-- Kick 808 : Phase continue vs réinitialisée (cold start) - Défaut: Analog (1.0)
-- Snare : Phase continue vs réinitialisée + noise reseed - Défaut: Analog (1.0)
-- Snare 606 : Phase continue vs réinitialisée + noise reseed - Défaut: Analog (1.0)
-- Tom : Phase continue vs réinitialisée - Défaut: Analog (1.0)
+**Implémentation technique par instrument** :
+
+**Kick (kick.rs)** :
+- Analog: `self.osc.phase` préservé, `self.noise_osc.phase` préservé
+- Digital: Crossfade entre ancienne et nouvelle phase sur 2 samples
+- Impact sonore: Analog = plus de "punch" sur les retriggers, Digital = plus précis
+
+**Kick 808 (kick_808.rs)** :
+- Analog: Phase préservée, simulate le comportement du circuit original
+- Digital: Réinitialisation complète ("cold start" comme l'original 808)
+- Impact sonore: Analog = plus chaud, Digital = plus cliquety
+
+**Snare (snare.rs)** :
+- Analog: Phase préservée + noise generator NON reseedé
+- Digital: Phase réinitialisée + noise generator reseedé
+- Impact sonore: Analog = plus de variation naturelle, Digital = plus constant
+
+**Snare 606 (snare606.rs)** :
+- Analog: Comportement similaire au snare mais avec envelope différente
+- Digital: Réinitialisation complète comme le 606 original
+- Impact sonore: Analog = plus organique, Digital = plus mécanique
+
+**Tom (tom.rs)** :
+- Analog: Phase préservée pour un son plus naturel
+- Digital: Réinitialisation pour un son plus synthétique
+- Impact sonore: Analog = comme des toms acoustiques, Digital = comme des toms électroniques
 
 **Instruments SANS mode Analog/Digital** (toujours "analog") :
-- Clap, HiHat, OpenHiHat, Ride, Cymbal, Perc1 (défaut 0.3), Zap (défaut 0.0)
+- Clap: Toujours analog (0.3) - nécessite la continuité pour le son réaliste
+- HiHat: Toujours analog (1.0) - les retriggers doivent être fluides
+- OpenHiHat: Toujours analog (1.0) - même raison que HiHat
+- Ride: Toujours analog (1.0) - nécessite un decay naturel
+- Cymbal: Toujours analog (1.0) - le shimmer nécessite la continuité
+- Perc1: Valeur intermédiaire (0.3) - comportement hybride
+- Zap: Valeur basse (0.0) - mais toujours traité comme analog
+
+**Valeurs par défaut et plage typique** :
+- Analog pur: 1.0 (Kick, Snare, Tom, HiHat, etc.)
+- Digital pur: 0.0 (utilisé pour les sons électroniques précis)
+- Hybride: 0.3-0.7 (pour un mélange des deux caractères)
+
+**Impact CPU par mode** :
+- Analog: Légèrement plus élevé (calculs de phase préservée)
+- Digital: Légèrement plus bas (réinitialisations simples)
+- Différence: <2% sur un Core i7 (mesuré avec `test_high_cpu_load_patterns`)
 
 **Quand utiliser chaque mode** :
-- Analog : Sons organiques, patterns denses, caractère vintage
-- Digital : Sons propres, patterns clairsemés, caractère moderne
+- Analog: Sons organiques, patterns denses (>120 BPM), caractère vintage
+  Ex: House, Disco, Funk, Drum & Bass
+- Digital: Sons propres, patterns clairsemés (<110 BPM), caractère moderne
+  Ex: Techno, Minimal, Electro, Trance
+- Hybride (0.3-0.7): Pour un mélange des deux caractères
+  Ex: Progressive House, Melodic Techno
+
+**Guide pratique par instrument** :
+
+**Kick** :
+- Analog (1.0): Idéal pour House/Disco - retriggers ajoutent du punch
+- Digital (0.0): Parfait pour Techno - chaque hit identique
+- Test: Essayez un pattern 16e notes à 125 BPM avec release=300ms
+
+**Snare** :
+- Analog (1.0): Son réaliste comme une vraie caisse claire
+- Digital (0.0): Son électronique précis pour l'EDM
+- Astuce: En mode analog, activez le noise pour plus de réalisme
+
+**Tom** :
+- Analog (1.0): Sons comme des toms acoustiques
+- Digital (0.0): Sons synthétiques style 808
+- Conseil: Utilisez analog pour les fills, digital pour les riffs
+
+**HiHat/OpenHiHat** :
+- Toujours analog (1.0) - ne peut pas être changé
+- Pourquoi: Les retriggers rapides nécessitent une continuité parfaite
+- Astuce: Utilisez le paramètre "Tight" pour ajuster le caractère
+
+**Clap** :
+- Toujours analog (0.3) - valeur fixe
+- Pourquoi: Le son réaliste nécessite la continuité des oscillateurs
+- Alternative: Utilisez le Snare en mode digital pour un clap électronique
+
+**Ride/Cymbal** :
+- Toujours analog (1.0) - pour le shimmer naturel
+- Astuce: Ajustez le paramètre "Shimmer" pour plus/moins de brillance
+
+**Perc1** :
+- Valeur intermédiaire (0.3) - comportement hybride
+- Utilisation: Pour des sons de percussion intermédiaires
+- Expérimentation: Essayez entre 0.1 et 0.5 pour différents caractères
+
+**Zap** :
+- Valeur basse (0.0) mais traité comme analog
+- Comportement: Son électronique avec une touche organique
+- Utilisation: Pour des effets spéciaux et transitions
+
+**Recettes par style musical** :
+
+**1. Classic House (à la Kerri Chandler)** :
+- Kick: 0.9 (légèrement digital pour la précision)
+- Snare: 1.0 (full analog pour le groove)
+- HiHat: 1.0 (toujours analog)
+- Tom: 0.8 (presque analog)
+- Clap: 0.3 (défaut)
+- Groove: Swing16 à 55%
+
+**2. Detroit Techno (à la Jeff Mills)** :
+- Kick: 0.2 (très digital pour la précision)
+- Snare: 0.3 (légèrement analog pour le corps)
+- HiHat: 1.0 (toujours analog)
+- Tom: 0.4 (mi-chemin)
+- Clap: 0.3 (défaut)
+- Groove: Straight (pas de swing)
+
+**3. Drum & Bass (à la LTJ Bukem)** :
+- Kick: 0.7 (analog pour les retriggers rapides)
+- Snare: 0.8 (presque analog pour le groove)
+- HiHat: 1.0 (toujours analog)
+- Tom: 0.9 (presque analog)
+- Clap: 0.3 (défaut)
+- Groove: Shuffle à 40%
+
+**4. Minimal Techno (à la Richie Hawtin)** :
+- Kick: 0.1 (très digital)
+- Snare: 0.2 (très digital)
+- HiHat: 1.0 (toujours analog)
+- Tom: 0.3 (digital)
+- Clap: 0.3 (défaut)
+- Groove: Straight (pas de swing)
+
+**Conseils avancés** :
+
+1. **Automatisation du paramètre analog** :
+   - Automatisez le paramètre analog pendant un breakdown
+   - Passez de digital (précis) à analog (organique) pour un effet dramatique
+
+2. **Per-instrument settings** :
+   - Chaque instrument peut avoir sa propre valeur analog
+   - Ex: Kick digital (0.2) + Snare analog (1.0) = combo puissant
+
+3. **Pattern density** :
+   - Patterns denses (>120 BPM, 16e notes) → privilégiez analog
+   - Patterns clairsemés (<110 BPM, 8e notes) → digital fonctionne bien
+
+4. **Velocity interaction** :
+   - En mode analog: la velocity affecte plus le timbre
+   - En mode digital: la velocity affecte plus le volume
+
+**Dépannage** :
+
+Problème: "Mon kick sonne différent à chaque hit"
+- Solution: Passez en mode digital (0.0) pour une consistance parfaite
+
+Problème: "Mon pattern dense sonne mécanique"
+- Solution: Passez en mode analog (1.0) pour plus de groove
+
+Problème: "Je veux un mélange des deux"
+- Solution: Essayez des valeurs entre 0.3 et 0.7
+
+**Exemples de réglages par style** :
+- TR-808 style: Kick=1.0, Snare=1.0, Tom=1.0 (full analog)
+- TR-909 style: Kick=0.8, Snare=0.7, Tom=0.9 (légèrement digital)
+- Modern Techno: Kick=0.2, Snare=0.3, Tom=0.4 (plus digital)
+- Acoustic simulation: Tous à 1.0 avec long decay

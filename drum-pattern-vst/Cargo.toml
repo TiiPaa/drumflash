@@ -31,6 +31,9 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+[dev-dependencies]
+hound = "3.5"
+
 [lib]
 crate-type = ["cdylib"]
 name = "drum_pattern_vst"
