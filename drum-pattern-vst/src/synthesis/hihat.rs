@@ -7,6 +7,9 @@
 
 use super::{dsp, settings::hihat::HiHatSettings, Voice, VoiceSettings};
 
+/// Anti-click floor for the amplitude attack (a true 0 ms attack is a step = click).
+const MIN_AMP_ATTACK_MS: f32 = 0.2;
+
 /// Hi-Hat voice using filtered white noise
 pub struct HiHatVoice {
     settings: HiHatSettings,
@@ -30,6 +33,9 @@ pub struct HiHatVoice {
     envelope: dsp::DecayReleaseEnvelope,
     // Filter envelope for splash decay.
     filter_env: dsp::ExpDecayEnvelope,
+    // DC blockers (per channel) — clean any offset from the tanh saturation.
+    dc_block_l: dsp::DcBlocker,
+    dc_block_r: dsp::DcBlocker,
 
     // Active state
     active: bool,
@@ -54,7 +60,7 @@ impl HiHatVoice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(settings.attack * 1000.0);
+        .with_attack_ms((settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         envelope.set_hold(settings.hold);
 
         Self {
@@ -73,6 +79,8 @@ impl HiHatVoice {
                 settings.filter_env_decay.max(0.001),
             )
             .with_attack_ms(0.3),
+            dc_block_l: dsp::DcBlocker::default(),
+            dc_block_r: dsp::DcBlocker::default(),
             active: false,
         }
     }
@@ -132,7 +140,7 @@ impl Voice for HiHatVoice {
             return 0.0;
         }
 
-        output
+        self.dc_block_l.process(output)
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -183,7 +191,10 @@ impl Voice for HiHatVoice {
         }
 
         let vol = env * self.settings.volume;
-        (left * vol, right * vol)
+        (
+            self.dc_block_l.process(left * vol),
+            self.dc_block_r.process(right * vol),
+        )
     }
 
     fn is_active(&self) -> bool {
@@ -195,28 +206,38 @@ impl Voice for HiHatVoice {
         self.peaking.reset();
         self.peaking_r.reset();
         self.filter.reset();
+        self.filter_r.reset();
         self.envelope.reset();
         self.filter_env.reset();
+        self.dc_block_l.reset();
+        self.dc_block_r.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = HiHatSettings::from(settings);
-        self.peaking
-            .set_peaking(self.settings.frequency, 2.0, 6.0, self.sample_rate);
-        self.peaking_r
-            .set_peaking(self.settings.frequency, 2.0, 6.0, self.sample_rate);
+        let new = HiHatSettings::from(settings);
+        let freq_changed = (new.frequency - self.settings.frequency).abs() > 1e-3;
+        self.settings = new;
+        // Only recompute the peaking biquad when the frequency actually changes —
+        // avoids needless coefficient churn (and its transient) on every per-step
+        // settings refresh when the frequency is unchanged.
+        if freq_changed {
+            self.peaking
+                .set_peaking(self.settings.frequency, 2.0, 6.0, self.sample_rate);
+            self.peaking_r
+                .set_peaking(self.settings.frequency, 2.0, 6.0, self.sample_rate);
+        }
         self.filter
             .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.filter_r
             .set_cutoff(self.settings.filter_freq, self.sample_rate);
-        self.envelope = dsp::DecayReleaseEnvelope::new(
-            self.sample_rate,
-            self.settings.decay_curve,
-            self.settings.decay,
-            self.settings.release_curve,
-            self.settings.release,
-        )
-        .with_attack_ms(self.settings.attack * 1000.0);
+        // Update the amp envelope via setters (preserve tail state across
+        // retriggers; recreating it reset the value to 0 = a retrigger click).
+        self.envelope.set_decay(self.settings.decay);
+        self.envelope.set_release(self.settings.release);
+        self.envelope.set_decay_curve(self.settings.decay_curve);
+        self.envelope.set_release_curve(self.settings.release_curve);
+        self.envelope
+            .set_attack_ms((self.settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         self.envelope.set_hold(self.settings.hold);
         self.filter_env
             .set_decay(self.settings.filter_env_decay.max(0.001));

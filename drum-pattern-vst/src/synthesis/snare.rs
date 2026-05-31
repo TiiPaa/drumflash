@@ -10,6 +10,9 @@
 
 use super::{dsp, saturation, settings::snare::SnareSettings, Voice, VoiceSettings};
 
+/// Anti-click floor for the amplitude attack (a true 0 ms attack is a step = click).
+const MIN_AMP_ATTACK_MS: f32 = 0.2;
+
 /// Snare drum voice using triangle oscillator + noise
 pub struct SnareVoice {
     settings: SnareSettings,
@@ -33,6 +36,10 @@ pub struct SnareVoice {
 
     // Saturation stage
     saturation: saturation::SaturationConfig,
+    // Per-hit analog drift (breathing) + DC blockers (per channel).
+    drift: dsp::AnalogDrift,
+    dc_block_l: dsp::DcBlocker,
+    dc_block_r: dsp::DcBlocker,
 
     // Active state
     active: bool,
@@ -55,7 +62,7 @@ impl SnareVoice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(settings.attack * 1000.0);
+        .with_attack_ms((settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         envelope.set_hold(settings.hold);
 
         Self {
@@ -80,6 +87,9 @@ impl SnareVoice {
                 output_gain: 1.0,
                 pre_filter: false,
             },
+            drift: dsp::AnalogDrift::new(0x7A7A_3333),
+            dc_block_l: dsp::DcBlocker::default(),
+            dc_block_r: dsp::DcBlocker::default(),
             active: false,
         }
     }
@@ -87,14 +97,24 @@ impl SnareVoice {
 
 impl Voice for SnareVoice {
     fn trigger(&mut self) {
+        let was_active = self.active;
         self.active = true;
-        if self.settings.analog < 0.5 {
-            // Digital stable: reset phase and filter state for identical hits.
+        // Cold start only (voice was silent): reset osc phase + filter state for a
+        // clean, consistent attack. Never on a ringing-tail retrigger (that jump is
+        // the click). The noise generators are always kept continuous.
+        if !was_active {
             self.osc.reset();
             self.filter.reset();
+            self.filter_r.reset();
+            self.dc_block_l.reset();
+            self.dc_block_r.reset();
         }
-        // Keep oscillator phase, noise generator and filter state continuous
-        // across triggers — see kick.rs for the rationale.
+        // analog = per-hit drift (breathing) ; digital = bit-identical hits.
+        self.drift.trigger(self.settings.analog >= 0.5);
+        self.osc.set_freq(self.settings.frequency * self.drift.pitch);
+        self.envelope.set_decay(self.settings.decay * self.drift.time);
+        self.envelope
+            .set_release(self.settings.release * self.drift.time);
         self.envelope.trigger();
         self.filter_env.trigger();
     }
@@ -148,7 +168,8 @@ impl Voice for SnareVoice {
             return 0.0;
         }
 
-        self.saturation.process(output)
+        self.dc_block_l
+            .process(self.saturation.process(output * self.drift.level))
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -209,9 +230,9 @@ impl Voice for SnareVoice {
             return (0.0, 0.0);
         }
 
-        let vol = env * self.settings.volume;
-        let l = self.saturation.process(left * vol);
-        let r = self.saturation.process(right * vol);
+        let vol = env * self.settings.volume * self.drift.level;
+        let l = self.dc_block_l.process(self.saturation.process(left * vol));
+        let r = self.dc_block_r.process(self.saturation.process(right * vol));
         (l, r)
     }
 
@@ -223,8 +244,11 @@ impl Voice for SnareVoice {
         self.active = false;
         self.osc.reset();
         self.filter.reset();
+        self.filter_r.reset();
         self.envelope.reset();
         self.filter_env.reset();
+        self.dc_block_l.reset();
+        self.dc_block_r.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
@@ -234,14 +258,14 @@ impl Voice for SnareVoice {
             .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.filter_r
             .set_cutoff(self.settings.filter_freq, self.sample_rate);
-        self.envelope = dsp::DecayReleaseEnvelope::new(
-            self.sample_rate,
-            self.settings.decay_curve,
-            self.settings.decay,
-            self.settings.release_curve,
-            self.settings.release,
-        )
-        .with_attack_ms(self.settings.attack * 1000.0);
+        // Update the amp envelope via setters (preserve tail state across
+        // retriggers; recreating it reset the value to 0 = a retrigger click).
+        self.envelope.set_decay(self.settings.decay);
+        self.envelope.set_release(self.settings.release);
+        self.envelope.set_decay_curve(self.settings.decay_curve);
+        self.envelope.set_release_curve(self.settings.release_curve);
+        self.envelope
+            .set_attack_ms((self.settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         self.envelope.set_hold(self.settings.hold);
         self.filter_env
             .set_decay(self.settings.filter_env_decay.max(0.001));

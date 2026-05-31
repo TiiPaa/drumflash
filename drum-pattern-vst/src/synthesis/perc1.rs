@@ -16,6 +16,8 @@ use super::{dsp, saturation, settings::perc1::Perc1Settings, Voice, VoiceSetting
 const MAX_DELAY_SAMPLES: usize = 8192;
 const SLAP_DELAY_MS: f32 = 100.0;
 const DELAY_FEEDBACK: f32 = 0.35;
+/// Anti-click floor for the amplitude attack (a true 0 ms attack is a step = click).
+const MIN_AMP_ATTACK_MS: f32 = 0.3;
 
 enum Perc1Osc {
     Sine(dsp::SineOsc),
@@ -81,6 +83,9 @@ pub struct Perc1Voice {
     delay_samples: usize,
     // Saturation stage
     saturation: saturation::SaturationConfig,
+    // DC blockers (per channel) — clean the asymmetric drift from FM + saturation.
+    dc_block_l: dsp::DcBlocker,
+    dc_block_r: dsp::DcBlocker,
 
     active: bool,
 }
@@ -111,7 +116,7 @@ impl Perc1Voice {
             settings.release_curve,
             settings.release.max(0.001),
         )
-        .with_attack_ms(settings.attack * 1000.0);
+        .with_attack_ms((settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         amp_env.set_hold(settings.hold);
 
         let filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
@@ -145,6 +150,8 @@ impl Perc1Voice {
                 output_gain: 1.0,
                 pre_filter: false,
             },
+            dc_block_l: dsp::DcBlocker::default(),
+            dc_block_r: dsp::DcBlocker::default(),
             active: false,
         }
     }
@@ -176,17 +183,22 @@ impl Perc1Voice {
 
 impl Voice for Perc1Voice {
     fn trigger(&mut self) {
+        let was_active = self.active;
         self.active = true;
         self.rebuild_sweep();
         self.sweep_env.trigger();
         self.amp_env.trigger();
         self.filter_env.trigger();
 
-        // Reset phases for crisp attack
-        self.osc_a_l.reset_phase(0.0);
-        self.osc_a_r.reset_phase(0.25);
-        self.osc_b_l.reset_phase(0.5);
-        self.osc_b_r.reset_phase(0.75);
+        // Cold start only (voice was silent): reset oscillator phases for a crisp,
+        // consistent attack + the L/R stereo phase spread. On a retrigger during a
+        // ringing tail we must NOT reset phase — that jump is the click parasite.
+        if !was_active {
+            self.osc_a_l.reset_phase(0.0);
+            self.osc_a_r.reset_phase(0.25);
+            self.osc_b_l.reset_phase(0.5);
+            self.osc_b_r.reset_phase(0.75);
+        }
     }
 
     fn process_sample(&mut self) -> f32 {
@@ -231,7 +243,8 @@ impl Voice for Perc1Voice {
         }
 
         let width = self.settings.width.clamp(0.0, 1.0);
-        self.saturation.process(dry + wet * width * 0.5)
+        self.dc_block_l
+            .process(self.saturation.process(dry + wet * width * 0.5))
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -293,8 +306,12 @@ impl Voice for Perc1Voice {
         }
 
         let delay_mix = width * 0.5;
-        let l = self.saturation.process(dry_l + wet_l * delay_mix);
-        let r = self.saturation.process(dry_r + wet_r * delay_mix);
+        let l = self
+            .dc_block_l
+            .process(self.saturation.process(dry_l + wet_l * delay_mix));
+        let r = self
+            .dc_block_r
+            .process(self.saturation.process(dry_r + wet_r * delay_mix));
         (l, r)
     }
 
@@ -310,6 +327,8 @@ impl Voice for Perc1Voice {
         self.delay_buf_l = [0.0; MAX_DELAY_SAMPLES];
         self.delay_buf_r = [0.0; MAX_DELAY_SAMPLES];
         self.delay_pos = 0;
+        self.dc_block_l.reset();
+        self.dc_block_r.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
@@ -334,7 +353,8 @@ impl Voice for Perc1Voice {
 
         // Update amplitude envelope via setters — do NOT recreate to preserve tail state
         self.amp_env.set_decay(self.settings.decay.max(0.01).min(2.0));
-        self.amp_env.set_attack_ms(self.settings.attack * 1000.0);
+        self.amp_env
+            .set_attack_ms((self.settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         self.amp_env.set_release(self.settings.release.max(0.001));
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
@@ -393,6 +413,41 @@ mod tests {
             }
         }
         count
+    }
+
+    /// Regression guard: a retrigger during a ringing tail must NOT reset the
+    /// oscillator phases (that unconditional reset was the click parasite). The
+    /// body should continue roughly continuously across the retrigger.
+    #[test]
+    fn perc1_no_click_on_retrigger_during_tail() {
+        let sr = 44100.0;
+        let mut settings = VoiceSettings::perc1();
+        settings.decay = 0.3;
+        settings.release = 0.4;
+        settings.special[2] = 0.0; // bite (FM depth) off → isolate the carrier body
+        settings.special[3] = 0.0; // width off → no slap-delay/stereo complication
+
+        let mut voice = Perc1Voice::new(sr, settings.into());
+        voice.trigger();
+        let mut last = 0.0f32;
+        for _ in 0..1500 {
+            last = voice.process_sample();
+        }
+        assert!(last.abs() > 1e-4, "tail must still ring: {}", last);
+
+        voice.trigger();
+        let first = voice.process_sample();
+        let edge = (first - last).abs();
+        // The trigger-edge step is the click metric: a phase reset on the ringing
+        // tail jumped the body hard here. The intra-sweep per-sample steps that
+        // follow are the legitimate (fast) laser pitch sweep, not a discontinuity,
+        // so we only assert on the edge.
+        eprintln!("perc1 retrigger: last={:.4} first={:.4} edge={:.4}", last, first, edge);
+        assert!(
+            edge < 0.05,
+            "perc1 retrigger edge discontinuity (phase reset on tail?): {}",
+            edge
+        );
     }
 
     #[test]
