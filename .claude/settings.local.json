@@ -22,7 +22,8 @@
       "PowerShell(Push-Location *)",
       "PowerShell(Get-Process *)",
       "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\" 2>&1 | Select-Object -Last 12; \"EXIT=$LASTEXITCODE\")",
-      "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\" | Select-Object -Last 4; \"EXIT=$LASTEXITCODE\")"
+      "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\" | Select-Object -Last 4; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\" | Select-Object -Last 5; \"EXIT=$LASTEXITCODE\")"
     ]
   }
 }
