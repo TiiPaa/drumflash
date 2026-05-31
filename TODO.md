@@ -2,7 +2,8 @@
 
 - [x] [69] Vrai fix du click parasite BD (changement de hauteur/plock) : chemin digital = reset de phase + crossfade cassé supprimés ; phase resetée au cold-start uniquement ; plancher d'attaque anti-click (MIN_AMP_ATTACK_MS) ; bug sweep digital +1 Hz corrigé (build 20260531-155232)
 - [x] [70] Mode analog/digital BD re-rendu audible : digital = identique au bit près, analog = drift par coup (hauteur ±3.5 %, niveau ±10 %, temps d'enveloppe ±20 %)
-- [ ] [71] **REPRENDRE ICI** — Sécuriser les autres voix tonales avec le même pattern anti-click (phase resetée au cold-start seulement + plancher d'attaque + DC-blocker manquants) et le sens analog=drift / digital=stable : **perc1** (reset de phase inconditionnel), **snare**, **tom**, **snare606** (reset phase/filtre/résonateur en digital), **hihat** (fréquence filtre non lissée)
+- [x] [71] Sécurisé les autres voix : perc1 (reset phase inconditionnel → cold-start only), snare/tom/snare606 (reset digital → cold-start only + enveloppes recréées → setters), hihat (enveloppe recréée → setters + biquad peaking recalculé seulement si freq change). Plancher d'attaque + DC-blockers partout ; drift analog sur snare & tom (sliders exposés) ; helper partagé `AnalogDrift`. ride/cymbal/clap/open_hihat/kick_808 déjà click-safe, non modifiés. (build 20260531-184528)
+- [ ] [72] **REPRENDRE ICI** — Nettoyer les fichiers de cruft hérités de la réparation ui.rs (src/ui_backup.rs, src/ui_fixed.rs, remaining_content.txt, tail_content.txt, temp_*.txt) + les ajouter au .gitignore si besoin
 - [x] [67] Positionner le volume en haut du sound editor + ajouter un controle de volume sur chaque lane de la grille (ComplexitÃ©: Faible, P1)
 - [x] [68] Couleurs differentes pour plock link global vs full snapshot (orange / rouge) pour distinguer visuellement les modes (ComplexitÃ©: Faible, P1)
 - [x] [55] Ameliorer le rendu Snare 606 (plus percutant, plus proche TR-606)

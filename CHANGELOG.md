@@ -1,5 +1,26 @@
 ﻿# Changelog
 
+## 2026-05-31 — Session: Task 71 — sécurisation anti-click des autres voix
+
+**Build:** `20260531-184528`
+**Commits:** `XXXXXXX`
+
+### Changes
+Application du pattern anti-click validé sur la BD à toutes les voix tonales / exposées :
+- **perc1** : supprimé le **reset de phase inconditionnel** (à chaque trigger) → reset au cold-start seulement. + plancher d'attaque + DC-blockers L/R.
+- **snare**, **tom** : le reset phase/filtre du mode digital ne se fait plus que sur cold-start ; + **drift analog** (slider exposé : hauteur/niveau/temps d'enveloppe par coup) ; + plancher + DC.
+- **snare606** : reset résonateur/filtres → cold-start only ; + plancher + DC.
+- **hihat** : pas de reset de phase (déjà ok) ; biquad peaking recalculé **seulement si la fréquence change** ; + plancher + DC.
+- **snare / snare606 / hihat** recréaient leur enveloppe d'amplitude à chaque `set_settings` (appelé avant chaque trigger) → l'enveloppe repartait de 0 = click au retrigger. Corrigé via **setters** (préserve l'état de queue).
+- Nouveau helper partagé **`AnalogDrift`** dans `dsp.rs` (drift pitch/level/temps ; mode digital = facteurs à 1.0).
+- ride / cymbal / clap / open_hihat / kick_808 : déjà click-safe (pas de reset de phase), **non modifiés**.
+
+### Tests
+- 73 lib tests pass (nouveau garde-fou `perc1_no_click_on_retrigger_during_tail` : edge au retrigger = 0.004 → phase continue).
+- Build installé dans le dossier VST3 système.
+
+---
+
 ## 2026-05-31 — Session: Vrai fix du click parasite BD + drift analogique
 
 **Build:** `20260531-155232`

@@ -18,6 +18,9 @@
 
 use super::{dsp, saturation, settings::snare606::Snare606Settings, Voice, VoiceSettings};
 
+/// Anti-click floor for the amplitude attack (a true 0 ms attack is a step = click).
+const MIN_AMP_ATTACK_MS: f32 = 0.2;
+
 pub struct Snare606Voice {
     settings: Snare606Settings,
     sample_rate: f32,
@@ -36,6 +39,9 @@ pub struct Snare606Voice {
     filter_env: dsp::ExpDecayEnvelope,
     /// Saturation stage for analog character.
     saturation: saturation::SaturationConfig,
+    // DC blockers (per channel).
+    dc_block_l: dsp::DcBlocker,
+    dc_block_r: dsp::DcBlocker,
 
     active: bool,
 }
@@ -65,7 +71,7 @@ impl Snare606Voice {
             settings.release_curve,
             settings.release,
         )
-        .with_attack_ms(settings.attack * 1000.0);
+        .with_attack_ms((settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         envelope.set_hold(settings.hold);
 
         let filter_env =
@@ -95,6 +101,8 @@ impl Snare606Voice {
             envelope,
             filter_env,
             saturation,
+            dc_block_l: dsp::DcBlocker::default(),
+            dc_block_r: dsp::DcBlocker::default(),
             active: false,
         }
     }
@@ -114,17 +122,21 @@ impl Snare606Voice {
 
 impl Voice for Snare606Voice {
     fn trigger(&mut self) {
+        let was_active = self.active;
         self.active = true;
-        if self.settings.analog < 0.5 {
+        // Cold start only (voice was silent): reset the filters + resonator for a
+        // clean, deterministic attack. NEVER on a ringing-tail retrigger — resetting
+        // a ringing resonator/filter is a discontinuity (click). Noise is continuous.
+        if !was_active {
             self.lp_softener.reset();
             self.lp_softener_r.reset();
             self.wires_hp.reset();
             self.wires_hp_r.reset();
             self.resonator.reset();
             self.resonator_r.reset();
+            self.dc_block_l.reset();
+            self.dc_block_r.reset();
         }
-        // Keep noise generator, filter states and resonator state continuous —
-        // analog-style retrigger (matches kick/tom convention in this codebase).
         self.envelope.trigger();
         self.filter_env.trigger();
     }
@@ -173,8 +185,8 @@ impl Voice for Snare606Voice {
         
         // Apply saturation (post-filter by default)
         mixed = self.saturation.process(mixed);
-        
-        mixed
+
+        self.dc_block_l.process(mixed)
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -227,9 +239,9 @@ impl Voice for Snare606Voice {
         let mut right = (body_r * body_gain + wires_r * wires_gain) * vol;
         
         // Apply saturation (post-filter by default)
-        left = self.saturation.process(left);
-        right = self.saturation.process(right);
-        
+        left = self.dc_block_l.process(self.saturation.process(left));
+        right = self.dc_block_r.process(self.saturation.process(right));
+
         (left, right)
     }
 
@@ -247,6 +259,8 @@ impl Voice for Snare606Voice {
         self.wires_hp_r.reset();
         self.resonator.reset();
         self.resonator_r.reset();
+        self.dc_block_l.reset();
+        self.dc_block_r.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
@@ -270,15 +284,15 @@ impl Voice for Snare606Voice {
             self.resonator_r
                 .set_bandpass(self.settings.frequency.max(80.0), q, self.sample_rate);
         }
-        self.envelope = dsp::DecayReleaseEnvelope::new(
-            self.sample_rate,
-            settings.decay_curve,
-            settings.decay,
-            settings.release_curve,
-            settings.release,
-        )
-        .with_attack_ms(settings.attack * 1000.0);
-        self.envelope.set_hold(settings.hold);
+        // Update the amp envelope via setters (preserve tail state across
+        // retriggers; recreating it reset the value to 0 = a retrigger click).
+        self.envelope.set_decay(self.settings.decay);
+        self.envelope.set_release(self.settings.release);
+        self.envelope.set_decay_curve(self.settings.decay_curve);
+        self.envelope.set_release_curve(self.settings.release_curve);
+        self.envelope
+            .set_attack_ms((self.settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
+        self.envelope.set_hold(self.settings.hold);
         self.filter_env
             .set_decay(settings.filter_env_decay.max(0.001));
         
