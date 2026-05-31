@@ -9,6 +9,9 @@
 
 use super::{dsp, saturation, settings::tom::TomSettings, Voice, VoiceSettings};
 
+/// Anti-click floor for the amplitude attack (a true 0 ms attack is a step = click).
+const MIN_AMP_ATTACK_MS: f32 = 0.5;
+
 pub struct TomVoice {
     settings: TomSettings,
     sample_rate: f32,
@@ -24,6 +27,9 @@ pub struct TomVoice {
     stick_attack: dsp::ClickGenerator,
     // Saturation stage
     saturation: saturation::SaturationConfig,
+    // Per-hit analog drift (breathing) + DC blocker.
+    drift: dsp::AnalogDrift,
+    dc_block: dsp::DcBlocker,
 
     active: bool,
 }
@@ -50,7 +56,7 @@ impl TomVoice {
                 settings.release_curve,
                 settings.release,
             )
-            .with_attack_ms(settings.attack * 1000.0),
+            .with_attack_ms((settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS)),
             filter_env: dsp::ExpDecayEnvelope::new(
                 sample_rate,
                 6.0,
@@ -65,6 +71,8 @@ impl TomVoice {
                 output_gain: 1.0,
                 pre_filter: false,
             },
+            drift: dsp::AnalogDrift::new(0x5151_2222),
+            dc_block: dsp::DcBlocker::default(),
             active: false,
         };
         voice.update_derived_params();
@@ -76,7 +84,8 @@ impl TomVoice {
         self.filter
             .set_cutoff(self.settings.filter_freq, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
-        self.amp_env.set_attack_ms(self.settings.attack * 1000.0);
+        self.amp_env
+            .set_attack_ms((self.settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
@@ -93,15 +102,21 @@ impl TomVoice {
 
 impl Voice for TomVoice {
     fn trigger(&mut self) {
+        let was_active = self.active;
         self.active = true;
-        if self.settings.analog < 0.5 {
-            // Digital stable: reset phase and filter state for identical hits.
+        // Cold start only (voice was silent): reset phase + filter for a clean,
+        // consistent attack. Never on a ringing-tail retrigger — that phase jump
+        // is the click parasite (tonal voices click hard on it). See kick.rs.
+        if !was_active {
             self.osc.phase = 0.0;
             self.filter.reset();
+            self.dc_block.reset();
         }
-        // Analog-style retrigger: keep oscillator phase and filter state intact.
-        // See kick.rs for the rationale — tonal voices click hard on a phase reset
-        // when retriggered during a ringing tail.
+        // analog = per-hit drift (breathing) ; digital = bit-identical hits.
+        self.drift.trigger(self.settings.analog >= 0.5);
+        self.amp_env.set_decay(self.settings.decay * self.drift.time);
+        self.amp_env
+            .set_release(self.settings.release * self.drift.time);
         self.pitch_env.trigger();
         self.amp_env.trigger();
         self.filter_env.trigger();
@@ -116,7 +131,7 @@ impl Voice for TomVoice {
         if self.active {
             // Pitch sweep
             let pitch_ratio = self.pitch_env.next();
-            self.osc.set_freq(self.settings.frequency * pitch_ratio);
+            self.osc.set_freq(self.settings.frequency * pitch_ratio * self.drift.pitch);
 
             // Amplitude envelope
             let env = self.amp_env.next();
@@ -128,7 +143,7 @@ impl Voice for TomVoice {
                         // Deep: lower pitch, darker tone, less overtone
                         let pitch_ratio = self.pitch_env.next();
                         let deep_freq = self.settings.frequency * 0.7;
-                        self.osc.set_freq(deep_freq * pitch_ratio);
+                        self.osc.set_freq(deep_freq * pitch_ratio * self.drift.pitch);
                         let fundamental = self.osc.next();
                         let overtone =
                             ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.12;
@@ -141,7 +156,7 @@ impl Voice for TomVoice {
                     _ => {
                         // Standard: sine + overtone, pitch sweep
                         let pitch_ratio = self.pitch_env.next();
-                        self.osc.set_freq(self.settings.frequency * pitch_ratio);
+                        self.osc.set_freq(self.settings.frequency * pitch_ratio * self.drift.pitch);
                         let fundamental = self.osc.next();
                         let overtone =
                             ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
@@ -153,7 +168,7 @@ impl Voice for TomVoice {
                 };
                 self.filter.set_cutoff(modulated_cutoff, self.sample_rate);
                 let filtered = self.filter.process(body);
-                tone = filtered * env * self.settings.volume;
+                tone = filtered * env * self.settings.volume * self.drift.level;
             }
         }
 
@@ -164,7 +179,7 @@ impl Voice for TomVoice {
             0.0
         };
 
-        self.saturation.process(tone + attack)
+        self.dc_block.process(self.saturation.process(tone + attack))
     }
 
     fn is_active(&self) -> bool {
@@ -176,6 +191,8 @@ impl Voice for TomVoice {
         self.amp_env.reset();
         self.filter_env.reset();
         self.stick_attack.reset();
+        self.filter.reset();
+        self.dc_block.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {

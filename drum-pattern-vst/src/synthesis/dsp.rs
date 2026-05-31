@@ -933,6 +933,55 @@ impl DcBlocker {
     }
 }
 
+// ── Analog Drift ─────────────────────────────────────────────────────────────
+
+/// Per-hit "analog" drift: on each trigger it pulls small random multipliers so
+/// no two hits are identical (the vintage "breathing"). In digital mode all
+/// factors stay exactly 1.0 (bit-identical hits). Click-safe: the factors scale a
+/// frequency (phase-accumulator → no phase jump), a gain, and envelope times —
+/// none of which introduce a discontinuity.
+#[derive(Clone, Copy, Debug)]
+pub struct AnalogDrift {
+    rng: WhiteNoise,
+    /// Multiplier on oscillator frequency (detune).
+    pub pitch: f32,
+    /// Multiplier on output level.
+    pub level: f32,
+    /// Multiplier on envelope decay/release times (tail length).
+    pub time: f32,
+}
+
+impl AnalogDrift {
+    /// Drift depths, shared across voices so the analog character is consistent.
+    pub const PITCH_DEPTH: f32 = 0.035; // ±3.5 % detune (~60 cents)
+    pub const LEVEL_DEPTH: f32 = 0.10; // ±10 % level (~0.8 dB)
+    pub const TIME_DEPTH: f32 = 0.20; // ±20 % envelope time (tail length)
+
+    pub fn new(seed: u32) -> Self {
+        Self {
+            rng: WhiteNoise::new(seed),
+            pitch: 1.0,
+            level: 1.0,
+            time: 1.0,
+        }
+    }
+
+    /// Recompute the drift factors for a new hit. `analog == true` → random
+    /// offsets; `false` → all 1.0 (deterministic, bit-identical hits).
+    #[inline]
+    pub fn trigger(&mut self, analog: bool) {
+        if analog {
+            self.pitch = 1.0 + self.rng.next() * Self::PITCH_DEPTH;
+            self.level = 1.0 + self.rng.next() * Self::LEVEL_DEPTH;
+            self.time = 1.0 + self.rng.next() * Self::TIME_DEPTH;
+        } else {
+            self.pitch = 1.0;
+            self.level = 1.0;
+            self.time = 1.0;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
