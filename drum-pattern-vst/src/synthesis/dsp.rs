@@ -400,6 +400,18 @@ impl ExpDecayEnvelope {
         self.attack_remaining = 0.0;
     }
 
+    /// Deterministic retrigger: snap the value to exactly `value`, no attack ramp.
+    /// Unlike `trigger_from_current` (which only ever raises the value, giving the
+    /// organic "analog" drift), this restarts from the same depth on every hit —
+    /// used by the "digital" path so the pitch sweep is identical each time.
+    /// Click-safe because the value drives a *frequency* (phase-accumulator), so a
+    /// jump changes the phase slope, never the phase itself.
+    pub fn trigger_reset_to(&mut self, value: f32) {
+        self.value = value.max(0.0);
+        self.attack_remaining = 0.0;
+        self.hold_remaining = self.hold_time;
+    }
+
     /// Returns the envelope's current value without ticking the decay. Useful for
     /// chaining envelopes that need to observe each other's state at trigger time.
     pub fn current(&self) -> f32 {
@@ -727,11 +739,6 @@ impl SineOsc {
     pub fn set_freq(&mut self, freq: f32) {
         self.phase_increment = freq / self.sample_rate;
     }
-    
-    /// Get current phase (for crossfade purposes)
-    pub fn phase(&self) -> f32 {
-        self.phase
-    }
 
     #[inline]
     pub fn next(&mut self) -> f32 {
@@ -764,13 +771,10 @@ impl SquareOsc {
         self.phase_increment = freq / self.sample_rate;
     }
 
+    /// Reset phase to zero. Used for cold-start phase alignment only (never on a
+    /// retrigger during a ringing tail, which must stay phase-continuous).
     pub fn reset_phase(&mut self) {
         self.phase = 0.0;
-    }
-    
-    /// Get current phase (for crossfade purposes)
-    pub fn phase(&self) -> f32 {
-        self.phase
     }
 
     #[inline]

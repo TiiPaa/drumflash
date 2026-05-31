@@ -1,4 +1,4 @@
-use nih_plug::prelude::*;
+﻿use nih_plug::prelude::*;
 use nih_plug_egui::{
     create_egui_editor,
     egui::{self, Color32, RichText, ScrollArea, Vec2},
@@ -30,9 +30,9 @@ mod local_param_slider;
 use envelope_viz::{draw_amp_envelope, draw_filter_envelope};
 use local_param_slider::LocalParamSlider;
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Frequency / Note conversion utilities
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn freq_to_note(freq: f32) -> f32 {
     69.0 + 12.0 * (freq / 440.0).log2()
 }
@@ -92,7 +92,7 @@ pub fn create_editor(
                         .show(ui, |ui| {
                             ui.heading("Drum Flash");
                             ui.label(format!(
-                                "v{} — build {}",
+                                "v{} â€” build {}",
                                 env!("CARGO_PKG_VERSION"),
                                 BUILD_ID
                             ));
@@ -127,16 +127,16 @@ pub fn create_editor(
                             );
 
                             ui.separator();
-                            ui.label("La grille édite le pattern joué en temps réel.");
+                            ui.label("La grille Ã©dite le pattern jouÃ© en temps rÃ©el.");
                         });
                 });
         },
     )
 }
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Top bar: Master Volume / Swing / Groove / Choke
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn draw_top_bar(ui: &mut egui::Ui, setter: &ParamSetter, params: &DrumFlashParams) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Vol").strong());
@@ -157,14 +157,14 @@ fn draw_top_bar(ui: &mut egui::Ui, setter: &ParamSetter, params: &DrumFlashParam
     });
 }
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Song mode placeholder: P1..P8 slots
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn draw_song_bar(ui: &mut egui::Ui, state: &mut EditorUIState) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Song").strong());
         ui.add_space(4.0);
-        if ui.button("◀").clicked() && state.selected_pattern_slot > 0 {
+        if ui.button("â—€").clicked() && state.selected_pattern_slot > 0 {
             state.selected_pattern_slot -= 1;
         }
         for i in 0..8 {
@@ -181,15 +181,15 @@ fn draw_song_bar(ui: &mut egui::Ui, state: &mut EditorUIState) {
                 state.selected_pattern_slot = i;
             }
         }
-        if ui.button("▶").clicked() && state.selected_pattern_slot < 7 {
+        if ui.button("â–¶").clicked() && state.selected_pattern_slot < 7 {
             state.selected_pattern_slot += 1;
         }
     });
 }
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Presets / Random / Export MIDI
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn draw_preset_bar(
     ui: &mut egui::Ui,
     pattern: &SharedPattern,
@@ -216,7 +216,7 @@ fn draw_preset_bar(
         ui.add_space(16.0);
 
         // Random (middle)
-        if ui.button("🎲 Random").clicked() {
+        if ui.button("ðŸŽ² Random").clicked() {
             load_pattern_for_ui(pattern, &Pattern::random_pattern());
         }
 
@@ -279,9 +279,9 @@ fn draw_preset_bar(
     });
 }
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Generator parameters
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn draw_generator_bar(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
@@ -326,9 +326,9 @@ fn draw_generator_bar(
     });
 }
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Pattern grid with per-row Hum/Push/Len
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn draw_grid(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
@@ -349,7 +349,7 @@ fn draw_grid(
     egui::Grid::new("pattern-grid")
         .spacing(Vec2::new(4.0, 4.0))
         .show(ui, |ui| {
-            // Header row — use exact same widths as instrument rows below
+            // Header row â€” use exact same widths as instrument rows below
             let header_item = |ui: &mut egui::Ui, text: &str, width: f32| {
                 ui.add_sized(
                     Vec2::new(width, 20.0),
@@ -463,9 +463,9 @@ fn draw_grid(
                             Color32::from_rgb(56, 132, 255)
                         } else if has_plock {
                             if is_snapshot {
-                                Color32::from_rgb(160, 30, 30) // rouge foncé snapshot
+                                Color32::from_rgb(160, 30, 30) // rouge foncÃ© snapshot
                             } else {
-                                Color32::from_rgb(180, 100, 0) // orange foncé link/mixed
+                                Color32::from_rgb(180, 100, 0) // orange foncÃ© link/mixed
                             }
                         } else if is_current {
                             Color32::from_rgb(48, 48, 48)
@@ -516,9 +516,9 @@ fn draw_grid(
         });
 }
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Sound Panel (always visible, tabbed by instrument)
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn draw_sound_panel(
     ui: &mut egui::Ui,
     sound_settings: &SoundSettingsState,
@@ -568,7 +568,7 @@ fn draw_sound_panel(
     ) = inst.load();
     let mut changed = false;
 
-    // ── Dev Tools: Preset Dumps ──
+    // â”€â”€ Dev Tools: Preset Dumps â”€â”€
     ui.collapsing("Dev: Preset Dumps", |ui| {
         ui.horizontal(|ui| {
             ui.label("Name:");
@@ -584,16 +584,26 @@ fn draw_sound_panel(
                     }
                 }
                 let algo = params.algos()[state.selected_instrument].value() as u8;
+                // Skip Analog for instruments that don't use it
+                let algo = params.algos()[state.selected_instrument].value() as u8;
+                // Skip Analog for instruments that don't use it
+                let standards = if matches!(state.selected_instrument, 2 | 3 | 7 | 8 | 10 | 12) {
+                    // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap - use 0.0 as placeholder
+                    [freq, decay, vol, filt, attack, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, 0.0, stereo]
+                } else {
+                    [freq, decay, vol, filt, attack, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]
+                };
+                
                 let dump = preset_dumps::PresetDump {
                     name: state.dump_name_input.clone(),
                     instrument_idx: state.selected_instrument,
                     instrument_label: instrument.label.to_string(),
-                    standards: [freq, decay, vol, filt, attack, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo],
+                    standards,
                     algo,
                     specials,
                 };
                 if let Err(e) = preset_dumps::dump_preset(&dump) {
-                    eprintln!("Dump failed: {}", e);
+                    eprintln!("Dump failed: { }", e);
                 }
             }
         });
@@ -616,10 +626,17 @@ fn draw_sound_panel(
                             store_field(target_inst, crate::instrument_registry::StandardField::DecayCurve, dump.standards[6]);
                             store_field(target_inst, crate::instrument_registry::StandardField::ReleaseCurve, dump.standards[7]);
                             store_field(target_inst, crate::instrument_registry::StandardField::Hold, dump.standards[8]);
-                            store_field(target_inst, crate::instrument_registry::StandardField::FilterEnvAmount, dump.standards[9]);
-                            store_field(target_inst, crate::instrument_registry::StandardField::FilterEnvDecay, dump.standards[10]);
-                            store_field(target_inst, crate::instrument_registry::StandardField::Analog, dump.standards[11]);
-                            store_field(target_inst, crate::instrument_registry::StandardField::Stereo, dump.standards[12]);
+                             store_field(target_inst, crate::instrument_registry::StandardField::FilterEnvAmount, dump.standards[9]);
+                             store_field(target_inst, crate::instrument_registry::StandardField::FilterEnvDecay, dump.standards[10]);
+                             // Skip Analog for instruments that don't use it
+                             let is_analog_fixed = matches!(
+                                 dump.instrument_idx,
+                                 2 | 3 | 7 | 8 | 10 | 12  // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap
+                             );
+                             if !is_analog_fixed {
+                                 store_field(target_inst, crate::instrument_registry::StandardField::Analog, dump.standards[11]);
+                             }
+                             store_field(target_inst, crate::instrument_registry::StandardField::Stereo, dump.standards[12]);
                             let algo_param = params.algos()[dump.instrument_idx];
                             setter.set_parameter(algo_param, dump.algo as i32);
                             let inst_def = &crate::instrument_registry::INSTRUMENTS[dump.instrument_idx];
@@ -641,7 +658,7 @@ fn draw_sound_panel(
     });
     ui.add(egui::Separator::default().spacing(8.0));
 
-    // ── Volume global de l'instrument ──
+    // â”€â”€ Volume global de l'instrument â”€â”€
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Volume").strong().size(14.0));
@@ -719,7 +736,7 @@ fn draw_sound_panel(
                                     false
                                 };
                                 
-                                match (&def.widget, def.field) {
+                                 match (&def.widget, def.field) {
                                 (crate::instrument_registry::ParamWidget::Slider { min, max, logarithmic, suffix }, field) => {
                                     // Special case: frequency in note mode for bass drums
                                     if freq_in_notes && field == crate::instrument_registry::StandardField::Freq {
@@ -865,7 +882,7 @@ fn draw_sound_panel(
                         let has_release = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::Release);
                         ui.horizontal(|ui| {
                             let legend = |ui: &mut egui::Ui, color: Color32, text: &str| {
-                                ui.label(RichText::new("■").color(color));
+                                ui.label(RichText::new("â– ").color(color));
                                 ui.label(text);
                             };
                             if has_attack {
@@ -905,9 +922,9 @@ fn draw_sound_panel(
     }
 }
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helpers
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn store_field(
     inst: &crate::sound_settings::InstrumentSettingsState,
     field: crate::instrument_registry::StandardField,
@@ -1104,9 +1121,9 @@ fn start_external_midi_drag(_path: &std::path::Path) -> Result<(), Box<dyn std::
     Err("MIDI drag helper is only implemented on Windows".into())
 }
 
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Plock context menu
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fn draw_plock_menu(
     ui: &mut egui::Ui,
     plock: &PlockState,
@@ -1121,7 +1138,7 @@ fn draw_plock_menu(
 
     ui.label(
         RichText::new(format!(
-            "Plock {} — Step {}",
+            "Plock {} â€” Step {}",
             crate::instrument_registry::INSTRUMENTS[instrument].label,
             step + 1
         ))
@@ -1134,13 +1151,13 @@ fn draw_plock_menu(
 
     let has_plock = plock.masks.is_active(instrument, step);
 
-    // ── Creation ──
+    // â”€â”€ Creation â”€â”€
     if !has_plock {
         ui.label("Create plock:");
-        if ui.button("🔗 Link to global").clicked() {
+        if ui.button("ðŸ”— Link to global").clicked() {
             plock.masks.set_active(instrument, step, true);
         }
-        if ui.button("📸 Snapshot current settings").clicked() {
+        if ui.button("ðŸ“¸ Snapshot current settings").clicked() {
             let mut special = [0.0f32; 32];
             for def in crate::instrument_registry::special_params(instrument) {
                 if def.special_index < special.len() {
@@ -1173,7 +1190,7 @@ fn draw_plock_menu(
         return;
     }
 
-    // ── Mode indicator ──
+    // â”€â”€ Mode indicator â”€â”€
     let mask = plock.field_masks.get(instrument, step);
     let all_bits = if FIELD_COUNT >= 64 {
         0xFFFFFFFFFFFFFFFFu64
@@ -1181,16 +1198,16 @@ fn draw_plock_menu(
         (1u64 << FIELD_COUNT) - 1
     };
     let mode_text = if mask == 0 {
-        "🔗 Linked to global"
+        "ðŸ”— Linked to global"
     } else if mask == all_bits {
-        "📸 Full snapshot"
+        "ðŸ“¸ Full snapshot"
     } else {
-        "🔀 Mixed"
+        "ðŸ”€ Mixed"
     };
     ui.label(RichText::new(mode_text).small());
     ui.separator();
 
-    // ── Helpers ──
+    // â”€â”€ Helpers â”€â”€
     let draw_slider = |ui: &mut egui::Ui,
                        label: &str,
                         value: &mut f32,
@@ -1211,7 +1228,7 @@ fn draw_plock_menu(
                     .with_width(120.0);
                 let response = ui.add(slider);
                 let c = response.changed();
-                let r = overridden && ui.small_button("↺").clicked();
+                let r = overridden && ui.small_button("â†º").clicked();
                 (c, r)
             })
             .inner;
@@ -1223,7 +1240,7 @@ fn draw_plock_menu(
         }
     };
 
-    // ── Standard fields ──
+    // â”€â”€ Standard fields â”€â”€
     let get_global_value = |field: crate::instrument_registry::StandardField| -> f32 {
         match field {
             crate::instrument_registry::StandardField::Freq => global.0,
@@ -1299,7 +1316,7 @@ fn draw_plock_menu(
                     value = note_to_freq(new_note) / ratio;
                     plock.set_field(instrument, step, field_index, value);
                 }
-                if overridden && ui.small_button("↺").clicked() {
+                if overridden && ui.small_button("â†º").clicked() {
                     plock.field_masks.clear(instrument, step, field_index);
                 }
             });
@@ -1325,7 +1342,7 @@ fn draw_plock_menu(
                         if c {
                             value = if checked { 1.0 } else { 0.0 };
                         }
-                        let r = overridden && ui.small_button("↺").clicked();
+                        let r = overridden && ui.small_button("â†º").clicked();
                         (c, r)
                     })
                     .inner;
@@ -1339,7 +1356,7 @@ fn draw_plock_menu(
         }
     }
 
-    // ── Algo ──
+    // â”€â”€ Algo â”€â”€
     let mut algo_val = if plock.field_masks.is_set(instrument, step, 13) {
         plock.values.get(instrument, step, 13) as u8
     } else {
@@ -1358,7 +1375,7 @@ fn draw_plock_menu(
             let slider = LocalParamSlider::new(&mut algo_val_f32, 0.0..=3.0)
                 .with_width(120.0);
             let c = ui.add(slider).changed();
-            let r = algo_overridden && ui.small_button("↺").clicked();
+            let r = algo_overridden && ui.small_button("â†º").clicked();
             (c, r)
         })
         .inner;
@@ -1372,7 +1389,7 @@ fn draw_plock_menu(
         plock.field_masks.clear(instrument, step, 13);
     }
 
-    // ── Special params ──
+    // â”€â”€ Special params â”€â”€
     let special_defs = crate::instrument_registry::special_params(instrument);
     for def in special_defs {
         if def.special_index >= 8 {
@@ -1401,7 +1418,7 @@ fn draw_plock_menu(
                     .logarithmic(log)
                     .with_width(120.0);
                 let c = ui.add(slider).changed();
-                let r = overridden && ui.small_button("↺").clicked();
+                let r = overridden && ui.small_button("â†º").clicked();
                 (c, r)
             })
             .inner;
@@ -1414,7 +1431,7 @@ fn draw_plock_menu(
     }
 
     ui.separator();
-    if ui.button("🗑 Clear plock").clicked() {
+    if ui.button("ðŸ—‘ Clear plock").clicked() {
         plock.clear(instrument, step);
     }
 }
