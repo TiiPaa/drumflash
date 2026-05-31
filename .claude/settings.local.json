@@ -15,7 +15,14 @@
       "Bash(gh api *)",
       "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f['name'], f['size']\\) for f in d]\")",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "PowerShell(Copy-Item *)"
+      "PowerShell(Copy-Item *)",
+      "Bash(cargo test *)",
+      "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\drum-pattern-vst\\\\build.ps1\")",
+      "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\"; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(Push-Location *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\" 2>&1 | Select-Object -Last 12; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\" | Select-Object -Last 4; \"EXIT=$LASTEXITCODE\")"
     ]
   }
 }

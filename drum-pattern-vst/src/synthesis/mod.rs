@@ -1003,4 +1003,113 @@ mod tests {
         }
         assert!(has_finite_output, "B8 should recover and produce finite output after attack corruption");
     }
+
+    /// Regression test for the "plock click" bug.
+    ///
+    /// Scenario: lib.rs used to call `set_voice_settings` inside `iter_samples`,
+    /// which meant a global settings update could overwrite a per-step plock
+    /// in the middle of a buffer — producing a one-sample discontinuity.
+    ///
+    /// This test reproduces that exact situation:
+    ///   1. Trigger kick at 60 Hz
+    ///   2. Process 500 samples (tail develops)
+    ///   3. `set_voice_settings` to 200 Hz (simulates the mid-buffer overwrite)
+    ///   4. Process 200 more samples
+    ///   5. Measure the spectral flux around the change point.
+    ///
+    /// With the old code (FREQ_SMOOTH_MS = 0.1 ms, no filter cutoff smoother)
+    /// this produced a sharp HF spike (click).  With the fix it should be smooth.
+    #[test]
+    fn kick_no_click_when_settings_changed_mid_envelope() {
+        use std::f32::consts::PI;
+
+        let sample_rate = 44100.0;
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(sample_rate);
+
+        let kick_idx = DrumVoice::Kick as usize;
+
+        // Settings A: low frequency
+        let mut settings_a = VoiceSettings::kick();
+        settings_a.frequency = 60.0;
+        settings_a.special[0] = 0.0; // disable click transient to isolate body
+        settings_a.filter_freq = 2000.0;
+        settings_a.filter_env_amount = 0.0;
+        settings_a.decay = 0.3;
+        settings_a.analog = 1.0;
+
+        // Settings B: high frequency (the plock value)
+        let mut settings_b = settings_a;
+        settings_b.frequency = 200.0;
+
+        // 1. Trigger at 60 Hz
+        synth.set_voice_settings(DrumVoice::Kick, settings_a);
+        synth.trigger(kick_idx, 1.0);
+
+        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        let mut samples: Vec<f32> = Vec::with_capacity(700);
+
+        // 2. Process 500 samples
+        for _ in 0..500 {
+            synth.process_voice_samples_stereo(&mut outputs);
+            samples.push(outputs[kick_idx][0]);
+        }
+
+        // 3. MID-ENVELOPE SETTINGS CHANGE — this is the bug scenario
+        synth.set_voice_settings(DrumVoice::Kick, settings_b);
+
+        // 4. Process 200 more samples
+        for _ in 0..200 {
+            synth.process_voice_samples_stereo(&mut outputs);
+            samples.push(outputs[kick_idx][0]);
+        }
+
+        // 5. Detect click: compute high-frequency energy in a 10 ms window
+        //    centred on the change point (sample 500).
+        let window = (sample_rate * 0.01) as usize; // 10 ms
+        let start = 500usize.saturating_sub(window / 2);
+        let end = (500 + window / 2).min(samples.len());
+
+        // Simple 1-pole HP @ 3 kHz
+        let mut hp_state = 0.0_f32;
+        let alpha = 1.0 - (-2.0 * PI * 3000.0 / sample_rate).exp();
+        let mut energy_low = 0.0_f32;
+        let mut energy_high = 0.0_f32;
+        for s in &samples[start..end] {
+            energy_low += s * s;
+            hp_state += alpha * (s - hp_state);
+            let hp = s - hp_state;
+            energy_high += hp * hp;
+        }
+        let hf_ratio = if energy_low > 0.0 {
+            energy_high / energy_low
+        } else {
+            0.0
+        };
+
+        // Also compute maximum sample-to-sample delta in the window
+        let mut max_delta = 0.0_f32;
+        for i in start..end.saturating_sub(1) {
+            max_delta = max_delta.max((samples[i + 1] - samples[i]).abs());
+        }
+
+        eprintln!(
+            "\n=== kick_no_click_when_settings_changed_mid_envelope ==="
+        );
+        eprintln!("HF ratio around change: {}", hf_ratio);
+        eprintln!("Max sample delta:       {}", max_delta);
+
+        // With the fix the HF ratio should stay below 0.05 and delta below 0.05
+        // (empirically: with FREQ_SMOOTH_MS=0.1ms, hf_ratio ~0.15 and delta ~0.25)
+        assert!(
+            hf_ratio < 0.08,
+            "Click detected: HF energy spike at settings change. hf_ratio={}",
+            hf_ratio
+        );
+        assert!(
+            max_delta < 0.08,
+            "Click detected: large sample delta at settings change. max_delta={}",
+            max_delta
+        );
+    }
 }
