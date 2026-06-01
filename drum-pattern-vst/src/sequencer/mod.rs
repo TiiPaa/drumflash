@@ -57,7 +57,7 @@ impl TrackState {
 
 pub struct Sequencer {
     is_playing: bool,
-    /// Master beat position (0.0 .. 4.0). One bar = 4 beats = 16 steps.
+    /// Master beat position (0.0 .. master_length * 0.25). 1 step = 0.25 beat.
     beat_position: f64,
     tracks: [TrackState; DrumVoice::COUNT],
     /// Cached values for sync_to_host.
@@ -65,6 +65,8 @@ pub struct Sequencer {
     groove_type: GrooveType,
     pattern: Arc<SharedPattern>,
     mutes: [bool; DrumVoice::COUNT],
+    /// Global pattern length (1-64 steps). Controls master loop point.
+    master_length: usize,
 }
 
 /// Per-instrument trigger result: (should_trigger, velocity).
@@ -80,6 +82,7 @@ impl Sequencer {
             groove_type: GrooveType::Swing16,
             pattern,
             mutes: [false; DrumVoice::COUNT],
+            master_length: 16,
         }
     }
 
@@ -99,21 +102,24 @@ impl Sequencer {
         self.swing = swing;
         self.groove_type = groove_type;
 
-        // Advance master beat position uniformly.
+        // Advance master beat position uniformly. Wrap at master_length steps.
         let beat_increment = (bpm as f64 / 60.0) / sample_rate as f64;
         self.beat_position += beat_increment;
-        if self.beat_position >= 4.0 {
-            self.beat_position -= 4.0;
+        let master_beat_length = self.master_length as f64 * 0.25;
+        if self.beat_position >= master_beat_length {
+            self.beat_position -= master_beat_length;
         }
 
         // Master beat advances uniformly; each track derives its own step.
+
+        let master_beat_length = self.master_length as f64 * 0.25;
 
         for instrument in 0..DrumVoice::COUNT {
             let track = &mut self.tracks[instrument];
 
             // Push/pull: convert ms to beats and subtract so positive = late.
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
-            let shifted_beat = (self.beat_position - push_pull_beats).rem_euclid(4.0);
+            let shifted_beat = (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
 
             // Re-compute master step for this track's shifted timeline.
             let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
@@ -150,12 +156,13 @@ impl Sequencer {
     }
 
     pub fn sync_to_host(&mut self, position_beats: f64, bpm: f32, _sample_rate: f32) {
-        self.beat_position = position_beats.rem_euclid(4.0);
+        let master_beat_length = self.master_length as f64 * 0.25;
+        self.beat_position = position_beats.rem_euclid(master_beat_length);
         // Reconstruct total master steps elapsed so polyrhythms keep their phase.
         let total_master_steps = (position_beats * 4.0) as usize;
         for track in self.tracks.iter_mut() {
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
-            let shifted_beat = (self.beat_position - push_pull_beats).rem_euclid(4.0);
+            let shifted_beat = (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
             let shifted_master = groove::beat_to_step(shifted_beat, self.swing, self.groove_type);
             track.previous_shifted_master = shifted_master;
             track.step_counter = total_master_steps;
@@ -165,9 +172,10 @@ impl Sequencer {
 
     pub fn reset(&mut self) {
         self.beat_position = 0.0;
+        let max_step = self.master_length.saturating_sub(1);
         for track in self.tracks.iter_mut() {
-            track.previous_step = 15;
-            track.previous_shifted_master = 15;
+            track.previous_step = max_step;
+            track.previous_shifted_master = max_step;
             track.step_counter = 0;
         }
         self.is_playing = false;
@@ -175,9 +183,10 @@ impl Sequencer {
 
     pub fn play(&mut self) {
         self.is_playing = true;
+        let max_step = self.master_length.saturating_sub(1);
         for track in self.tracks.iter_mut() {
-            track.previous_step = 15; // Force trigger on next step 0
-            track.previous_shifted_master = 15;
+            track.previous_step = max_step; // Force trigger on next step 0
+            track.previous_shifted_master = max_step;
             track.step_counter = track.track_length.wrapping_sub(1);
         }
     }
@@ -185,9 +194,10 @@ impl Sequencer {
     /// Force a trigger on step 0 for all tracks.
     /// Call after sync_to_host when starting near beat 0 to avoid missing the first step.
     pub fn force_step0_trigger(&mut self) {
+        let max_step = self.master_length.saturating_sub(1);
         for track in self.tracks.iter_mut() {
-            track.previous_step = 15;
-            track.previous_shifted_master = 15;
+            track.previous_step = max_step;
+            track.previous_shifted_master = max_step;
             track.step_counter = track.track_length.wrapping_sub(1);
         }
     }
@@ -207,15 +217,17 @@ impl Sequencer {
         lengths: [usize; DrumVoice::COUNT],
         push_pulls: [f32; DrumVoice::COUNT],
         humanizes: [f32; DrumVoice::COUNT],
+        master_length: usize,
     ) {
+        self.master_length = master_length.clamp(1, 64);
         for i in 0..DrumVoice::COUNT {
-            self.tracks[i].track_length = lengths[i].clamp(1, 16);
+            self.tracks[i].track_length = lengths[i].clamp(1, self.master_length);
             self.tracks[i].push_pull_ms = push_pulls[i];
             self.tracks[i].humanize_amount = humanizes[i].clamp(0.0, 1.0);
         }
     }
 
-    /// Set position from DAW transport (in steps 0-15).
+    /// Set position from DAW transport (in steps 0-63).
     #[allow(dead_code)]
     pub fn set_position(&mut self, step: usize) {
         self.beat_position = (step as f64) * 0.25;

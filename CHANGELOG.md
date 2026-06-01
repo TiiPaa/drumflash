@@ -1,5 +1,33 @@
 ﻿# Changelog
 
+## 2026-06-01 — Session: Pattern 64 steps avec pagination style Digitakt
+
+**Build:** `20260601-175002`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Pattern étendu à 64 steps** (4 pages × 16 steps)
+  - `STEP_COUNT` : 16 → 64 (`pattern.rs`, `plock.rs`, `lib.rs`)
+  - Le séquenceur supporte une `master_length` globale (1-64 steps)
+  - Chaque track `length_*` passe de max 16 à max 64
+- **Pagination UI** (`ui.rs`)
+  - 4 boutons de page (1-2-3-4) au-dessus de la grille
+  - Mode **Follow** : la page affichée suit automatiquement la tête de lecture
+  - Mode **Free** : navigation manuelle entre les pages
+  - La grille affiche toujours 16 steps selon la page courante
+- **Persistance** (`lib.rs`, `pattern.rs`)
+  - Nouveau format `pattern-v2` avec `PatternMasks` wrapper pour `serde_arrays`
+  - Migration automatique `pattern-v1` (16 steps) → `pattern-v2` (64 steps)
+  - Migration legacy `st01..st16` → `pattern-v2` (padding avec zéros)
+- **Fix stack overflow** (`plock.rs`)
+  - `PlockValues` et `PlockFieldMasks` alloués sur le heap (`Vec`) au lieu de la stack
+
+### Tests
+- 73 lib tests pass
+- Build installé dans le dossier VST3 système
+
+---
+
 ## 2026-06-01 — Session: Fix range volume master (coherence 0.0-2.0)
 
 **Build:** `20260601-171606`
