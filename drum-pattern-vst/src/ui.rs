@@ -152,6 +152,10 @@ fn draw_top_bar(ui: &mut egui::Ui, setter: &ParamSetter, params: &DrumFlashParam
         enum_combo(ui, setter, &params.groove_type, "Groove");
 
         ui.add_space(16.0);
+        ui.label(RichText::new("Len").strong());
+        ui.add(widgets::ParamSlider::for_param(&params.pattern_length, setter).with_width(60.0));
+
+        ui.add_space(16.0);
         bool_checkbox(ui, setter, &params.hihat_chokes_oh, "Choke");
 
         ui.add_space(16.0);
