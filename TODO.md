@@ -24,7 +24,7 @@
 
 ### Bugs P1 (UI/UX)
 
-- [ ] [75] **Incohérence des ranges de volume** dans l'interface
+- [x] [75] **Incohérence des ranges de volume** dans l'interface (CORRIGÉ - build 20260601-171606)
   - Slider en haut du Sound Editor : range 0.0–2.0 (max 1.5 affiché)
   - Slider en bas du Sound Editor : range 0.0–1.0
   - Slider dans la lane de la grille : range 0.0–1.5
