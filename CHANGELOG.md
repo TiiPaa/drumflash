@@ -1,5 +1,29 @@
 ﻿# Changelog
 
+## 2026-06-01 — Session: AnalogDrift sur Snare606 + Perc1
+
+**Build:** `20260601-100457`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Snare606** : ajout du drift analogique (`AnalogDrift`) — le slider Analog est maintenant fonctionnel :
+  - `pitch` → détune la fréquence du résonateur bridged-T par coup (±3.5 %)
+  - `level` → variation de niveau par coup (±10 %)
+  - `time` → variation du decay/release par coup (±20 %)
+  - Mode digital (`analog < 0.5`) = bit-identical, pas de drift.
+- **Perc1** : ajout du drift analogique (`AnalogDrift`) — le slider Analog est maintenant fonctionnel :
+  - `pitch` → détune la fréquence du sweep FM par coup
+  - `level` → variation de niveau par coup
+  - `time` → variation du decay/release par coup
+  - Mode digital = bit-identical.
+- Audit complet : Kick, Snare, Tom ont déjà le drift ; HiHat/OpenHiHat/Ride/Cymbal/Clap masquent le slider ; Kick808 a son propre comportement cold-start.
+
+### Tests
+- 73 lib tests pass
+- Build installé dans le dossier VST3 système
+
+---
+
 ## 2026-05-31 — Session: Task 71 — sécurisation anti-click des autres voix
 
 **Build:** `20260531-184528`
