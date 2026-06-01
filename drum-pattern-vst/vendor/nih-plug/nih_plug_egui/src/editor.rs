@@ -353,15 +353,30 @@ pub mod win_keyboard {
                 return;
             }
             let fg = GetForegroundWindow();
-            if !fg.is_null() {
-                let fg_thread = GetWindowThreadProcessId(fg, null_mut());
-                let my_thread = GetCurrentThreadId();
-                if fg_thread != 0 && fg_thread != my_thread {
-                    AttachThreadInput(my_thread, fg_thread, 1);
-                    SetFocus(target);
-                    AttachThreadInput(my_thread, fg_thread, 0);
-                    return;
+            if fg.is_null() {
+                return;
+            }
+            // Only set focus if the plugin (or its parent DAW window) is the foreground
+            // window. If the user has switched to another application (browser, explorer,
+            // etc.), do NOT steal focus back.
+            let mut plugin_or_parent = plugin;
+            while !plugin_or_parent.is_null() {
+                if plugin_or_parent == fg {
+                    break;
                 }
+                plugin_or_parent = GetParent(plugin_or_parent);
+            }
+            if plugin_or_parent.is_null() {
+                // Plugin is not in the foreground window chain; user switched away.
+                return;
+            }
+            let fg_thread = GetWindowThreadProcessId(fg, null_mut());
+            let my_thread = GetCurrentThreadId();
+            if fg_thread != 0 && fg_thread != my_thread {
+                AttachThreadInput(my_thread, fg_thread, 1);
+                SetFocus(target);
+                AttachThreadInput(my_thread, fg_thread, 0);
+                return;
             }
             SetFocus(target);
         }
