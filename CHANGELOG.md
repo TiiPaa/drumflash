@@ -1,5 +1,20 @@
 ﻿# Changelog
 
+## 2026-06-01 — Session: Fix range volume master (coherence 0.0-2.0)
+
+**Build:** `20260601-171606`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Uniformisation range volume** (`lib.rs`)
+  - `master_volume` : range changé de `0.0..1.5` à `0.0..2.0`
+  - Cohérent avec les sliders de lane (`0.0..=2.0`) et le volume instrument (`0.0..=2.0`)
+
+### Tests
+- Build installé dans le dossier VST3 système
+
+---
+
 ## 2026-06-01 — Session: Fix focus fenêtre plugin bloque Windows
 
 **Build:** `20260601-170350`
