@@ -5,6 +5,51 @@
 - [x] [71] Sécurisé les autres voix : perc1 (reset phase inconditionnel → cold-start only), snare/tom/snare606 (reset digital → cold-start only + enveloppes recréées → setters), hihat (enveloppe recréée → setters + biquad peaking recalculé seulement si freq change). Plancher d'attaque + DC-blockers partout ; drift analog sur snare & tom (sliders exposés) ; helper partagé `AnalogDrift`. ride/cymbal/clap/open_hihat/kick_808 déjà click-safe, non modifiés. (build 20260531-184528)
 - [x] [71a] Ajout du drift analogique sur Snare606 + Perc1 (sliders Analog inactifs → fonctionnels). Audit complet de tous les instruments avec slider Analog.
 - [ ] [72] **REPRENDRE ICI** — Nettoyer les fichiers de cruft hérités de la réparation ui.rs (src/ui_backup.rs, src/ui_fixed.rs, remaining_content.txt, tail_content.txt, temp_*.txt) + les ajouter au .gitignore si besoin
+
+## Nouveaux bugs & Feedback (Session 2026-06-01)
+
+### Bugs P1 (Critiques — À traiter en priorité)
+
+- [x] [73] **Corruption caractères UTF-8 récurrente** dans les boutons/texte UI (CORRIGÉ - build 20260601-163923)
+  - Remplacement des émojis corrompus (🔗, 📸, 🎲, 🗑) par du texte ASCII (Link, Snapshot, Random, Clear)
+  - Remplacement des symboles de navigation (◀, ▶, ↺) par des caractères ASCII (<, >, R)
+  - Remplacement des séparateurs box-drawing (─) et em-dashes (—) par des tirets simples
+  - **Cause** : encodage UTF-8 → Windows-1252 lors de manipulations PowerShell
+  - **Prévention** : utilisation exclusive de caractères ASCII dans les labels de boutons pour éviter les problèmes d'encodage
+- [ ] [74] **Focus fenêtre plugin bloque Windows** — impossible de switcher vers une autre fenêtre
+  - Quand la fenêtre Drum Flash est ouverte, le focus revient automatiquement vers Studio One/Drum Flash
+  - Bloque l'utilisation d'autres applications (navigateur, explorateur, etc.)
+  - Potentiellement lié au workaround focus clavier (SetFocus sur HWND)
+  - **Action** : identifier et corriger le hook/mécanisme qui force le focus
+
+### Bugs P1 (UI/UX)
+
+- [ ] [75] **Incohérence des ranges de volume** dans l'interface
+  - Slider en haut du Sound Editor : range 0.0–2.0 (max 1.5 affiché)
+  - Slider en bas du Sound Editor : range 0.0–1.0
+  - Slider dans la lane de la grille : range 0.0–1.5
+  - **Action** : uniformiser à 0.0–2.0 partout (cohérent avec le gain de sortie)
+
+### Features P1 (Parité PoC / Impact fort)
+
+- [ ] [76] **Longueur globale du pattern ajustable 1 → 64 steps**
+  - 4 pages de 16 steps maximum
+  - Prévoir un switch "Follow lecture" (la grille suit le playhead ou reste fixe)
+  - Complexité : Moyenne-Élevée
+  - **Note** : cela implique de revoir la logique `SharedPattern` (actuellement 16 steps) et l'UI de pagination
+
+### Features P2 (Amélioration)
+
+- [ ] [77] **3 types de clicks pour la Bass Drum**
+  - Soft : click subtil, rond
+  - Medium : click standard (actuel)
+  - Hard : click agressif, transitoire pointu
+  - Complexité : Moyenne, 3-5 jours
+- [ ] [78] **Clarifier/documenter le mode Analog**
+  - Le rendu sur Kick est très audible et apprécié
+  - Sur Snare/Tom/Snare606/Perc1/Kick808 le drift est subtil (~7.5% pitch max)
+  - **Action** : augmenter légèrement le drift sur les voix non-kick OU ajouter un indicateur visuel dans l'UI quand le drift est actif
+  - Alternative : séparer "Analog Depth" (global) du switch on/off par instrument
 - [x] [67] Positionner le volume en haut du sound editor + ajouter un controle de volume sur chaque lane de la grille (ComplexitÃ©: Faible, P1)
 - [x] [68] Couleurs differentes pour plock link global vs full snapshot (orange / rouge) pour distinguer visuellement les modes (ComplexitÃ©: Faible, P1)
 - [x] [55] Ameliorer le rendu Snare 606 (plus percutant, plus proche TR-606)

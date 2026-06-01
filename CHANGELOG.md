@@ -1,5 +1,56 @@
 ﻿# Changelog
 
+## 2026-06-01 — Session: Fix complet corruption UTF-8 UI (séparateurs et caractères spéciaux)
+
+**Build:** `20260601-165420`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Correction complète des caractères corrompus** (`ui.rs` + `envelope_viz.rs`)
+  - Suppression de 698 séquences box-drawing corrompues (`━` → `-`)
+  - Correction de séquences em-dash/en-dash mal encodées (`—`, `–` → `-`)
+  - Correction de caractères accentués double-encodés (`é` → `e`)
+  - Remplacement des émojis résiduels par du texte ASCII :
+    - `🎲` → `Random`
+    - `🗑` → `Clear`
+    - `📸` → `Snapshot`
+    - `↺` → `Undo`
+  - **Cause** : double encodage UTF-8 (UTF-8 → Latin-1 → UTF-8) lors de manipulations PowerShell
+  - **Prévention** : utilisation exclusive de caractères ASCII dans les labels de boutons et commentaires
+
+### Tests
+- 73 lib tests pass
+- Build installé dans le dossier VST3 système
+
+---
+
+## 2026-06-01 — Session: Fix corruption UTF-8 UI (émojis et symboles)
+
+**Build:** `20260601-163923`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Correction corruption caractères UI** (`ui.rs`)
+  - Remplacement des émojis corrompus (🔗, 📸, 🎲, 🗑) par du texte ASCII :
+    - "🔗 Link" → "Link"
+    - "📸 Snapshot" → "Snapshot" 
+    - "🎲 Random" → "Random"
+    - "🗑 Clear" → "Clear"
+  - Remplacement des symboles de navigation corrompus :
+    - "◀" (précédent) → "<"
+    - "▶" (suivant) → ">"
+    - "↺" (reset) → "R"
+  - Remplacement des séparateurs box-drawing (─) par des tirets simples
+  - Remplacement des em-dashes (—) par des tirets
+  - **Cause** : encodage UTF-8 → Windows-1252 lors de manipulations PowerShell
+  - **Prévention** : utilisation exclusive de caractères ASCII dans les labels de boutons
+
+### Tests
+- 73 lib tests pass
+- Build installé dans le dossier VST3 système
+
+---
+
 ## 2026-06-01 — Session: AnalogDrift sur Snare606 + Perc1
 
 **Build:** `20260601-100457`

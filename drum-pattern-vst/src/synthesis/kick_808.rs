@@ -39,6 +39,8 @@ pub struct Kick808Voice {
     dc_blocker: dsp::DcBlocker,
     // Saturation stage
     saturation: saturation::SaturationConfig,
+    /// Per-hit analog drift (breathing) — pitch/level/time variation per hit.
+    drift: dsp::AnalogDrift,
 
     active: bool,
 }
@@ -85,6 +87,7 @@ impl Kick808Voice {
                 output_gain: 1.0,
                 pre_filter: false,
             },
+            drift: dsp::AnalogDrift::new(0x8080_8080),
             active: false,
         }
     }
@@ -133,6 +136,8 @@ impl Voice for Kick808Voice {
     fn trigger(&mut self) {
         let is_cold_start = !self.active;
         self.active = true;
+        // analog = per-hit drift (breathing) ; digital = bit-identical hits.
+        self.drift.trigger(self.settings.analog >= 0.5);
         let base = self.settings.frequency.max(10.0);
         if self.settings.analog < 0.5 && is_cold_start {
             // Digital stable: reset phase and smoother only on cold start.
@@ -141,6 +146,9 @@ impl Voice for Kick808Voice {
             self.freq_smoother.reset(base);
         }
         self.osc.set_freq(base);
+        // Per-hit envelope-time drift: scale decay/release so the tail length varies.
+        self.amp_env.set_decay(self.settings.decay * self.drift.time);
+        self.amp_env.set_release(self.settings.release * self.drift.time);
         self.snap_env.trigger();
         self.drop_env.trigger();
         self.amp_env.trigger();
@@ -159,8 +167,10 @@ impl Voice for Kick808Voice {
         let drop = self.drop_env.next();
 
         // Frequency modulation: base + snap_peak*env - drop_depth*env
-        let target_freq =
-            (base + self.snap_depth_hz() * snap - self.drop_depth_hz() * (1.0 - drop)).max(10.0);
+        let target_freq = (base + self.snap_depth_hz() * snap
+            - self.drop_depth_hz() * (1.0 - drop))
+            .max(10.0)
+            * self.drift.pitch;
         let freq = self.freq_smoother.process(target_freq);
         self.osc.set_freq(freq);
 
@@ -171,7 +181,10 @@ impl Voice for Kick808Voice {
             return 0.0;
         }
 
-        let body = self.tone_filter.process(raw) * env * self.settings.volume;
+        let body = self.tone_filter.process(raw)
+            * env
+            * self.settings.volume
+            * self.drift.level;
 
         let click = if self.accent_amount() > 0.0 && self.click.is_active() {
             self.click_filter.process(self.click.next()) * self.accent_amount()
