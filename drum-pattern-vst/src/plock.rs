@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::sequencer::pattern::INSTRUMENT_COUNT;
 use crate::synthesis::VoiceSettings;
 
-pub const STEP_COUNT: usize = 16;
+pub const STEP_COUNT: usize = 64;
 pub const FIELD_COUNT: usize = 46;  // 13 standard + 1 algo + 32 special
 const LEGACY_FIELD_COUNT: usize = 18;
 const LEGACY_CLAP_ECHO_FIELD: usize = 12;
@@ -65,15 +65,19 @@ impl PlockMasks {
 /// `values[instrument][step][field]` is a f32 bitcast.
 /// Only meaningful when the corresponding bit in `PlockMasks` is set.
 pub struct PlockValues {
-    pub values: [[[AtomicU64; FIELD_COUNT]; STEP_COUNT]; INSTRUMENT_COUNT],
+    pub values: Vec<Vec<Vec<AtomicU64>>>,
 }
 
 impl PlockValues {
     pub fn new() -> Self {
         Self {
-            values: std::array::from_fn(|_| {
-                std::array::from_fn(|_| std::array::from_fn(|_| AtomicU64::new(0)))
-            }),
+            values: (0..INSTRUMENT_COUNT)
+                .map(|_| {
+                    (0..STEP_COUNT)
+                        .map(|_| (0..FIELD_COUNT).map(|_| AtomicU64::new(0)).collect())
+                        .collect()
+                })
+                .collect(),
         }
     }
 
@@ -89,13 +93,15 @@ impl PlockValues {
 /// Per-field modification mask: one u32 per instrument × step.
 /// Bit `1 << field` is set when that field has been explicitly overridden.
 pub struct PlockFieldMasks {
-    masks: [[AtomicU64; STEP_COUNT]; INSTRUMENT_COUNT],
+    masks: Vec<Vec<AtomicU64>>,
 }
 
 impl PlockFieldMasks {
     pub fn new() -> Self {
         Self {
-            masks: std::array::from_fn(|_| std::array::from_fn(|_| AtomicU64::new(0))),
+            masks: (0..INSTRUMENT_COUNT)
+                .map(|_| (0..STEP_COUNT).map(|_| AtomicU64::new(0)).collect())
+                .collect(),
         }
     }
 

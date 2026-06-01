@@ -32,7 +32,7 @@
 
 ### Features P1 (Parité PoC / Impact fort)
 
-- [ ] [76] **Longueur globale du pattern ajustable 1 → 64 steps**
+- [x] [76] **Longueur globale du pattern ajustable 1 → 64 steps** (CORRIGÉ - build 20260601-175002)
   - 4 pages de 16 steps maximum
   - Prévoir un switch "Follow lecture" (la grille suit le playhead ou reste fixe)
   - Complexité : Moyenne-Élevée

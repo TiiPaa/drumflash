@@ -8,7 +8,7 @@ use std::sync::{
 };
 
 pub const INSTRUMENT_COUNT: usize = 13;
-pub const STEP_COUNT: usize = 16;
+pub const STEP_COUNT: usize = 64;
 
 /// A single step in a pattern containing trigger states for all instruments.
 #[derive(Clone, Debug)]
@@ -39,7 +39,7 @@ impl Step {
     }
 }
 
-/// A 16-step pattern for drum sequencing.
+/// A 64-step pattern for drum sequencing (4 pages of 16 steps).
 #[derive(Clone, Debug)]
 pub struct Pattern {
     ///  steps, each with  instrument triggers.
@@ -51,24 +51,7 @@ impl Pattern {
     /// Create empty pattern.
     pub fn empty() -> Self {
         Self {
-            steps: [
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-                Step::empty(),
-            ],
+            steps: array::from_fn(|_| Step::empty()),
             name: "Empty".to_string(),
         }
     }
@@ -217,6 +200,12 @@ pub struct SharedPattern {
     steps: [AtomicU16; STEP_COUNT],
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct PatternMasks(
+    #[serde(with = "serde_arrays")]
+    pub [u16; STEP_COUNT],
+);
+
 #[derive(Clone)]
 pub struct PersistentPattern {
     shared: Arc<SharedPattern>,
@@ -276,16 +265,16 @@ impl SharedPattern {
     }
 }
 
-impl<'a> PersistentField<'a, [u16; STEP_COUNT]> for PersistentPattern {
-    fn set(&self, new_value: [u16; STEP_COUNT]) {
-        self.shared.load_step_masks(&new_value);
+impl<'a> PersistentField<'a, PatternMasks> for PersistentPattern {
+    fn set(&self, new_value: PatternMasks) {
+        self.shared.load_step_masks(&new_value.0);
     }
 
     fn map<F, R>(&self, f: F) -> R
     where
-        F: Fn(&[u16; STEP_COUNT]) -> R,
+        F: Fn(&PatternMasks) -> R,
     {
         let masks = self.shared.step_masks();
-        f(&masks)
+        f(&PatternMasks(masks))
     }
 }

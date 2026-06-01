@@ -1,6 +1,6 @@
 use nih_plug::prelude::*;
 use nih_plug::{
-    params::persist::serialize_field,
+    params::persist::{deserialize_field, serialize_field},
     wrapper::state::{ParamValue, PluginState},
 };
 use nih_plug_egui::EguiState;
@@ -48,9 +48,9 @@ const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
     "808 Kick",
     "Perc1",
 ];
-const STEP_COUNT: usize = 16;
+const STEP_COUNT: usize = 64;
 
-const PATTERN_STATE_FIELD: &str = "pattern-v1";
+const PATTERN_STATE_FIELD: &str = "pattern-v2";
 
 pub struct DrumFlashVst {
     params: Arc<DrumFlashParams>,
@@ -73,7 +73,7 @@ pub struct DrumFlashParams {
     #[persist = "editor-state-v2"]
     pub editor_state: Arc<EguiState>,
 
-    #[persist = "pattern-v1"]
+    #[persist = "pattern-v2"]
     pub pattern_state: PersistentPattern,
 
     #[persist = "sound-settings-v2"]
@@ -175,6 +175,10 @@ pub struct DrumFlashParams {
     pub length_bassdrum808: IntParam,
     #[id = "pl_perc1"]
     pub length_perc1: IntParam,
+
+    // Global pattern length (master length)
+    #[id = "pat_len"]
+    pub pattern_length: IntParam,
 
     #[id = "kick_click"]
     pub kick_click: FloatParam,
@@ -706,32 +710,37 @@ impl Default for DrumFlashParams {
             .with_smoother(SmoothingStyle::Linear(10.0))
             .with_unit(" ms"),
 
-            // Pattern length per track (1-16 steps)
-            length_kick: IntParam::new("Length Kick", 16, IntRange::Linear { min: 1, max: 16 }),
-            length_snare: IntParam::new("Length Snare", 16, IntRange::Linear { min: 1, max: 16 }),
-            length_hihat: IntParam::new("Length Hi-Hat", 16, IntRange::Linear { min: 1, max: 16 }),
+            // Pattern length per track (1-64 steps)
+            length_kick: IntParam::new("Length Kick", 16, IntRange::Linear { min: 1, max: 64 }),
+            length_snare: IntParam::new("Length Snare", 16, IntRange::Linear { min: 1, max: 64 }),
+            length_hihat: IntParam::new("Length Hi-Hat", 16, IntRange::Linear { min: 1, max: 64 }),
             length_open_hh: IntParam::new(
                 "Length Open HH",
                 16,
-                IntRange::Linear { min: 1, max: 16 },
+                IntRange::Linear { min: 1, max: 64 },
             ),
-            length_tom1: IntParam::new("Length Tom 1", 16, IntRange::Linear { min: 1, max: 16 }),
-            length_tom2: IntParam::new("Length Tom 2", 16, IntRange::Linear { min: 1, max: 16 }),
-            length_tom3: IntParam::new("Length Tom 3", 16, IntRange::Linear { min: 1, max: 16 }),
-            length_clap: IntParam::new("Length Clap", 16, IntRange::Linear { min: 1, max: 16 }),
-            length_ride: IntParam::new("Length Ride", 16, IntRange::Linear { min: 1, max: 16 }),
-            length_cymbal: IntParam::new("Length Cymbal", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_tom1: IntParam::new("Length Tom 1", 16, IntRange::Linear { min: 1, max: 64 }),
+            length_tom2: IntParam::new("Length Tom 2", 16, IntRange::Linear { min: 1, max: 64 }),
+            length_tom3: IntParam::new("Length Tom 3", 16, IntRange::Linear { min: 1, max: 64 }),
+            length_clap: IntParam::new("Length Clap", 16, IntRange::Linear { min: 1, max: 64 }),
+            length_ride: IntParam::new("Length Ride", 16, IntRange::Linear { min: 1, max: 64 }),
+            length_cymbal: IntParam::new("Length Cymbal", 16, IntRange::Linear { min: 1, max: 64 }),
             length_snare606: IntParam::new(
                 "Length Snare 606",
                 16,
-                IntRange::Linear { min: 1, max: 16 },
+                IntRange::Linear { min: 1, max: 64 },
             ),
             length_bassdrum808: IntParam::new(
                 "Length 808 Kick",
                 16,
-                IntRange::Linear { min: 1, max: 16 },
+                IntRange::Linear { min: 1, max: 64 },
             ),
-            length_perc1: IntParam::new("Length Perc1", 16, IntRange::Linear { min: 1, max: 16 }),
+            length_perc1: IntParam::new("Length Perc1", 16, IntRange::Linear { min: 1, max: 64 }),
+            pattern_length: IntParam::new(
+                "Pattern Length",
+                16,
+                IntRange::Linear { min: 1, max: 64 },
+            ),
 
             kick_click: FloatParam::new(
                 "Kick Click",
@@ -1600,6 +1609,7 @@ impl Plugin for DrumFlashVst {
             std::array::from_fn(|i| self.params.lengths()[i].value() as usize),
             std::array::from_fn(|i| self.params.pushes()[i].value()),
             std::array::from_fn(|i| self.params.humanizes()[i].value()),
+            self.params.pattern_length.value() as usize,
         );
 
         // Hi-hat chokes open hi-hat
@@ -1758,13 +1768,33 @@ impl Plugin for DrumFlashVst {
             return;
         }
 
-        let masks: [u8; STEP_COUNT] = std::array::from_fn(|step| {
-            let key = format!("st{:02}", step + 1);
-            match state.params.get(&key) {
-                Some(ParamValue::I32(value)) => (*value).clamp(0, 127) as u8,
-                _ => 0,
+        // Migration pattern-v1 (16 steps) → pattern-v2 (64 steps)
+        if let Some(data) = state.fields.get("pattern-v1") {
+            if let Ok(old_masks) = deserialize_field::<[u16; 16]>(data) {
+                let mut new_masks = [0u16; STEP_COUNT];
+                new_masks[..16].copy_from_slice(&old_masks);
+                let wrapped = sequencer::pattern::PatternMasks(new_masks);
+                if let Ok(serialized) = serialize_field(&wrapped) {
+                    state.fields.insert(PATTERN_STATE_FIELD.to_string(), serialized);
+                    return;
+                }
             }
-        });
+        }
+
+        // Migration legacy st01..st16 (8-bit masks) → pattern-v2 (64 steps)
+        let masks: Vec<u8> = (0..STEP_COUNT)
+            .map(|step| {
+                if step < 16 {
+                    let key = format!("st{:02}", step + 1);
+                    match state.params.get(&key) {
+                        Some(ParamValue::I32(value)) => (*value).clamp(0, 127) as u8,
+                        _ => 0,
+                    }
+                } else {
+                    0
+                }
+            })
+            .collect();
 
         if let Ok(serialized_pattern) = serialize_field(&masks) {
             state
@@ -1797,11 +1827,11 @@ mod tests {
         shared_pattern.set_step_mask(1, 0x3ff);
 
         pattern_state.map(|masks| {
-            assert_eq!(masks[0], 0);
-            assert_eq!(masks[1], 0x3ff);
+            assert_eq!(masks.0[0], 0);
+            assert_eq!(masks.0[1], 0x3ff);
         });
 
-        let restored_masks = [3u16; STEP_COUNT];
+        let restored_masks = sequencer::pattern::PatternMasks([3u16; STEP_COUNT]);
         pattern_state.set(restored_masks);
 
         assert_eq!(shared_pattern.load_step_mask(0), 3);
@@ -1826,12 +1856,12 @@ mod tests {
             .fields
             .get(PATTERN_STATE_FIELD)
             .expect("legacy pattern field should be created");
-        let masks: [u16; STEP_COUNT] =
+        let masks: sequencer::pattern::PatternMasks =
             deserialize_field(serialized_pattern).expect("pattern field should deserialize");
 
-        assert_eq!(masks[0], 0);
-        assert_eq!(masks[1], 0x7f);
-        assert_eq!(masks[2], 0);
+        assert_eq!(masks.0[0], 0);
+        assert_eq!(masks.0[1], 0x7f);
+        assert_eq!(masks.0[2], 0);
     }
 
     #[test]

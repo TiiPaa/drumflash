@@ -58,6 +58,8 @@ struct EditorUIState {
     last_midi_export_path: Option<String>,
     last_midi_export_error: Option<String>,
     dump_name_input: String,
+    current_page: usize,     // 0-3 (displaying steps current_page*16 .. current_page*16+15)
+    follow_mode: bool,       // if true, page follows the playhead
 }
 
 pub fn create_editor(
@@ -346,6 +348,47 @@ fn draw_grid(
     let pushes: [&FloatParam; DrumVoice::COUNT] = std::array::from_fn(|i| params.pushes()[i]);
     let lengths: [&IntParam; DrumVoice::COUNT] = std::array::from_fn(|i| params.lengths()[i]);
 
+    // Page navigation + Follow toggle
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Page:").strong());
+        for page in 0..4 {
+            let is_active = state.current_page == page;
+            let btn = egui::Button::new(format!("{}", page + 1))
+                .min_size(Vec2::new(28.0, 22.0))
+                .fill(if is_active {
+                    Color32::from_rgb(56, 132, 255)
+                } else {
+                    Color32::from_rgb(40, 40, 40)
+                });
+            if ui.add(btn).clicked() {
+                state.current_page = page;
+            }
+        }
+        ui.add_space(16.0);
+        let follow_btn = egui::Button::new(if state.follow_mode { "Follow ON" } else { "Follow OFF" })
+            .min_size(Vec2::new(80.0, 22.0))
+            .fill(if state.follow_mode {
+                Color32::from_rgb(50, 150, 50)
+            } else {
+                Color32::from_rgb(80, 80, 80)
+            });
+        if ui.add(follow_btn).clicked() {
+            state.follow_mode = !state.follow_mode;
+        }
+    });
+    ui.add_space(4.0);
+
+    // Follow mode: auto-switch page based on playhead
+    if state.follow_mode {
+        let master_step = current_step.load(Ordering::Relaxed) as usize;
+        let target_page = master_step / 16;
+        if target_page < 4 {
+            state.current_page = target_page;
+        }
+    }
+
+    let page_offset = state.current_page * 16;
+
     egui::Grid::new("pattern-grid")
         .spacing(Vec2::new(4.0, 4.0))
         .show(ui, |ui| {
@@ -361,15 +404,16 @@ fn draw_grid(
             header_item(ui, "M", 24.0);       // mute
             header_item(ui, "S", 24.0);       // solo
             header_item(ui, "T", 24.0);       // test
-            // Steps container with tighter spacing
+            // Steps container with tighter spacing (showing steps of current page)
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                for step in 0..16 {
-                    let is_current = (current_step.load(Ordering::Relaxed) as usize) == step;
-                    let text = if step % 4 == 0 {
-                        RichText::new(format!("{}", step + 1)).strong().size(10.0)
+                for local_step in 0..16 {
+                    let global_step = page_offset + local_step;
+                    let is_current = (current_step.load(Ordering::Relaxed) as usize) == global_step;
+                    let text = if local_step % 4 == 0 {
+                        RichText::new(format!("{}", global_step + 1)).strong().size(10.0)
                     } else {
-                        RichText::new(format!("{}", step + 1)).size(10.0)
+                        RichText::new(format!("{}", global_step + 1)).size(10.0)
                     };
                     let label = if is_current {
                         RichText::new(text.text())
@@ -433,17 +477,18 @@ fn draw_grid(
                     voice_test_triggers[inst].store(true, Ordering::Relaxed);
                 }
 
-                // 16 steps (tight horizontal container)
+                // 16 steps of current page (tight horizontal container)
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    for step in 0..16 {
-                    let active = pattern.is_active(step, inst);
-                    let is_current = current_steps[inst].load(Ordering::Relaxed) as usize == step;
-                    let beyond_len = step >= track_len;
-                    let has_plock = plock.masks.is_active(inst, step);
+                    for local_step in 0..16 {
+                    let global_step = page_offset + local_step;
+                    let active = pattern.is_active(global_step, inst);
+                    let is_current = current_steps[inst].load(Ordering::Relaxed) as usize == global_step;
+                    let beyond_len = global_step >= track_len;
+                    let has_plock = plock.masks.is_active(inst, global_step);
 
                     let plock_mask = if has_plock {
-                        plock.field_masks.get(inst, step)
+                        plock.field_masks.get(inst, global_step)
                     } else {
                         0
                     };
@@ -473,11 +518,11 @@ fn draw_grid(
                             Color32::from_rgb(28, 28, 28)
                         };
 
-                        let block_color = if step < 4 {
+                        let block_color = if local_step < 4 {
                             Color32::from_rgb(32, 32, 32)
-                        } else if step < 8 {
+                        } else if local_step < 8 {
                             Color32::from_rgb(40, 40, 40)
-                        } else if step < 12 {
+                        } else if local_step < 12 {
                             Color32::from_rgb(32, 32, 32)
                         } else {
                             Color32::from_rgb(40, 40, 40)
@@ -494,13 +539,13 @@ fn draw_grid(
 
                         let response = ui.add(btn);
                         if response.clicked() {
-                            toggle_step_for_ui(pattern, step, inst);
+                            toggle_step_for_ui(pattern, global_step, inst);
                             if params.auto_edit.value() {
                                 state.selected_instrument = inst;
                             }
                         }
                         response.context_menu(|ui| {
-                            draw_plock_menu(ui, plock, sound_settings, params, setter, inst, step, state);
+                            draw_plock_menu(ui, plock, sound_settings, params, setter, inst, global_step, state);
                         });
                     }
                 }
