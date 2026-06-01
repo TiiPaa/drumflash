@@ -1,5 +1,22 @@
 ﻿# Changelog
 
+## 2026-06-01 — Session: Fix focus fenêtre plugin bloque Windows
+
+**Build:** `20260601-170350`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Correction du vol de focus Windows** (`editor.rs` — `win_keyboard::set_keyboard_focus`)
+  - **Problème** : `SetFocus` était appelé à chaque frame même quand l'utilisateur avait switché vers une autre application (navigateur, explorer, etc.)
+  - **Cause** : `AttachThreadInput` + `SetFocus` forçaient le focus à revenir vers le plugin indépendamment de la fenêtre active
+  - **Fix** : vérification que le plugin (ou sa fenêtre parent DAW) est bien la fenêtre au premier plan (`GetForegroundWindow()`) avant d'appeler `SetFocus`
+  - Si l'utilisateur a switché vers une autre app, le plugin ne vole plus le focus
+
+### Tests
+- Build installé dans le dossier VST3 système
+
+---
+
 ## 2026-06-01 — Session: Fix complet corruption UTF-8 UI (séparateurs et caractères spéciaux)
 
 **Build:** `20260601-165420`

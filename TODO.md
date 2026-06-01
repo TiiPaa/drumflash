@@ -16,7 +16,7 @@
   - Remplacement des séparateurs box-drawing (─) et em-dashes (—) par des tirets simples
   - **Cause** : encodage UTF-8 → Windows-1252 lors de manipulations PowerShell
   - **Prévention** : utilisation exclusive de caractères ASCII dans les labels de boutons pour éviter les problèmes d'encodage
-- [ ] [74] **Focus fenêtre plugin bloque Windows** — impossible de switcher vers une autre fenêtre
+- [x] [74] **Focus fenêtre plugin bloque Windows** — impossible de switcher vers une autre fenêtre (CORRIGÉ - build 20260601-170350)
   - Quand la fenêtre Drum Flash est ouverte, le focus revient automatiquement vers Studio One/Drum Flash
   - Bloque l'utilisation d'autres applications (navigateur, explorateur, etc.)
   - Potentiellement lié au workaround focus clavier (SetFocus sur HWND)
