@@ -438,10 +438,11 @@ fn draw_grid(
             header_item(ui, "Len", 35.0);
             ui.end_row();
 
+            let master_length = params.pattern_length.value() as usize;
+
             // Instrument rows
             for inst in 0..DrumVoice::COUNT {
                 let row = &mixer_rows[inst];
-                let track_len = lengths[inst].value() as usize;
 
                 // Instrument label (clickable)
                 let label_btn = egui::Button::new(
@@ -488,7 +489,7 @@ fn draw_grid(
                     let global_step = page_offset + local_step;
                     let active = pattern.is_active(global_step, inst);
                     let is_current = current_steps[inst].load(Ordering::Relaxed) as usize == global_step;
-                    let beyond_len = global_step >= track_len;
+                    let beyond_len = global_step >= master_length;
                     let has_plock = plock.masks.is_active(inst, global_step);
 
                     let plock_mask = if has_plock {
