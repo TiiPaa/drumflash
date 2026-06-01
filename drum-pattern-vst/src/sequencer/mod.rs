@@ -221,7 +221,17 @@ impl Sequencer {
     ) {
         self.master_length = master_length.clamp(1, 64);
         for i in 0..DrumVoice::COUNT {
-            self.tracks[i].track_length = lengths[i].clamp(1, self.master_length);
+            // Si le track length est a sa valeur par defaut (16) et que master_length
+            // est different, on synchronise le track sur master_length. Cela permet
+            // a l'utilisateur d'agrandir le pattern sans changer manuellement chaque track.
+            // Si l'utilisateur veut vraiment un track a 16 avec un master > 16, il doit
+            // le remettre a 16 apres avoir change le master.
+            let track_len = if lengths[i] == 16 && master_length != 16 {
+                master_length
+            } else {
+                lengths[i]
+            };
+            self.tracks[i].track_length = track_len.clamp(1, self.master_length);
             self.tracks[i].push_pull_ms = push_pulls[i];
             self.tracks[i].humanize_amount = humanizes[i].clamp(0.0, 1.0);
         }
