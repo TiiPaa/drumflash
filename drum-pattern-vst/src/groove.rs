@@ -28,7 +28,7 @@ pub enum GrooveType {
     Mpc,
 }
 
-/// Convert a beat position (0..4) into a swung step index (0..15).
+/// Convert a beat position (0..16) into a swung step index (0..63).
 pub fn beat_to_step(beat_pos: f64, swing: f32, groove_type: GrooveType) -> usize {
     match groove_type {
         GrooveType::Straight => straight_step(beat_pos),
@@ -39,21 +39,22 @@ pub fn beat_to_step(beat_pos: f64, swing: f32, groove_type: GrooveType) -> usize
 }
 
 fn straight_step(beat_pos: f64) -> usize {
-    ((beat_pos / 0.25).floor() as usize).clamp(0, 15)
+    ((beat_pos / 0.25).floor() as usize).clamp(0, 63)
 }
 
 /// Shared pair-based logic. 8 pairs per bar, each pair = 0.5 beat (one 8th-note).
 /// The odd step of each pair is delayed according to `swing_ratio`.
 fn pair_step(beat_pos: f64, swing_ratio: f64) -> usize {
-    let pair_index = (beat_pos / 0.5).floor() as usize % 8;
+    let pair_index = (beat_pos / 0.5).floor() as usize;
     let pos_in_pair = beat_pos % 0.5;
     // Clamp so the odd step always has a non-zero window
     let threshold = 0.5 * swing_ratio.clamp(0.02, 0.98);
-    if pos_in_pair < threshold {
+    let step = if pos_in_pair < threshold {
         pair_index * 2
     } else {
         pair_index * 2 + 1
-    }
+    };
+    step.clamp(0, 63)
 }
 
 /// Swing 16th: linear curve, +50 % = triplet feel.
