@@ -464,7 +464,7 @@ impl Default for DrumFlashParams {
             master_volume: FloatParam::new(
                 "Master Volume",
                 0.8,
-                FloatRange::Linear { min: 0.0, max: 1.5 },
+                FloatRange::Linear { min: 0.0, max: 2.0 },
             )
             .with_smoother(SmoothingStyle::Logarithmic(50.0))
             .with_unit(" dB")
