@@ -45,9 +45,8 @@ const MIN_AMP_ATTACK_MS: f32 = 0.5;
 /// "Analog" per-hit drift depths. In analog mode every trigger pulls a small
 /// random detune + level offset so no two hits are identical (the vintage
 /// "breathing"); digital mode uses 0 drift = bit-identical hits.
-const ANALOG_PITCH_DRIFT: f32 = 0.035; // ±3.5 % detune (~60 cents) per hit
-const ANALOG_LEVEL_DRIFT: f32 = 0.10; // ±10 % level (~0.8 dB) per hit
-const ANALOG_TIME_DRIFT: f32 = 0.20; // ±20 % envelope time (decay+release tail) per hit
+// Analog drift is now shared via dsp::AnalogDrift constants.
+// Use those values for consistency across all voices.
 
 pub struct KickVoice {
     settings: KickSettings,
@@ -208,9 +207,9 @@ impl Voice for KickVoice {
             // Analog: persistent sweep + per-hit drift (the vintage "breathing").
             // Î”-Hz only ever rises toward the peak, stacking with the tail.
             self.pitch_env.trigger_from_current(self.pitch_peak_hz());
-            self.drift_pitch = 1.0 + self.drift_rng.next() * ANALOG_PITCH_DRIFT;
-            self.drift_level = 1.0 + self.drift_rng.next() * ANALOG_LEVEL_DRIFT;
-            self.drift_decay = 1.0 + self.drift_rng.next() * ANALOG_TIME_DRIFT;
+            self.drift_pitch = 1.0 + self.drift_rng.next() * dsp::AnalogDrift::PITCH_DEPTH;
+            self.drift_level = 1.0 + self.drift_rng.next() * dsp::AnalogDrift::LEVEL_DEPTH;
+            self.drift_decay = 1.0 + self.drift_rng.next() * dsp::AnalogDrift::TIME_DEPTH;
         } else {
             // Digital: deterministic sweep, NO drift — bit-identical on every hit.
             self.pitch_env.trigger_reset_to(self.pitch_peak_hz());

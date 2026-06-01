@@ -953,9 +953,12 @@ pub struct AnalogDrift {
 
 impl AnalogDrift {
     /// Drift depths, shared across voices so the analog character is consistent.
-    pub const PITCH_DEPTH: f32 = 0.035; // ±3.5 % detune (~60 cents)
-    pub const LEVEL_DEPTH: f32 = 0.10; // ±10 % level (~0.8 dB)
-    pub const TIME_DEPTH: f32 = 0.20; // ±20 % envelope time (tail length)
+    /// These are the MAXIMUM bounds (±). Increase them if the analog effect feels
+    /// too subtle; decrease if it feels too extreme.
+    /// Calibrated for a clearly audible "breathing" on a dense 16-step pattern.
+    pub const PITCH_DEPTH: f32 = 0.075; // ±7.5 % detune (~130 cents)
+    pub const LEVEL_DEPTH: f32 = 0.25;  // ±25 % level (~2 dB)
+    pub const TIME_DEPTH: f32 = 0.50;   // ±50 % envelope time (tail length)
 
     pub fn new(seed: u32) -> Self {
         Self {

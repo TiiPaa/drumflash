@@ -86,6 +86,8 @@ pub struct Perc1Voice {
     // DC blockers (per channel) — clean the asymmetric drift from FM + saturation.
     dc_block_l: dsp::DcBlocker,
     dc_block_r: dsp::DcBlocker,
+    /// Per-hit analog drift (breathing) — pitch/level/time variation per hit.
+    drift: dsp::AnalogDrift,
 
     active: bool,
 }
@@ -152,6 +154,7 @@ impl Perc1Voice {
             },
             dc_block_l: dsp::DcBlocker::default(),
             dc_block_r: dsp::DcBlocker::default(),
+            drift: dsp::AnalogDrift::new(0x1111_2222),
             active: false,
         }
     }
@@ -185,6 +188,11 @@ impl Voice for Perc1Voice {
     fn trigger(&mut self) {
         let was_active = self.active;
         self.active = true;
+        // analog = per-hit drift (breathing) ; digital = bit-identical hits.
+        self.drift.trigger(self.settings.analog >= 0.5);
+        self.amp_env.set_decay(self.settings.decay * self.drift.time);
+        self.amp_env
+            .set_release(self.settings.release * self.drift.time);
         self.rebuild_sweep();
         self.sweep_env.trigger();
         self.amp_env.trigger();
@@ -214,7 +222,7 @@ impl Voice for Perc1Voice {
 
         let base = self.settings.frequency.max(20.0);
         let ratio = self.sweep_env.next();
-        let freq = base * ratio;
+        let freq = base * ratio * self.drift.pitch;
 
         let bite = self.settings.bite.clamp(0.0, 1.0);
         let fm_deviation = bite * 3000.0;
@@ -223,7 +231,7 @@ impl Voice for Perc1Voice {
         self.osc_b_l.set_freq(freq * 1.5);
         let mod_sample = self.osc_b_l.next();
         self.osc_a_l.set_freq(freq + mod_sample * fm_deviation);
-        let mut dry = self.osc_a_l.next() * amp * self.settings.volume;
+        let mut dry = self.osc_a_l.next() * amp * self.settings.volume * self.drift.level;
 
         // Filter — additive envelope: Cutoff at rest + (envelope × amount × depth)
         let filter_env_val = self.filter_env.next();
@@ -264,7 +272,7 @@ impl Voice for Perc1Voice {
 
         let base = self.settings.frequency.max(20.0);
         let ratio = self.sweep_env.next();
-        let freq = base * ratio;
+        let freq = base * ratio * self.drift.pitch;
 
         let bite = self.settings.bite.clamp(0.0, 1.0);
         let fm_deviation = bite * 3000.0;
@@ -277,13 +285,13 @@ impl Voice for Perc1Voice {
         self.osc_b_l.set_freq(freq * 1.5);
         let mod_l = self.osc_b_l.next();
         self.osc_a_l.set_freq(freq + mod_l * fm_deviation);
-        let mut dry_l = self.osc_a_l.next() * amp * self.settings.volume;
+        let mut dry_l = self.osc_a_l.next() * amp * self.settings.volume * self.drift.level;
 
         // Right channel
         self.osc_b_r.set_freq(freq * 1.5 * detune);
         let mod_r = self.osc_b_r.next();
         self.osc_a_r.set_freq(freq * detune + mod_r * fm_deviation);
-        let mut dry_r = self.osc_a_r.next() * amp * self.settings.volume;
+        let mut dry_r = self.osc_a_r.next() * amp * self.settings.volume * self.drift.level;
 
         // Filter — additive envelope
         let filter_env_val = self.filter_env.next();
