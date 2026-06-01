@@ -39,7 +39,7 @@ impl Phase {
     }
 }
 
-// ── Amplitude envelope (AHDSR style) ────────────────────────────────────────
+// -- Amplitude envelope (AHDSR style) ----------------------------------------
 
 pub fn draw_amp_envelope(
     ui: &mut nih_plug_egui::egui::Ui,
@@ -168,7 +168,7 @@ pub fn draw_amp_envelope(
     response
 }
 
-// ── Filter envelope ─────────────────────────────────────────────────────────
+// -- Filter envelope ---------------------------------------------------------
 
 pub fn draw_filter_envelope(
     ui: &mut nih_plug_egui::egui::Ui,
