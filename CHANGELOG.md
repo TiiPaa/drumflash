@@ -1,5 +1,22 @@
 ﻿# Changelog
 
+## 2026-06-02 — Fix : suppression du vide en bas de l'UI
+
+**Build:** `20260602-141849`
+**Commits:** `8c17e54`
+
+### Changes
+- **Auto-resize de la hauteur de fenêtre** selon le contenu réel
+  - `ResizableWindow` mesure la hauteur du contenu après chaque frame
+  - Ajuste automatiquement la taille de la fenêtre quand `resizable=false`
+  - Élimine le vide noir de ~300px en bas de l'interface
+
+### Tests
+- Build et installation OK
+- UI s'affiche correctement sans espace vide en bas
+
+---
+
 ## 2026-06-02 — Layout UI : 2 colonnes (Option A)
 
 **Build:** `20260602-103224`
