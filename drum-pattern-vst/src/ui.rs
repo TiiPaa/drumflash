@@ -207,7 +207,6 @@ fn draw_header_bar(
         // Sliders
         ui.add(widgets::ParamSlider::for_param(&params.master_volume, setter).with_width(80.0));
         ui.add(widgets::ParamSlider::for_param(&params.swing, setter).with_width(80.0));
-        ui.add(widgets::ParamSlider::for_param(&params.pattern_length, setter).with_width(60.0));
         enum_combo(ui, setter, &params.groove_type, "");
 
         ui.separator();
@@ -472,6 +471,10 @@ fn draw_grid(
     let lengths: [&IntParam; DrumVoice::COUNT] = std::array::from_fn(|i| params.lengths()[i]);
 
     // Page navigation + Follow toggle
+    let play_page = {
+        let step = current_step.load(Ordering::Relaxed) as usize;
+        step / 16
+    };
     ui.horizontal(|ui| {
         ui.label(RichText::new("Page:").strong());
         for page in 0..4 {
@@ -484,6 +487,11 @@ fn draw_grid(
                     Color32::from_rgb(40, 40, 40)
                 });
             let response = ui.add(btn);
+            // LED rouge sous le bouton de la page en cours de lecture
+            if play_page == page && play_page < 4 {
+                let led_center = response.rect.center_bottom() + egui::vec2(0.0, 4.0);
+                ui.painter().circle_filled(led_center, 3.0, Color32::from_rgb(255, 40, 40));
+            }
             if response.clicked() {
                 state.current_page = page;
             }
@@ -553,6 +561,45 @@ fn draw_grid(
             });
         if ui.add(follow_btn).clicked() {
             state.follow_mode = !state.follow_mode;
+        }
+        ui.add_space(16.0);
+        ui.label(RichText::new("Len:").strong());
+        ui.add(widgets::ParamSlider::for_param(&params.pattern_length, setter).with_width(60.0));
+        for &len in &[16, 32, 48, 64] {
+            let is_active = params.pattern_length.value() == len;
+            let btn = egui::Button::new(format!("{}", len))
+                .min_size(Vec2::new(32.0, 22.0))
+                .fill(if is_active {
+                    Color32::from_rgb(56, 132, 255)
+                } else {
+                    Color32::from_rgb(40, 40, 40)
+                });
+            if ui.add(btn).clicked() {
+                setter.set_parameter(&params.pattern_length, len);
+            }
+        }
+        ui.add_space(8.0);
+        let current_len = params.pattern_length.value() as usize;
+        let can_double = current_len <= 32;
+        let x2_btn = egui::Button::new("x2")
+            .min_size(Vec2::new(32.0, 22.0));
+        let response = ui.add_enabled(can_double, x2_btn);
+        if response.clicked() {
+            for i in 0..current_len {
+                pattern.set_step_mask(current_len + i, pattern.load_step_mask(i));
+                for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+                    if plock.masks.is_active(inst, i) {
+                        let field_mask = plock.field_masks.get_raw(inst, i);
+                        plock.masks.set_active(inst, current_len + i, true);
+                        plock.field_masks.set_raw(inst, current_len + i, field_mask);
+                        for field in 0..crate::plock::FIELD_COUNT {
+                            let value = plock.values.get(inst, i, field);
+                            plock.values.set(inst, current_len + i, field, value);
+                        }
+                    }
+                }
+            }
+            setter.set_parameter(&params.pattern_length, (current_len * 2) as i32);
         }
     });
     ui.add_space(4.0);

@@ -1,5 +1,27 @@
 ﻿# Changelog
 
+## 2026-06-02 — UI: Layout page navigation + x2 + LED lecture
+
+**Build:** `20260602-202855`
+**Commits:** À venir
+
+### Changes
+- **Slider "Len" déplacé vers la ligne des pages**
+  - Retiré du header bar, positionné à côté des boutons 1-4
+  - Plus logique : la longueur est liée à la pagination
+- **Boutons presets de longueur 16/32/48/64**
+  - Accès rapide aux longueurs standard
+  - Le bouton actif est surligné en bleu
+- **Bouton x2 (doubler le pattern)**
+  - Copie les steps 0..len vers len..2×len
+  - Copie aussi les parameter locks (plocks)
+  - Grisé quand len > 32 (limite 64 steps)
+- **LED rouge sous la page en cours de lecture**
+  - Petit cercle rouge sous le bouton de page actif dans le séquenceur
+  - Indépendant du highlight bleu de la page affichée
+
+---
+
 ## 2026-06-02 — Kick: 3 types de click fonctionnels
 
 **Build:** `20260602-174136`
