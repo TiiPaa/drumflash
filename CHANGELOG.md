@@ -1,5 +1,19 @@
 ﻿# Changelog
 
+## 2026-06-02 — Copier/Coller de pages avec parameter locks
+
+**Build:** `20260602-155542`
+**Commits:** `93886a3`
+
+### Changes
+- **Copy/Paste de pages avec parameter locks (plocks)**
+  - Copy Page : copie les triggers + tous les plocks de la page
+  - Paste Page : restaure les triggers + les plocks
+  - Seuls les steps avec plocks sont stockés (optimisation mémoire)
+  - Structures `PlockClipboardEntry` et `PageClipboard` ajoutées
+
+---
+
 ## 2026-06-02 — Menu contextuel pages + Clear plocks
 
 **Build:** `20260602-152305`
