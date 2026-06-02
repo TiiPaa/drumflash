@@ -711,30 +711,25 @@ fn draw_sound_panel(
         }
     });
 
+    let inst = &sound_settings.instruments[state.selected_instrument];
+    let (
+        mut freq,
+        mut decay,
+        mut vol,
+        mut filt,
+        mut attack,
+        mut release,
+        mut decay_curve,
+        mut release_curve,
+        mut hold,
+        mut filter_env_amount,
+        mut filter_env_decay,
+        mut analog,
+        mut stereo,
+    ) = inst.load();
     let mut changed = false;
 
-    // Scrollable content area
-    egui::ScrollArea::vertical()
-        .max_height(ui.available_height())
-        .show(ui, |ui| {
-            let inst = &sound_settings.instruments[state.selected_instrument];
-            let (
-                mut freq,
-                mut decay,
-                mut vol,
-                mut filt,
-                mut attack,
-                mut release,
-                mut decay_curve,
-                mut release_curve,
-                mut hold,
-                mut filter_env_amount,
-                mut filter_env_decay,
-                mut analog,
-                mut stereo,
-            ) = inst.load();
-
-            // ------ Dev Tools: Preset Dumps ------
+    // ------ Dev Tools: Preset Dumps ------
     ui.collapsing("Dev: Preset Dumps", |ui| {
         ui.horizontal(|ui| {
             ui.label("Name:");
@@ -1082,7 +1077,6 @@ fn draw_sound_panel(
             });
         });
     }
-    });
 
     if changed {
         sound_settings.bump_version();
