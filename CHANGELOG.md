@@ -1,5 +1,21 @@
 ﻿# Changelog
 
+## 2026-06-02 — Fix : slider Len restauré dans la barre d'en-tête
+
+**Build:** `20260602-145233`
+**Commits:** `786e368`
+
+### Changes
+- **Slider de longueur (Len) restauré**
+  - Le slider était dans `draw_top_bar()` qui n'est plus appelé
+  - Déplacé dans `draw_header_bar()` entre Swing et Groove
+  - Pages 1-4 et Follow toujours visibles dans la grille
+
+### Tests
+- Build et installation OK
+
+---
+
 ## 2026-06-02 — UI : largeur augmentée + fix Sound Editor
 
 **Build:** `20260602-143954`
