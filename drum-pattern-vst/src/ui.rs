@@ -92,7 +92,7 @@ pub fn create_editor(
             #[cfg(target_os = "windows")]
             nih_plug_egui::set_keyboard_focus(egui_ctx.wants_keyboard_input());
             ResizableWindow::new("drum-pattern-generator")
-                .min_size(Vec2::new(1400.0, 520.0))
+                .min_size(Vec2::new(1480.0, 520.0))
                 .resizable(false)
                 .show(egui_ctx, editor_state.as_ref(), |ui| {
                     draw_header_bar(ui, setter, &params_for_ui, state);
@@ -100,9 +100,9 @@ pub fn create_editor(
                     ui.separator();
 
                     // --- Layout 2 colonnes avec largeurs fixes ---
-                    let left_w = 860.0;
-                    let right_w = 520.0;
-                    let gap = 12.0;
+                    let left_w = 900.0;
+                    let right_w = 560.0;
+                    let gap = 20.0;
 
                     ui.horizontal_top(|ui| {
                         // Colonne gauche
@@ -711,25 +711,30 @@ fn draw_sound_panel(
         }
     });
 
-    let inst = &sound_settings.instruments[state.selected_instrument];
-    let (
-        mut freq,
-        mut decay,
-        mut vol,
-        mut filt,
-        mut attack,
-        mut release,
-        mut decay_curve,
-        mut release_curve,
-        mut hold,
-        mut filter_env_amount,
-        mut filter_env_decay,
-        mut analog,
-        mut stereo,
-    ) = inst.load();
     let mut changed = false;
 
-    // ------ Dev Tools: Preset Dumps ------
+    // Scrollable content area
+    egui::ScrollArea::vertical()
+        .max_height(ui.available_height())
+        .show(ui, |ui| {
+            let inst = &sound_settings.instruments[state.selected_instrument];
+            let (
+                mut freq,
+                mut decay,
+                mut vol,
+                mut filt,
+                mut attack,
+                mut release,
+                mut decay_curve,
+                mut release_curve,
+                mut hold,
+                mut filter_env_amount,
+                mut filter_env_decay,
+                mut analog,
+                mut stereo,
+            ) = inst.load();
+
+            // ------ Dev Tools: Preset Dumps ------
     ui.collapsing("Dev: Preset Dumps", |ui| {
         ui.horizontal(|ui| {
             ui.label("Name:");
@@ -1077,6 +1082,7 @@ fn draw_sound_panel(
             });
         });
     }
+    });
 
     if changed {
         sound_settings.bump_version();
