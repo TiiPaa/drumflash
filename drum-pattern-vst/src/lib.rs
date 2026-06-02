@@ -460,7 +460,7 @@ impl Default for DrumFlashParams {
         let pattern_state = PersistentPattern::new(&default_pattern);
 
         Self {
-            editor_state: EguiState::from_size(1200, 720),
+            editor_state: EguiState::from_size(1400, 520),
             pattern_state,
             sound_settings: PersistentSoundSettings::new(),
             plock_state: PersistentPlockState::new(),
