@@ -4,7 +4,7 @@
 - [x] [70] Mode analog/digital BD re-rendu audible : digital = identique au bit près, analog = drift par coup (hauteur ±3.5 %, niveau ±10 %, temps d'enveloppe ±20 %)
 - [x] [71] Sécurisé les autres voix : perc1 (reset phase inconditionnel → cold-start only), snare/tom/snare606 (reset digital → cold-start only + enveloppes recréées → setters), hihat (enveloppe recréée → setters + biquad peaking recalculé seulement si freq change). Plancher d'attaque + DC-blockers partout ; drift analog sur snare & tom (sliders exposés) ; helper partagé `AnalogDrift`. ride/cymbal/clap/open_hihat/kick_808 déjà click-safe, non modifiés. (build 20260531-184528)
 - [x] [71a] Ajout du drift analogique sur Snare606 + Perc1 (sliders Analog inactifs → fonctionnels). Audit complet de tous les instruments avec slider Analog.
-- [ ] [72] **REPRENDRE ICI** — Nettoyer les fichiers de cruft hérités de la réparation ui.rs (src/ui_backup.rs, src/ui_fixed.rs, remaining_content.txt, tail_content.txt, temp_*.txt) + les ajouter au .gitignore si besoin
+- [x] [72] Nettoyer les fichiers de cruft hérités de la réparation ui.rs + .gitignore
 
 ## Nouveaux bugs & Feedback (Session 2026-06-01)
 
