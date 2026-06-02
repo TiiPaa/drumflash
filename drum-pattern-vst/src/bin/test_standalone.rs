@@ -15,7 +15,7 @@ use sequencer::{Pattern, SharedPattern};
 use synthesis::DrumSynthesizer;
 
 fn main() {
-    println!("Drum Flash - Test Standalone");
+    println!("Flash Drum - Test Standalone");
     println!("==========================================");
     println!();
 

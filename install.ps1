@@ -1,4 +1,4 @@
-﻿# Installation rapide du plugin Drum Flash
+﻿# Installation rapide du plugin Flash Drum
 #
 # Usage: .\install.ps1
 # Delegue au build officiel du plugin pour appliquer le patch Studio One,
@@ -15,7 +15,7 @@ if (-not (Test-Path $buildScript)) {
 }
 
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "  Drum Flash - Build/Install" -ForegroundColor Cyan
+Write-Host "  Flash Drum - Build/Install" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
 

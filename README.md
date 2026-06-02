@@ -1,4 +1,4 @@
-# Drum Flash
+# Flash Drum
 
 Plugin VST3 de séquenceur de batterie 16 pas en Rust.
 
