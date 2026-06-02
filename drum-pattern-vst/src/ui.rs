@@ -192,6 +192,7 @@ fn draw_header_bar(
         // Sliders
         ui.add(widgets::ParamSlider::for_param(&params.master_volume, setter).with_width(80.0));
         ui.add(widgets::ParamSlider::for_param(&params.swing, setter).with_width(80.0));
+        ui.add(widgets::ParamSlider::for_param(&params.pattern_length, setter).with_width(60.0));
         enum_combo(ui, setter, &params.groove_type, "");
 
         ui.separator();
