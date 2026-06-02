@@ -92,7 +92,7 @@ pub fn create_editor(
                     ScrollArea::both()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            ui.heading("Drum Flash");
+                            ui.heading("Flash Drum");
                             ui.label(format!(
                                 "v{} --- build {}",
                                 env!("CARGO_PKG_VERSION"),
@@ -247,7 +247,7 @@ fn draw_preset_bar(
                 }
             }
         }
-        response.on_hover_text("Export MIDI file to Documents/Drum Flash/exports");
+        response.on_hover_text("Export MIDI file to Documents/Flash Drum/exports");
 
         let drag_btn = egui::Button::new("Drag").sense(egui::Sense::click_and_drag());
         let drag_response = ui.add(drag_btn);
@@ -1110,7 +1110,7 @@ fn export_midi_to_documents(
         .map(PathBuf::from)
         .map(|p| p.join("Documents"))
         .ok_or("Cannot find Documents folder")?;
-    let export_dir = docs.join("Drum Flash").join("exports");
+    let export_dir = docs.join("Flash Drum").join("exports");
     create_dir_all(&export_dir)?;
 
     let timestamp = std::time::SystemTime::now()
