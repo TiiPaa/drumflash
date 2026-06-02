@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## 2026-06-02 — Menu contextuel pages + Clear plocks
+
+**Build:** `20260602-152305`
+**Commits:** `44ceed5`
+
+### Changes
+- **Menu contextuel sur les boutons de page (1-4)**
+  - Copy Page : copie les 16 steps dans le presse-papiers
+  - Paste Page : colle le presse-papiers dans la page cible
+  - Clear Page : efface les triggers ET les plocks de la page
+- **Fix : Clear Page efface aussi les plocks**
+  - Appelle `plock.clear()` pour chaque instrument et chaque step de la page
+
+### Tests
+- Build et installation OK
+
+---
+
 ## 2026-06-02 — Fix : slider Len restauré dans la barre d'en-tête
 
 **Build:** `20260602-145233`
