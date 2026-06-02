@@ -132,7 +132,7 @@ impl KickVoice {
              )
              .with_attack_ms(0.5),
              dc_block: dsp::DcBlocker::default(),
-             click: dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0),
+              click: Self::make_click_generator(sample_rate, 1),
              saturation: saturation::SaturationConfig {
                  saturation_type: saturation::SaturationType::None,
                  amount: 0.0,
@@ -174,6 +174,14 @@ impl KickVoice {
 
     fn click_amount(&self) -> f32 {
         self.settings.click_level
+    }
+
+    fn make_click_generator(sample_rate: f32, click_type: u8) -> dsp::ClickGenerator {
+        match click_type {
+            0 => dsp::ClickGenerator::new(sample_rate, 18.0, 0.5, 0.7), // Soft
+            2 => dsp::ClickGenerator::new(sample_rate, 5.0, 0.1, 1.5),  // Hard
+            _ => dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0), // Medium
+        }
     }
 }
 
@@ -330,6 +338,9 @@ impl Voice for KickVoice {
         } else if index == 5 {
             self.settings.saturation_pre_filter = value;
             self.saturation.pre_filter = value > 0.5;
+        } else if index == 6 {
+            self.settings.click_type = value as u8;
+            self.click = Self::make_click_generator(self.sample_rate, self.settings.click_type);
         }
     }
 }
