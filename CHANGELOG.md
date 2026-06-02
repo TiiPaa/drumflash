@@ -1,5 +1,25 @@
 ﻿# Changelog
 
+## 2026-06-02 — Layout UI : 2 colonnes (Option A)
+
+**Build:** `20260602-103224`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Nouveau layout 2 colonnes** (conforme au LAYOUT.md)
+  - **Barre haute** : Flash Drum v0.2 | ▶ | BPM | Master | Swing | Mode | Choke | Auto-Edit | P1..P8
+  - **Colonne gauche** (~850px) : Séquenceur (grille 13×16 avec pagination 64) + Générateur
+  - **Colonne droite** (~550px) : Éditeur de son (onglets + sound panel)
+  - Toute la logique existante conservée (plock, pattern, sound settings, test, etc.)
+- Fondations pour le design system et le schema data-driven
+  - `src/ui/design_system.rs` : tokens visuels + widgets de base
+  - `src/ui/schema.rs` : ParamSpec, Section, Category, schemas par instrument
+
+### Tests
+- Build et installation OK
+
+---
+
 ## 2026-06-02 — Renommage : Drum Flash → Flash Drum
 
 **Build:** `20260602-085637`
