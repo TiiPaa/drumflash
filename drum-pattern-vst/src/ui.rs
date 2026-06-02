@@ -97,48 +97,138 @@ pub fn create_editor(
                     ScrollArea::both()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            ui.heading("Flash Drum");
-                            ui.label(format!(
-                                "v{} --- build {}",
-                                env!("CARGO_PKG_VERSION"),
-                                BUILD_ID
-                            ));
-                            ui.separator();
-
-                            draw_top_bar(ui, setter, &params_for_ui);
-                            draw_song_bar(ui, state);
-                            draw_preset_bar(ui, &pattern_for_ui, &params_for_ui, setter, state);
-                            draw_generator_bar(ui, setter, &params_for_ui, &pattern_for_ui);
+                            draw_header_bar(ui, setter, &params_for_ui, state);
 
                             ui.separator();
-                            draw_grid(
-                                ui,
-                                setter,
-                                &params_for_ui,
-                                &pattern_for_ui,
-                                &voice_test_triggers_for_ui,
-                                &current_step,
-                                &current_steps_for_ui,
-                                &sound_settings_for_ui,
-                                &plock_for_ui,
-                                state,
-                            );
 
-                            ui.separator();
-                            draw_sound_panel(
-                                ui,
-                                &sound_settings_for_ui,
-                                &params_for_ui,
-                                setter,
-                                state,
-                            );
+                            ui.horizontal(|ui| {
+                                // === COLONNE GAUCHE : Séquenceur + Générateur ===
+                                ui.vertical(|ui| {
+                                    ui.set_min_width(850.0);
+                                    draw_grid(
+                                        ui,
+                                        setter,
+                                        &params_for_ui,
+                                        &pattern_for_ui,
+                                        &voice_test_triggers_for_ui,
+                                        &current_step,
+                                        &current_steps_for_ui,
+                                        &sound_settings_for_ui,
+                                        &plock_for_ui,
+                                        state,
+                                    );
+                                    ui.separator();
+                                    draw_generator_panel(
+                                        ui,
+                                        setter,
+                                        &params_for_ui,
+                                        &pattern_for_ui,
+                                        state,
+                                    );
+                                });
 
-                            ui.separator();
-                            ui.label("La grille edite le pattern joue en temps reel.");
+                                ui.separator();
+
+                                // === COLONNE DROITE : Éditeur de son ===
+                                ui.vertical(|ui| {
+                                    ui.set_min_width(500.0);
+                                    draw_sound_panel(
+                                        ui,
+                                        &sound_settings_for_ui,
+                                        &params_for_ui,
+                                        setter,
+                                        state,
+                                    );
+                                });
+                            });
                         });
                 });
         },
     )
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Header bar: Brand + Play + BPM + Sliders + Toggles + P1..P8
+// ---------------------------------------------------------------------------------------------------------------
+fn draw_header_bar(
+    ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
+    state: &mut EditorUIState,
+) {
+    ui.horizontal(|ui| {
+        // Brand
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("FLASH DRUM").strong().size(15.0));
+            ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).monospace().size(10.0).color(Color32::from_rgb(100, 100, 110)));
+        });
+
+        ui.separator();
+
+        // Play button (placeholder — no transport state in UI yet)
+        let play_btn = egui::Button::new(RichText::new("▶").size(13.0))
+            .min_size(Vec2::new(30.0, 30.0))
+            .fill(Color32::from_rgb(28, 28, 36))
+            .stroke(egui::Stroke::new(1.0, Color32::from_rgb(58, 58, 72)))
+            .corner_radius(7.0);
+        ui.add(play_btn);
+
+        // BPM display
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(format!("{:.0}", params.bpm.value())).strong().size(18.0).monospace());
+            ui.label(RichText::new("BPM").size(9.0).monospace().color(Color32::from_rgb(100, 100, 110)));
+        });
+
+        ui.separator();
+
+        // Sliders
+        ui.add(widgets::ParamSlider::for_param(&params.master_volume, setter).with_width(80.0));
+        ui.add(widgets::ParamSlider::for_param(&params.swing, setter).with_width(80.0));
+        enum_combo(ui, setter, &params.groove_type, "");
+
+        ui.separator();
+
+        // Toggles
+        bool_checkbox(ui, setter, &params.hihat_chokes_oh, "Choke");
+        bool_checkbox(ui, setter, &params.auto_edit, "Auto-Edit");
+
+        ui.add_space(16.0);
+
+        // Pattern slots P1..P8
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            for i in (0..8).rev() {
+                let selected = state.selected_pattern_slot == i;
+                let text = format!("P{}", i + 1);
+                let btn = egui::Button::new(RichText::new(text).size(10.0).strong().monospace())
+                    .min_size(Vec2::new(30.0, 26.0))
+                    .fill(if selected {
+                        Color32::from_rgb(74, 158, 255)
+                    } else {
+                        Color32::from_rgb(28, 28, 36)
+                    })
+                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(58, 58, 72)))
+                    .corner_radius(5.0);
+                if ui.add(btn).clicked() {
+                    state.selected_pattern_slot = i;
+                }
+            }
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Generator panel (preset chips + generator controls + GENERATE button)
+// ---------------------------------------------------------------------------------------------------------------
+fn draw_generator_panel(
+    ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    state: &mut EditorUIState,
+) {
+    ui.label(RichText::new("Generator").strong());
+    draw_preset_bar(ui, pattern, params, setter, state);
+    draw_generator_bar(ui, setter, params, pattern);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
