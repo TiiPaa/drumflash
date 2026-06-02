@@ -95,7 +95,7 @@ fn run_drag_window(path: PathBuf) -> Result<(), String> {
             cursor_pos.y = 240;
         }
 
-        let title = wide_null("Drum Flash MIDI Drag");
+        let title = wide_null("Flash Drum MIDI Drag");
         let state = Box::into_raw(Box::new(HelperState { path }));
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW,

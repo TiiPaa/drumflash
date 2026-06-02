@@ -1,4 +1,4 @@
-# Build automatique pour Drum Flash VST
+# Build automatique pour Flash Drum VST
 #
 # Ce script:
 # 1. Verifie que Rust est disponible
@@ -32,7 +32,7 @@ function Write-Color($color, $message) {
 }
 
 Write-Color "Cyan" "========================================="
-Write-Color "Cyan" "  Drum Flash VST - Build"
+Write-Color "Cyan" "  Flash Drum VST - Build"
 Write-Color "Cyan" "========================================="
 Write-Host ""
 

@@ -1,5 +1,28 @@
 ﻿# Changelog
 
+## 2026-06-02 — Renommage : Drum Flash → Flash Drum
+
+**Build:** `20260602-085637`
+**Commits:** `XXXXXXX`
+
+### Changes
+- **Renommage global de la marque** : Drum Flash → Flash Drum
+  - Nom du plugin affiché dans le DAW : `Flash Drum`
+  - Titre de fenêtre UI : `Flash Drum`
+  - Fenêtre drag-drop MIDI : `Flash Drum MIDI Drag`
+  - Dossiers utilisateur : `Documents/Flash Drum/exports` et `Documents/Flash Drum/preset_dumps`
+  - Scripts build/verif/install : titres mis à jour
+  - Documentation (README, AGENTS, ADDING_AN_INSTRUMENT, STUDIO_ONE_MULTI_OUT)
+  - `Cargo.toml` authors, `bundle.toml` name
+  - **Non modifié** : `VST3_CLASS_ID = DrumFlashPlugin1` (gelé pour compatibilité DAW)
+  - **Non modifié** : nom du dossier racine du repo (`E:\Dev\Projets\Drum Flash`)
+
+### Tests
+- Build et installation OK
+- Plugin s'affiche comme `Flash Drum` dans le DAW
+
+---
+
 ## 2026-06-01 — Session: Pattern 64 steps avec pagination style Digitakt
 
 **Build:** `20260601-175002`
@@ -318,7 +341,7 @@ ih_plug_egui::ensure_window_focus() exposée
   - Appel systématique dans ui.rs::update callback via ensure_keyboard_focus()
 - **Preset dump dev tools** (Phase 1a)
   - Section "Dev: Preset Dumps" dans le Sound Panel
-  - Dump/Load/Delete de presets JSON dans Documents/Drum Flash/preset_dumps/
+  - Dump/Load/Delete de presets JSON dans Documents/Flash Drum/preset_dumps/
   - serde_json ajouté aux dépendances
 
 ### Tests
@@ -338,7 +361,7 @@ ih_plug_egui::ensure_window_focus() exposée
   - **Dump** : captures current instrument settings (13 standards + algo + specials) to JSON
   - **Load** : restores dumped settings + switches to target instrument tab
   - **Delete** : removes dump file
-  - Files stored in Documents/Drum Flash/preset_dumps/
+  - Files stored in Documents/Flash Drum/preset_dumps/
 - **New dependency** : serde_json = "1.0" (Cargo.toml)
 - **New module** : src/preset_dumps.rs (dump/list/load/delete preset JSONs)
 
@@ -780,7 +803,7 @@ ih_plug_egui::ensure_window_focus() exposée
 - Groove engine: Straight, Swing 16th, Shuffle, MPC Style.
 - Push/pull per instrument, humanize per instrument.
 - Pattern generators: Euclidean, Markov, Probabilistic.
-- MIDI export to `Documents/Drum Flash/exports/`.
+- MIDI export to `Documents/Flash Drum/exports/`.
 - UI: BoolParam â†’ checkbox, EnumParam â†’ combobox, algo â†’ named combobox.
 - Sound panel per instrument with frequency, decay, volume, filter, algo, special params.
 

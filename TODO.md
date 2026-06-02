@@ -17,7 +17,7 @@
   - **Cause** : encodage UTF-8 → Windows-1252 lors de manipulations PowerShell
   - **Prévention** : utilisation exclusive de caractères ASCII dans les labels de boutons pour éviter les problèmes d'encodage
 - [x] [74] **Focus fenêtre plugin bloque Windows** — impossible de switcher vers une autre fenêtre (CORRIGÉ - build 20260601-170350)
-  - Quand la fenêtre Drum Flash est ouverte, le focus revient automatiquement vers Studio One/Drum Flash
+  - Quand la fenêtre Flash Drum est ouverte, le focus revient automatiquement vers Studio One/Flash Drum
   - Bloque l'utilisation d'autres applications (navigateur, explorateur, etc.)
   - Potentiellement lié au workaround focus clavier (SetFocus sur HWND)
   - **Action** : identifier et corriger le hook/mécanisme qui force le focus
@@ -158,7 +158,7 @@
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
 - [x] [28] Drag & drop MIDI directement vers le DAW â€” helper externe validÃ© dans Studio One
   - [x] remplacer l'ancien `dnd_set_drag_payload(bytes)` interne egui par un drag fichier OS natif Windows (`CF_HDROP` via OLE `DoDragDrop`)
-  - [x] garder l'export fichier OK via bouton MIDI dans `Documents/Drum Flash/exports`
+  - [x] garder l'export fichier OK via bouton MIDI dans `Documents/Flash Drum/exports`
   - [x] isoler `DoDragDrop` hors process DAW via `drum-pattern-midi-drag-helper.exe`
   - [x] rÃ©activer le bouton `Drag` : export MIDI puis ouverture d'une petite poignÃ©e de drag externe
   - [x] valider dans Studio One : cliquer `Drag`, puis glisser la fenÃªtre `Drag MIDI` vers une piste/instrument et vÃ©rifier qu'un clip MIDI est crÃ©Ã© sans crash

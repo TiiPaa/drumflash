@@ -1444,7 +1444,7 @@ impl DrumFlashVst {
 }
 
 impl Plugin for DrumFlashVst {
-    const NAME: &'static str = "Drum Flash";
+    const NAME: &'static str = "Flash Drum";
     const VENDOR: &'static str = "DrumFlash";
     const URL: &'static str = "";
     const EMAIL: &'static str = "";
@@ -1505,7 +1505,7 @@ impl Plugin for DrumFlashVst {
             s.store(0, Ordering::Relaxed);
         }
 
-        nih_log!("Drum Flash initialized at {} Hz", buffer_config.sample_rate);
+        nih_log!("Flash Drum initialized at {} Hz", buffer_config.sample_rate);
         true
     }
 
