@@ -65,6 +65,7 @@ struct EditorUIState {
     dump_name_input: String,
     current_page: usize,     // 0-3 (displaying steps current_page*16 .. current_page*16+15)
     follow_mode: bool,       // if true, page follows the playhead
+    page_clipboard: Option<[u16; 16]>, // copied page data for paste
 }
 
 pub fn create_editor(
@@ -468,9 +469,40 @@ fn draw_grid(
                 } else {
                     Color32::from_rgb(40, 40, 40)
                 });
-            if ui.add(btn).clicked() {
+            let response = ui.add(btn);
+            if response.clicked() {
                 state.current_page = page;
             }
+            response.context_menu(|ui| {
+                if ui.button("Copy Page").clicked() {
+                    let base = page * 16;
+                    let mut data = [0u16; 16];
+                    for i in 0..16 {
+                        data[i] = pattern.load_step_mask(base + i);
+                    }
+                    state.page_clipboard = Some(data);
+                    ui.close_menu();
+                }
+                if let Some(data) = state.page_clipboard {
+                    if ui.button("Paste Page").clicked() {
+                        let base = page * 16;
+                        for i in 0..16 {
+                            pattern.set_step_mask(base + i, data[i]);
+                        }
+                        ui.close_menu();
+                    }
+                }
+                if ui.button("Clear Page").clicked() {
+                    let base = page * 16;
+                    for i in 0..16 {
+                        pattern.set_step_mask(base + i, 0);
+                        for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+                            plock.clear(inst, base + i);
+                        }
+                    }
+                    ui.close_menu();
+                }
+            });
         }
         ui.add_space(16.0);
         let follow_btn = egui::Button::new(if state.follow_mode { "Follow ON" } else { "Follow OFF" })
