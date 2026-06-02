@@ -182,6 +182,8 @@ pub struct DrumFlashParams {
 
     #[id = "kick_click"]
     pub kick_click: FloatParam,
+    #[id = "kick_click_type"]
+    pub kick_click_type: FloatParam,
     // Kick saturation parameters
     #[id = "kick_sat_type"]
     pub kick_saturation_type: FloatParam,
@@ -748,6 +750,13 @@ impl Default for DrumFlashParams {
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
+            kick_click_type: FloatParam::new(
+                "Kick Click Type",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
             kick_saturation_type: FloatParam::new(
                 "Kick Saturation Type",
                 0.0,
@@ -1272,6 +1281,7 @@ impl DrumFlashParams {
     pub fn special_param(&self, instrument: usize, special_idx: usize) -> Option<&FloatParam> {
         match (instrument, special_idx) {
             (0, 0) => Some(&self.kick_click),
+            (0, 6) => Some(&self.kick_click_type),
             (0, 1) => Some(&self.kick_saturation_type),
             (0, 2) => Some(&self.kick_saturation_amount),
             (0, 3) => Some(&self.kick_saturation_mix),
