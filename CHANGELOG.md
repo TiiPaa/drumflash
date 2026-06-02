@@ -3,7 +3,7 @@
 ## 2026-06-02 — UI : largeur augmentée + scroll dans Sound Editor
 
 **Build:** `20260602-143215`
-**Commits:** `XXXXXXX`
+**Commits:** `6ca8753`
 
 ### Changes
 - **Largeur de fenêtre augmentée** : 1400 → 1480 px
