@@ -1,5 +1,22 @@
 ﻿# Changelog
 
+## 2026-06-02 — Kick: 3 types de click fonctionnels
+
+**Build:** `20260602-174136`
+**Commits:** `8188cc6` + fix
+
+### Changes
+- **Kick: 3 types de click (Soft/Medium/Hard)**
+  - Ajout paramètre `kick_click_type` dans `DrumFlashParams` (special_index: 6)
+  - Dropdown UI avec labels "Soft / Medium / Hard" au lieu d'un slider numérique
+  - **Fix bug critique** : `set_settings()` ne recréait pas le `ClickGenerator` quand `click_type` changeait
+  - Valeurs exagérées pour différenciation audible :
+    - Soft: 30ms decay, 80% noise, 0.4 level (feutré)
+    - Medium: 10ms decay, 30% noise, 1.0 level (standard)
+    - Hard: 2ms decay, 0% noise, 2.5 level (agressif)
+
+---
+
 ## 2026-06-02 — Copier/Coller de pages avec parameter locks
 
 **Build:** `20260602-155542`

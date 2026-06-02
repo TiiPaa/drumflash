@@ -1074,6 +1074,21 @@ fn draw_sound_panel(
                                                 }
                                             }
                                         });
+                                // Kick Click Type: show combobox with names
+                                } else if def.label.to_lowercase().contains("click type") {
+                                    let current_val = param.value() as i32;
+                                    let type_names = ["Soft", "Medium", "Hard"];
+                                    let current_name = type_names.get(current_val as usize).unwrap_or(&"Medium");
+                                    egui::ComboBox::from_id_salt(def.name)
+                                        .width(100.0)
+                                        .selected_text(*current_name)
+                                        .show_ui(ui, |ui| {
+                                            for (idx, name) in type_names.iter().enumerate() {
+                                                if ui.selectable_label(idx as i32 == current_val, *name).clicked() {
+                                                    setter.set_parameter(param, idx as f32);
+                                                }
+                                            }
+                                        });
                                 } else {
                                     ui.add(widgets::ParamSlider::for_param(param, setter).with_width(120.0));
                                 }
