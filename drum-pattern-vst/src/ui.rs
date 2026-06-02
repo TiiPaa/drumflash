@@ -25,10 +25,15 @@ use crate::{
     DrumFlashParams, BUILD_ID,
 };
 
+mod design_system;
 mod envelope_viz;
 mod local_param_slider;
+mod schema;
+
+use design_system::*;
 use envelope_viz::{draw_amp_envelope, draw_filter_envelope};
 use local_param_slider::LocalParamSlider;
+use schema::{Category, category_for_instrument, instrument_label, instrument_name};
 
 // ---------------------------------------------------------------------------------------------------------------
 // Frequency / Note conversion utilities
