@@ -1,9 +1,9 @@
 ﻿# Changelog
 
-## 2026-06-02 — UI : largeur augmentée + scroll dans Sound Editor
+## 2026-06-02 — UI : largeur augmentée + fix Sound Editor
 
-**Build:** `20260602-143215`
-**Commits:** `6ca8753`
+**Build:** `20260602-143954`
+**Commits:** `0db6acc`
 
 ### Changes
 - **Largeur de fenêtre augmentée** : 1400 → 1480 px
@@ -11,12 +11,13 @@
   - Colonne droite : 520 → 560 px
   - Gap entre colonnes : 12 → 20 px
   - Boutons P1..P8 moins tronqués dans la barre supérieure
-- **Scroll vertical dans le Sound Editor**
-  - `ScrollArea::vertical()` englobe le contenu de l'éditeur de son
-  - Permet de scroller si les paramètres dépassent la hauteur disponible
+- **Fix : Sound Editor de nouveau visible**
+  - ScrollArea mal configuré masquait le Sound Editor (hauteur ~0)
+  - Retrait du ScrollArea temporairement pour restaurer la visibilité
 
 ### Tests
 - Build et installation OK
+- Sound Editor visible et fonctionnel
 
 ---
 
