@@ -834,6 +834,15 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 family: ParamFamily::Osc,
             },
             SpecialParamDef {
+                name: "kick_click_type",
+                label: "Click Type",
+                default: 1.0,
+                min: 0.0,
+                max: 2.0,
+                special_index: 6,
+                family: ParamFamily::Osc,
+            },
+            SpecialParamDef {
                 name: "kick_saturation_type",
                 label: "Saturation Type",
                 default: 0.0,
