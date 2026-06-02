@@ -40,11 +40,22 @@
 
 ### Features P2 (Amélioration)
 
-- [x] [77] **3 types de clicks pour la Bass Drum** (CORRIGÉ - build 20260602-160540)
+- [x] [77] **3 types de clicks pour la Bass Drum** (CORRIGÉ - build 20260602-174136)
   - Soft : click subtil, rond
   - Medium : click standard (actuel)
   - Hard : click agressif, transitoire pointu
   - Complexité : Moyenne, 3-5 jours
+  - **Fix bug** : `set_settings()` ne recréait pas le `ClickGenerator` quand `click_type` changeait
+  - Valeurs exagérées pour différenciation audible (Soft/Medium/Hard)
+- [x] [79] **Déplacer le slider de longueur à côté de la pagination**
+  - Slider "Len" retiré du header bar, positionné avec les boutons de page
+  - Ajout de boutons rapides 16/32/48/64
+  - Ajout du bouton x2 pour doubler le pattern (avec copie des plocks)
+  - Grisage du bouton x2 quand len > 32
+  - **REPRENDRE ICI**
+- [x] [80] **LED rouge sous la page en cours de lecture**
+  - Petit cercle rouge sous le bouton de page active dans le séquenceur
+  - Indépendant du highlight bleu de la page affichée
 - [ ] [78] **Clarifier/documenter le mode Analog**
   - Le rendu sur Kick est très audible et apprécié
   - Sur Snare/Tom/Snare606/Perc1/Kick808 le drift est subtil (~7.5% pitch max)
