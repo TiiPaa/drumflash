@@ -1,7 +1,7 @@
 use nih_plug::prelude::*;
 use nih_plug_egui::{
     create_egui_editor,
-    egui::{self, Color32, RichText, ScrollArea, Vec2},
+    egui::{self, Color32, RichText, Vec2},
     resizable_window::ResizableWindow,
     widgets,
 };
@@ -92,56 +92,64 @@ pub fn create_editor(
             #[cfg(target_os = "windows")]
             nih_plug_egui::set_keyboard_focus(egui_ctx.wants_keyboard_input());
             ResizableWindow::new("drum-pattern-generator")
-                .min_size(Vec2::new(1200.0, 720.0))
+                .min_size(Vec2::new(1400.0, 520.0))
+                .resizable(false)
                 .show(egui_ctx, editor_state.as_ref(), |ui| {
-                    ScrollArea::both()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            draw_header_bar(ui, setter, &params_for_ui, state);
+                    draw_header_bar(ui, setter, &params_for_ui, state);
 
-                            ui.separator();
+                    ui.separator();
 
-                            ui.horizontal(|ui| {
-                                // === COLONNE GAUCHE : Séquenceur + Générateur ===
-                                ui.vertical(|ui| {
-                                    ui.set_min_width(850.0);
-                                    draw_grid(
-                                        ui,
-                                        setter,
-                                        &params_for_ui,
-                                        &pattern_for_ui,
-                                        &voice_test_triggers_for_ui,
-                                        &current_step,
-                                        &current_steps_for_ui,
-                                        &sound_settings_for_ui,
-                                        &plock_for_ui,
-                                        state,
-                                    );
-                                    ui.separator();
-                                    draw_generator_panel(
-                                        ui,
-                                        setter,
-                                        &params_for_ui,
-                                        &pattern_for_ui,
-                                        state,
-                                    );
-                                });
+                    // --- Layout 2 colonnes avec largeurs fixes ---
+                    let left_w = 860.0;
+                    let right_w = 520.0;
+                    let gap = 12.0;
 
+                    ui.horizontal_top(|ui| {
+                        // Colonne gauche
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(left_w, 0.0),
+                            egui::Layout::top_down(egui::Align::LEFT),
+                            |ui| {
+                                draw_grid(
+                                    ui,
+                                    setter,
+                                    &params_for_ui,
+                                    &pattern_for_ui,
+                                    &voice_test_triggers_for_ui,
+                                    &current_step,
+                                    &current_steps_for_ui,
+                                    &sound_settings_for_ui,
+                                    &plock_for_ui,
+                                    state,
+                                );
                                 ui.separator();
+                                draw_generator_panel(
+                                    ui,
+                                    setter,
+                                    &params_for_ui,
+                                    &pattern_for_ui,
+                                    state,
+                                );
+                            },
+                        );
 
-                                // === COLONNE DROITE : Éditeur de son ===
-                                ui.vertical(|ui| {
-                                    ui.set_min_width(500.0);
-                                    draw_sound_panel(
-                                        ui,
-                                        &sound_settings_for_ui,
-                                        &params_for_ui,
-                                        setter,
-                                        state,
-                                    );
-                                });
-                            });
-                        });
+                        ui.add_space(gap);
+
+                        // Colonne droite
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(right_w, 0.0),
+                            egui::Layout::top_down(egui::Align::LEFT),
+                            |ui| {
+                                draw_sound_panel(
+                                    ui,
+                                    &sound_settings_for_ui,
+                                    &params_for_ui,
+                                    setter,
+                                    state,
+                                );
+                            },
+                        );
+                    });
                 });
         },
     )
@@ -160,7 +168,7 @@ fn draw_header_bar(
         // Brand
         ui.horizontal(|ui| {
             ui.label(RichText::new("FLASH DRUM").strong().size(15.0));
-            ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).monospace().size(10.0).color(Color32::from_rgb(100, 100, 110)));
+            ui.label(RichText::new(format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID)).monospace().size(10.0).color(Color32::from_rgb(100, 100, 110)));
         });
 
         ui.separator();
@@ -651,9 +659,17 @@ fn draw_grid(
                 }
                 });
 
-                // Hum / Push / Len (compact sliders)
-                ui.add(widgets::ParamSlider::for_param(hums[inst], setter).with_width(40.0));
-                ui.add(widgets::ParamSlider::for_param(pushes[inst], setter).with_width(45.0));
+                // Hum / Push / Len (compact sliders avec valeurs formatées stables)
+                ui.horizontal(|ui| {
+                    ui.add(widgets::ParamSlider::for_param(hums[inst], setter).with_width(32.0).without_value());
+                    let hum_pct = (hums[inst].value() * 100.0) as i32;
+                    ui.label(RichText::new(format!("{:>3}%", hum_pct)).monospace().size(9.0)).on_hover_text("Humanize");
+                });
+                ui.horizontal(|ui| {
+                    ui.add(widgets::ParamSlider::for_param(pushes[inst], setter).with_width(32.0).without_value());
+                    let push_val = pushes[inst].value() as i32;
+                    ui.label(RichText::new(format!("{:>+3} ms", push_val)).monospace().size(9.0)).on_hover_text("Push/Pull");
+                });
                 ui.add(widgets::ParamSlider::for_param(lengths[inst], setter).with_width(35.0));
 
                 ui.end_row();
