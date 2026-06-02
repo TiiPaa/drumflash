@@ -1,4 +1,4 @@
-# Drum Flash - Agent Guide
+# Flash Drum - Agent Guide
 
 ## Project Overview
 

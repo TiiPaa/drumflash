@@ -1,4 +1,4 @@
-# Guide : Ajouter un nouvel instrument dans Drum Flash
+# Guide : Ajouter un nouvel instrument dans Flash Drum
 
 > Ce document décrit l'architecture du plugin et la procédure exacte pour ajouter une voix (instrument) de synthèse. Il est destiné à un agent externe qui doit appréhender rapidement le codebase.
 

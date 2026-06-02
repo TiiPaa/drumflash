@@ -1,4 +1,4 @@
-﻿# Verification rapide du plugin Drum Flash
+﻿# Verification rapide du plugin Flash Drum
 
 $ErrorActionPreference = "Stop"
 
@@ -10,7 +10,7 @@ $expectedBuild = "20260510-115905-s1route"
 $expectedClass = "DrumFlashPlugin1"
 
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "  Drum Flash - Verification" -ForegroundColor Cyan
+Write-Host "  Flash Drum - Verification" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 
 $ok = $true

@@ -24,7 +24,7 @@ fn dumps_dir() -> PathBuf {
     let mut p = std::env::var("USERPROFILE")
         .map(|profile| PathBuf::from(profile).join("Documents"))
         .unwrap_or_else(|_| PathBuf::from("."));
-    p.push("Drum Flash");
+    p.push("Flash Drum");
     p.push("preset_dumps");
     p
 }

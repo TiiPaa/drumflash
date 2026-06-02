@@ -24,14 +24,14 @@ The `nih-plug` copy in `vendor/nih-plug` carries the following patches:
 1. Close Studio One.
 2. Run `.\build.ps1 -Install` from `drum-pattern-vst`.
 3. Reopen Studio One and rescan VST3 plugins.
-4. Add `Drum Flash` as an instrument.
+4. Add `Flash Drum` as an instrument.
 5. Open the Console, then the Instruments panel.
 6. Expand the plugin output list and enable the extra outputs.
 7. Verify the output channels: Main Mix, Kick, Snare, Hi-Hat, Open HH, Tom 1, Tom 2, Tom 3, Clap, Ride, Cymbal, Snare 606, 808 Kick, Zap.
 
 Expected result: extra output checkboxes are clickable, and each enabled channel receives the corresponding drum voice while the main mix still receives the full stereo mix.
 
-If the plugin row is grayed in Studio One's Instruments section, first verify that the instrument track is routed to `Drum Flash`. The plugin exposes a basic MIDI/event input bus for this association even though the current sequencer does not need incoming notes to play.
+If the plugin row is grayed in Studio One's Instruments section, first verify that the instrument track is routed to `Flash Drum`. The plugin exposes a basic MIDI/event input bus for this association even though the current sequencer does not need incoming notes to play.
 
 ## Duplicate bundle warning
 
