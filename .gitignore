@@ -14,6 +14,13 @@ drum-pattern-vst/build/
 *.swp
 *~
 
+# Backup / repair cruft
+*backup*
+*fixed*
+temp_*
+remaining_content.txt
+tail_content.txt
+
 # OS
 .DS_Store
 Thumbs.db
