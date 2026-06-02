@@ -56,6 +56,20 @@ fn note_name(note: f32) -> String {
 
 // Instrument labels and names are sourced from instrument_registry::INSTRUMENTS
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct PlockClipboardEntry {
+    instrument: usize,
+    step: usize, // 0-15 within the page
+    field_mask: u64,
+    values: Vec<f32>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct PageClipboard {
+    triggers: [u16; 16],
+    plocks: Vec<PlockClipboardEntry>,
+}
+
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct EditorUIState {
     selected_instrument: usize,
@@ -65,7 +79,7 @@ struct EditorUIState {
     dump_name_input: String,
     current_page: usize,     // 0-3 (displaying steps current_page*16 .. current_page*16+15)
     follow_mode: bool,       // if true, page follows the playhead
-    page_clipboard: Option<[u16; 16]>, // copied page data for paste
+    page_clipboard: Option<PageClipboard>, // copied page data for paste
 }
 
 pub fn create_editor(
@@ -476,18 +490,43 @@ fn draw_grid(
             response.context_menu(|ui| {
                 if ui.button("Copy Page").clicked() {
                     let base = page * 16;
-                    let mut data = [0u16; 16];
+                    let mut triggers = [0u16; 16];
+                    let mut plocks = Vec::new();
                     for i in 0..16 {
-                        data[i] = pattern.load_step_mask(base + i);
+                        let step = base + i;
+                        triggers[i] = pattern.load_step_mask(step);
+                        for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+                            if plock.masks.is_active(inst, step) {
+                                let field_mask = plock.field_masks.get_raw(inst, step);
+                                let mut values = Vec::with_capacity(crate::plock::FIELD_COUNT);
+                                for field in 0..crate::plock::FIELD_COUNT {
+                                    values.push(plock.values.get(inst, step, field));
+                                }
+                                plocks.push(PlockClipboardEntry {
+                                    instrument: inst,
+                                    step: i,
+                                    field_mask,
+                                    values,
+                                });
+                            }
+                        }
                     }
-                    state.page_clipboard = Some(data);
+                    state.page_clipboard = Some(PageClipboard { triggers, plocks });
                     ui.close_menu();
                 }
-                if let Some(data) = state.page_clipboard {
+                if let Some(ref data) = state.page_clipboard {
                     if ui.button("Paste Page").clicked() {
                         let base = page * 16;
                         for i in 0..16 {
-                            pattern.set_step_mask(base + i, data[i]);
+                            pattern.set_step_mask(base + i, data.triggers[i]);
+                        }
+                        for entry in &data.plocks {
+                            let step = base + entry.step;
+                            plock.masks.set_active(entry.instrument, step, true);
+                            plock.field_masks.set_raw(entry.instrument, step, entry.field_mask);
+                            for (field, &value) in entry.values.iter().enumerate() {
+                                plock.values.set(entry.instrument, step, field, value);
+                            }
                         }
                         ui.close_menu();
                     }
