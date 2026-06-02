@@ -40,7 +40,7 @@
 
 ### Features P2 (Amélioration)
 
-- [ ] [77] **3 types de clicks pour la Bass Drum**
+- [x] [77] **3 types de clicks pour la Bass Drum** (CORRIGÉ - build 20260602-160540)
   - Soft : click subtil, rond
   - Medium : click standard (actuel)
   - Hard : click agressif, transitoire pointu

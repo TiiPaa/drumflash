@@ -178,9 +178,9 @@ impl KickVoice {
 
     fn make_click_generator(sample_rate: f32, click_type: u8) -> dsp::ClickGenerator {
         match click_type {
-            0 => dsp::ClickGenerator::new(sample_rate, 18.0, 0.5, 0.7), // Soft
-            2 => dsp::ClickGenerator::new(sample_rate, 5.0, 0.1, 1.5),  // Hard
-            _ => dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0), // Medium
+            0 => dsp::ClickGenerator::new(sample_rate, 30.0, 0.8, 0.4), // Soft: long decay, noisy, quiet
+            2 => dsp::ClickGenerator::new(sample_rate, 2.0, 0.0, 2.5),  // Hard: ultra-short, pure impulse, loud
+            _ => dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0), // Medium: balanced
         }
     }
 }
@@ -305,7 +305,11 @@ impl Voice for KickVoice {
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
+        let old_click_type = self.settings.click_type;
         self.settings = KickSettings::from(settings);
+        if self.settings.click_type != old_click_type {
+            self.click = Self::make_click_generator(self.sample_rate, self.settings.click_type);
+        }
         self.update_derived_params();
         // Update saturation config
         self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
