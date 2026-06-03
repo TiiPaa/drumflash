@@ -5,6 +5,10 @@
 - [x] [71] Sécurisé les autres voix : perc1 (reset phase inconditionnel → cold-start only), snare/tom/snare606 (reset digital → cold-start only + enveloppes recréées → setters), hihat (enveloppe recréée → setters + biquad peaking recalculé seulement si freq change). Plancher d'attaque + DC-blockers partout ; drift analog sur snare & tom (sliders exposés) ; helper partagé `AnalogDrift`. ride/cymbal/clap/open_hihat/kick_808 déjà click-safe, non modifiés. (build 20260531-184528)
 - [x] [71a] Ajout du drift analogique sur Snare606 + Perc1 (sliders Analog inactifs → fonctionnels). Audit complet de tous les instruments avec slider Analog.
 - [x] [72] Nettoyer les fichiers de cruft hérités de la réparation ui.rs + .gitignore
+- [x] [81] **Bug P1 — Plock lié à la page et pas à la position grid** (FAUX POSITIF — code déjà correct)
+  - Le code utilise `global_step = page_offset + local_step` partout (affichage, clic, x2, copier/coller)
+  - Les plocks sont bien indexés par step absolu (0-63) et suivent correctement la pagination
+  - Tests confirment le bon fonctionnement des steps 16-63
 
 ## Nouveaux bugs & Feedback (Session 2026-06-01)
 
@@ -52,15 +56,15 @@
   - Ajout de boutons rapides 16/32/48/64
   - Ajout du bouton x2 pour doubler le pattern (avec copie des plocks)
   - Grisage du bouton x2 quand len > 32
-  - **REPRENDRE ICI**
 - [x] [80] **LED rouge sous la page en cours de lecture**
   - Petit cercle rouge sous le bouton de page active dans le séquenceur
   - Indépendant du highlight bleu de la page affichée
-- [ ] [78] **Clarifier/documenter le mode Analog**
-  - Le rendu sur Kick est très audible et apprécié
-  - Sur Snare/Tom/Snare606/Perc1/Kick808 le drift est subtil (~7.5% pitch max)
-  - **Action** : augmenter légèrement le drift sur les voix non-kick OU ajouter un indicateur visuel dans l'UI quand le drift est actif
-  - Alternative : séparer "Analog Depth" (global) du switch on/off par instrument
+- [x] [78] **Clarifier/documenter le mode Analog** — Document créé dans `docs/analog-mode.md`
+  - Différenciation claire entre instruments avec drift opérationnel (Kick, Snare, Tom, Cymbal, B8) et analog fixé (HiHat, OpenHH, Clap, Ride, Snare606, Zap)
+  - Amplitude du drift documentée : Kick ±3.5% pitch / ±10% niveau, autres ~7.5% pitch max
+  - Valeurs par défaut 0.3 vs 1.0 expliquées
+  - Recommandations par style musical et conseils de dépannage inclus
+  - La section "Analyse Technique (Reference)" de ce fichier reste disponible pour les détails d'implémentation
 - [x] [67] Positionner le volume en haut du sound editor + ajouter un controle de volume sur chaque lane de la grille (ComplexitÃ©: Faible, P1)
 - [x] [68] Couleurs differentes pour plock link global vs full snapshot (orange / rouge) pour distinguer visuellement les modes (ComplexitÃ©: Faible, P1)
 - [x] [55] Ameliorer le rendu Snare 606 (plus percutant, plus proche TR-606)
@@ -118,7 +122,6 @@
 - [x] [24c] Ajouter Snare algos (Synth/Noise/Layered) + snap param
 - [x] [24d] Ajouter Clap, Ride, Cymbal voices
 - [x] [25] Labels complets des instruments dans l'UI et couleurs par instrument (labels courts BD/SD/HH, couleurs blocs de 4 steps, grisage len)
-- [ ] [26] Barre de progression visuelle du pattern (0-100%) â€” non prio
 - [x] [26a] Per-instrument Mix Bus checkbox (exclure du Main Mix)
 - [x] [26b] Clap Echo plockable par step
 - [x] [26c] Masquer les paramÃ¨tres inutiles par instrument dans le Sound Panel
@@ -133,7 +136,6 @@
   - Ranges corrigÃ©s pour Ã©viter le clamp involontaire (ex: Ride decay 1.2s > slider 0.5s)
 - [x] [51] Ajouter un paramÃ¨tre Attack rÃ©glable par instrument (graphique AHDSR complet A-H-D-R)
 - [x] **[EN COURS — Phase 1a OK]** [66] Presets d'instruments â€” sauvegarder/charger des rÃ©glages de synthese par voix (ComplexitÃ©: Moyenne, P2)
-- [ ] [52] Ajouter un paramÃ¨tre Sustain level pour un vrai ADSR sÃ©quentiel â€” non prio
 - [x] [26k] Refonte UI Phase 1 (grid intÃ©grÃ©, sound panel ongletÃ©, auto-edit)
   - Sound Panel regroupÃ© par familles data-driven (OSC/ENV/FILTER/OUTPUT)
   - Visualisations interactives d'enveloppe (Amp AHDSR + Filter Env)
@@ -162,11 +164,26 @@
 - [x] [63] Bug B8 se coupe quand on modifie CY : corrigÃ© division par zÃ©ro dans `ExpDecayEnvelope::set_attack_ms`
   - Quand attack_time passe Ã  0 pendant un ramp actif â†’ snap Ã  peak immÃ©diat pour Ã©viter NaN
   - Bouton "T" (Test) : appelle maintenant `set_voice_settings` avant `trigger`
+- [ ] [82] **IntÃ©grer les Ã©lÃ©ments graphiques dÃ©finis avec Claude Design**
+  - Assets UI (icÃ´nes, couleurs, fonts, layout) produits par Claude Design
+  - Remplacer les widgets egui basiques par des widgets custom avec le design system
+  - **ComplexitÃ© : Moyenne-Ã‰levÃ©e, 1-2 semaines, P2**
 
 ## Fonctionnalites P3 (Avancees / Complexes)
 
 - [ ] [69] Creer un instrument percussif a base de wavetables â€” phase recherche et prototypage (ComplexitÃ©: Ã‰levÃ©e, 2-4 semaines, P3)
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
+- [ ] [83] **Instruments sampler TR-606 multisamplÃ© (x4 layers)**
+  - Nouveau type de voix "Sampler" avec 4 variations par instrument (multisample)
+  - SÃ©lection alÃ©atoire du layer Ã  chaque trigger pour simuler l'imperfection analogique
+  - NÃ©cessite un systÃ¨me de chargement de samples WAV en mÃ©moire prÃ©allouÃ©e
+  - Architecture : voix sampler hybride (peut coexister avec les voix de synthÃ¨se actuelles)
+  - **ComplexitÃ© : Ã‰levÃ©e, 3-4 semaines, P3**
+- [ ] [84] **Instruments sampler Yamaha RX11**
+  - MÃªme architecture sampler que [83] avec le kit RX11
+  - 4 layers par son pour l'effet analog random
+  - DÃ©pend de [83] (infrastructure sampler)
+  - **ComplexitÃ© : Moyenne, 2-3 semaines, P3**
 - [x] [28] Drag & drop MIDI directement vers le DAW â€” helper externe validÃ© dans Studio One
   - [x] remplacer l'ancien `dnd_set_drag_payload(bytes)` interne egui par un drag fichier OS natif Windows (`CF_HDROP` via OLE `DoDragDrop`)
   - [x] garder l'export fichier OK via bouton MIDI dans `Documents/Flash Drum/exports`
@@ -198,14 +215,20 @@
   - Interface de navigation et d'Ã©dition
   - SystÃ¨me de sauvegarde/restoration
 
-- [ ] [59] Gestion des plocks de type sÃ©quenceur (ComplexitÃ©: Moyenne, 2-3 semaines)
-  - ImplÃ©mentation d'un systÃ¨me de modes de plock (ex: mode "step", mode "sequenceur")
-  - Logique de basculement entre les modes
-  - SystÃ¨me de couleurs pour diffÃ©rencier visuellement les types de plock
-  - IntÃ©gration avec l'interface utilisateur existante
-  - Sauvegarde/restoration de l'Ã©tat du mode
+- [x] [59] **Gestion des plocks de type sÃ©quenceur — COMPLET** (FAIT build 20260603-205246)
+  - [x] Architecture `SequencerPlockState` lock-free (probabilitÃ©, stutter, condition, microtiming)
+  - [x] Switch UI "Plock mode: Sound / Sequencer" sous la grille
+  - [x] Menu contextuel adaptatif (mode Seq = paramÃ¨tres sÃ©quenceur)
+  - [x] ProbabilitÃ© 0-100% par step × instrument
+  - [x] Skip alÃ©atoire dans le callback audio (LCG)
+  - [x] Persistance DAW (`seq-plock-v1`)
+  - [x] **Phase 2:** Couleurs violet pour les plocks sÃ©quenceur (visibles uniquement en mode Seq)
+  - [x] **Phase 3:** Switch avec label "Plock mode" + couleur orange (Sound) / violet (Sequencer)
+  - [x] **Phase 4:** Stutter (1-8x) — dÃ©clenche multiple fois le son
+  - [x] **Phase 5:** Conditions (Always, 1st, Not 1st, 1/2, 2/2, 1/3, 2/3, 3/3, 1/4, 2/4, 3/4, 4/4)
+  - [x] **Fix build 20260603-211721:** `SequencerStepParams::default()` probability=1.0, stutter_count=1 ; retrait Fill/NotFill ; stutter avec espacement temporel
 
-- [ ] [60] DÃ©sactivation du sÃ©quenceur interne et pilotage MIDI depuis le DAW (ComplexitÃ©: Moyenne, 1-2 semaines)
+- [ ] [60] **REPRENDRE ICI** DÃ©sactivation du sÃ©quenceur interne et pilotage MIDI depuis le DAW (ComplexitÃ©: Moyenne, 1-2 semaines)
   - Ajout d'un paramÃ¨tre pour activer/dÃ©sactiver le sÃ©quenceur interne
   - ImplÃ©mentation d'un mode "MIDI thru" oÃ¹ le plugin transmet simplement les notes MIDI aux instruments
   - Gestion des canaux MIDI et mapping des instruments
@@ -218,11 +241,12 @@
   - Mettre Ã  jour l'interface utilisateur pour afficher le bon format
   - S'assurer que la valeur est correctement sauvegardÃ©e/restaurÃ©e
   - Appliquer aux instruments Kick et B8 (et potentiellement autres bass drums)
-- [ ] [61b] Ajouter copier/coller un plock dans le menu bouton droit
-  - Stocker le plock copiÃ© dans l'Ã©tat de l'Ã©diteur (EditorUIState)
-  - Afficher "Copier plock" / "Coller plock" dans le menu contextuel
-  - Coller doit Ã©craser le plock existant sur la step cible
-  - Support multi-instrument (on ne colle que si le type d'instrument correspond)
+- [x] [61b] Ajouter copier/coller un plock dans le menu bouton droit — **FAIT (build 20260603-142316)**
+  - Stocker le plock copiÃ© dans l'Ã©tat de l'Ã©diteur (`EditorUIState.plock_clipboard` via `SinglePlockClipboard`)
+  - Boutons "Copy Plock" / "Paste Plock" dans le menu contextuel de la grid
+  - Coller Ã©crase le plock existant sur la step cible
+  - Support multi-instrument : on ne colle que si l'instrument correspond
+  - Disponible Ã  la fois en mode crÃ©ation (step vide) et Ã©dition (step avec plock)
 - [x] [29a] Refactor plock UI data-driven depuis `instrument_registry`
   - remplacer les branches hardcodees par instrument dans `draw_plock_menu`
   - exposer automatiquement les `special_params` de Clap, Snare606, B8, Perc1 et futurs instruments
@@ -241,8 +265,12 @@
 
 ## Dette technique & Documentation
 
-- [ ] [30] Clarifier si `index.js` doit etre conserve ou archive
-- [ ] [31] Revoir l'organisation du repo pour separer clairement PoC web et plugin
+- [x] [30] ~~Clarifier si `index.js` doit etre conserve ou archive~~ — **ARCHIVÉ**
+  - Les fichiers `index.html` et `index.js` (PoC web React) ont été déplacés dans `archive/web-poc/`
+  - Le plugin VST3 est désormais le seul produit actif
+- [x] [31] ~~Revoir l'organisation du repo pour separer clairement PoC web et plugin~~ — **FAIT**
+  - Le PoC web est archivé dans `archive/web-poc/`
+  - La racine du repo contient uniquement le plugin (`drum-pattern-vst/`), la doc et les fichiers de suivi
 - [x] [31a] Clarifier l'emplacement des docs produit actives
   - `AGENTS.md` cite `PROJECT_BRIEF.md` et `BACKLOG_VST.md`, mais les fichiers presents sont sous `docs/historique/`
   - decider si ces docs doivent revenir a la racine, etre remplacees par `TODO.md`/`README.md`, ou etre explicitement marquees comme archivees
@@ -272,7 +300,11 @@
 - [x] [35a] Plock B8 : accent/snap/pitch_drop/click_tone plockables
 - [x] [36] Corriger la persistance de grille via `pattern-v1`
 - [x] [37] Migration legacy depuis les parametres caches `st01` a `st16`
-- [ ] [38] Ecart entre documentation et code reel a surveiller
+- [x] [38] ~~Ecart entre documentation et code reel a surveiller~~ — **DOCUMENTATION À JOUR**
+  - `README.md` : mis à jour avec la structure du repo (archive/web-poc/)
+  - `docs/infrastructure.md` : créé — guide build, architecture, tests, déploiement
+  - `docs/user-guide.md` : créé — guide utilisateur complet (UI, plocks, export, multi-out)
+  - `docs/analog-mode.md` : créé précédemment — documentation technique du mode Analog
 - [x] [38b] Supprimer les `unwrap()` evitables du chemin audio/UI sensible
   - `lib.rs::process()` utilise `DrumVoice::from_index(...).unwrap()` sur des index bornes par `DrumVoice::COUNT`
   - risque faible aujourd'hui, mais non conforme a la regle stricte "audio thread sans panic"
@@ -284,8 +316,8 @@
 
 ## Bugs a corriger (Nouveaux)
 
-- [ ] [71] Longueur globale du pattern ajustable 1 => 64 avec 4 pages de 16 steps max. Prevoir un switch de follow de la lecture ou pas (Complexite: Moyenne-Elevee, 1-2 semaines, P1)
-- [ ] [72] Probleme d'affichage du volume : slider en haut de l'editor (1.5 max) et en bas (1) et dans la lane (1.5) — incoherence de range a uniformiser (Complexite: Faible, 1-2 jours, P1)
+- [x] [71] Longueur globale du pattern ajustable 1 => 64 avec 4 pages de 16 steps max. Prevoir un switch de follow de la lecture ou pas (Complexite: Moyenne-Elevee, 1-2 semaines, P1) — **DOUBLON de [76], DÃ‰JÃ€ CORRIGÃ‰**
+- [x] [72] Probleme d'affichage du volume : slider en haut de l'editor (1.5 max) et en bas (1) et dans la lane (1.5) — incoherence de range a uniformiser (Complexite: Faible, 1-2 jours, P1) — **DOUBLON de [75], DÃ‰JÃ€ CORRIGÃ‰**
 - [x] [73] caracteres esoteriques ont remplace aleatoirement les caracteres normaux dans les boutons/texte UI — CORRIGE (restauration UTF-8 via script Python) — build 20260529-174106 (Complexite: Faible, 1 jour, P1)
 - [x] [74] Proposer 3 types de clicks pour la BD (Kick) : soft/medium/hard ou impulse/noise/transient (Complexite: Moyenne, 3-5 jours, P2)
 

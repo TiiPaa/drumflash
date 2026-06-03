@@ -70,6 +70,13 @@ struct PageClipboard {
     plocks: Vec<PlockClipboardEntry>,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct SinglePlockClipboard {
+    instrument: usize,
+    field_mask: u64,
+    values: Vec<f32>,
+}
+
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct EditorUIState {
     selected_instrument: usize,
@@ -80,6 +87,8 @@ struct EditorUIState {
     current_page: usize,     // 0-3 (displaying steps current_page*16 .. current_page*16+15)
     follow_mode: bool,       // if true, page follows the playhead
     page_clipboard: Option<PageClipboard>, // copied page data for paste
+    plock_clipboard: Option<SinglePlockClipboard>, // copied single plock for paste
+    sequencer_mode: bool,    // if true, right-click opens sequencer params instead of sound plocks
 }
 
 pub fn create_editor(
@@ -340,7 +349,7 @@ fn draw_preset_bar(
         ui.add_space(16.0);
 
         // Random (middle)
-        if ui.button("Random Random").clicked() {
+        if ui.button("Random").clicked() {
             load_pattern_for_ui(pattern, &Pattern::random_pattern());
         }
 
@@ -352,7 +361,8 @@ fn draw_preset_bar(
         let response = ui.add(export_btn);
         if response.clicked() {
             let bpm = params.bpm.value();
-            match export_midi_to_documents(pattern, bpm) {
+            let pattern_length = params.pattern_length.value() as usize;
+            match export_midi_to_documents(pattern, bpm, pattern_length) {
                 Ok(path) => {
                     nih_log!("MIDI exported to: {}", path.display());
                     state.last_midi_export_path = Some(path.display().to_string());
@@ -371,7 +381,8 @@ fn draw_preset_bar(
         let drag_response = ui.add(drag_btn);
         if drag_response.clicked() || drag_response.drag_started() {
             let bpm = params.bpm.value();
-            match export_midi_to_documents(pattern, bpm)
+            let pattern_length = params.pattern_length.value() as usize;
+            match export_midi_to_documents(pattern, bpm, pattern_length)
                 .and_then(|path| start_external_midi_drag(&path).map(|_| path))
             {
                 Ok(path) => {
@@ -701,7 +712,7 @@ fn draw_grid(
                 }
                 let test_btn = egui::Button::new("T").min_size(Vec2::new(24.0, 20.0));
                 if ui.add(test_btn).on_hover_text("Test").clicked() {
-                    voice_test_triggers[inst].store(true, Ordering::Relaxed);
+                    voice_test_triggers[inst].store(true, Ordering::Release);
                 }
 
                 // 16 steps of current page (tight horizontal container)
@@ -722,27 +733,45 @@ fn draw_grid(
                     let all_bits = (1u64 << crate::plock::FIELD_COUNT) - 1;
                     let is_snapshot = has_plock && plock_mask == all_bits;
 
+                    let has_seq_plock = params.seq_plock_state.state.is_active(inst, global_step);
+
                     if beyond_len {
                         ui.allocate_space(Vec2::new(20.0, 20.0));
                     } else {
-                        let bg = if active && has_plock {
-                            if is_snapshot {
-                                Color32::from_rgb(220, 50, 50) // rouge snapshot + active
+                        let bg = if state.sequencer_mode {
+                            // Mode Sequencer: violet if seq_plock exists
+                            if active && has_seq_plock {
+                                Color32::from_rgb(168, 85, 247) // violet clair actif
+                            } else if has_seq_plock {
+                                Color32::from_rgb(126, 34, 206) // violet foncé
+                            } else if active {
+                                Color32::from_rgb(56, 132, 255) // bleu actif
+                            } else if is_current {
+                                Color32::from_rgb(48, 48, 48)
                             } else {
-                                Color32::from_rgb(255, 140, 0) // orange link/mixed + active
+                                Color32::from_rgb(28, 28, 28)
                             }
-                        } else if active {
-                            Color32::from_rgb(56, 132, 255)
-                        } else if has_plock {
-                            if is_snapshot {
-                                Color32::from_rgb(160, 30, 30) // rouge fonce snapshot
-                            } else {
-                                Color32::from_rgb(180, 100, 0) // orange fonce link/mixed
-                            }
-                        } else if is_current {
-                            Color32::from_rgb(48, 48, 48)
                         } else {
-                            Color32::from_rgb(28, 28, 28)
+                            // Mode Sound: original plock colors
+                            if active && has_plock {
+                                if is_snapshot {
+                                    Color32::from_rgb(220, 50, 50) // rouge snapshot + active
+                                } else {
+                                    Color32::from_rgb(255, 140, 0) // orange link/mixed + active
+                                }
+                            } else if active {
+                                Color32::from_rgb(56, 132, 255)
+                            } else if has_plock {
+                                if is_snapshot {
+                                    Color32::from_rgb(160, 30, 30) // rouge fonce snapshot
+                                } else {
+                                    Color32::from_rgb(180, 100, 0) // orange fonce link/mixed
+                                }
+                            } else if is_current {
+                                Color32::from_rgb(48, 48, 48)
+                            } else {
+                                Color32::from_rgb(28, 28, 28)
+                            }
                         };
 
                         let block_color = if local_step < 4 {
@@ -755,9 +784,15 @@ fn draw_grid(
                             Color32::from_rgb(40, 40, 40)
                         };
 
+                        let show_color = if state.sequencer_mode {
+                            active || is_current || has_seq_plock
+                        } else {
+                            active || is_current || has_plock
+                        };
+
                         let btn = egui::Button::new(if active { "X" } else { "." })
                             .min_size(Vec2::new(20.0, 20.0))
-                            .fill(if active || is_current || has_plock {
+                            .fill(if show_color {
                                 bg
                             } else {
                                 block_color
@@ -772,7 +807,11 @@ fn draw_grid(
                             }
                         }
                         response.context_menu(|ui| {
-                            draw_plock_menu(ui, plock, sound_settings, params, setter, inst, global_step, state);
+                            if state.sequencer_mode {
+                                draw_sequencer_plock_menu(ui, params, setter, inst, global_step, state);
+                            } else {
+                                draw_plock_menu(ui, plock, sound_settings, params, setter, inst, global_step, state);
+                            }
                         });
                     }
                 }
@@ -793,6 +832,23 @@ fn draw_grid(
 
                 ui.end_row();
             }
+        });
+
+        // Mode switch under the sequencer grid
+        ui.horizontal(|ui| {
+            ui.add_space(32.0); // indent to align with grid
+            ui.label(RichText::new("Plock mode:").strong().size(11.0));
+            let seq_btn = egui::Button::new(if state.sequencer_mode { "Sequencer" } else { "Sound" })
+                .min_size(Vec2::new(70.0, 22.0))
+                .fill(if state.sequencer_mode {
+                    Color32::from_rgb(147, 51, 234) // violet
+                } else {
+                    Color32::from_rgb(234, 120, 50) // orange
+                });
+            if ui.add(seq_btn).clicked() {
+                state.sequencer_mode = !state.sequencer_mode;
+            }
+            ui.label(RichText::new("Right-click steps for plocks").small().color(Color32::from_rgb(120, 120, 120)));
         });
 }
 
@@ -849,6 +905,7 @@ fn draw_sound_panel(
     let mut changed = false;
 
     // ------ Dev Tools: Preset Dumps ------
+    if cfg!(debug_assertions) {
     ui.collapsing("Dev: Preset Dumps", |ui| {
         ui.horizontal(|ui| {
             ui.label("Name:");
@@ -863,8 +920,6 @@ fn draw_sound_panel(
                         specials.push(0.0);
                     }
                 }
-                let algo = params.algos()[state.selected_instrument].value() as u8;
-                // Skip Analog for instruments that don't use it
                 let algo = params.algos()[state.selected_instrument].value() as u8;
                 // Skip Analog for instruments that don't use it
                 let standards = if matches!(state.selected_instrument, 2 | 3 | 7 | 8 | 10 | 12) {
@@ -883,7 +938,7 @@ fn draw_sound_panel(
                     specials,
                 };
                 if let Err(e) = preset_dumps::dump_preset(&dump) {
-                    eprintln!("Dump failed: { }", e);
+                    eprintln!("Dump failed: {}", e);
                 }
             }
         });
@@ -936,6 +991,7 @@ fn draw_sound_panel(
             }
         }
     });
+    }
     ui.add(egui::Separator::default().spacing(8.0));
 
     // ------ Volume global de l'instrument ------
@@ -1349,6 +1405,7 @@ fn draw_bool_toggle(
 fn export_midi_to_documents(
     pattern: &SharedPattern,
     bpm: f32,
+    pattern_length: usize,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let docs = std::env::var("USERPROFILE")
         .ok()
@@ -1364,7 +1421,7 @@ fn export_midi_to_documents(
     let filename = format!("drum_pattern_{:.0}bpm_{}.mid", bpm, timestamp);
     let path = export_dir.join(filename);
 
-    midi_export::export_pattern_to_midi(pattern, bpm, &path)?;
+    midi_export::export_pattern_to_midi(pattern, bpm, pattern_length, &path)?;
     Ok(path)
 }
 
@@ -1427,7 +1484,7 @@ fn draw_plock_menu(
     setter: &ParamSetter,
     instrument: usize,
     step: usize,
-    _state: &mut EditorUIState,
+    state: &mut EditorUIState,
 ) {
     use crate::plock::{FIELD_COUNT, SPECIAL_FIELD_START};
 
@@ -1449,10 +1506,10 @@ fn draw_plock_menu(
     // ------ Creation ------
     if !has_plock {
         ui.label("Create plock:");
-        if ui.button("-- Link to global").clicked() {
+        if ui.button("Link to global").clicked() {
             plock.masks.set_active(instrument, step, true);
         }
-        if ui.button("Snapshot Snapshot current settings").clicked() {
+        if ui.button("Snapshot current settings").clicked() {
             let mut special = [0.0f32; 32];
             for def in crate::instrument_registry::special_params(instrument) {
                 if def.special_index < special.len() {
@@ -1482,6 +1539,18 @@ fn draw_plock_menu(
             };
             plock.set_settings(instrument, step, &settings);
         }
+        // Paste plock from clipboard (even if no plock exists here yet)
+        if let Some(ref entry) = state.plock_clipboard {
+            if entry.instrument == instrument {
+                if ui.button("Paste Plock").clicked() {
+                    plock.masks.set_active(instrument, step, true);
+                    plock.field_masks.set_raw(instrument, step, entry.field_mask);
+                    for (field, &value) in entry.values.iter().enumerate() {
+                        plock.values.set(instrument, step, field, value);
+                    }
+                }
+            }
+        }
         return;
     }
 
@@ -1493,11 +1562,11 @@ fn draw_plock_menu(
         (1u64 << FIELD_COUNT) - 1
     };
     let mode_text = if mask == 0 {
-        "-- Linked to global"
+        "Linked to global"
     } else if mask == all_bits {
-        "Snapshot Full snapshot"
+        "Full snapshot"
     } else {
-        "-- Mixed"
+        "Mixed"
     };
     ui.label(RichText::new(mode_text).small());
     ui.separator();
@@ -1726,7 +1795,100 @@ fn draw_plock_menu(
     }
 
     ui.separator();
-    if ui.button("-' Clear plock").clicked() {
+    if ui.button("Copy Plock").clicked() {
+        let field_mask = plock.field_masks.get_raw(instrument, step);
+        let mut values = Vec::with_capacity(crate::plock::FIELD_COUNT);
+        for field in 0..crate::plock::FIELD_COUNT {
+            values.push(plock.values.get(instrument, step, field));
+        }
+        state.plock_clipboard = Some(SinglePlockClipboard {
+            instrument,
+            field_mask,
+            values,
+        });
+    }
+    if let Some(ref entry) = state.plock_clipboard {
+        if entry.instrument == instrument {
+            if ui.button("Paste Plock").clicked() {
+                plock.masks.set_active(instrument, step, true);
+                plock.field_masks.set_raw(instrument, step, entry.field_mask);
+                for (field, &value) in entry.values.iter().enumerate() {
+                    plock.values.set(instrument, step, field, value);
+                }
+            }
+        }
+    }
+    if ui.button("Clear plock").clicked() {
         plock.clear(instrument, step);
+    }
+}
+
+fn draw_sequencer_plock_menu(
+    ui: &mut egui::Ui,
+    params: &DrumFlashParams,
+    _setter: &ParamSetter,
+    instrument: usize,
+    step: usize,
+    _state: &mut EditorUIState,
+) {
+    use crate::plock::SequencerStepParams;
+
+    ui.label(
+        RichText::new(format!(
+            "Seq Plock {} --- Step {}",
+            crate::instrument_registry::INSTRUMENTS[instrument].label,
+            step + 1
+        ))
+        .strong(),
+    );
+    ui.separator();
+
+    let seq_plock = &params.seq_plock_state.state;
+    let has_seq_plock = seq_plock.is_active(instrument, step);
+    let current = seq_plock.get(instrument, step).unwrap_or_default();
+
+    // Probability slider
+    let mut prob = current.probability;
+    ui.label(format!("Probability: {:.0}%", prob * 100.0));
+    if ui.add(egui::Slider::new(&mut prob, 0.0..=1.0).show_value(false)).changed() {
+        seq_plock.set_probability(instrument, step, prob);
+    }
+
+    // Stutter count (2-8)
+    let mut stutter = current.stutter_count.max(1) as i32;
+    ui.label(format!("Stutter: {}x", stutter));
+    if ui.add(egui::Slider::new(&mut stutter, 1..=8)).changed() {
+        seq_plock.set_stutter(instrument, step, stutter as u8);
+    }
+
+    // Condition dropdown
+    let mut current_cond_idx = crate::plock::StepCondition::all()
+        .iter()
+        .position(|c| *c == current.condition)
+        .unwrap_or(0);
+    let all_conditions = crate::plock::StepCondition::all();
+    ui.label("Condition:");
+    egui::ComboBox::from_id_salt(format!("cond_{}_{}", instrument, step))
+        .selected_text(all_conditions[current_cond_idx].label())
+        .show_ui(ui, |ui| {
+            for (i, cond) in all_conditions.iter().enumerate() {
+                ui.selectable_value(&mut current_cond_idx, i, cond.label());
+            }
+        });
+    if current_cond_idx < all_conditions.len() {
+        seq_plock.set_condition(instrument, step, all_conditions[current_cond_idx]);
+    }
+
+    // Clear button
+    ui.separator();
+    if has_seq_plock {
+        if ui.button("Clear Seq Plock").clicked() {
+            seq_plock.clear(instrument, step);
+        }
+    } else {
+        ui.label("No sequencer plock");
+        if ui.button("Create Seq Plock").clicked() {
+            seq_plock.set(instrument, step, &SequencerStepParams::default());
+        }
     }
 }

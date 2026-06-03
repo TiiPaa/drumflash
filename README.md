@@ -1,10 +1,14 @@
 # Flash Drum
 
-Plugin VST3 de séquenceur de batterie 16 pas en Rust.
+Plugin VST3 de séquenceur de batterie 64 pas (4 pages × 16) avec 13 voix de synthèse modulaire, écrit en Rust avec le framework `nih-plug`.
 
-Le produit actif est le plugin dans `drum-pattern-vst/`. Les fichiers `index.html` et `index.js` à la racine sont un PoC web legacy conservé comme référence fonctionnelle.
+## Structure du projet
 
-## Build
+- **`drum-pattern-vst/`** — Plugin VST3 (produit actif)
+- **`docs/`** — Documentation technique et utilisateur
+- **`archive/web-poc/`** — PoC web legacy (HTML/React), archivé, non maintenu
+
+## Build & Installation
 
 ```powershell
 cd "E:\Dev\Projets\Drum Flash\drum-pattern-vst"
@@ -13,9 +17,10 @@ cd "E:\Dev\Projets\Drum Flash\drum-pattern-vst"
 
 ## Documentation
 
-- **`AGENTS.md`** — architecture, build/test, contraintes temps réel, guide agent
-- **`TODO.md`** — tâches en cours et à venir
-- **`CHANGELOG.md`** — historique des builds et nouveautés
-- **`ADDING_AN_INSTRUMENT.md`** — procédure pour ajouter une voix de synthèse
-- **`drum-pattern-vst/STUDIO_ONE_MULTI_OUT.md`** — notes techniques multi-out
-- **`docs/historique/`** - anciens brief/backlog/guides conserves comme archives
+- **`AGENTS.md`** — Architecture détaillée, build/test, contraintes temps réel
+- **`TODO.md`** — Tâches en cours et backlog
+- **`CHANGELOG.md`** — Historique des builds
+- **`ADDING_AN_INSTRUMENT.md`** — Procédure d'ajout d'une voix de synthèse
+- **`docs/infrastructure.md`** — Guide infrastructure (build, CI, déploiement)
+- **`docs/user-guide.md`** — Guide utilisateur (fonctionnalités, workflow)
+- **`docs/analog-mode.md`** — Documentation du mode Analog

@@ -67,6 +67,8 @@ pub struct Sequencer {
     mutes: [bool; DrumVoice::COUNT],
     /// Global pattern length (1-64 steps). Controls master loop point.
     master_length: usize,
+    /// How many times the master pattern has looped (for step conditions).
+    loop_count: usize,
 }
 
 /// Per-instrument trigger result: (should_trigger, velocity).
@@ -83,6 +85,7 @@ impl Sequencer {
             pattern,
             mutes: [false; DrumVoice::COUNT],
             master_length: 16,
+            loop_count: 0,
         }
     }
 
@@ -104,10 +107,15 @@ impl Sequencer {
 
         // Advance master beat position uniformly. Wrap at master_length steps.
         let beat_increment = (bpm as f64 / 60.0) / sample_rate as f64;
-        self.beat_position += beat_increment;
         let master_beat_length = self.master_length as f64 * 0.25;
+        let prev_beat = self.beat_position;
+        self.beat_position += beat_increment;
         if self.beat_position >= master_beat_length {
             self.beat_position -= master_beat_length;
+            // Detect loop wrap (only when actually wrapping, not on seek)
+            if prev_beat + beat_increment >= master_beat_length {
+                self.loop_count = self.loop_count.wrapping_add(1);
+            }
         }
 
         // Master beat advances uniformly; each track derives its own step.
@@ -266,6 +274,10 @@ impl Sequencer {
             steps[i] = track.step_counter % track.track_length.max(1);
         }
         steps
+    }
+
+    pub fn loop_count(&self) -> usize {
+        self.loop_count
     }
 
     pub fn set_mutes(&mut self, mutes: [bool; DrumVoice::COUNT]) {

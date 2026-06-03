@@ -151,7 +151,7 @@ impl SoundSettingsState {
     }
 
     pub fn bump_version(&self) {
-        self.version.fetch_add(1, Ordering::Relaxed);
+        self.version.fetch_add(1, Ordering::Release);
     }
 
     pub fn read_all(&self) -> Vec<f32> {
