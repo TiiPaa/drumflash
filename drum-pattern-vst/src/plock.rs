@@ -11,7 +11,7 @@
 //!   fields follow live global values.
 
 use nih_plug::params::persist::PersistentField;
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::sequencer::pattern::INSTRUMENT_COUNT;
@@ -26,16 +26,16 @@ pub const SPECIAL_FIELD_START: usize = 14;
 pub const SPECIAL_FIELD_COUNT: usize = 32;
 const ATTACK_FIELD: usize = 18;
 
-/// Active-bit mask: one u16 per instrument (bit = step has a plock).
+/// Active-bit mask: one u64 per instrument (bit = step has a plock).
 /// Stored as atomic so the UI can toggle bits without locking.
 pub struct PlockMasks {
-    pub masks: [AtomicU16; INSTRUMENT_COUNT],
+    pub masks: [AtomicU64; INSTRUMENT_COUNT],
 }
 
 impl PlockMasks {
     pub fn new() -> Self {
         Self {
-            masks: std::array::from_fn(|_| AtomicU16::new(0)),
+            masks: std::array::from_fn(|_| AtomicU64::new(0)),
         }
     }
 
@@ -43,8 +43,8 @@ impl PlockMasks {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return false;
         }
-        let mask = self.masks[instrument].load(Ordering::Relaxed);
-        (mask & (1u16 << step)) != 0
+        let mask = self.masks[instrument].load(Ordering::Acquire);
+        (mask & (1u64 << step)) != 0
     }
 
     pub fn set_active(&self, instrument: usize, step: usize, active: bool) {
@@ -53,11 +53,11 @@ impl PlockMasks {
         }
         let mask = self.masks[instrument].load(Ordering::Relaxed);
         let new_mask = if active {
-            mask | (1u16 << step)
+            mask | (1u64 << step)
         } else {
-            mask & !(1u16 << step)
+            mask & !(1u64 << step)
         };
-        self.masks[instrument].store(new_mask, Ordering::Relaxed);
+        self.masks[instrument].store(new_mask, Ordering::Release);
     }
 }
 
@@ -343,19 +343,32 @@ impl PersistentPlockState {
 impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
     fn set(&self, new_value: Vec<u8>) {
         // Binary format: instrument * step * field f32 values (little-endian u32),
-        // followed by instrument u16 step masks, followed by instrument * step u32 field masks.
+        // followed by instrument u64 step masks (new) or u16 step masks (old),
+        // followed by instrument * step u64 field masks.
         let expected_values = INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4;
         let legacy_expected_values = INSTRUMENT_COUNT * STEP_COUNT * LEGACY_FIELD_COUNT * 4;
-        let expected_masks = INSTRUMENT_COUNT * 2;
+        let expected_masks_old = INSTRUMENT_COUNT * 2;  // u16 (legacy format)
+        let expected_masks_new = INSTRUMENT_COUNT * 8;  // u64 (current format)
         let expected_field_masks = INSTRUMENT_COUNT * STEP_COUNT * 8;
-        let value_field_count = if new_value.len() >= expected_values + expected_masks {
+
+        // Detect format based on total size.
+        let has_new_format = new_value.len() >= expected_values + expected_masks_new + expected_field_masks
+            || (new_value.len() >= legacy_expected_values + expected_masks_new + expected_field_masks
+                && new_value.len() < expected_values + expected_masks_old + expected_field_masks);
+
+        let value_field_count = if new_value.len() >= expected_values + expected_masks_new {
             FIELD_COUNT
-        } else if new_value.len() >= legacy_expected_values + expected_masks {
+        } else if new_value.len() >= legacy_expected_values + expected_masks_new {
+            LEGACY_FIELD_COUNT
+        } else if new_value.len() >= expected_values + expected_masks_old {
+            FIELD_COUNT
+        } else if new_value.len() >= legacy_expected_values + expected_masks_old {
             LEGACY_FIELD_COUNT
         } else {
             return;
         };
         let values_len = INSTRUMENT_COUNT * STEP_COUNT * value_field_count * 4;
+        let masks_size = if has_new_format { expected_masks_new } else { expected_masks_old };
 
         let mut offset = 0usize;
         for inst in 0..INSTRUMENT_COUNT {
@@ -374,13 +387,29 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
             }
         }
         for inst in 0..INSTRUMENT_COUNT {
-            let bytes = [new_value[offset], new_value[offset + 1]];
-            let mask = u16::from_le_bytes(bytes);
-            self.state.masks.masks[inst].store(mask, Ordering::Relaxed);
-            offset += 2;
+            if has_new_format {
+                let bytes = [
+                    new_value[offset],
+                    new_value[offset + 1],
+                    new_value[offset + 2],
+                    new_value[offset + 3],
+                    new_value[offset + 4],
+                    new_value[offset + 5],
+                    new_value[offset + 6],
+                    new_value[offset + 7],
+                ];
+                let mask = u64::from_le_bytes(bytes);
+                self.state.masks.masks[inst].store(mask, Ordering::Relaxed);
+                offset += 8;
+            } else {
+                let bytes = [new_value[offset], new_value[offset + 1]];
+                let mask = u16::from_le_bytes(bytes) as u64;
+                self.state.masks.masks[inst].store(mask, Ordering::Relaxed);
+                offset += 2;
+            }
         }
 
-        if new_value.len() >= values_len + expected_masks + expected_field_masks {
+        if new_value.len() >= values_len + masks_size + expected_field_masks {
             for inst in 0..INSTRUMENT_COUNT {
                 for step in 0..STEP_COUNT {
                     let bytes = [
@@ -421,7 +450,7 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
     {
         let mut result = Vec::with_capacity(
             INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4
-                + INSTRUMENT_COUNT * 2
+                + INSTRUMENT_COUNT * 8
                 + INSTRUMENT_COUNT * STEP_COUNT * 8,
         );
         for inst in 0..INSTRUMENT_COUNT {
@@ -444,6 +473,324 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentPlockState {
                 result.extend_from_slice(&self.state.field_masks.get_raw(inst, step).to_le_bytes());
             }
         }
+        f(&result)
+    }
+}
+
+// ============================================================================
+// Sequencer Plocks — per-step sequencer parameters (probability, stutter, etc.)
+// ============================================================================
+
+/// Condition types for sequencer step parameters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepCondition {
+    Always = 0,
+    First = 1,        // First loop/bar only
+    NotFirst = 2,     // Not first loop/bar
+    Half1 = 3,        // 1/2 — first half
+    Half2 = 4,        // 2/2 — second half
+    Third1 = 5,       // 1/3
+    Third2 = 6,       // 2/3
+    Third3 = 7,       // 3/3
+    Fourth1 = 8,      // 1/4
+    Fourth2 = 9,      // 2/4
+    Fourth3 = 10,     // 3/4
+    Fourth4 = 11,     // 4/4
+}
+
+impl Default for StepCondition {
+    fn default() -> Self {
+        StepCondition::Always
+    }
+}
+
+impl StepCondition {
+    pub fn label(&self) -> &'static str {
+        match self {
+            StepCondition::Always => "Always",
+            StepCondition::First => "1st loop only",
+            StepCondition::NotFirst => "Not 1st loop",
+            StepCondition::Half1 => "1/2",
+            StepCondition::Half2 => "2/2",
+            StepCondition::Third1 => "1/3",
+            StepCondition::Third2 => "2/3",
+            StepCondition::Third3 => "3/3",
+            StepCondition::Fourth1 => "1/4",
+            StepCondition::Fourth2 => "2/4",
+            StepCondition::Fourth3 => "3/4",
+            StepCondition::Fourth4 => "4/4",
+        }
+    }
+    
+    pub fn all() -> &'static [StepCondition] {
+        &[
+            StepCondition::Always,
+            StepCondition::First,
+            StepCondition::NotFirst,
+            StepCondition::Half1,
+            StepCondition::Half2,
+            StepCondition::Third1,
+            StepCondition::Third2,
+            StepCondition::Third3,
+            StepCondition::Fourth1,
+            StepCondition::Fourth2,
+            StepCondition::Fourth3,
+            StepCondition::Fourth4,
+        ]
+    }
+}
+
+/// Sequencer parameters for a single step × instrument.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SequencerStepParams {
+    pub probability: f32,      // 0.0 - 1.0, default 1.0 = always trigger
+    pub stutter_count: u8,     // 1-8, default 1 = no stutter
+    pub condition: StepCondition,
+    pub microtiming_ms: f32,   // -50.0 to +50.0, default 0.0
+}
+
+impl Default for SequencerStepParams {
+    fn default() -> Self {
+        Self {
+            probability: 1.0,
+            stutter_count: 1,
+            condition: StepCondition::Always,
+            microtiming_ms: 0.0,
+        }
+    }
+}
+
+/// Lock-free storage for sequencer step parameters.
+/// Same pattern as PlockState: masks + per-cell values.
+pub struct SequencerPlockState {
+    pub masks: [AtomicU64; INSTRUMENT_COUNT],
+    pub probabilities: Vec<Vec<AtomicU32>>,
+    pub stutters: Vec<Vec<AtomicU32>>,
+    pub conditions: Vec<Vec<AtomicU32>>,
+    pub microtimings: Vec<Vec<AtomicU32>>,
+}
+
+impl SequencerPlockState {
+    pub fn new() -> Self {
+        Self {
+            masks: std::array::from_fn(|_| AtomicU64::new(0)),
+            probabilities: (0..INSTRUMENT_COUNT)
+                .map(|_| (0..STEP_COUNT).map(|_| AtomicU32::new(f32::to_bits(1.0))).collect())
+                .collect(),
+            stutters: (0..INSTRUMENT_COUNT)
+                .map(|_| (0..STEP_COUNT).map(|_| AtomicU32::new(f32::to_bits(1.0))).collect())
+                .collect(),
+            conditions: (0..INSTRUMENT_COUNT)
+                .map(|_| (0..STEP_COUNT).map(|_| AtomicU32::new(0)).collect())
+                .collect(),
+            microtimings: (0..INSTRUMENT_COUNT)
+                .map(|_| (0..STEP_COUNT).map(|_| AtomicU32::new(0)).collect())
+                .collect(),
+        }
+    }
+
+    pub fn is_active(&self, instrument: usize, step: usize) -> bool {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return false;
+        }
+        let mask = self.masks[instrument].load(Ordering::Acquire);
+        (mask & (1u64 << step)) != 0
+    }
+
+    pub fn set_active(&self, instrument: usize, step: usize, active: bool) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        let mask = self.masks[instrument].load(Ordering::Relaxed);
+        let new_mask = if active {
+            mask | (1u64 << step)
+        } else {
+            mask & !(1u64 << step)
+        };
+        self.masks[instrument].store(new_mask, Ordering::Release);
+    }
+
+    pub fn get(&self, instrument: usize, step: usize) -> Option<SequencerStepParams> {
+        if !self.is_active(instrument, step) {
+            return None;
+        }
+        Some(SequencerStepParams {
+            probability: f32::from_bits(self.probabilities[instrument][step].load(Ordering::Relaxed)),
+            stutter_count: f32::from_bits(self.stutters[instrument][step].load(Ordering::Relaxed)) as u8,
+            condition: match self.conditions[instrument][step].load(Ordering::Relaxed) {
+                1 => StepCondition::First,
+                2 => StepCondition::NotFirst,
+                3 => StepCondition::Half1,
+                4 => StepCondition::Half2,
+                5 => StepCondition::Third1,
+                6 => StepCondition::Third2,
+                7 => StepCondition::Third3,
+                8 => StepCondition::Fourth1,
+                9 => StepCondition::Fourth2,
+                10 => StepCondition::Fourth3,
+                11 => StepCondition::Fourth4,
+                _ => StepCondition::Always,
+            },
+            microtiming_ms: f32::from_bits(self.microtimings[instrument][step].load(Ordering::Relaxed)),
+        })
+    }
+
+    pub fn set(&self, instrument: usize, step: usize, params: &SequencerStepParams) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        self.probabilities[instrument][step].store(params.probability.to_bits(), Ordering::Relaxed);
+        self.stutters[instrument][step].store((params.stutter_count as f32).to_bits(), Ordering::Relaxed);
+        self.conditions[instrument][step].store(params.condition as u32, Ordering::Relaxed);
+        self.microtimings[instrument][step].store(params.microtiming_ms.to_bits(), Ordering::Relaxed);
+        self.set_active(instrument, step, true);
+    }
+
+    pub fn set_probability(&self, instrument: usize, step: usize, value: f32) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        self.probabilities[instrument][step].store(value.to_bits(), Ordering::Relaxed);
+        self.set_active(instrument, step, true);
+    }
+
+    pub fn set_stutter(&self, instrument: usize, step: usize, value: u8) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        self.stutters[instrument][step].store((value as f32).to_bits(), Ordering::Relaxed);
+        self.set_active(instrument, step, true);
+    }
+
+    pub fn set_condition(&self, instrument: usize, step: usize, value: StepCondition) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        self.conditions[instrument][step].store(value as u32, Ordering::Relaxed);
+        self.set_active(instrument, step, true);
+    }
+
+    pub fn set_microtiming(&self, instrument: usize, step: usize, value: f32) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        self.microtimings[instrument][step].store(value.to_bits(), Ordering::Relaxed);
+        self.set_active(instrument, step, true);
+    }
+
+    pub fn clear(&self, instrument: usize, step: usize) {
+        self.set_active(instrument, step, false);
+    }
+}
+
+#[derive(Clone)]
+pub struct PersistentSequencerPlockState {
+    pub state: Arc<SequencerPlockState>,
+}
+
+impl PersistentSequencerPlockState {
+    pub fn new() -> Self {
+        Self {
+            state: Arc::new(SequencerPlockState::new()),
+        }
+    }
+}
+
+impl<'a> PersistentField<'a, Vec<u8>> for PersistentSequencerPlockState {
+    fn set(&self, new_value: Vec<u8>) {
+        let cell_count = INSTRUMENT_COUNT * STEP_COUNT;
+        let expected_size = cell_count * 4 * 4 + INSTRUMENT_COUNT * 8;
+
+        if new_value.len() < expected_size {
+            return;
+        }
+
+        let mut offset = 0;
+        let read_f32 = |bytes: &[u8], idx: &mut usize| -> f32 {
+            let val = f32::from_le_bytes([
+                bytes[*idx], bytes[*idx + 1], bytes[*idx + 2], bytes[*idx + 3]
+            ]);
+            *idx += 4;
+            val
+        };
+
+        let read_u32 = |bytes: &[u8], idx: &mut usize| -> u32 {
+            let val = u32::from_le_bytes([
+                bytes[*idx], bytes[*idx + 1], bytes[*idx + 2], bytes[*idx + 3]
+            ]);
+            *idx += 4;
+            val
+        };
+
+        for inst in 0..INSTRUMENT_COUNT {
+            for step in 0..STEP_COUNT {
+                let prob = read_f32(&new_value, &mut offset);
+                let stutter = read_f32(&new_value, &mut offset) as u8;
+                let condition = match read_u32(&new_value, &mut offset) {
+                    1 => StepCondition::First,
+                    2 => StepCondition::NotFirst,
+                    3 => StepCondition::Half1,
+                    4 => StepCondition::Half2,
+                    5 => StepCondition::Third1,
+                    6 => StepCondition::Third2,
+                    7 => StepCondition::Third3,
+                    8 => StepCondition::Fourth1,
+                    9 => StepCondition::Fourth2,
+                    10 => StepCondition::Fourth3,
+                    11 => StepCondition::Fourth4,
+                    _ => StepCondition::Always,
+                };
+                let micro = read_f32(&new_value, &mut offset);
+
+                self.state.probabilities[inst][step].store(prob.to_bits(), Ordering::Relaxed);
+                self.state.stutters[inst][step].store((stutter as f32).to_bits(), Ordering::Relaxed);
+                self.state.conditions[inst][step].store(condition as u32, Ordering::Relaxed);
+                self.state.microtimings[inst][step].store(micro.to_bits(), Ordering::Relaxed);
+            }
+        }
+
+        for inst in 0..INSTRUMENT_COUNT {
+            let mask = u64::from_le_bytes([
+                new_value[offset], new_value[offset + 1], new_value[offset + 2], new_value[offset + 3],
+                new_value[offset + 4], new_value[offset + 5], new_value[offset + 6], new_value[offset + 7],
+            ]);
+            offset += 8;
+            self.state.masks[inst].store(mask, Ordering::Relaxed);
+        }
+    }
+
+    fn map<F, T>(&self, f: F) -> T
+    where
+        F: Fn(&Vec<u8>) -> T,
+    {
+        let mut result = Vec::with_capacity(INSTRUMENT_COUNT * STEP_COUNT * 4 * 4 + INSTRUMENT_COUNT * 8);
+
+        for inst in 0..INSTRUMENT_COUNT {
+            for step in 0..STEP_COUNT {
+                result.extend_from_slice(
+                    &f32::from_bits(self.state.probabilities[inst][step].load(Ordering::Relaxed))
+                        .to_le_bytes(),
+                );
+                result.extend_from_slice(
+                    &f32::from_bits(self.state.stutters[inst][step].load(Ordering::Relaxed))
+                        .to_le_bytes(),
+                );
+                result.extend_from_slice(
+                    &self.state.conditions[inst][step].load(Ordering::Relaxed).to_le_bytes(),
+                );
+                result.extend_from_slice(
+                    &f32::from_bits(self.state.microtimings[inst][step].load(Ordering::Relaxed))
+                        .to_le_bytes(),
+                );
+            }
+        }
+
+        for inst in 0..INSTRUMENT_COUNT {
+            result.extend_from_slice(
+                &self.state.masks[inst].load(Ordering::Relaxed).to_le_bytes(),
+            );
+        }
+
         f(&result)
     }
 }
@@ -638,5 +985,63 @@ mod tests {
             .get_settings(0, 0, &global)
             .expect("plock should exist");
         assert_eq!(restored.decay, global.decay); // falls back to global
+    }
+
+    #[test]
+    fn plock_supports_steps_16_to_63() {
+        let state = PlockState::new();
+        let global = base_settings();
+
+        // Set plocks at boundaries beyond u16 range
+        state.set_field(0, 16, 1, 0.99);
+        state.set_field(0, 31, 2, 0.42);
+        state.set_field(0, 63, 3, 5000.0);
+
+        assert!(state.masks.is_active(0, 16));
+        assert!(state.masks.is_active(0, 31));
+        assert!(state.masks.is_active(0, 63));
+
+        let r16 = state.get_settings(0, 16, &global).expect("plock at step 16");
+        assert_eq!(r16.decay, 0.99);
+
+        let r31 = state.get_settings(0, 31, &global).expect("plock at step 31");
+        assert_eq!(r31.volume, 0.42);
+
+        let r63 = state.get_settings(0, 63, &global).expect("plock at step 63");
+        assert_eq!(r63.filter_freq, 5000.0);
+    }
+
+    #[test]
+    fn plock_persistence_roundtrips_step_63() {
+        let state = PlockState::new();
+        let mut settings = base_settings();
+        settings.decay = 0.99;
+        settings.volume = 0.42;
+        settings.filter_freq = 5000.0;
+
+        state.set_settings(0, 16, &settings);
+        state.set_settings(1, 31, &settings);
+        state.set_settings(2, 63, &settings);
+
+        // Serialize from the populated state and restore into a fresh one.
+        let persistent_src = PersistentPlockState { state };
+        let serialized = persistent_src.map(|v| v.clone());
+
+        let persistent_dst = PersistentPlockState::new();
+        persistent_dst.set(serialized);
+
+        let global = base_settings();
+        assert!(persistent_dst.state.masks.is_active(0, 16));
+        assert!(persistent_dst.state.masks.is_active(1, 31));
+        assert!(persistent_dst.state.masks.is_active(2, 63));
+
+        let r16 = persistent_dst.state.get_settings(0, 16, &global).expect("restored step 16");
+        assert_eq!(r16.decay, 0.99);
+
+        let r31 = persistent_dst.state.get_settings(1, 31, &global).expect("restored step 31");
+        assert_eq!(r31.volume, 0.42);
+
+        let r63 = persistent_dst.state.get_settings(2, 63, &global).expect("restored step 63");
+        assert_eq!(r63.filter_freq, 5000.0);
     }
 }

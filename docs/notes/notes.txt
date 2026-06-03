@@ -1,2 +1,3 @@
-- intégrer les éléments graphiques définis avec Claude Design
-- pb : le plock doit être lié à la page et pas à la position dans la grid
+- ajout un instrument de type midi (avec du midi out)
+- virer le play / bpm (sera toujours synchroniser au DAW)
+

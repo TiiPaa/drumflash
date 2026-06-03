@@ -1,5 +1,148 @@
 ﻿# Changelog
 
+## 2026-06-03 — Fix Plocks Séquenceur: defaults, conditions, stutter spacing
+
+**Build:** `20260603-211721`
+**Commits:** Corrections bugs [59] Plocks Séquenceur
+
+### Changes
+- **Fix `SequencerStepParams::default()`**
+  - `probability` = `1.0` (was `0.0` — new seq-plocks were silent by default)
+  - `stutter_count` = `1` (was `0` — caused no-trigger)
+  - `condition` = `Always`, `microtiming_ms` = `0.0`
+- **Retrait Fill / NotFill de `StepCondition`**
+  - Supprimés de l'enum, du label, de `all()`, des match arms `lib.rs` et persistance
+  - Seuls `First` / `NotFirst` restent comme conditions de loop
+- **Fix Stutter: espacement temporel entre triggers**
+  - `pending_stutters` : file fixe 128 slots `(samples_until, voice_idx, velocity, step)`
+  - Chaque trigger stutter est espacé de `step_duration / stutter_count` samples
+  - Évite l'écrasement de tous les triggers au même `sample_idx`
+  - `fire_voice_trigger()` helper extrait pour uniformiser audio + MIDI
+
+---
+
+## 2026-06-03 — Revue code: Plocks 64 steps, Export MIDI, Atomics, NoteOff timing
+
+**Build:** `20260603-095833`
+**Commits:** Revue de code et corrections post-revue
+
+### Changes
+- **Plocks: support complet des 64 steps**
+  - `PlockMasks` passe de `AtomicU16` à `AtomicU64` (masque d'activation par instrument)
+  - Persistance `plock-v1` rétrocompatible : détection auto ancien format (masques u16) vs nouveau (u64)
+  - Tests ajoutés : `plock_supports_steps_16_to_63`, `plock_persistence_roundtrips_step_63`
+- **Export MIDI: respecte la longueur du pattern**
+  - `export_pattern_to_midi_data()` accepte `pattern_length` (1-64 steps)
+  - Boutons Export MIDI et Drag passent la longueur courante
+  - Test ajouté : `midi_export_includes_steps_beyond_first_page`
+- **Fix NoteOff timing hors buffer**
+  - `NoteOff` envoyé à `sample_idx` au lieu de `sample_idx + 1` pour éviter un offset égal à la taille du buffer
+- **Sécurisation atomics UI → audio**
+  - `bump_version()` : `Release` au lieu de `Relaxed`
+  - Lecture version côté audio : `Acquire` au lieu de `Relaxed`
+  - `PlockMasks.set_active()` : `Release`, `is_active()` : `Acquire`
+  - `voice_test_triggers` : `Release` en UI, `Acquire` en audio
+- **Nettoyage**
+  - `Cargo.toml` : description corrigée "64-step drum sequencer"
+  - `ui.rs` : suppression du double `algo` et commentaire dupliqué
+  - Section "Dev: Preset Dumps" masquée en build release (`cfg!(debug_assertions)`)
+
+---
+
+## 2026-06-03 — Plocks Séquenceur: Phases 1-5 (Probabilité + Stutter + Conditions + UI)
+
+**Build:** `20260603-205246`
+**Commits:** Architecture séquenceur plock complète avec probabilité, stutter, conditions et UI couleurs
+
+### Changes
+- **Nouveau système: Sequencer Plocks** (`TODO.md` [59] Phases 1-5)
+  - `SequencerPlockState` : stockage lock-free par step × instrument (4 paramètres)
+  - `StepCondition` enum : Always / 1st loop / Not 1st / 1/2, 2/2 / 1/3, 2/3, 3/3 / 1/4, 2/4, 3/4, 4/4 / Fill / Not Fill
+  - `SequencerStepParams` : probability (0-100%), stutter_count (1-8), condition, microtiming_ms (±50ms)
+  - Persistance DAW via `PersistentSequencerPlockState` (champ `seq-plock-v1`)
+- **Probabilité (Phase 1)**
+  - Slider 0-100% dans le menu contextuel mode "Sequencer"
+  - Skip aléatoire dans le callback audio (`next_rand()` LCG)
+  - Par défaut 100% (pas de changement de comportement)
+- **Stutter (Phase 4)**
+  - Slider 1-8x dans le menu contextuel séquenceur
+  - Déclenche multiple fois le son sur le même step
+- **Conditions (Phase 5)**
+  - Combobox avec toutes les conditions dans le menu contextuel
+  - Filtrage dans le callback audio basé sur `loop_count`
+  - Fonctionne sur le nombre de boucles du pattern
+- **UI**
+  - Label "Plock mode:" avant le switch
+  - Switch "Sound / Sequencer" sous la grille avec couleur adaptative (orange = Sound, violet = Sequencer)
+  - Menu contextuel adaptatif : Sound → plocks instruments, Seq → plocks séquenceur
+  - Bouton "Create Seq Plock" / "Clear Seq Plock"
+- **Couleurs par mode**
+  - Mode Sound : plocks instruments en rouge/orange (inchangé)
+  - Mode Sequencer : plocks séquenceur en violet (#9333EA) visibles uniquement en mode Seq
+  - Les steps affichent les couleurs correspondant au mode actif uniquement
+
+---
+
+## 2026-06-03 — Archivage PoC web + Documentation + Cleanup labels UI
+
+**Build:** `20260603-171338`
+**Commits:** Archivage PoC web, création docs infrastructure/utilisateur, cleanup labels
+
+### Changes
+- **Archivage du PoC web**
+  - Déplacement de `index.html` et `index.js` vers `archive/web-poc/`
+  - Le plugin VST3 est désormais le seul produit actif
+  - README.md mis à jour avec la nouvelle structure du repo
+- **Documentation**
+  - `docs/infrastructure.md` créé — guide build, architecture technique, tests, déploiement
+  - `docs/user-guide.md` créé — guide utilisateur complet (UI, plocks, export, multi-out, analog)
+- **Cleanup labels UI**
+  - Suppression des préfixes `--` devant "Link to global", "Linked to global", "Mixed"
+  - Correction "Snapshot Snapshot" → "Snapshot"
+  - Correction "Random Random" → "Random"
+  - Correction `Dump failed: { }` → `Dump failed: {}`
+
+---
+
+## 2026-06-03 — Copier/coller de plock + cleanup labels UI
+
+**Build:** `20260603-145433`
+**Commits:** Plock copy/paste + audit et correction des labels UI
+
+### Changes
+- **Copier/coller de plock individuel** (`TODO.md` [61b])
+  - Bouton "Copy Plock" dans le menu contextuel d'une step avec plock existant
+  - Bouton "Paste Plock" disponible quand le clipboard contient un plock du même instrument
+  - Stockage dans `EditorUIState.plock_clipboard` (`SinglePlockClipboard`)
+  - Le collage écrase le plock existant sur la step cible
+  - Protection multi-instrument : on ne colle que si l'instrument correspond
+  - Disponible à la fois dans le mode "création" (step sans plock) et "édition" (step avec plock)
+- **Cleanup labels UI**
+  - Suppression des préfixes `--` devant "Link to global", "Linked to global", "Mixed"
+  - Correction "Snapshot Snapshot current settings" → "Snapshot current settings"
+  - Correction "Random Random" → "Random"
+  - Correction "-' Clear plock" → "Clear plock"
+  - Correction format string `Dump failed: { }` → `Dump failed: {}`
+
+---
+
+## 2026-06-03 — Slider Analog: défaut 0.3 sur instruments opérationnels
+
+**Build:** `20260603-121232`
+**Commits:** Post-revue — Valeur par défaut du slider Analog
+
+### Changes
+- **Slider "Analog" passe à 0.3 par défaut sur 7 instruments**
+  - Kick, Snare, Tom1, Tom2, Tom3, Cymbal, BassDrum808
+  - Correspond au drift opérationnel (pas une alternance binaire)
+  - Les instruments avec analog fixé/inactif restent à 1.0 (HiHat, OpenHiHat, Clap, Ride, Snare606, Zap)
+- **`instrument_registry.rs`** : `sound_settings_default()` retourne `analog: 0.3` pour les 7 instruments concernés
+- **`synthesis/mod.rs`** : `VoiceSettings::default()` et `default_for_instrument()` alignés sur 0.3
+- **`ADDING_AN_INSTRUMENT.md`** : convention Analog ajoutée — 0.3 si opérationnel, 1.0 si fixé/inactif
+- **135 tests passent**, build VST3 installé
+
+---
+
 ## 2026-06-02 — UI: Layout page navigation + x2 + LED lecture
 
 **Build:** `20260602-202855`

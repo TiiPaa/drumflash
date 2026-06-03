@@ -236,6 +236,8 @@ special_params: &[
   release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo ]
 ```
 
+> **Convention Analog :** sur les instruments où le slider Analog est opérationnel (drift analogique audible), la valeur par défaut est **`0.3`**. Sur les instruments où le drift est inactif ou fixé, la valeur reste **`1.0`**. Cela donne un comportement "propre" par défaut tout en préservant la fonctionnalité. Les instruments avec analog fixé sont : HiHat, OpenHiHat, Clap, Ride, Snare606, Perc1.
+
 ### Étape 5 — Plock field mapping
 
 Le menu plock est **data-driven** : il lit `instrument.standard_params` et affiche uniquement les champs déclarés. Chaque `StandardField` a un `plock_field_index()` qui mappe vers l'index interne du plock :
