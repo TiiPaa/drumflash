@@ -44,13 +44,15 @@ fn midi_header(track_length: u32) -> Vec<u8> {
 pub fn export_pattern_to_midi(
     pattern: &SharedPattern,
     bpm: f32,
+    pattern_length: usize,
     path: &Path,
 ) -> std::io::Result<()> {
-    std::fs::write(path, export_pattern_to_midi_data(pattern, bpm))
+    std::fs::write(path, export_pattern_to_midi_data(pattern, bpm, pattern_length))
 }
 
-fn export_pattern_to_midi_data(pattern: &SharedPattern, bpm: f32) -> Vec<u8> {
+fn export_pattern_to_midi_data(pattern: &SharedPattern, bpm: f32, pattern_length: usize) -> Vec<u8> {
     let microseconds_per_quarter = (60_000_000.0 / bpm).round() as u32;
+    let steps = pattern_length.clamp(1, 64);
 
     let mut events: Vec<(u32, Vec<u8>)> = Vec::new();
 
@@ -67,7 +69,7 @@ fn export_pattern_to_midi_data(pattern: &SharedPattern, bpm: f32) -> Vec<u8> {
         ],
     ));
 
-    for step in 0..16 {
+    for step in 0..steps {
         let mask = pattern.load_step_mask(step);
         for (instrument, def) in INSTRUMENTS.iter().enumerate() {
             if (mask & (1u16 << instrument)) != 0 {
@@ -102,8 +104,8 @@ fn export_pattern_to_midi_data(pattern: &SharedPattern, bpm: f32) -> Vec<u8> {
 
 /// Export pattern to MIDI bytes in memory (for drag-and-drop).
 #[allow(dead_code)]
-pub fn export_pattern_to_midi_bytes(pattern: &SharedPattern, bpm: f32) -> std::io::Result<Vec<u8>> {
-    Ok(export_pattern_to_midi_data(pattern, bpm))
+pub fn export_pattern_to_midi_bytes(pattern: &SharedPattern, bpm: f32, pattern_length: usize) -> std::io::Result<Vec<u8>> {
+    Ok(export_pattern_to_midi_data(pattern, bpm, pattern_length))
 }
 
 #[cfg(test)]
@@ -118,7 +120,7 @@ mod tests {
         pattern.set_step_mask(0, 1u16 << perc1_index);
 
         let bytes =
-            export_pattern_to_midi_bytes(&pattern, 120.0).expect("MIDI export should succeed");
+            export_pattern_to_midi_bytes(&pattern, 120.0, 16).expect("MIDI export should succeed");
 
         assert!(
             bytes.windows(3).any(|window| window == [0x99, 37, 100]),
@@ -127,6 +129,26 @@ mod tests {
         assert!(
             bytes.windows(3).any(|window| window == [0x89, 37, 0]),
             "Perc1 note-off event should be exported"
+        );
+    }
+
+    #[test]
+    fn midi_export_includes_steps_beyond_first_page() {
+        let pattern = SharedPattern::new(&Pattern::empty());
+        pattern.set_step_mask(32, 1u16 << 0); // Kick at step 32
+        pattern.set_step_mask(63, 1u16 << 1); // Snare at step 63
+
+        let bytes =
+            export_pattern_to_midi_bytes(&pattern, 120.0, 64).expect("MIDI export should succeed");
+
+        // Kick note = 36, Snare note = 38
+        assert!(
+            bytes.windows(3).any(|window| window == [0x99, 36, 100]),
+            "Kick note-on at step 32 should be exported"
+        );
+        assert!(
+            bytes.windows(3).any(|window| window == [0x99, 38, 100]),
+            "Snare note-on at step 63 should be exported"
         );
     }
 }
