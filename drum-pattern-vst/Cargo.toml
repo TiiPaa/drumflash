@@ -3,7 +3,7 @@ name = "drum-pattern-vst"
 version = "0.1.0"
 edition = "2021"
 authors = ["Flash Drum"]
-description = "A 16-step drum sequencer VST3 plugin"
+description = "A 64-step drum sequencer VST3 plugin"
 license = "GPL-3.0"
 
 [[bin]]

@@ -21,7 +21,7 @@ mod ui;
 mod preset_dumps;
 
 use generator::{GeneratorType, Style};
-use plock::PersistentPlockState;
+use plock::{PersistentPlockState, PersistentSequencerPlockState};
 use sequencer::{pattern::PersistentPattern, Pattern, Sequencer, SharedPattern};
 use sound_settings::{PersistentSoundSettings, SoundSettingsState};
 use synthesis::{DrumSynthesizer, DrumVoice};
@@ -66,6 +66,13 @@ pub struct DrumFlashVst {
     last_sound_settings_version: u64,
     /// Last host beat position, used to detect seeks.
     last_host_pos: Option<f64>,
+    /// Simple LCG RNG state for probability checks (audio-thread safe).
+    rng_state: AtomicU32,
+    /// Pending stutter triggers: (samples_until, voice_idx, velocity, step).
+    /// Fixed-size queue for audio-thread safety (no allocation).
+    /// Max: 13 voices × 7 extra triggers = 91, rounded up to 128.
+    pending_stutters: [(u32, usize, f32, u32); 128],
+    pending_stutter_count: usize,
 }
 
 #[derive(Params)]
@@ -81,6 +88,9 @@ pub struct DrumFlashParams {
 
     #[persist = "plock-v1"]
     pub plock_state: PersistentPlockState,
+
+    #[persist = "seq-plock-v1"]
+    pub seq_plock_state: PersistentSequencerPlockState,
 
     #[id = "master_vol"]
     pub master_volume: FloatParam,
@@ -466,6 +476,7 @@ impl Default for DrumFlashParams {
             pattern_state,
             sound_settings: PersistentSoundSettings::new(),
             plock_state: PersistentPlockState::new(),
+            seq_plock_state: PersistentSequencerPlockState::new(),
 
             master_volume: FloatParam::new(
                 "Master Volume",
@@ -1353,6 +1364,9 @@ impl Default for DrumFlashVst {
             sound_settings_state: sound_settings_state.clone(),
             last_sound_settings_version: 0,
             last_host_pos: None,
+            rng_state: AtomicU32::new(0xACE1_0000),
+            pending_stutters: [(0, 0, 0.0, 0); 128],
+            pending_stutter_count: 0,
         };
         plugin.sequencer.play();
         plugin
@@ -1362,6 +1376,14 @@ impl Default for DrumFlashVst {
 impl DrumFlashVst {
     fn remember_current_pattern(&mut self) {
         self.last_step_masks = self.pattern.step_masks();
+    }
+
+    /// Simple LCG random number generator (audio-thread safe, no allocation).
+    fn next_rand(&self) -> f32 {
+        let prev = self.rng_state.load(Ordering::Relaxed);
+        let next = prev.wrapping_mul(1103515245).wrapping_add(12345);
+        self.rng_state.store(next, Ordering::Relaxed);
+        ((next >> 16) & 0x7FFF) as f32 / 32767.0
     }
 
     /// Build VoiceSettings including the correct special params for each instrument.
@@ -1450,6 +1472,42 @@ impl DrumFlashVst {
             .state
             .get_settings(voice_idx, step, &global)
             .unwrap_or(global)
+    }
+
+    /// Fire a single voice trigger (audio + MIDI) at the given sample offset.
+    fn fire_voice_trigger(
+        &mut self,
+        voice_idx: usize,
+        velocity: f32,
+        step: u32,
+        sample_idx: usize,
+        context: &mut impl ProcessContext<Self>,
+        hihat_chokes_oh: bool,
+    ) {
+        let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+            return;
+        };
+        let settings = self.voice_settings_at_step(voice_idx, step as usize);
+        self.synthesizer.set_voice_settings(voice, settings);
+        self.synthesizer.trigger(voice_idx, velocity);
+        if hihat_chokes_oh && voice_idx == 2 {
+            self.synthesizer.reset_voice(3);
+        }
+        let note = crate::instrument_registry::INSTRUMENTS[voice_idx].midi_note;
+        context.send_event(NoteEvent::NoteOn {
+            timing: sample_idx as u32,
+            voice_id: None,
+            channel: 9,
+            note,
+            velocity,
+        });
+        context.send_event(NoteEvent::NoteOff {
+            timing: sample_idx as u32,
+            voice_id: None,
+            channel: 9,
+            note,
+            velocity: 0.0,
+        });
     }
 }
 
@@ -1635,7 +1693,7 @@ impl Plugin for DrumFlashVst {
         // Previously this was inside iter_samples, which caused a click:
         // a trigger with plock settings would be overwritten by global settings
         // in the same buffer, creating a one-sample discontinuity.
-        let current_version = self.sound_settings_state.version.load(Ordering::Relaxed);
+        let current_version = self.sound_settings_state.version.load(Ordering::Acquire);
         if current_version != self.last_sound_settings_version {
             self.last_sound_settings_version = current_version;
             for (i, inst) in self.sound_settings_state.instruments.iter().enumerate() {
@@ -1679,7 +1737,24 @@ impl Plugin for DrumFlashVst {
             }
         }
 
+        // Pre-calculate step duration in samples for stutter spacing.
+        let step_duration_samples = (sample_rate * 60.0 / (bpm * 4.0)).max(1.0);
+
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
+            // Process pending stutter triggers (decrement countdown, fire at 0).
+            let mut i = 0;
+            while i < self.pending_stutter_count {
+                if self.pending_stutters[i].0 == 0 {
+                    let (_, voice_idx, velocity, step) = self.pending_stutters[i];
+                    self.fire_voice_trigger(voice_idx, velocity, step, sample_idx, context, hihat_chokes_oh);
+                    self.pending_stutters[i] = self.pending_stutters[self.pending_stutter_count - 1];
+                    self.pending_stutter_count -= 1;
+                } else {
+                    self.pending_stutters[i].0 -= 1;
+                    i += 1;
+                }
+            }
+
             let swing = self.params.swing.value();
             let groove_type = self.params.groove_type.value();
             let triggers = self
@@ -1689,40 +1764,66 @@ impl Plugin for DrumFlashVst {
             let current_steps = self.sequencer.current_steps();
             for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
                 if *should_trigger {
-                    let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
-                        continue;
+                    let step = current_steps[voice_idx] as usize;
+                    let seq_params = self.params.seq_plock_state.state.get(voice_idx, step);
+                    
+                    // Apply sequencer probability
+                    let prob = seq_params.map(|sp| sp.probability).unwrap_or(1.0);
+                    if prob < 1.0 && self.next_rand() > prob {
+                        continue; // Skip this trigger based on probability
+                    }
+                    
+                    // Apply step conditions
+                    let loop_count = self.sequencer.loop_count();
+                    let condition_passes = if let Some(sp) = seq_params {
+                        use crate::plock::StepCondition::*;
+                        match sp.condition {
+                            Always => true,
+                            First => loop_count == 0,
+                            NotFirst => loop_count > 0,
+                            Half1 => loop_count % 2 == 0,
+                            Half2 => loop_count % 2 == 1,
+                            Third1 => loop_count % 3 == 0,
+                            Third2 => loop_count % 3 == 1,
+                            Third3 => loop_count % 3 == 2,
+                            Fourth1 => loop_count % 4 == 0,
+                            Fourth2 => loop_count % 4 == 1,
+                            Fourth3 => loop_count % 4 == 2,
+                            Fourth4 => loop_count % 4 == 3,
+                        }
+                    } else {
+                        true // No condition = always pass
                     };
-
-                    let settings = self.voice_settings_at_step(voice_idx, current_steps[voice_idx]);
-                    self.synthesizer.set_voice_settings(voice, settings);
-
-                    self.synthesizer.trigger(voice_idx, *velocity);
-
-                    // Hi-hat chokes open hi-hat
-                    if hihat_chokes_oh && voice_idx == 2 {
-                        self.synthesizer.reset_voice(3);
+                    if !condition_passes {
+                        continue;
                     }
 
-                    let note = crate::instrument_registry::INSTRUMENTS[voice_idx].midi_note;
-                    context.send_event(NoteEvent::NoteOn {
-                        timing: sample_idx as u32,
-                        voice_id: None,
-                        channel: 9,
-                        note,
-                        velocity: *velocity,
-                    });
-                    context.send_event(NoteEvent::NoteOff {
-                        timing: (sample_idx + 1) as u32,
-                        voice_id: None,
-                        channel: 9,
-                        note,
-                        velocity: 0.0,
-                    });
+                    let stutter = seq_params.as_ref().map(|sp| sp.stutter_count.max(1)).unwrap_or(1);
+                    let step_for_trigger = current_steps[voice_idx] as u32;
+
+                    // Fire the first trigger immediately.
+                    self.fire_voice_trigger(voice_idx, *velocity, step_for_trigger, sample_idx, context, hihat_chokes_oh);
+
+                    // Schedule additional stutter triggers with temporal spacing.
+                    if stutter > 1 {
+                        let spacing = (step_duration_samples / stutter as f32).max(1.0) as u32;
+                        for k in 1..stutter {
+                            if self.pending_stutter_count < self.pending_stutters.len() {
+                                self.pending_stutters[self.pending_stutter_count] = (
+                                    spacing * k as u32,
+                                    voice_idx,
+                                    *velocity,
+                                    step_for_trigger,
+                                );
+                                self.pending_stutter_count += 1;
+                            }
+                        }
+                    }
                 }
             }
 
             for (voice_idx, trigger) in self.voice_test_triggers.iter().enumerate() {
-                if trigger.swap(false, Ordering::Relaxed) {
+                if trigger.swap(false, Ordering::Acquire) {
                     let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                         continue;
                     };
