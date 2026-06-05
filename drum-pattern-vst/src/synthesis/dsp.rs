@@ -412,6 +412,22 @@ impl ExpDecayEnvelope {
         self.hold_remaining = self.hold_time;
     }
 
+    /// Hard machine-gun retrigger: snap to 0, then full attack ramp to peak.
+    /// Unlike `trigger_at_peak` which ramps from the current value (smooth
+    /// roll), this always restarts the attack from silence.
+    pub fn trigger_from_zero(&mut self, peak: f32) {
+        let peak = peak.max(0.0);
+        self.value = 0.0;
+        self.attack_peak = peak;
+        self.hold_remaining = self.hold_time;
+        if self.attack_time > 0.0 {
+            self.attack_start_value = 0.0;
+            self.attack_remaining = self.attack_time;
+        } else {
+            self.value = peak;
+        }
+    }
+
     /// Returns the envelope's current value without ticking the decay. Useful for
     /// chaining envelopes that need to observe each other's state at trigger time.
     pub fn current(&self) -> f32 {
@@ -547,6 +563,13 @@ impl DecayReleaseEnvelope {
         // shelf, trigger_at_peak keeps it (attack_start_value = current value)
         // and the ramp will pull it back toward the shelf.
         self.release.trigger_at_peak(self.release_shelf);
+    }
+
+    /// Hard machine-gun retrigger: both decay and release stages restart
+    /// from zero with full attack ramps.
+    pub fn trigger_hard(&mut self) {
+        self.decay.trigger_from_zero(1.0);
+        self.release.trigger_from_zero(self.release_shelf);
     }
 
     #[inline]

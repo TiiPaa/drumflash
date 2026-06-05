@@ -73,13 +73,16 @@ impl Pattern {
         let mut pattern = Self::empty();
         pattern.name = "Rock".to_string();
 
-        pattern.steps[0].instruments[0] = true;
-        pattern.steps[4].instruments[0] = true;
-        pattern.steps[8].instruments[0] = true;
-        pattern.steps[12].instruments[0] = true;
+        for bar in 0..(STEP_COUNT / 16) {
+            let offset = bar * 16;
+            pattern.steps[offset + 0].instruments[0] = true;
+            pattern.steps[offset + 4].instruments[0] = true;
+            pattern.steps[offset + 8].instruments[0] = true;
+            pattern.steps[offset + 12].instruments[0] = true;
 
-        pattern.steps[4].instruments[1] = true;
-        pattern.steps[12].instruments[1] = true;
+            pattern.steps[offset + 4].instruments[1] = true;
+            pattern.steps[offset + 12].instruments[1] = true;
+        }
 
         for i in (0..STEP_COUNT).step_by(2) {
             pattern.steps[i].instruments[2] = true;
@@ -92,25 +95,28 @@ impl Pattern {
         let mut pattern = Self::empty();
         pattern.name = "Funk".to_string();
 
-        pattern.steps[0].instruments[0] = true;
-        pattern.steps[3].instruments[0] = true;
-        pattern.steps[6].instruments[0] = true;
-        pattern.steps[10].instruments[0] = true;
+        for bar in 0..(STEP_COUNT / 16) {
+            let offset = bar * 16;
+            pattern.steps[offset + 0].instruments[0] = true;
+            pattern.steps[offset + 3].instruments[0] = true;
+            pattern.steps[offset + 6].instruments[0] = true;
+            pattern.steps[offset + 10].instruments[0] = true;
 
-        pattern.steps[4].instruments[1] = true;
-        pattern.steps[7].instruments[1] = true;
-        pattern.steps[12].instruments[1] = true;
+            pattern.steps[offset + 4].instruments[1] = true;
+            pattern.steps[offset + 7].instruments[1] = true;
+            pattern.steps[offset + 12].instruments[1] = true;
+
+            pattern.steps[offset + 2].instruments[3] = true;
+            pattern.steps[offset + 6].instruments[3] = true;
+            pattern.steps[offset + 10].instruments[3] = true;
+            pattern.steps[offset + 14].instruments[3] = true;
+        }
 
         for i in 0..STEP_COUNT {
             if i % 3 != 0 {
                 pattern.steps[i].instruments[2] = true;
             }
         }
-
-        pattern.steps[2].instruments[3] = true;
-        pattern.steps[6].instruments[3] = true;
-        pattern.steps[10].instruments[3] = true;
-        pattern.steps[14].instruments[3] = true;
 
         pattern
     }
@@ -119,19 +125,22 @@ impl Pattern {
         let mut pattern = Self::empty();
         pattern.name = "Disco".to_string();
 
-        for beat in [0, 4, 8, 12] {
-            pattern.steps[beat].instruments[0] = true;
-        }
+        for bar in 0..(STEP_COUNT / 16) {
+            let offset = bar * 16;
+            for beat in [0, 4, 8, 12] {
+                pattern.steps[offset + beat].instruments[0] = true;
+            }
 
-        pattern.steps[4].instruments[1] = true;
-        pattern.steps[12].instruments[1] = true;
+            pattern.steps[offset + 4].instruments[1] = true;
+            pattern.steps[offset + 12].instruments[1] = true;
+
+            for step in [3, 7, 11, 15] {
+                pattern.steps[offset + step].instruments[3] = true;
+            }
+        }
 
         for step in 0..STEP_COUNT {
             pattern.steps[step].instruments[2] = true;
-        }
-
-        for step in [3, 7, 11, 15] {
-            pattern.steps[step].instruments[3] = true;
         }
 
         pattern

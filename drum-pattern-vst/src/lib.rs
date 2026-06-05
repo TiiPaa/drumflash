@@ -5,7 +5,7 @@ use nih_plug::{
 };
 use nih_plug_egui::EguiState;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
     Arc,
 };
 
@@ -13,6 +13,7 @@ mod generator;
 mod groove;
 mod instrument_registry;
 mod midi_export;
+mod pattern_bank;
 mod plock;
 mod sequencer;
 mod sound_settings;
@@ -73,6 +74,27 @@ pub struct DrumFlashVst {
     /// Max: 13 voices × 7 extra triggers = 91, rounded up to 128.
     pending_stutters: [(u32, usize, f32, u32); 128],
     pending_stutter_count: usize,
+    /// Pattern save request from UI: slot index + 1 (0 = none).
+    save_pattern_request: Arc<AtomicU32>,
+    /// Pattern load request from UI: slot index + 1 (0 = none).
+    load_pattern_request: Arc<AtomicU32>,
+    /// Clear all plocks request from UI (true = clear on next process()).
+    clear_plocks_request: Arc<AtomicBool>,
+    /// Song mode state (UI-driven, atomic for lock-free access).
+    song_mode: Arc<AtomicBool>,
+    /// Current position in the song sequence (0-63).
+    song_position: Arc<AtomicU32>,
+    /// Last observed loop count to detect pattern wrap.
+    last_loop_count: usize,
+    /// Pending pattern length update after a slot load (1-64, 0 = none).
+    /// The UI thread applies this to the IntParam on the next frame.
+    pending_pattern_length: Arc<AtomicI32>,
+    /// Pre-allocated scratch buffers so restore() never allocates in the audio thread.
+    temp_plock_bytes: [u8; pattern_bank::MAX_PLOCK_BYTES],
+    temp_seq_plock_bytes: [u8; pattern_bank::MAX_SEQ_PLOCK_BYTES],
+    /// Which slot the audio thread last successfully loaded (0-7), or u32::MAX if none.
+    /// The UI thread reads this to keep last_loaded_slot in sync with reality.
+    audio_last_loaded_slot: Arc<AtomicU32>,
 }
 
 #[derive(Params)]
@@ -92,6 +114,9 @@ pub struct DrumFlashParams {
     #[persist = "seq-plock-v1"]
     pub seq_plock_state: PersistentSequencerPlockState,
 
+    #[persist = "pattern-bank-v1"]
+    pub pattern_bank: pattern_bank::PersistentPatternBank,
+
     #[id = "master_vol"]
     pub master_volume: FloatParam,
 
@@ -103,6 +128,16 @@ pub struct DrumFlashParams {
 
     #[id = "groove_type"]
     pub groove_type: EnumParam<groove::GrooveType>,
+
+    /// When true (default), the internal step sequencer generates triggers.
+    /// When false, the plugin responds to incoming MIDI notes on the configured channel.
+    #[id = "int_seq"]
+    pub use_internal_sequencer: BoolParam,
+
+    /// When true, the sequencer plays through the song sequence (P1-P8 chain).
+    /// When false, the current pattern loops normally.
+    #[id = "song_mode"]
+    pub song_mode: BoolParam,
 
     // Per-track groove parameters (3 × 7 instruments)
     #[id = "hu_kick"]
@@ -477,6 +512,7 @@ impl Default for DrumFlashParams {
             sound_settings: PersistentSoundSettings::new(),
             plock_state: PersistentPlockState::new(),
             seq_plock_state: PersistentSequencerPlockState::new(),
+            pattern_bank: pattern_bank::PersistentPatternBank::new(),
 
             master_volume: FloatParam::new(
                 "Master Volume",
@@ -510,6 +546,9 @@ impl Default for DrumFlashParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             groove_type: EnumParam::new("Groove", groove::GrooveType::Swing16),
+
+            use_internal_sequencer: BoolParam::new("Internal Sequencer", true),
+            song_mode: BoolParam::new("Song Mode", false),
 
             // Humanize per track (0 = none, 1 = max)
             humanize_kick: FloatParam::new(
@@ -1367,6 +1406,16 @@ impl Default for DrumFlashVst {
             rng_state: AtomicU32::new(0xACE1_0000),
             pending_stutters: [(0, 0, 0.0, 0); 128],
             pending_stutter_count: 0,
+            save_pattern_request: Arc::new(AtomicU32::new(0)),
+            load_pattern_request: Arc::new(AtomicU32::new(0)),
+            clear_plocks_request: Arc::new(AtomicBool::new(false)),
+            song_mode: Arc::new(AtomicBool::new(false)),
+            song_position: Arc::new(AtomicU32::new(0)),
+            last_loop_count: 0,
+            pending_pattern_length: Arc::new(AtomicI32::new(0)),
+            temp_plock_bytes: [0; pattern_bank::MAX_PLOCK_BYTES],
+            temp_seq_plock_bytes: [0; pattern_bank::MAX_SEQ_PLOCK_BYTES],
+            audio_last_loaded_slot: Arc::new(AtomicU32::new(u32::MAX)),
         };
         plugin.sequencer.play();
         plugin
@@ -1474,7 +1523,95 @@ impl DrumFlashVst {
             .unwrap_or(global)
     }
 
+    /// Save the current pattern into the bank slot.
+    pub fn save_pattern_to_slot(&mut self, slot: usize) {
+        if slot >= pattern_bank::SLOT_COUNT {
+            return;
+        }
+        let plock = &self.params.plock_state.state;
+        let seq_plock = &self.params.seq_plock_state.state;
+        if let Ok(mut bank) = self.params.pattern_bank.bank.lock() {
+            bank.slots[slot].capture(
+                &self.pattern,
+                plock,
+                seq_plock,
+                self.params.pattern_length.value() as u8,
+            );
+            nih_log!("Pattern saved to slot P{}", slot + 1);
+        }
+        // Mark this slot as the current one so the UI highlights it in green.
+        self.audio_last_loaded_slot.store(slot as u32, Ordering::Relaxed);
+    }
+
+    /// Load a pattern from the bank slot.
+    pub fn load_pattern_from_slot(&mut self, slot: usize) {
+        if slot >= pattern_bank::SLOT_COUNT {
+            return;
+        }
+
+        // 1. Copy slot data under the lock (fast), then release before restore.
+        let mut step_masks = [0u16; crate::sequencer::pattern::STEP_COUNT];
+        let plock_len: usize;
+        let seq_plock_len: usize;
+        let pattern_length: u8;
+        {
+            let bank = match self.params.pattern_bank.bank.lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    nih_log!("Pattern bank mutex poisoned, skipping load");
+                    return;
+                }
+            };
+            let slot_ref = &bank.slots[slot];
+            if !slot_ref.occupied {
+                nih_log!("Slot P{} is empty", slot + 1);
+                return;
+            }
+            let maybe_len = slot_ref.copy_data_for_restore(
+                &mut step_masks,
+                &mut self.temp_plock_bytes,
+                &mut self.temp_seq_plock_bytes,
+            );
+            pattern_length = match maybe_len {
+                Some(len) => len,
+                None => return,
+            };
+            plock_len = slot_ref.plock_bytes.len();
+            seq_plock_len = slot_ref.seq_plock_bytes.len();
+        } // lock released here
+
+        // 2. Wipe old plocks so nothing leaks from the previous pattern, then restore.
+        let plock = &self.params.plock_state.state;
+        let seq_plock = &self.params.seq_plock_state.state;
+        nih_log!("[LOAD] Slot P{}: plock_len={}, seq_plock_len={}, pattern_length={}", slot + 1, plock_len, seq_plock_len, pattern_length);
+        plock.clear_all();
+        seq_plock.clear_all();
+        nih_log!("[LOAD] After clear_all: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
+            plock.masks.masks[0].load(Ordering::Relaxed),
+            seq_plock.masks[0].load(Ordering::Relaxed)
+        );
+        pattern_bank::restore_from_buffers(
+            &step_masks,
+            &self.temp_plock_bytes[..plock_len],
+            &self.temp_seq_plock_bytes[..seq_plock_len],
+            &self.pattern,
+            plock,
+            seq_plock,
+        );
+        nih_log!("[LOAD] After restore: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
+            plock.masks.masks[0].load(Ordering::Relaxed),
+            seq_plock.masks[0].load(Ordering::Relaxed)
+        );
+
+        // 3. Notify UI and record which slot the audio thread actually loaded.
+        self.pending_pattern_length.store(pattern_length as i32, Ordering::Relaxed);
+        self.audio_last_loaded_slot.store(slot as u32, Ordering::Relaxed);
+        nih_log!("Pattern loaded from slot P{}", slot + 1);
+    }
+
     /// Fire a single voice trigger (audio + MIDI) at the given sample offset.
+    /// `hard` uses `trigger_hard()` for machine-gun stutter repeats instead of
+    /// the smooth anti-click `trigger()`.
     fn fire_voice_trigger(
         &mut self,
         voice_idx: usize,
@@ -1483,13 +1620,18 @@ impl DrumFlashVst {
         sample_idx: usize,
         context: &mut impl ProcessContext<Self>,
         hihat_chokes_oh: bool,
+        hard: bool,
     ) {
         let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
             return;
         };
         let settings = self.voice_settings_at_step(voice_idx, step as usize);
         self.synthesizer.set_voice_settings(voice, settings);
-        self.synthesizer.trigger(voice_idx, velocity);
+        if hard {
+            self.synthesizer.trigger_hard(voice_idx, velocity);
+        } else {
+            self.synthesizer.trigger(voice_idx, velocity);
+        }
         if hihat_chokes_oh && voice_idx == 2 {
             self.synthesizer.reset_voice(3);
         }
@@ -1554,6 +1696,13 @@ impl Plugin for DrumFlashVst {
             self.voice_test_triggers.clone(),
             self.sound_settings_state.clone(),
             self.params.plock_state.state.clone(),
+            self.save_pattern_request.clone(),
+            self.load_pattern_request.clone(),
+            self.song_mode.clone(),
+            self.song_position.clone(),
+            self.pending_pattern_length.clone(),
+            self.audio_last_loaded_slot.clone(),
+            self.clear_plocks_request.clone(),
         )
     }
 
@@ -1592,6 +1741,23 @@ impl Plugin for DrumFlashVst {
         aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        // Process pattern save/load requests from UI
+        if let Some(slot) = self.save_pattern_request.swap(0, Ordering::Relaxed).checked_sub(1) {
+            if (slot as usize) < pattern_bank::SLOT_COUNT {
+                self.save_pattern_to_slot(slot as usize);
+            }
+        }
+        if let Some(slot) = self.load_pattern_request.swap(0, Ordering::Relaxed).checked_sub(1) {
+            if (slot as usize) < pattern_bank::SLOT_COUNT {
+                self.load_pattern_from_slot(slot as usize);
+            }
+        }
+        if self.clear_plocks_request.swap(false, Ordering::Relaxed) {
+            self.params.plock_state.state.clear_all();
+            self.params.seq_plock_state.state.clear_all();
+            nih_log!("All plocks cleared");
+        }
+
         let transport = context.transport();
         let sample_rate = self.sample_rate;
         let bpm = transport
@@ -1740,13 +1906,20 @@ impl Plugin for DrumFlashVst {
         // Pre-calculate step duration in samples for stutter spacing.
         let step_duration_samples = (sample_rate * 60.0 / (bpm * 4.0)).max(1.0);
 
+        let use_internal_sequencer = self.params.use_internal_sequencer.value();
+        let mut next_event = if use_internal_sequencer {
+            None
+        } else {
+            context.next_event()
+        };
+
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Process pending stutter triggers (decrement countdown, fire at 0).
             let mut i = 0;
             while i < self.pending_stutter_count {
                 if self.pending_stutters[i].0 == 0 {
                     let (_, voice_idx, velocity, step) = self.pending_stutters[i];
-                    self.fire_voice_trigger(voice_idx, velocity, step, sample_idx, context, hihat_chokes_oh);
+                    self.fire_voice_trigger(voice_idx, velocity, step, sample_idx, context, hihat_chokes_oh, true);
                     self.pending_stutters[i] = self.pending_stutters[self.pending_stutter_count - 1];
                     self.pending_stutter_count -= 1;
                 } else {
@@ -1755,70 +1928,111 @@ impl Plugin for DrumFlashVst {
                 }
             }
 
-            let swing = self.params.swing.value();
-            let groove_type = self.params.groove_type.value();
-            let triggers = self
-                .sequencer
-                .process_sample(bpm, sample_rate, swing, groove_type);
+            if use_internal_sequencer {
+                let swing = self.params.swing.value();
+                let groove_type = self.params.groove_type.value();
+                let triggers = self
+                    .sequencer
+                    .process_sample(bpm, sample_rate, swing, groove_type);
 
-            let current_steps = self.sequencer.current_steps();
-            for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
-                if *should_trigger {
-                    let step = current_steps[voice_idx] as usize;
-                    let seq_params = self.params.seq_plock_state.state.get(voice_idx, step);
-                    
-                    // Apply sequencer probability
-                    let prob = seq_params.map(|sp| sp.probability).unwrap_or(1.0);
-                    if prob < 1.0 && self.next_rand() > prob {
-                        continue; // Skip this trigger based on probability
-                    }
-                    
-                    // Apply step conditions
-                    let loop_count = self.sequencer.loop_count();
-                    let condition_passes = if let Some(sp) = seq_params {
-                        use crate::plock::StepCondition::*;
-                        match sp.condition {
-                            Always => true,
-                            First => loop_count == 0,
-                            NotFirst => loop_count > 0,
-                            Half1 => loop_count % 2 == 0,
-                            Half2 => loop_count % 2 == 1,
-                            Third1 => loop_count % 3 == 0,
-                            Third2 => loop_count % 3 == 1,
-                            Third3 => loop_count % 3 == 2,
-                            Fourth1 => loop_count % 4 == 0,
-                            Fourth2 => loop_count % 4 == 1,
-                            Fourth3 => loop_count % 4 == 2,
-                            Fourth4 => loop_count % 4 == 3,
+                let current_steps = self.sequencer.current_steps();
+                for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
+                    if *should_trigger {
+                        let step = current_steps[voice_idx] as usize;
+                        let seq_params = self.params.seq_plock_state.state.get(voice_idx, step);
+                        
+                        // Apply sequencer probability
+                        let prob = seq_params.map(|sp| sp.probability).unwrap_or(1.0);
+                        if prob < 1.0 && self.next_rand() > prob {
+                            continue; // Skip this trigger based on probability
                         }
-                    } else {
-                        true // No condition = always pass
-                    };
-                    if !condition_passes {
-                        continue;
-                    }
+                        
+                        // Apply step conditions
+                        let loop_count = self.sequencer.loop_count();
+                        let condition_passes = if let Some(sp) = seq_params {
+                            use crate::plock::StepCondition::*;
+                            match sp.condition {
+                                Always => true,
+                                First => loop_count == 0,
+                                NotFirst => loop_count > 0,
+                                Half1 => loop_count % 2 == 0,
+                                Half2 => loop_count % 2 == 1,
+                                Third1 => loop_count % 3 == 0,
+                                Third2 => loop_count % 3 == 1,
+                                Third3 => loop_count % 3 == 2,
+                                Fourth1 => loop_count % 4 == 0,
+                                Fourth2 => loop_count % 4 == 1,
+                                Fourth3 => loop_count % 4 == 2,
+                                Fourth4 => loop_count % 4 == 3,
+                            }
+                        } else {
+                            true // No condition = always pass
+                        };
+                        if !condition_passes {
+                            continue;
+                        }
 
-                    let stutter = seq_params.as_ref().map(|sp| sp.stutter_count.max(1)).unwrap_or(1);
-                    let step_for_trigger = current_steps[voice_idx] as u32;
+                        let stutter = seq_params.as_ref().map(|sp| sp.stutter_count.max(1)).unwrap_or(1);
+                        let step_for_trigger = current_steps[voice_idx] as u32;
 
-                    // Fire the first trigger immediately.
-                    self.fire_voice_trigger(voice_idx, *velocity, step_for_trigger, sample_idx, context, hihat_chokes_oh);
+                        // Fire the first trigger immediately.
+                        self.fire_voice_trigger(voice_idx, *velocity, step_for_trigger, sample_idx, context, hihat_chokes_oh, false);
 
-                    // Schedule additional stutter triggers with temporal spacing.
-                    if stutter > 1 {
-                        let spacing = (step_duration_samples / stutter as f32).max(1.0) as u32;
-                        for k in 1..stutter {
-                            if self.pending_stutter_count < self.pending_stutters.len() {
-                                self.pending_stutters[self.pending_stutter_count] = (
-                                    spacing * k as u32,
-                                    voice_idx,
-                                    *velocity,
-                                    step_for_trigger,
-                                );
-                                self.pending_stutter_count += 1;
+                        // Schedule additional stutter triggers with temporal spacing.
+                        // Spacing is derived from the current step duration (which itself
+                        // depends on the DAW BPM) so the roll always fits musically inside
+                        // the step.  stutter=N => N evenly-spaced hits across one step.
+                        if stutter > 1 {
+                            let spacing = (step_duration_samples / stutter as f32).max(1.0) as u32;
+                            for k in 1..stutter {
+                                if self.pending_stutter_count < self.pending_stutters.len() {
+                                    self.pending_stutters[self.pending_stutter_count] = (
+                                        spacing * k as u32,
+                                        voice_idx,
+                                        *velocity,
+                                        step_for_trigger,
+                                    );
+                                    self.pending_stutter_count += 1;
+                                }
                             }
                         }
                     }
+                }
+            } else {
+                // MIDI mode: process incoming NoteOn events
+                while let Some(event) = next_event {
+                    if event.timing() != sample_idx as u32 {
+                        break;
+                    }
+                    if let NoteEvent::NoteOn { note, velocity, .. } = event {
+                        if let Some(voice_idx) = crate::instrument_registry::voice_idx_from_midi_note(note) {
+                            let settings = self.voice_settings_at_step(voice_idx, 0);
+                            let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+                                continue;
+                            };
+                            self.synthesizer.set_voice_settings(voice, settings);
+                            self.synthesizer.trigger(voice_idx, velocity);
+                            if hihat_chokes_oh && voice_idx == 2 {
+                                self.synthesizer.reset_voice(3);
+                            }
+                            // Forward the MIDI event to the output
+                            context.send_event(NoteEvent::NoteOn {
+                                timing: sample_idx as u32,
+                                voice_id: None,
+                                channel: 9,
+                                note,
+                                velocity,
+                            });
+                            context.send_event(NoteEvent::NoteOff {
+                                timing: sample_idx as u32,
+                                voice_id: None,
+                                channel: 9,
+                                note,
+                                velocity: 0.0,
+                            });
+                        }
+                    }
+                    next_event = context.next_event();
                 }
             }
 
@@ -1827,7 +2041,7 @@ impl Plugin for DrumFlashVst {
                     let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                         continue;
                     };
-                    let settings = self.voice_settings_at_step(voice_idx, current_steps[voice_idx]);
+                    let settings = self.voice_settings_at_step(voice_idx, 0);
                     self.synthesizer.set_voice_settings(voice, settings);
                     self.synthesizer.trigger(voice_idx, 0.8);
                 }
@@ -1863,6 +2077,43 @@ impl Plugin for DrumFlashVst {
                 channels[0][sample_idx] = voice_outputs[voice_idx][0] * master_vol;
                 channels[1][sample_idx] = voice_outputs[voice_idx][1] * master_vol;
             }
+        }
+
+        // Song mode: advance to next pattern when current pattern wraps.
+        if self.params.song_mode.value() && self.sequencer.is_playing() {
+            let current_loop_count = self.sequencer.loop_count();
+            if current_loop_count != self.last_loop_count {
+                self.last_loop_count = current_loop_count;
+                let (next_slot, next_pos, _should_loop) = {
+                    if let Ok(bank) = self.params.pattern_bank.bank.lock() {
+                        let song = &bank.song;
+                        let current_pos = self.song_position.load(Ordering::Relaxed) as usize;
+                        let next_pos = current_pos + 1;
+
+                        if next_pos < song.length as usize {
+                            let slot = song.slot_at(next_pos);
+                            (slot, Some(next_pos), false)
+                        } else if song.loop_enabled && song.length > 0 {
+                            let slot = song.slot_at(0);
+                            (slot, Some(0), true)
+                        } else {
+                            (None, None, false)
+                        }
+                    } else {
+                        (None, None, false)
+                    }
+                };
+
+                if let Some(pos) = next_pos {
+                    if let Some(slot) = next_slot {
+                        self.load_pattern_from_slot(slot);
+                    }
+                    self.song_position.store(pos as u32, Ordering::Relaxed);
+                }
+            }
+        } else {
+            // Reset song position when not in song mode
+            self.last_loop_count = self.sequencer.loop_count();
         }
 
         self.current_step

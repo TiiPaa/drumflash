@@ -157,6 +157,11 @@ impl Voice for Kick808Voice {
         }
     }
 
+    fn trigger_hard(&mut self) {
+        self.active = true;
+        self.amp_env.trigger_hard();
+    }
+
     fn process_sample(&mut self) -> f32 {
         if !self.active {
             return 0.0;
