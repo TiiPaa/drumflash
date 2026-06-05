@@ -154,6 +154,11 @@ impl Voice for Snare606Voice {
         self.filter_env.trigger();
     }
 
+    fn trigger_hard(&mut self) {
+        self.active = true;
+        self.envelope.trigger_hard();
+    }
+
     fn process_sample(&mut self) -> f32 {
         if !self.active {
             return 0.0;

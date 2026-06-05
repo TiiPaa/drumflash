@@ -10,7 +10,7 @@ use std::{
     path::PathBuf,
     process::Command,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
         Arc,
     },
 };
@@ -18,6 +18,7 @@ use std::{
 use crate::{
     preset_dumps,
     generator, midi_export,
+    pattern_bank::SLOT_COUNT,
     plock::PlockState,
     sequencer::{Pattern, SharedPattern},
     sound_settings::SoundSettingsState,
@@ -89,6 +90,15 @@ struct EditorUIState {
     page_clipboard: Option<PageClipboard>, // copied page data for paste
     plock_clipboard: Option<SinglePlockClipboard>, // copied single plock for paste
     sequencer_mode: bool,    // if true, right-click opens sequencer params instead of sound plocks
+    // Pattern bank state
+    /// The slot last loaded into the current pattern (None = fresh/preset).
+    last_loaded_slot: Option<usize>,
+    /// True when the user clicked "Save" and is now selecting a target slot.
+    save_mode_active: bool,
+    /// Copied pattern slot for copy/paste between slots.
+    pattern_clipboard: Option<crate::pattern_bank::PatternSlot>,
+    /// True when the user clicked "Clr" once and needs to confirm.
+    clear_confirm_mode: bool,
 }
 
 pub fn create_editor(
@@ -99,6 +109,13 @@ pub fn create_editor(
     voice_test_triggers: Arc<[AtomicBool; DrumVoice::COUNT]>,
     sound_settings_state: Arc<SoundSettingsState>,
     plock_state: Arc<PlockState>,
+    save_pattern_request: Arc<AtomicU32>,
+    load_pattern_request: Arc<AtomicU32>,
+    song_mode: Arc<AtomicBool>,
+    song_position: Arc<AtomicU32>,
+    pending_pattern_length: Arc<AtomicI32>,
+    audio_last_loaded_slot: Arc<AtomicU32>,
+    clear_plocks_request: Arc<AtomicBool>,
 ) -> Option<Box<dyn Editor>> {
     let params_for_ui = params.clone();
     let editor_state = params.editor_state.clone();
@@ -107,6 +124,11 @@ pub fn create_editor(
     let sound_settings_for_ui = sound_settings_state.clone();
     let current_steps_for_ui = current_steps.clone();
     let plock_for_ui = plock_state.clone();
+    let song_mode_for_ui = song_mode.clone();
+    let song_position_for_ui = song_position.clone();
+    let pending_pattern_length_for_ui = pending_pattern_length.clone();
+    let audio_last_loaded_slot_for_ui = audio_last_loaded_slot.clone();
+    let clear_plocks_request_for_ui = clear_plocks_request.clone();
 
     create_egui_editor(
         params.editor_state.clone(),
@@ -115,11 +137,30 @@ pub fn create_editor(
         move |egui_ctx, setter, state| {
             #[cfg(target_os = "windows")]
             nih_plug_egui::set_keyboard_focus(egui_ctx.wants_keyboard_input());
+
+            // Apply any pending pattern length update from a slot load.
+            let pending_len = pending_pattern_length_for_ui.swap(0, Ordering::Relaxed);
+            if pending_len >= 1 && pending_len <= 64 {
+                setter.set_parameter(&params_for_ui.pattern_length,
+                    pending_len as i32,
+                );
+            }
+
+            // Sync last_loaded_slot with the audio thread so the UI always
+            // reflects the slot that was actually loaded (prevents divergence
+            // when clicking rapidly while the audio thread is still restoring).
+            let audio_slot = audio_last_loaded_slot_for_ui.load(Ordering::Relaxed);
+            if audio_slot == u32::MAX {
+                state.last_loaded_slot = None;
+            } else if (audio_slot as usize) < SLOT_COUNT {
+                state.last_loaded_slot = Some(audio_slot as usize);
+            }
+
             ResizableWindow::new("drum-pattern-generator")
                 .min_size(Vec2::new(1480.0, 520.0))
                 .resizable(false)
                 .show(egui_ctx, editor_state.as_ref(), |ui| {
-                    draw_header_bar(ui, setter, &params_for_ui, state);
+                    draw_header_bar(ui, setter, &params_for_ui, state, &save_pattern_request, &load_pattern_request, &song_mode_for_ui, &song_position_for_ui);
 
                     ui.separator();
 
@@ -147,13 +188,34 @@ pub fn create_editor(
                                     state,
                                 );
                                 ui.separator();
-                                draw_generator_panel(
+                                draw_pattern_bank(
                                     ui,
-                                    setter,
+                                    state,
                                     &params_for_ui,
                                     &pattern_for_ui,
-                                    state,
+                                    &save_pattern_request,
+                                    &load_pattern_request,
+                                    &clear_plocks_request_for_ui,
                                 );
+                                ui.separator();
+                                if params_for_ui.song_mode.value() {
+                                    draw_song_editor(
+                                        ui,
+                                        setter,
+                                        &params_for_ui,
+                                        state,
+                                        &song_mode_for_ui,
+                                        &song_position_for_ui,
+                                    );
+                                } else {
+                                    draw_generator_panel(
+                                        ui,
+                                        setter,
+                                        &params_for_ui,
+                                        &pattern_for_ui,
+                                        state,
+                                    );
+                                }
                             },
                         );
 
@@ -180,35 +242,23 @@ pub fn create_editor(
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Header bar: Brand + Play + BPM + Sliders + Toggles + P1..P8
+// Header bar: Brand + Play + BPM + Sliders + Toggles
 // ---------------------------------------------------------------------------------------------------------------
 fn draw_header_bar(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
     params: &DrumFlashParams,
     state: &mut EditorUIState,
+    _save_pattern_request: &Arc<AtomicU32>,
+    _load_pattern_request: &Arc<AtomicU32>,
+    _song_mode: &Arc<AtomicBool>,
+    _song_position: &Arc<AtomicU32>,
 ) {
     ui.horizontal(|ui| {
         // Brand
         ui.horizontal(|ui| {
             ui.label(RichText::new("FLASH DRUM").strong().size(15.0));
             ui.label(RichText::new(format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID)).monospace().size(10.0).color(Color32::from_rgb(100, 100, 110)));
-        });
-
-        ui.separator();
-
-        // Play button (placeholder — no transport state in UI yet)
-        let play_btn = egui::Button::new(RichText::new("▶").size(13.0))
-            .min_size(Vec2::new(30.0, 30.0))
-            .fill(Color32::from_rgb(28, 28, 36))
-            .stroke(egui::Stroke::new(1.0, Color32::from_rgb(58, 58, 72)))
-            .corner_radius(7.0);
-        ui.add(play_btn);
-
-        // BPM display
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{:.0}", params.bpm.value())).strong().size(18.0).monospace());
-            ui.label(RichText::new("BPM").size(9.0).monospace().color(Color32::from_rgb(100, 100, 110)));
         });
 
         ui.separator();
@@ -221,30 +271,257 @@ fn draw_header_bar(
         ui.separator();
 
         // Toggles
+        bool_checkbox(ui, setter, &params.use_internal_sequencer, "Seq");
         bool_checkbox(ui, setter, &params.hihat_chokes_oh, "Choke");
         bool_checkbox(ui, setter, &params.auto_edit, "Auto-Edit");
+        bool_checkbox(ui, setter, &params.song_mode, "Song");
+    });
+}
 
-        ui.add_space(16.0);
+// ---------------------------------------------------------------------------------------------------------------
+// Pattern bank bar: Save/Load with P1-P8 slots
+// ---------------------------------------------------------------------------------------------------------------
+fn draw_pattern_bank(
+    ui: &mut egui::Ui,
+    state: &mut EditorUIState,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    save_pattern_request: &Arc<AtomicU32>,
+    load_pattern_request: &Arc<AtomicU32>,
+    clear_plocks_request: &Arc<AtomicBool>,
+) {
+    // Count active plocks for debug display
+    let mut sound_plock_count = 0usize;
+    let mut seq_plock_count = 0usize;
+    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+        for step in 0..64usize {
+            if params.plock_state.state.masks.is_active(inst, step) {
+                sound_plock_count += 1;
+            }
+            if params.seq_plock_state.state.is_active(inst, step) {
+                seq_plock_count += 1;
+            }
+        }
+    }
 
-        // Pattern slots P1..P8
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            for i in (0..8).rev() {
-                let selected = state.selected_pattern_slot == i;
-                let text = format!("P{}", i + 1);
-                let btn = egui::Button::new(RichText::new(text).size(10.0).strong().monospace())
-                    .min_size(Vec2::new(30.0, 26.0))
-                    .fill(if selected {
-                        Color32::from_rgb(74, 158, 255)
-                    } else {
-                        Color32::from_rgb(28, 28, 36)
-                    })
-                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(58, 58, 72)))
-                    .corner_radius(5.0);
-                if ui.add(btn).clicked() {
-                    state.selected_pattern_slot = i;
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Patterns").strong().size(12.0));
+        ui.label(
+            RichText::new(format!("[P:{} S:{}]", sound_plock_count, seq_plock_count))
+                .size(9.0)
+                .monospace()
+                .color(Color32::from_rgb(100, 100, 110)),
+        );
+        ui.add_space(8.0);
+
+        // Save button (blinks when save mode is active)
+        let is_save_mode = state.save_mode_active;
+        let time = ui.ctx().input(|i| i.time);
+        let blink = if is_save_mode {
+            ((time * 4.0).sin() + 1.0) / 2.0 // 0..1 oscillation
+        } else {
+            0.0
+        };
+        let save_fill = if is_save_mode {
+            Color32::from_rgb(
+                (74.0 + blink * 80.0) as u8,
+                (158.0 + blink * 40.0) as u8,
+                255,
+            )
+        } else {
+            Color32::from_rgb(48, 48, 58)
+        };
+        let save_btn = egui::Button::new(RichText::new("Save").size(10.0).strong().monospace())
+            .min_size(Vec2::new(44.0, 26.0))
+            .fill(save_fill)
+            .stroke(egui::Stroke::new(1.5, if is_save_mode {
+                Color32::from_rgb(120, 200, 255)
+            } else {
+                Color32::from_rgb(58, 58, 72)
+            }))
+            .corner_radius(5.0);
+        let save_response = ui.add(save_btn);
+        let save_response = save_response.on_hover_text(
+            RichText::new(if is_save_mode {
+                "Click a slot (P1-P8) to save the current pattern there"
+            } else {
+                "Activate save mode, then click a slot to store the current pattern"
+            }).size(11.0).monospace()
+        );
+        if save_response.clicked() {
+            state.save_mode_active = !state.save_mode_active;
+            state.clear_confirm_mode = false;
+        }
+
+        ui.add_space(8.0);
+
+        // Determine if current pattern is dirty compared to last_loaded_slot
+        let is_dirty = state.last_loaded_slot.map_or(false, |slot_idx| {
+            if let Ok(bank) = params.pattern_bank.bank.lock() {
+                let slot = &bank.slots[slot_idx];
+                if !slot.occupied {
+                    return false;
                 }
+                // Compare step masks
+                let current_masks = pattern.step_masks();
+                if slot.step_masks != current_masks {
+                    return true;
+                }
+                // Compare pattern length
+                let current_len = params.pattern_length.value() as u8;
+                if slot.pattern_length != current_len {
+                    return true;
+                }
+                false
+            } else {
+                false
             }
         });
+
+        // P1-P8 slots
+        for i in 0..8 {
+            let occupied = params.pattern_bank.bank.lock()
+                .map(|b| b.slots[i].occupied)
+                .unwrap_or(false);
+            let is_loaded = state.last_loaded_slot == Some(i);
+            let show_star = is_dirty && is_loaded;
+            let text = if show_star {
+                format!("P{}*", i + 1)
+            } else {
+                format!("P{}", i + 1)
+            };
+
+            let btn_size = Vec2::new(36.0, 26.0);
+            let fill = if is_loaded {
+                Color32::from_rgb(40, 60, 40)
+            } else if occupied {
+                Color32::from_rgb(48, 48, 58)
+            } else {
+                Color32::from_rgb(16, 16, 22) // much darker for empty slot
+            };
+            let stroke_color = if is_loaded {
+                Color32::from_rgb(100, 220, 120) // green ring for loaded
+            } else if occupied {
+                Color32::from_rgb(100, 100, 120)
+            } else {
+                Color32::from_rgb(40, 40, 50) // dimmer border for empty slot
+            };
+
+            let response = ui.allocate_ui_with_layout(btn_size, egui::Layout::top_down(egui::Align::Center), |ui| {
+                let (rect, response) = ui.allocate_exact_size(btn_size, egui::Sense::click());
+                let visuals = ui.style().interact(&response);
+                let rect = rect.expand(visuals.expansion);
+                let corner_radius = 5.0;
+                ui.painter().rect_filled(rect, corner_radius, fill);
+                ui.painter().rect_stroke(rect, corner_radius, egui::Stroke::new(2.0, stroke_color), egui::StrokeKind::Outside);
+
+                let label_color = if is_loaded {
+                    Color32::from_rgb(150, 255, 150)
+                } else {
+                    Color32::from_rgb(200, 200, 210)
+                };
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &text,
+                    egui::FontId::monospace(10.0),
+                    label_color,
+                );
+                response
+            }).inner;
+
+            let tooltip = if state.save_mode_active {
+                format!("Save current pattern to P{}", i + 1)
+            } else if occupied {
+                if is_loaded {
+                    format!("P{}: current pattern (click to reload)\n* = unsaved changes", i + 1)
+                } else {
+                    format!("P{}: saved pattern (click to load)", i + 1)
+                }
+            } else {
+                format!("P{}: empty", i + 1)
+            };
+            let response = response.on_hover_text(RichText::new(tooltip).size(11.0).monospace());
+
+            if response.clicked_by(egui::PointerButton::Primary) {
+                state.clear_confirm_mode = false;
+                if state.save_mode_active {
+                    save_pattern_request.store((i + 1) as u32, std::sync::atomic::Ordering::Relaxed);
+                    state.save_mode_active = false;
+                    state.last_loaded_slot = Some(i);
+                } else if occupied {
+                    load_pattern_request.store((i + 1) as u32, std::sync::atomic::Ordering::Relaxed);
+                    state.last_loaded_slot = Some(i);
+                }
+            }
+            if response.secondary_clicked() {
+                if occupied {
+                    // Copy slot to clipboard
+                    if let Ok(bank) = params.pattern_bank.bank.lock() {
+                        state.pattern_clipboard = Some(bank.slots[i].clone());
+                    }
+                } else if let Some(ref clipboard) = state.pattern_clipboard {
+                    // Paste clipboard into empty slot
+                    if let Ok(mut bank_mut) = params.pattern_bank.bank.lock() {
+                        bank_mut.slots[i] = clipboard.clone();
+                    }
+                }
+            }
+        }
+
+        ui.add_space(8.0);
+
+        // Clear button: wipes all sound + sequencer plocks (two-step confirmation)
+        let is_clear_confirm = state.clear_confirm_mode;
+        let clear_blink = if is_clear_confirm {
+            ((time * 4.0).sin() + 1.0) / 2.0 // 0..1 oscillation
+        } else {
+            0.0
+        };
+        let clear_fill = if is_clear_confirm {
+            Color32::from_rgb(
+                (200.0 + clear_blink * 55.0) as u8,
+                (60.0 + clear_blink * 40.0) as u8,
+                (60.0 + clear_blink * 40.0) as u8,
+            )
+        } else {
+            Color32::from_rgb(48, 48, 58)
+        };
+        let clear_btn = egui::Button::new(
+            RichText::new(if is_clear_confirm { "Sure?" } else { "Clr" }).size(10.0).strong().monospace()
+        )
+            .min_size(Vec2::new(44.0, 26.0))
+            .fill(clear_fill)
+            .stroke(egui::Stroke::new(1.5, if is_clear_confirm {
+                Color32::from_rgb(255, 120, 120)
+            } else {
+                Color32::from_rgb(58, 58, 72)
+            }))
+            .corner_radius(5.0);
+        let clear_response = ui.add(clear_btn);
+        let clear_response = clear_response.on_hover_text(
+            RichText::new(if is_clear_confirm {
+                "Click again to confirm clearing the current pattern"
+            } else {
+                "Clear all steps and plocks from the current pattern"
+            })
+                .size(11.0)
+                .monospace()
+        );
+        if clear_response.clicked() {
+            if is_clear_confirm {
+                // Confirmed: clear grid + plocks
+                load_pattern_for_ui(pattern, &crate::sequencer::pattern::Pattern::empty());
+                params.plock_state.state.clear_all();
+                params.seq_plock_state.state.clear_all();
+                state.last_loaded_slot = None;
+                state.clear_confirm_mode = false;
+            } else {
+                // Enter confirmation mode, cancel save mode if active
+                state.clear_confirm_mode = true;
+                state.save_mode_active = false;
+            }
+        }
     });
 }
 
@@ -260,7 +537,120 @@ fn draw_generator_panel(
 ) {
     ui.label(RichText::new("Generator").strong());
     draw_preset_bar(ui, pattern, params, setter, state);
-    draw_generator_bar(ui, setter, params, pattern);
+    draw_generator_bar(ui, setter, params, pattern, state);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Song editor: sequence of pattern slots (P1-P8)
+// ---------------------------------------------------------------------------------------------------------------
+fn draw_song_editor(
+    ui: &mut egui::Ui,
+    _setter: &ParamSetter,
+    params: &DrumFlashParams,
+    _state: &mut EditorUIState,
+    song_mode: &Arc<AtomicBool>,
+    song_position: &Arc<AtomicU32>,
+) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Song Sequence").strong().size(12.0));
+        ui.add_space(8.0);
+
+        // Loop toggle
+        if let Ok(mut bank) = params.pattern_bank.bank.lock() {
+            let loop_enabled = bank.song.loop_enabled;
+            let btn = egui::Button::new(RichText::new("Loop").size(10.0))
+                .min_size(Vec2::new(40.0, 22.0))
+                .fill(if loop_enabled {
+                    Color32::from_rgb(74, 158, 255)
+                } else {
+                    Color32::from_rgb(36, 36, 44)
+                })
+                .stroke(egui::Stroke::new(1.0, Color32::from_rgb(58, 58, 72)))
+                .corner_radius(5.0);
+            if ui.add(btn).clicked() {
+                bank.song.loop_enabled = !loop_enabled;
+            }
+        }
+
+        ui.add_space(8.0);
+
+        // Song length control
+        if let Ok(mut bank) = params.pattern_bank.bank.lock() {
+            let len = bank.song.length;
+            ui.label(RichText::new(format!("Len: {}", len)).size(10.0).monospace());
+            if ui.button("+").clicked() && bank.song.length < 64 {
+                bank.song.length += 1;
+            }
+            if ui.button("-").clicked() && bank.song.length > 0 {
+                bank.song.length -= 1;
+            }
+        }
+    });
+
+    ui.add_space(4.0);
+
+    // Song steps grid
+    let current_song_pos = song_position.load(Ordering::Relaxed) as usize;
+
+    if let Ok(mut bank) = params.pattern_bank.bank.lock() {
+        let len = bank.song.length as usize;
+        let steps_per_row = 16_usize;
+        let rows = (len + steps_per_row - 1) / steps_per_row;
+
+        for row in 0..rows.max(1) {
+            ui.horizontal(|ui| {
+                for col in 0..steps_per_row {
+                    let step_idx = row * steps_per_row + col;
+                    if step_idx >= len {
+                        break;
+                    }
+
+                    let is_current = step_idx == current_song_pos && song_mode.load(Ordering::Relaxed);
+                    let slot = bank.song.steps[step_idx];
+                    let occupied = slot >= 0 && (slot as usize) < SLOT_COUNT && bank.slots[slot as usize].occupied;
+
+                    let text = if slot < 0 {
+                        "--".to_string()
+                    } else {
+                        format!("P{}", slot + 1)
+                    };
+
+                    let btn = egui::Button::new(RichText::new(text).size(9.0).monospace())
+                        .min_size(Vec2::new(28.0, 22.0))
+                        .fill(if is_current {
+                            Color32::from_rgb(255, 100, 100)
+                        } else if occupied {
+                            Color32::from_rgb(48, 48, 58)
+                        } else {
+                            Color32::from_rgb(28, 28, 36)
+                        })
+                        .stroke(egui::Stroke::new(1.0, if is_current {
+                            Color32::from_rgb(255, 150, 150)
+                        } else {
+                            Color32::from_rgb(58, 58, 72)
+                        }))
+                        .corner_radius(4.0);
+
+                    let response = ui.add(btn);
+                    if response.clicked() {
+                        // Cycle through P1-P8 and empty
+                        let next_slot = if slot < 0 {
+                            0
+                        } else if (slot as usize) >= SLOT_COUNT - 1 {
+                            -1
+                        } else {
+                            slot + 1
+                        };
+                        bank.song.set_step(step_idx, next_slot);
+                    }
+                    if response.secondary_clicked() {
+                        // Right click to clear
+                        bank.song.set_step(step_idx, -1);
+                    }
+                }
+            });
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -333,24 +723,33 @@ fn draw_preset_bar(
     ui.horizontal(|ui| {
         // Presets (left)
         ui.label(RichText::new("Presets").strong().size(11.0));
+        let pattern_length = params.pattern_length.value() as usize;
         if ui.button("Rock").clicked() {
-            load_pattern_for_ui(pattern, &Pattern::rock_pattern());
+            params.plock_state.state.clear_all();
+            params.seq_plock_state.state.clear_all();
+            load_pattern_for_ui_with_length(pattern, &Pattern::rock_pattern(), pattern_length);
+            state.last_loaded_slot = None;
         }
         if ui.button("Funk").clicked() {
-            load_pattern_for_ui(pattern, &Pattern::funk_pattern());
+            params.plock_state.state.clear_all();
+            params.seq_plock_state.state.clear_all();
+            load_pattern_for_ui_with_length(pattern, &Pattern::funk_pattern(), pattern_length);
+            state.last_loaded_slot = None;
         }
         if ui.button("Disco").clicked() {
-            load_pattern_for_ui(pattern, &Pattern::disco_pattern());
+            params.plock_state.state.clear_all();
+            params.seq_plock_state.state.clear_all();
+            load_pattern_for_ui_with_length(pattern, &Pattern::disco_pattern(), pattern_length);
+            state.last_loaded_slot = None;
         }
-        if ui.button("Clear").clicked() {
-            load_pattern_for_ui(pattern, &Pattern::empty());
-        }
-
         ui.add_space(16.0);
 
         // Random (middle)
         if ui.button("Random").clicked() {
-            load_pattern_for_ui(pattern, &Pattern::random_pattern());
+            params.plock_state.state.clear_all();
+            params.seq_plock_state.state.clear_all();
+            load_pattern_for_ui_with_length(pattern, &Pattern::random_pattern(), pattern_length);
+            state.last_loaded_slot = None;
         }
 
         ui.add_space(16.0);
@@ -422,6 +821,7 @@ fn draw_generator_bar(
     setter: &ParamSetter,
     params: &DrumFlashParams,
     pattern: &SharedPattern,
+    state: &mut EditorUIState,
 ) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Generator").strong().size(11.0));
@@ -438,6 +838,8 @@ fn draw_generator_bar(
         let gen_btn = egui::Button::new(RichText::new(" GENERATE ").strong().size(13.0))
             .fill(Color32::from_rgb(56, 132, 255));
         if ui.add(gen_btn).clicked() {
+            params.plock_state.state.clear_all();
+            params.seq_plock_state.state.clear_all();
             let gen_params = generator::GeneratorParams {
                 generator_type: params.generator_type.value(),
                 style_primary: params.style_primary.value(),
@@ -456,7 +858,9 @@ fn draw_generator_bar(
                 (rng_state as f32) / (u64::MAX as f32)
             };
             let generated = generator::generate(&gen_params, &mut rng);
-            load_pattern_for_ui(pattern, &generated);
+            let pattern_length = params.pattern_length.value() as usize;
+            load_pattern_for_ui_with_length(pattern, &generated, pattern_length);
+            state.last_loaded_slot = None;
         }
     });
 }
@@ -1308,6 +1712,15 @@ fn load_pattern_for_ui(pattern_for_ui: &SharedPattern, pattern: &Pattern) {
     pattern_for_ui.load_step_masks(&masks);
 }
 
+fn load_pattern_for_ui_with_length(pattern_for_ui: &SharedPattern, pattern: &Pattern, length: usize) {
+    let mut masks = pattern.step_masks();
+    // Clear steps beyond the current pattern length
+    for step in length..masks.len() {
+        masks[step] = 0;
+    }
+    pattern_for_ui.load_step_masks(&masks);
+}
+
 fn toggle_step_for_ui(pattern_for_ui: &SharedPattern, step: usize, instrument: usize) {
     let current_mask = pattern_for_ui.load_step_mask(step);
     let bit = 1u16 << instrument;
@@ -1831,7 +2244,7 @@ fn draw_sequencer_plock_menu(
     step: usize,
     _state: &mut EditorUIState,
 ) {
-    use crate::plock::SequencerStepParams;
+    use crate::plock::{SequencerStepParams, StepCondition};
 
     ui.label(
         RichText::new(format!(
@@ -1846,42 +2259,49 @@ fn draw_sequencer_plock_menu(
     let seq_plock = &params.seq_plock_state.state;
     let has_seq_plock = seq_plock.is_active(instrument, step);
     let current = seq_plock.get(instrument, step).unwrap_or_default();
+    let mut changed_this_frame = false;
 
     // Probability slider
     let mut prob = current.probability;
     ui.label(format!("Probability: {:.0}%", prob * 100.0));
     if ui.add(egui::Slider::new(&mut prob, 0.0..=1.0).show_value(false)).changed() {
         seq_plock.set_probability(instrument, step, prob);
+        changed_this_frame = true;
     }
 
-    // Stutter count (2-8)
+    // Stutter count (1-16)
     let mut stutter = current.stutter_count.max(1) as i32;
     ui.label(format!("Stutter: {}x", stutter));
-    if ui.add(egui::Slider::new(&mut stutter, 1..=8)).changed() {
+    if ui.add(egui::Slider::new(&mut stutter, 1..=16)).changed() {
         seq_plock.set_stutter(instrument, step, stutter as u8);
+        changed_this_frame = true;
     }
 
-    // Condition dropdown
-    let mut current_cond_idx = crate::plock::StepCondition::all()
-        .iter()
-        .position(|c| *c == current.condition)
-        .unwrap_or(0);
-    let all_conditions = crate::plock::StepCondition::all();
+    // Condition selector. Avoid egui::ComboBox here: nested popups inside
+    // context_menu can close before the selected value is committed.
+    let all_conditions = StepCondition::all();
     ui.label("Condition:");
-    egui::ComboBox::from_id_salt(format!("cond_{}_{}", instrument, step))
-        .selected_text(all_conditions[current_cond_idx].label())
-        .show_ui(ui, |ui| {
-            for (i, cond) in all_conditions.iter().enumerate() {
-                ui.selectable_value(&mut current_cond_idx, i, cond.label());
+    egui::Grid::new(format!("condition_grid_{}_{}", instrument, step))
+        .num_columns(3)
+        .spacing([6.0, 4.0])
+        .show(ui, |ui| {
+            for (idx, cond) in all_conditions.iter().copied().enumerate() {
+                if ui
+                    .selectable_label(current.condition == cond, cond.label())
+                    .clicked()
+                {
+                    seq_plock.set_condition(instrument, step, cond);
+                    changed_this_frame = true;
+                }
+                if (idx + 1) % 3 == 0 {
+                    ui.end_row();
+                }
             }
         });
-    if current_cond_idx < all_conditions.len() {
-        seq_plock.set_condition(instrument, step, all_conditions[current_cond_idx]);
-    }
 
     // Clear button
     ui.separator();
-    if has_seq_plock {
+    if has_seq_plock || changed_this_frame {
         if ui.button("Clear Seq Plock").clicked() {
             seq_plock.clear(instrument, step);
         }

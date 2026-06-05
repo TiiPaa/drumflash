@@ -1606,3 +1606,10 @@ pub fn sound_settings_default(voice_idx: usize) -> &'static [f32; SOUND_SETTINGS
 pub fn filter_type_label(voice_idx: usize) -> &'static str {
     INSTRUMENTS[voice_idx].filter_type_label
 }
+
+/// Map an incoming MIDI note number to a voice index.
+/// Returns `Some(index)` if the note matches one of the instrument's default
+/// MIDI notes, `None` otherwise.
+pub fn voice_idx_from_midi_note(note: u8) -> Option<usize> {
+    INSTRUMENTS.iter().position(|inst| inst.midi_note == note)
+}
