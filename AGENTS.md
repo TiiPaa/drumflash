@@ -142,3 +142,15 @@ cargo run --bin test_standalone    # headless audio engine harness
 There is no lint config beyond `cargo`’s default warnings.
 
 **Studio One file lock:** the DAW must be fully closed during install because it locks the VST3 DLL.
+
+## Agent Workflow Rule
+
+When the user says **"next"**, **"on continue"**, **"qu'est-ce qu'on fait maintenant"**, or any similar phrase indicating they want to proceed to the next task:
+
+1. **DO NOT** immediately start coding.
+2. Read `TODO.md` to find all unchecked tasks (`- [ ]`).
+3. Present a **curated list** of the available tasks to the user, organized by priority/impact.
+4. Wait for the user to **explicitly choose** which task to tackle.
+5. Only then proceed with implementation.
+
+This prevents the agent from making decisions on behalf of the user about what to work on next.

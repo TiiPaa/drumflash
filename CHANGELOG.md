@@ -1,5 +1,301 @@
 ﻿# Changelog
 
+## 2026-06-05 — Session Pattern Bank : plocks, Clear, Generate, Presets (build 20260605-180924)
+
+**Build:** `20260605-180924`
+**Commits:** Stabilisation complète Pattern Bank + UX Clear + Generate 64 steps + Presets étendus
+
+### Changes
+- **[85] Crash retour P1** fixé : `MAX_PLOCK_BYTES` calcul dynamique depuis `FIELD_COUNT`/`INSTRUMENT_COUNT`/`STEP_COUNT` (plus de hardcode 18 fields)
+- **[86] Plocks résiduels au changement de slot** fixé : `clear_all()` + détection auto format legacy (18 vs 46 fields) dans `restore_from_buffers()`
+- **Bouton Clear** : déplacé après les slots P1-P8, confirmation 2 étapes ("Clr" → "Sure?" rouge clignotant), annulation auto sur clic Save/slot
+- **Suppression** du bouton "Clear" de la section Generator (doublon)
+- **Plocks effacés** automatiquement sur : preset (Rock/Funk/Disco), Random, Generate
+- **Presets Rock/Funk/Disco** étendus sur 64 steps (répétition bar-by-bar)
+- **Generator tiling** : Probabilistic/Markov/Classic répètent le motif 16-step sur 4 bars (64 steps). Euclidean inchangé (déjà 64 steps)
+- **Generator respecte `pattern_length`** : steps au-delà de la longueur sont effacés après génération
+
+---
+
+## 2026-06-05 — Fix Clear + confirmation deux étapes [58]
+
+**Build:** `20260605-124507`
+**Commits:** Correction du bouton Clear qui ne vidait pas la grille + ajout confirmation deux étapes
+
+### Changes
+- **Fix** : le bouton "Clr" vidait les plocks mais pas la grille (step masks) — il appelle maintenant `load_pattern_for_ui(pattern, &Pattern::empty())` pour vider aussi la grille
+- **Confirmation deux étapes** : premier clic sur "Clr" affiche "Sure?" en rouge clignotant, deuxième clic confirme le clear
+- **Annulation auto** : le mode confirm est annulé si on clique sur Save, un slot P1-P8, ou ailleurs
+- **Bouton "Clr"** déplacé à droite des slots P1-P8 pour un flux de travail cohérent (Save → Slots → Clear)
+- **Suppression** du bouton "Clear" de la section Generator qui faisait doublon
+
+---
+
+## 2026-06-05 — Déplacement du bouton Clear dans la Pattern Bank [58]
+
+**Build:** `20260605-123720`
+**Commits:** UI — bouton "Clr" déplacé après les slots P1-P8, suppression du "Clear" de la section Generator
+
+### Changes
+- **Bouton "Clr"** déplacé à droite des slots P1-P8 pour un flux de travail cohérent (Save → Slots → Clear)
+- **Suppression** du bouton "Clear" de la section Generator qui faisait doublon avec le bouton "Clr" de la Pattern Bank
+- Le bouton "Clr" vide les plocks sound + sequencer directement depuis l'UI thread
+
+---
+
+## 2026-06-05 — Fix plocks liés au pattern bank (clear + restore + legacy format) [58]
+
+**Build:** `20260605-094135`
+**Commits:** Correction plocks qui restaient du pattern précédent au changement de slot
+
+### Changes
+- **Problème** : quand on chargeait un pattern depuis la bank, les plocks du pattern précédent restaient visibles
+- **Cause** : `restore_from_buffers()` skipait le restore si `plock_bytes.len()` < `expected_plock_size` (calculé avec `FIELD_COUNT=46`). Les slots sauvegardés avant le passage de `FIELD_COUNT` de 18 à 46 avaient des données trop courtes
+- **Fix** :
+  - `restore_from_buffers()` et `PatternSlot::restore()` détectent automatiquement le format (18 vs 46 fields) depuis la taille des données
+  - `PlockState::clear_all()` et `SequencerPlockState::clear_all()` : vident tous les plocks avant restauration pour éviter les résiduels
+  - `load_pattern_from_slot()` appelle `clear_all()` sur les plocks sound et sequencer avant `restore_from_buffers()`
+- **Rétrocompatibilité** : les anciens slots (FIELD_COUNT=18) sont correctement restaurés
+
+---
+
+## 2026-06-05 — UI Pattern Bank : slot vide plus sombre + save positionne + header cleanup [58]
+
+**Build:** `20260605-092903`
+**Commits:** Améliorations UX Pattern Bank + cleanup header
+
+### Changes
+- Slot **vide** : fond `rgb(16, 16, 22)` + bordure `rgb(40, 40, 50)` (beaucoup plus sombre)
+- Slot **enregistré non lu** : inchangé `rgb(48, 48, 58)`
+- **Save positionne le slot** : après sauvegarde, le slot est automatiquement marqué comme "chargé" (vert)
+  - `save_pattern_to_slot()` met à jour `audio_last_loaded_slot`
+  - Le slot sauvegardé s'affiche en vert dans l'UI
+- **Header bar cleanup** : suppression du bouton play (non fonctionnel) et de l'affichage BPM
+  - Gardé : Master Volume, Swing, Groove, toggles (Seq, Choke, Auto-Edit, Song)
+
+---
+
+## 2026-06-05 — Fix crash [85] : buffer overflow dans copy_data_for_restore() [58]
+
+**Build:** `20260605-090814`
+**Commits:** Correction crash retour P1 — `MAX_PLOCK_BYTES` under-allocatait de 2.4x
+
+### Changes
+- **Cause racine identifiée**
+  - `MAX_PLOCK_BYTES` utilisait `18` (ancienne valeur de `FIELD_COUNT`) au lieu de `46` (valeur actuelle)
+  - Calcul incorrect : 66 664 bytes alloués vs 159 848 bytes écrits par `capture()`
+  - `copy_data_for_restore()` copiait 159 848 bytes dans un buffer de 66 664 → panic/crash Studio One
+- **Fix**
+  - `MAX_PLOCK_BYTES` et `MAX_SEQ_PLOCK_BYTES` calculés dynamiquement depuis `FIELD_COUNT`, `INSTRUMENT_COUNT`, `STEP_COUNT`
+  - Plus de hardcode — les constantes suivent automatiquement les évolutions du modèle de données
+  - `copy_data_for_restore()` protégé par `.min()` pour éviter tout overflow futur
+- **Tests**
+  - 82 tests passent, tests pattern bank validés
+
+---
+
+## 2026-06-04 — Fix race condition Pattern Bank (mutex lock + divergence last_loaded_slot) [58]
+
+**Build:** `20260604-200117`
+**Commits:** Correction race condition pattern bank — grid bloqué sur P2 après switch rapide
+
+### Changes
+- **Réduction temps de verrou audio thread**
+  - `PatternSlot::copy_data_for_restore()` : copie les données du slot sous le lock (court)
+  - `restore_from_buffers()` : restauration lock-free depuis des buffers temporaires
+  - `load_pattern_from_slot()` ne tient plus le mutex `pattern_bank` pendant le restore (qui touche des milliers d'atomics)
+- **Synchronisation `last_loaded_slot` audio→UI**
+  - Nouvel atomic `audio_last_loaded_slot` mis à jour par l'audio thread après chaque `load_pattern_from_slot`
+  - L'UI thread lit cet atomic à chaque frame et synchronise `state.last_loaded_slot`
+  - Élimine la divergence entre l'affichage (UI) et l'état réel (audio) quand on clique rapidement
+- **Buffers préalloués**
+  - `temp_plock_bytes: [u8; MAX_PLOCK_BYTES]` et `temp_seq_plock_bytes` dans `DrumFlashVst`
+  - Zéro allocation dans l'audio thread pendant le restore
+
+---
+
+## 2026-06-04 — Refonte UX Pattern Bank v2 (Save mode 2 étapes + indicateurs dirty/actif) [58]
+
+**Build:** `20260604-193124`
+**Commits:** Finalisation UX pattern bank — save/load explicites, indicateurs d'état, position sous grille
+
+### Changes
+- **Nouvelle position** : Pattern Bank sous la grille, au-dessus du générateur
+- **Interaction Save à 2 étapes**
+  - Bouton **"Save"** : clic pour activer le mode save (clignote), puis clic sur un slot P1-P8 pour sauvegarder
+  - Désactive le mode save après sauvegarde
+- **Click direct sur slot = Load**
+  - Slot occupé : charge immédiatement le pattern dans la grille
+  - Slot vide : rien (pas de chargement)
+- **Indicateurs d'état**
+  - Cercle **vert** sur le slot actuellement chargé (`last_loaded_slot`)
+  - Étoile `*` sur slot si pattern modifié depuis le dernier load/save (dirty detection)
+- **Reset indicateurs**
+  - Presets (Rock/Funk/Disco/Clear/Random) et Generate resettent `last_loaded_slot = None`
+  - Le pattern n'est plus lié au bank après modification via preset/generate
+- **Synchro `pattern_length` audio→UI**
+  - `pending_pattern_length: Arc<AtomicI32>` notifie l'UI thread qui applique via `setter.set_parameter()`
+
+---
+
+## 2026-06-04 — Refonte UX Pattern Bank (boutons Save/Load explicites) [58]
+
+**Build:** `20260604-175459`
+**Commits:** Correction de l'UX pattern bank — interactions confuses remplacées par des boutons explicites
+
+### Changes
+- **Nouvelle interaction Pattern Bank**
+  - P1-P8 = simples sélecteurs de slot
+  - Bouton **"Save"** explicite : sauvegarde le pattern courant dans le slot sélectionné
+  - Bouton **"Load"** explicite : charge le pattern du slot sélectionné (grisé si vide)
+- **Indicateurs visuels clairs**
+  - Slot occupé = petit point vert + bordure verte
+  - Slot sélectionné = fond bleu
+  - Slot vide = fond gris foncé
+- **Tooltips explicites** au survol de chaque élément
+- **Bugfix : `pattern_length` se met à jour au load**
+  - L'audio thread notifie l'UI via `pending_pattern_length` atomic
+  - L'UI thread applique la valeur via `setter.set_parameter()`
+  - Auparavant, charger un pattern de 32 steps dans un contexte de 16 steps laissait le slider bloqué
+
+---
+
+## 2026-06-04 — Stabilisation Pattern Bank (pas d'alloc audio thread + pas de panic) [58]
+
+**Build:** `20260604-170429`
+
+### Changes
+- **`PatternSlot::default()` préalloue les buffers**
+  - `capture()` utilise `clear()` + `extend_from_slice()` — zéro allocation dans l'audio thread
+- **`load_pattern_from_slot()` sans `.unwrap()`** sur le mutex
+- **Tests unitaires ajoutés** : capture/restore roundtrip, préallocation, persistance song
+
+---
+
+## 2026-06-04 — Song Mode (chaînage patterns P1-P8) [58]
+
+**Build:** `20260604-164354`
+**Commits:** Implémentation du song mode — chaînage séquentiel des patterns
+
+### Changes
+- **Nouveau paramètre `song_mode` (BoolParam, ID: `song_mode`)**
+  - Default: `false` (pattern unique en boucle — comportement existant)
+  - Quand activé: le séquenceur avance automatiquement dans la séquence de patterns
+- **Structure `SongSequence` dans `PatternBank`**
+  - 64 steps max, chaque step référence un slot P1-P8 (ou vide `-1`)
+  - `length`: nombre de steps actifs
+  - `loop_enabled`: boucle la séquence à la fin
+  - Persistance DAW via le champ existant `pattern-bank-v1`
+- **Logique de playback dans `process()`**
+  - Détection du wrap de pattern via `loop_count` du séquenceur
+  - Au wrap: avance `song_position`, charge le pattern du slot suivant
+  - Si fin de séquence et `loop_enabled`: retour au step 0
+- **UI: Toggle "Song" dans la header bar**
+  - Checkbox à côté des autres toggles (Seq, Choke, Auto-Edit)
+  - Quand Song mode actif: le panel generator est remplacé par l'éditeur de séquence
+- **Song Editor UI**
+  - Grille horizontale de steps (16 par ligne)
+  - Click sur un step: cycle P1 → P2 → ... → P8 → vide
+  - Right-click: efface le step
+  - Bouton "Loop": toggle boucle
+  - Contrôles "Len +/-": ajuste la longueur de la séquence
+  - Highlight rouge sur le step en cours de lecture
+
+---
+
+## 2026-06-04 — Désactivation séquenceur interne / Mode MIDI thru [60]
+
+**Build:** `20260604-141711`
+**Commits:** Implémentation du mode MIDI thru pour pilotage DAW
+
+### Changes
+- **Nouveau paramètre `use_internal_sequencer` (BoolParam, ID: `int_seq`)**
+  - Default: `true` (séquenceur interne actif — comportement existant)
+  - Quand désactivé: le plugin ne génère plus de triggers depuis le séquenceur interne
+  - Le plugin passe en mode "MIDI thru": les notes MIDI reçues déclenchent les instruments
+- **Mapping MIDI note → voix**
+  - Fonction `instrument_registry::voice_idx_from_midi_note(note: u8) -> Option<usize>`
+  - Mappe les notes MIDI standards (GM Drum Map) aux 13 voix du plugin
+  - Kick=36, Snare=38, HiHat=42, OpenHH=46, Tom1=50, Tom2=47, Tom3=43, Clap=39, Ride=51, Cymbal=49, Snare606=40, B8=35, Perc1=37
+- **Traitement des événements MIDI entrants dans `process()`**
+  - NoteOn reçu → lookup de la voix correspondante → `trigger()` avec velocity MIDI
+  - Hi-hat choke open hi-hat respecté aussi en mode MIDI
+  - Les événements MIDI sont forwardés à la sortie (channel 9) comme en mode séquenceur
+  - Le test panel (bouton T) continue de fonctionner en mode MIDI
+- **UI: Toggle "Seq" dans la header bar**
+  - Checkbox à côté de "Choke" et "Auto-Edit"
+  - Label court pour ne pas surcharger la barre
+
+---
+
+## 2026-06-04 — Fix trigger_hard() remet active=true (stutter machine-gun)
+
+**Build:** `20260604-130503`
+**Commits:** Fix trigger_hard() manquait self.active = true sur toutes les voix
+
+### Changes
+- **Bugfix critique : `trigger_hard()` ne remettait pas `self.active = true`**
+  - Quand l'enveloppe atteignait 0 entre deux stutters, la voix devenait inactive
+  - Les coups suivants du stutter étaient muets → un seul long son au lieu de coups distincts
+  - Fix appliqué sur les 11 voix : Kick, Snare, HiHat, OpenHiHat, Tom, Clap, Ride, Cymbal, Snare606, BassDrum808, Perc1
+  - Chaque `trigger_hard()` commence maintenant par `self.active = true` avant de hard-retrigger l'enveloppe
+
+---
+
+## 2026-06-04 — trigger_hard() machine-gun retrigger chain
+
+**Build:** `20260604-102713`
+**Commits:** Ajout trigger_hard() sur toute la chaîne de voix
+
+### Changes
+- **Ajout de `trigger_hard()` pour les répétitions stutter en "machine gun"**
+  - `ExpDecayEnvelope::trigger_from_zero()` — redémarre l'enveloppe depuis zéro avec une rampe d'attaque complète
+  - `DecayReleaseEnvelope::trigger_hard()` — hard-retrigger des deux stages (decay + release)
+  - `Voice::trigger_hard()` — méthode par défaut qui fallback sur `trigger()`
+  - `DrumVoiceKind::trigger_hard()` — dispatch vers chaque voix concrète
+  - `DrumSynthesizer::trigger_hard()` — API publique pour le séquenceur
+  - Implémentations par voix : Kick, Snare, HiHat, OpenHiHat, Tom, Clap, Ride, Cymbal, Snare606, BassDrum808, Perc1
+  - Seule l'enveloppe d'amplitude est hard-reset ; les autres états (pitch, filtres) restent continus
+
+---
+
+## 2026-06-04 — Stutter max 16 + espacement BPM-sync
+
+**Build:** `20260604-100501`
+**Commits:** Ajustements stutter après retour utilisateur
+
+### Changes
+- **Stutter max augmenté de 8 à 16**
+  - Slider UI : `1..=16` au lieu de `1..=8`
+  - Commentaire struct mis à jour (`1-16`)
+- **Espacement stutter recalculé proportionnellement au step**
+  - `spacing = step_duration / stutter` (revert du hardcodé `step/4`)
+  - Le step_duration est dérivé du BPM du DAW : `sample_rate * 60 / (bpm * 4)`
+  - x2 = 2 coups sur le step, x4 = 4 coups, x8 = 8 coups, x16 = 16 coups
+  - L'espacement s'adapte automatiquement au tempo du projet
+
+---
+
+## 2026-06-04 — Fix UI conditions Plocks Séquenceur
+
+**Build:** `20260604-092857`
+**Commits:** Correction interactive après retour test utilisateur
+
+### Changes
+- **Fix ComboBox condition qui revenait sur `Always`**
+  - Suppression complète du `ComboBox` imbriqué dans le menu contextuel
+  - Remplacement par une grille de boutons/radios visible directement dans le menu
+  - Chaque option appelle directement `set_condition()` dans le handler `.clicked()`
+  - Le bouton `Create Seq Plock` n'apparaît plus comme état inactif après une modification dans le même frame, ce qui évite d'écraser la sélection par `SequencerStepParams::default()`
+- **Sécurisation atomique du `SequencerPlockState`**
+  - `set_active()` utilise maintenant `fetch_or` / `fetch_and` au lieu d'un cycle load/store
+  - Lectures des champs sequencer plock en `Acquire`, écritures en `Release`
+- **Tests ajoutés**
+  - `sequencer_step_params_default_is_playable`
+  - `sequencer_condition_setter_roundtrips`
+
+---
+
 ## 2026-06-03 — Fix Plocks Séquenceur: defaults, conditions, stutter spacing
 
 **Build:** `20260603-211721`

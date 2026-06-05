@@ -14,7 +14,7 @@ pub mod styles;
 
 pub use styles::Style;
 
-use crate::sequencer::pattern::Pattern;
+use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT, STEP_COUNT};
 
 #[derive(Enum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GeneratorType {
@@ -42,9 +42,22 @@ pub struct GeneratorParams {
     pub variation: f32,
 }
 
+/// Tile a 16-step pattern across all 64 steps by repeating it bar-by-bar.
+fn tile_pattern(pattern: &mut Pattern) {
+    for bar in 1..4 {
+        let offset = bar * 16;
+        for step in 0..16 {
+            for inst in 0..INSTRUMENT_COUNT {
+                pattern.steps[offset + step].instruments[inst] =
+                    pattern.steps[step].instruments[inst];
+            }
+        }
+    }
+}
+
 /// Generate a pattern using the selected technique.
 pub fn generate(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Pattern {
-    match params.generator_type {
+    let mut pattern = match params.generator_type {
         GeneratorType::Probabilistic => probabilistic::generate(
             params.style_primary,
             params.style_secondary,
@@ -68,5 +81,12 @@ pub fn generate(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Patt
             params.variation,
             rng,
         ),
+    };
+
+    // Tile the generated 16-step pattern across all 64 steps
+    // (Euclidean already generates full 64 steps, skip tiling for it)
+    if params.generator_type != GeneratorType::Euclidean {
+        tile_pattern(&mut pattern);
     }
+    pattern
 }
