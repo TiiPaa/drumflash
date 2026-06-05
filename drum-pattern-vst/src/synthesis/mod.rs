@@ -440,6 +440,11 @@ impl VoiceSettings {
 
 pub trait Voice: Send + Sync {
     fn trigger(&mut self);
+    /// Hard machine-gun retrigger: envelope restarts from zero. Default
+    /// falls back to regular trigger for voices that don't override.
+    fn trigger_hard(&mut self) {
+        self.trigger();
+    }
     fn process_sample(&mut self) -> f32;
     /// Stereo version. Default returns duplicated mono.
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -489,6 +494,22 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.trigger(),
             DrumVoiceKind::BassDrum808(v) => v.trigger(),
             DrumVoiceKind::Perc1(v) => v.trigger(),
+        }
+    }
+
+    fn trigger_hard(&mut self) {
+        match self {
+            DrumVoiceKind::Kick(v) => v.trigger_hard(),
+            DrumVoiceKind::Snare(v) => v.trigger_hard(),
+            DrumVoiceKind::HiHat(v) => v.trigger_hard(),
+            DrumVoiceKind::OpenHiHat(v) => v.trigger_hard(),
+            DrumVoiceKind::Tom(v) => v.trigger_hard(),
+            DrumVoiceKind::Clap(v) => v.trigger_hard(),
+            DrumVoiceKind::Ride(v) => v.trigger_hard(),
+            DrumVoiceKind::Cymbal(v) => v.trigger_hard(),
+            DrumVoiceKind::Snare606(v) => v.trigger_hard(),
+            DrumVoiceKind::BassDrum808(v) => v.trigger_hard(),
+            DrumVoiceKind::Perc1(v) => v.trigger_hard(),
         }
     }
 
@@ -695,6 +716,13 @@ impl DrumSynthesizer {
     pub fn trigger(&mut self, voice_idx: usize, velocity: f32) {
         if let Some(voice) = self.voices.get_mut(voice_idx) {
             voice.trigger();
+            self.velocities[voice_idx] = velocity;
+        }
+    }
+
+    pub fn trigger_hard(&mut self, voice_idx: usize, velocity: f32) {
+        if let Some(voice) = self.voices.get_mut(voice_idx) {
+            voice.trigger_hard();
             self.velocities[voice_idx] = velocity;
         }
     }

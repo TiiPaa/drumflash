@@ -51,13 +51,11 @@ impl PlockMasks {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        let mask = self.masks[instrument].load(Ordering::Relaxed);
-        let new_mask = if active {
-            mask | (1u64 << step)
+        if active {
+            self.masks[instrument].fetch_or(1u64 << step, Ordering::Release);
         } else {
-            mask & !(1u64 << step)
-        };
-        self.masks[instrument].store(new_mask, Ordering::Release);
+            self.masks[instrument].fetch_and(!(1u64 << step), Ordering::Release);
+        }
     }
 }
 
@@ -325,6 +323,20 @@ impl PlockState {
         self.masks.set_active(instrument, step, false);
         self.field_masks.clear_all(instrument, step);
     }
+
+    /// Clear every plock in the entire grid.
+    /// Call before restore_from_buffers() so old plocks don't leak into the new pattern.
+    pub fn clear_all(&self) {
+        for inst in 0..INSTRUMENT_COUNT {
+            self.masks.masks[inst].store(0, Ordering::Relaxed);
+            for step in 0..STEP_COUNT {
+                self.field_masks.clear_all(inst, step);
+                for field in 0..FIELD_COUNT {
+                    self.values.set(inst, step, field, 0.0);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -544,7 +556,7 @@ impl StepCondition {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SequencerStepParams {
     pub probability: f32,      // 0.0 - 1.0, default 1.0 = always trigger
-    pub stutter_count: u8,     // 1-8, default 1 = no stutter
+    pub stutter_count: u8,     // 1-16, default 1 = no stutter
     pub condition: StepCondition,
     pub microtiming_ms: f32,   // -50.0 to +50.0, default 0.0
 }
@@ -615,9 +627,9 @@ impl SequencerPlockState {
             return None;
         }
         Some(SequencerStepParams {
-            probability: f32::from_bits(self.probabilities[instrument][step].load(Ordering::Relaxed)),
-            stutter_count: f32::from_bits(self.stutters[instrument][step].load(Ordering::Relaxed)) as u8,
-            condition: match self.conditions[instrument][step].load(Ordering::Relaxed) {
+            probability: f32::from_bits(self.probabilities[instrument][step].load(Ordering::Acquire)),
+            stutter_count: f32::from_bits(self.stutters[instrument][step].load(Ordering::Acquire)) as u8,
+            condition: match self.conditions[instrument][step].load(Ordering::Acquire) {
                 1 => StepCondition::First,
                 2 => StepCondition::NotFirst,
                 3 => StepCondition::Half1,
@@ -631,7 +643,7 @@ impl SequencerPlockState {
                 11 => StepCondition::Fourth4,
                 _ => StepCondition::Always,
             },
-            microtiming_ms: f32::from_bits(self.microtimings[instrument][step].load(Ordering::Relaxed)),
+            microtiming_ms: f32::from_bits(self.microtimings[instrument][step].load(Ordering::Acquire)),
         })
     }
 
@@ -639,10 +651,10 @@ impl SequencerPlockState {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.probabilities[instrument][step].store(params.probability.to_bits(), Ordering::Relaxed);
-        self.stutters[instrument][step].store((params.stutter_count as f32).to_bits(), Ordering::Relaxed);
-        self.conditions[instrument][step].store(params.condition as u32, Ordering::Relaxed);
-        self.microtimings[instrument][step].store(params.microtiming_ms.to_bits(), Ordering::Relaxed);
+        self.probabilities[instrument][step].store(params.probability.to_bits(), Ordering::Release);
+        self.stutters[instrument][step].store((params.stutter_count as f32).to_bits(), Ordering::Release);
+        self.conditions[instrument][step].store(params.condition as u32, Ordering::Release);
+        self.microtimings[instrument][step].store(params.microtiming_ms.to_bits(), Ordering::Release);
         self.set_active(instrument, step, true);
     }
 
@@ -650,7 +662,7 @@ impl SequencerPlockState {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.probabilities[instrument][step].store(value.to_bits(), Ordering::Relaxed);
+        self.probabilities[instrument][step].store(value.to_bits(), Ordering::Release);
         self.set_active(instrument, step, true);
     }
 
@@ -658,7 +670,7 @@ impl SequencerPlockState {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.stutters[instrument][step].store((value as f32).to_bits(), Ordering::Relaxed);
+        self.stutters[instrument][step].store((value as f32).to_bits(), Ordering::Release);
         self.set_active(instrument, step, true);
     }
 
@@ -666,7 +678,7 @@ impl SequencerPlockState {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.conditions[instrument][step].store(value as u32, Ordering::Relaxed);
+        self.conditions[instrument][step].store(value as u32, Ordering::Release);
         self.set_active(instrument, step, true);
     }
 
@@ -674,12 +686,25 @@ impl SequencerPlockState {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.microtimings[instrument][step].store(value.to_bits(), Ordering::Relaxed);
+        self.microtimings[instrument][step].store(value.to_bits(), Ordering::Release);
         self.set_active(instrument, step, true);
     }
 
     pub fn clear(&self, instrument: usize, step: usize) {
         self.set_active(instrument, step, false);
+    }
+
+    /// Clear every sequencer plock in the entire grid.
+    pub fn clear_all(&self) {
+        for inst in 0..INSTRUMENT_COUNT {
+            self.masks[inst].store(0, Ordering::Relaxed);
+            for step in 0..STEP_COUNT {
+                self.probabilities[inst][step].store(f32::to_bits(1.0), Ordering::Relaxed);
+                self.stutters[inst][step].store(f32::to_bits(1.0), Ordering::Relaxed);
+                self.conditions[inst][step].store(0, Ordering::Relaxed);
+                self.microtimings[inst][step].store(0, Ordering::Relaxed);
+            }
+        }
     }
 }
 
@@ -1043,5 +1068,27 @@ mod tests {
 
         let r63 = persistent_dst.state.get_settings(2, 63, &global).expect("restored step 63");
         assert_eq!(r63.filter_freq, 5000.0);
+    }
+
+    #[test]
+    fn sequencer_step_params_default_is_playable() {
+        let params = SequencerStepParams::default();
+
+        assert_eq!(params.probability, 1.0);
+        assert_eq!(params.stutter_count, 1);
+        assert_eq!(params.condition, StepCondition::Always);
+        assert_eq!(params.microtiming_ms, 0.0);
+    }
+
+    #[test]
+    fn sequencer_condition_setter_roundtrips() {
+        let state = SequencerPlockState::new();
+
+        state.set_condition(0, 7, StepCondition::NotFirst);
+
+        let params = state.get(0, 7).expect("sequencer plock should exist");
+        assert_eq!(params.condition, StepCondition::NotFirst);
+        assert_eq!(params.probability, 1.0);
+        assert_eq!(params.stutter_count, 1);
     }
 }

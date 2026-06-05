@@ -213,7 +213,7 @@ impl Voice for KickVoice {
         }
         if self.settings.analog >= 0.5 {
             // Analog: persistent sweep + per-hit drift (the vintage "breathing").
-            // Î”-Hz only ever rises toward the peak, stacking with the tail.
+            // Δ-Hz only ever rises toward the peak, stacking with the tail.
             self.pitch_env.trigger_from_current(self.pitch_peak_hz());
             self.drift_pitch = 1.0 + self.drift_rng.next() * dsp::AnalogDrift::PITCH_DEPTH;
             self.drift_level = 1.0 + self.drift_rng.next() * dsp::AnalogDrift::LEVEL_DEPTH;
@@ -238,6 +238,11 @@ impl Voice for KickVoice {
         if self.click_amount() > 0.0 {
             self.click.trigger();
         }
+    }
+
+    fn trigger_hard(&mut self) {
+        self.active = true;
+        self.amp_env.trigger_hard();
     }
 
     fn process_sample(&mut self) -> f32 {
