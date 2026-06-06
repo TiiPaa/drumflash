@@ -42,22 +42,9 @@ pub struct GeneratorParams {
     pub variation: f32,
 }
 
-/// Tile a 16-step pattern across all 64 steps by repeating it bar-by-bar.
-fn tile_pattern(pattern: &mut Pattern) {
-    for bar in 1..4 {
-        let offset = bar * 16;
-        for step in 0..16 {
-            for inst in 0..INSTRUMENT_COUNT {
-                pattern.steps[offset + step].instruments[inst] =
-                    pattern.steps[step].instruments[inst];
-            }
-        }
-    }
-}
-
-/// Generate a pattern using the selected technique.
-pub fn generate(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Pattern {
-    let mut pattern = match params.generator_type {
+/// Generate a single 16-step bar.
+fn generate_bar(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Pattern {
+    match params.generator_type {
         GeneratorType::Probabilistic => probabilistic::generate(
             params.style_primary,
             params.style_secondary,
@@ -70,23 +57,38 @@ pub fn generate(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Patt
             params.density,
             rng,
         ),
-        GeneratorType::Euclidean => {
-            // Default rotations: slightly offset per instrument for groove
-            let rotations = [0, 0, 0, 2, 4, 6, 8, 0, 0, 0, 0, 0, 0];
-            euclidean::generate(params.style_primary, params.density, &rotations, rng)
-        }
         GeneratorType::Classic => classic::generate(
             params.style_primary,
             params.density,
             params.variation,
             rng,
         ),
-    };
-
-    // Tile the generated 16-step pattern across all 64 steps
-    // (Euclidean already generates full 64 steps, skip tiling for it)
-    if params.generator_type != GeneratorType::Euclidean {
-        tile_pattern(&mut pattern);
+        _ => unreachable!(),
     }
-    pattern
+}
+
+/// Generate a pattern using the selected technique.
+/// Non-Euclidean generators produce 4 distinct bars (variations).
+/// Euclidean already generates varied 64 steps in one pass.
+pub fn generate(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Pattern {
+    match params.generator_type {
+        GeneratorType::Euclidean => {
+            // Default rotations: slightly offset per instrument for groove
+            let rotations = [0, 0, 0, 2, 4, 6, 8, 0, 0, 0, 0, 0, 0];
+            euclidean::generate(params.style_primary, params.density, &rotations, rng)
+        }
+        _ => {
+            let mut pattern = Pattern::empty();
+            for bar in 0..4 {
+                let bar_pattern = generate_bar(params, rng);
+                for step in 0..16 {
+                    for inst in 0..INSTRUMENT_COUNT {
+                        pattern.steps[bar * 16 + step].instruments[inst] =
+                            bar_pattern.steps[step].instruments[inst];
+                    }
+                }
+            }
+            pattern
+        }
+    }
 }
