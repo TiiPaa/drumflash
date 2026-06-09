@@ -52,17 +52,10 @@ fn generate_bar(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Patt
             params.density,
             rng,
         ),
-        GeneratorType::Markov => markov::generate(
-            params.style_primary,
-            params.density,
-            rng,
-        ),
-        GeneratorType::Classic => classic::generate(
-            params.style_primary,
-            params.density,
-            params.variation,
-            rng,
-        ),
+        GeneratorType::Markov => markov::generate(params.style_primary, params.density, rng),
+        GeneratorType::Classic => {
+            classic::generate(params.style_primary, params.density, params.variation, rng)
+        }
         _ => unreachable!(),
     }
 }

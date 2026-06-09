@@ -76,6 +76,13 @@ pub mod win_keyboard {
         private: u32,
     }
 
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct POINT {
+        x: i32,
+        y: i32,
+    }
+
     const PM_NOREMOVE: u32 = 0x0000;
     const SCAN_MASK: isize = 0x01FF_0000;
 
@@ -120,6 +127,8 @@ pub mod win_keyboard {
         fn SetFocus(hwnd: *mut c_void) -> *mut c_void;
         fn GetFocus() -> *mut c_void;
         fn GetForegroundWindow() -> *mut c_void;
+        fn GetCursorPos(point: *mut POINT) -> i32;
+        fn WindowFromPoint(point: POINT) -> *mut c_void;
         fn GetWindowThreadProcessId(hwnd: *mut c_void, process_id: *mut u32) -> u32;
         fn GetCurrentThreadId() -> u32;
         fn AttachThreadInput(id_attach: u32, id_attach_to: u32, f_attach: i32) -> i32;
@@ -334,9 +343,34 @@ pub mod win_keyboard {
         MESSAGE_HWND.store(msg_hwnd, Ordering::Release);
     }
 
+    unsafe fn is_window_or_descendant(root: *mut c_void, child: *mut c_void) -> bool {
+        if root.is_null() || child.is_null() {
+            return false;
+        }
+
+        let mut current = child;
+        while !current.is_null() {
+            if current == root {
+                return true;
+            }
+            current = GetParent(current);
+        }
+        false
+    }
+
+    unsafe fn cursor_over_window_or_descendant(root: *mut c_void) -> bool {
+        let mut point = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut point) == 0 {
+            return false;
+        }
+        is_window_or_descendant(root, WindowFromPoint(point))
+    }
+
     /// Move keyboard focus between the message window (when egui wants input) and the
-    /// baseview window (when it doesn't). Uses `AttachThreadInput` so `SetFocus` works
-    /// even when the calling thread doesn't own the host's input queue.
+    /// baseview window (when it doesn't). Never refocuses the plugin unless focus is
+    /// already inside the editor, otherwise hosts like Studio One cannot open menus while
+    /// the editor is visible. Uses `AttachThreadInput` so `SetFocus` works even when the
+    /// calling thread doesn't own the host's input queue.
     pub fn set_keyboard_focus(focused: bool) {
         let plugin = super::PLUGIN_HWND.load(Ordering::Acquire);
         let msg = MESSAGE_HWND.load(Ordering::Acquire);
@@ -349,9 +383,23 @@ pub mod win_keyboard {
                 return;
             }
             let target = if focused && !msg.is_null() { msg } else { plugin };
-            if GetFocus() == target {
+            let current_focus = GetFocus();
+            if current_focus == target {
                 return;
             }
+
+            if focused {
+                if !is_window_or_descendant(plugin, current_focus)
+                    && !cursor_over_window_or_descendant(plugin)
+                {
+                    return;
+                }
+            } else if !msg.is_null() {
+                if current_focus != msg || !cursor_over_window_or_descendant(plugin) {
+                    return;
+                }
+            }
+
             let fg = GetForegroundWindow();
             if fg.is_null() {
                 return;

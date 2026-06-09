@@ -1,8 +1,8 @@
 //! Euclidean rhythm generator (Technique C).
 //! Uses the Bjorklund algorithm, then applies musical coherence rules.
 
-use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT, STEP_COUNT};
 use super::styles::{MusicalTemplate, Style};
+use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT, STEP_COUNT};
 
 fn bjorklund(hits: usize, steps: usize) -> Vec<bool> {
     if hits == 0 || steps == 0 {
@@ -34,8 +34,12 @@ fn bjorklund(hits: usize, steps: usize) -> Vec<bool> {
     }
 
     let mut result = Vec::new();
-    for g in &groups { result.extend_from_slice(g); }
-    for g in &remainders { result.extend_from_slice(g); }
+    for g in &groups {
+        result.extend_from_slice(g);
+    }
+    for g in &remainders {
+        result.extend_from_slice(g);
+    }
     result.resize(steps, false);
     result
 }
@@ -53,13 +57,18 @@ fn euclidean_params(density: f32) -> [(usize, usize); INSTRUMENT_COUNT] {
         ((d * 2.0).round() as usize, STEP_COUNT), // Clap
         ((4.0 + d * 8.0).round() as usize, STEP_COUNT), // Ride
         ((d * 2.0).round() as usize, STEP_COUNT), // Cymbal
-        (0, STEP_COUNT), // Snare 606 — user-only, no auto-generation
+        (0, STEP_COUNT),                          // Snare 606 — user-only, no auto-generation
         ((2.0 + d * 3.0).round() as usize, STEP_COUNT), // 808 Kick
         ((d * 2.0).round() as usize, STEP_COUNT), // Perc1
     ]
 }
 
-pub fn generate(style: Style, density: f32, rotation: &[usize; INSTRUMENT_COUNT], rng: &mut impl FnMut() -> f32) -> Pattern {
+pub fn generate(
+    style: Style,
+    density: f32,
+    rotation: &[usize; INSTRUMENT_COUNT],
+    rng: &mut impl FnMut() -> f32,
+) -> Pattern {
     let mut pattern = Pattern::empty();
     pattern.name = "Euclidean".to_string();
     let template = MusicalTemplate::for_style(style);
@@ -70,7 +79,9 @@ pub fn generate(style: Style, density: f32, rotation: &[usize; INSTRUMENT_COUNT]
         let (hits, steps) = params[inst];
         let mut row = bjorklund(hits, steps);
         let rot = rotation.get(inst).copied().unwrap_or(0) % steps.max(1);
-        if rot > 0 { row.rotate_left(rot); }
+        if rot > 0 {
+            row.rotate_left(rot);
+        }
 
         // Style variation: probabilistically flip some steps
         let variation = 0.05 + (1.0 - density) * 0.1;

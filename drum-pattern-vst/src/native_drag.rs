@@ -8,15 +8,16 @@ use std::{
 };
 
 use windows_sys::{
-    core::{GUID, HRESULT, IID_IUnknown, IUnknown_Vtbl},
+    core::{IID_IUnknown, IUnknown_Vtbl, GUID, HRESULT},
     Win32::{
         Foundation::{
             DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC,
-            E_NOINTERFACE, E_NOTIMPL, OLE_E_ADVISENOTSUPPORTED, RPC_E_CHANGED_MODE, S_FALSE,
-            S_OK,
+            E_NOINTERFACE, E_NOTIMPL, OLE_E_ADVISENOTSUPPORTED, RPC_E_CHANGED_MODE, S_FALSE, S_OK,
         },
         System::{
-            Com::{FORMATETC, STGMEDIUM, STGMEDIUM_0, DATADIR_GET, DVASPECT_CONTENT, TYMED_HGLOBAL},
+            Com::{
+                DATADIR_GET, DVASPECT_CONTENT, FORMATETC, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
+            },
             Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT},
             Ole::{
                 DoDragDrop, OleInitialize, OleUninitialize, CF_HDROP, DROPEFFECT_COPY,
@@ -39,17 +40,22 @@ extern "system" {
 #[repr(C)]
 struct DataObjectVtbl {
     base: IUnknown_Vtbl,
-    get_data:
-        unsafe extern "system" fn(*mut c_void, *const FORMATETC, *mut STGMEDIUM) -> HRESULT,
+    get_data: unsafe extern "system" fn(*mut c_void, *const FORMATETC, *mut STGMEDIUM) -> HRESULT,
     get_data_here:
         unsafe extern "system" fn(*mut c_void, *const FORMATETC, *mut STGMEDIUM) -> HRESULT,
     query_get_data: unsafe extern "system" fn(*mut c_void, *const FORMATETC) -> HRESULT,
     get_canonical_format_etc:
         unsafe extern "system" fn(*mut c_void, *const FORMATETC, *mut FORMATETC) -> HRESULT,
-    set_data: unsafe extern "system" fn(*mut c_void, *const FORMATETC, *const STGMEDIUM, i32) -> HRESULT,
+    set_data:
+        unsafe extern "system" fn(*mut c_void, *const FORMATETC, *const STGMEDIUM, i32) -> HRESULT,
     enum_format_etc: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void) -> HRESULT,
-    d_advise:
-        unsafe extern "system" fn(*mut c_void, *const FORMATETC, u32, *mut c_void, *mut u32) -> HRESULT,
+    d_advise: unsafe extern "system" fn(
+        *mut c_void,
+        *const FORMATETC,
+        u32,
+        *mut c_void,
+        *mut u32,
+    ) -> HRESULT,
     d_unadvise: unsafe extern "system" fn(*mut c_void, u32) -> HRESULT,
     enum_d_advise: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> HRESULT,
 }

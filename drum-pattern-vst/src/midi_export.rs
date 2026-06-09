@@ -30,7 +30,7 @@ fn midi_header(track_length: u32) -> Vec<u8> {
     data.extend_from_slice(&[0x00, 0x00]); // format 0
     data.extend_from_slice(&[0x00, 0x01]); // 1 track
     data.extend_from_slice(&[0x01, 0xE0]); // 480 ticks per quarter
-    // MTrk
+                                           // MTrk
     data.extend_from_slice(b"MTrk");
     data.extend_from_slice(&[
         (track_length >> 24) as u8,
@@ -47,10 +47,17 @@ pub fn export_pattern_to_midi(
     pattern_length: usize,
     path: &Path,
 ) -> std::io::Result<()> {
-    std::fs::write(path, export_pattern_to_midi_data(pattern, bpm, pattern_length))
+    std::fs::write(
+        path,
+        export_pattern_to_midi_data(pattern, bpm, pattern_length),
+    )
 }
 
-fn export_pattern_to_midi_data(pattern: &SharedPattern, bpm: f32, pattern_length: usize) -> Vec<u8> {
+fn export_pattern_to_midi_data(
+    pattern: &SharedPattern,
+    bpm: f32,
+    pattern_length: usize,
+) -> Vec<u8> {
     let microseconds_per_quarter = (60_000_000.0 / bpm).round() as u32;
     let steps = pattern_length.clamp(1, 64);
 
@@ -104,7 +111,11 @@ fn export_pattern_to_midi_data(pattern: &SharedPattern, bpm: f32, pattern_length
 
 /// Export pattern to MIDI bytes in memory (for drag-and-drop).
 #[allow(dead_code)]
-pub fn export_pattern_to_midi_bytes(pattern: &SharedPattern, bpm: f32, pattern_length: usize) -> std::io::Result<Vec<u8>> {
+pub fn export_pattern_to_midi_bytes(
+    pattern: &SharedPattern,
+    bpm: f32,
+    pattern_length: usize,
+) -> std::io::Result<Vec<u8>> {
     Ok(export_pattern_to_midi_data(pattern, bpm, pattern_length))
 }
 

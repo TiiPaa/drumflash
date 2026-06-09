@@ -2,12 +2,12 @@
 
 #[path = "../groove.rs"]
 mod groove;
+#[path = "../instrument_registry.rs"]
+mod instrument_registry;
 #[path = "../sequencer/mod.rs"]
 mod sequencer;
 #[path = "../synthesis/mod.rs"]
 mod synthesis;
-#[path = "../instrument_registry.rs"]
-mod instrument_registry;
 
 use groove::GrooveType;
 use sequencer::Sequencer;
@@ -42,9 +42,9 @@ fn main() {
         for sample in output_buffer.iter_mut() {
             let triggers = sequencer.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
 
-            for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
-                if *should_trigger {
-                    synthesizer.trigger(voice_idx, *velocity);
+            for (voice_idx, trigger) in triggers.iter().enumerate() {
+                if trigger.should_trigger {
+                    synthesizer.trigger(voice_idx, trigger.velocity);
                 }
             }
 

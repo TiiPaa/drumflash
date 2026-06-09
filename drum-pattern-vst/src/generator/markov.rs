@@ -1,8 +1,8 @@
 //! Markov-chain pattern generator (Technique B).
 //! Uses musical templates as transition priors for coherent rhythmic evolution.
 
-use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT, STEP_COUNT};
 use super::styles::{MusicalTemplate, Style};
+use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT, STEP_COUNT};
 
 pub fn generate(style: Style, density: f32, rng: &mut impl FnMut() -> f32) -> Pattern {
     let template = MusicalTemplate::for_style(style);

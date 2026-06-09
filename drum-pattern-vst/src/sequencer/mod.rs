@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use crate::groove::{self, GrooveType};
 use crate::synthesis::DrumVoice;
-pub use pattern::{Pattern, SharedPattern};
+pub use pattern::{FusedGroup, Pattern, SharedPattern, MAX_FUSIONS};
 
 /// Per-instrument state.
 #[derive(Clone, Copy, Debug)]
@@ -32,6 +32,51 @@ pub struct TrackState {
     pub step_counter: usize,
     /// Simple LCG RNG state for deterministic per-track randomness.
     rng_state: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FusionTrack {
+    groups: [FusedGroup; MAX_FUSIONS],
+    count: usize,
+}
+
+impl Default for FusionTrack {
+    fn default() -> Self {
+        Self {
+            groups: [FusedGroup::default(); MAX_FUSIONS],
+            count: 0,
+        }
+    }
+}
+
+impl FusionTrack {
+    #[cfg(test)]
+    fn set_from_slice(&mut self, fusions: &[FusedGroup]) {
+        self.count = 0;
+        for group in fusions
+            .iter()
+            .copied()
+            .filter(FusedGroup::is_valid)
+            .take(MAX_FUSIONS)
+        {
+            self.groups[self.count] = group;
+            self.count += 1;
+        }
+    }
+
+    fn set_from_pattern(&mut self, pattern: &SharedPattern, instrument: usize) {
+        self.count = pattern.load_fusions_into(instrument, &mut self.groups);
+    }
+
+    fn containing(&self, step: usize) -> Option<FusedGroup> {
+        for i in 0..self.count {
+            let group = self.groups[i];
+            if group.contains(step) {
+                return Some(group);
+            }
+        }
+        None
+    }
 }
 
 impl Default for TrackState {
@@ -69,10 +114,40 @@ pub struct Sequencer {
     master_length: usize,
     /// How many times the master pattern has looped (for step conditions).
     loop_count: usize,
+    /// Per-instrument fused cell groups (Step Fusion), copied from SharedPattern once per buffer.
+    fusions: [FusionTrack; DrumVoice::COUNT],
 }
 
-/// Per-instrument trigger result: (should_trigger, velocity).
-pub type TriggerResult = (bool, f32);
+/// Per-instrument trigger result.
+#[derive(Clone, Copy, Debug)]
+pub struct TriggerResult {
+    pub should_trigger: bool,
+    pub velocity: f32,
+    /// Cell used for sound plocks, sequencer plocks and MIDI export of this hit.
+    pub step: usize,
+    /// Number of evenly spaced pulses to emit over `fusion_span_cells` cells.
+    /// `1` means a normal, non-fused trigger.
+    pub fusion_pulse_count: u8,
+    pub fusion_span_cells: u8,
+}
+
+impl Default for TriggerResult {
+    fn default() -> Self {
+        Self {
+            should_trigger: false,
+            velocity: 0.0,
+            step: 0,
+            fusion_pulse_count: 1,
+            fusion_span_cells: 1,
+        }
+    }
+}
+
+impl TriggerResult {
+    pub fn is_fusion(&self) -> bool {
+        self.fusion_span_cells > 1
+    }
+}
 
 impl Sequencer {
     pub fn new(pattern: Arc<SharedPattern>) -> Self {
@@ -86,6 +161,22 @@ impl Sequencer {
             mutes: [false; DrumVoice::COUNT],
             master_length: 16,
             loop_count: 0,
+            fusions: [FusionTrack::default(); DrumVoice::COUNT],
+        }
+    }
+
+    /// Copy fusion groups from SharedPattern into fixed local arrays.
+    /// Call once per audio buffer, never per sample.
+    pub fn sync_fusions_from_pattern(&mut self) {
+        for instrument in 0..DrumVoice::COUNT {
+            self.fusions[instrument].set_from_pattern(&self.pattern, instrument);
+        }
+    }
+
+    #[cfg(test)]
+    fn set_fusions_for_test(&mut self, instrument: usize, fusions: &[FusedGroup]) {
+        if instrument < DrumVoice::COUNT {
+            self.fusions[instrument].set_from_slice(fusions);
         }
     }
 
@@ -96,7 +187,7 @@ impl Sequencer {
         swing: f32,
         groove_type: GrooveType,
     ) -> [TriggerResult; DrumVoice::COUNT] {
-        let mut triggers = [(false, 0.0f32); DrumVoice::COUNT];
+        let mut triggers = [TriggerResult::default(); DrumVoice::COUNT];
 
         if !self.is_playing {
             return triggers;
@@ -127,7 +218,8 @@ impl Sequencer {
 
             // Push/pull: convert ms to beats and subtract so positive = late.
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
-            let shifted_beat = (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
+            let shifted_beat =
+                (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
 
             // Re-compute master step for this track's shifted timeline.
             let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
@@ -140,7 +232,24 @@ impl Sequencer {
                 track.step_counter = track.step_counter.wrapping_add(1);
                 let current_step = track.step_counter % track.track_length.max(1);
 
-                let step_mask = self.pattern.load_step_mask(current_step);
+                let fusion = self.fusions[instrument].containing(current_step);
+                let (source_step, fusion_pulse_count, fusion_span_cells) = match fusion {
+                    Some(group) if group.is_start(current_step) => (
+                        group.start_cell as usize,
+                        group.step_count.clamp(1, 64),
+                        group.cell_span().min(64) as u8,
+                    ),
+                    Some(_) => {
+                        // Covered cells do not trigger independently. The start cell
+                        // schedules all pulses for the fused region.
+                        track.previous_shifted_master = shifted_master;
+                        track.previous_step = current_step;
+                        continue;
+                    }
+                    None => (current_step, 1, 1),
+                };
+
+                let step_mask = self.pattern.load_step_mask(source_step);
                 let active = (step_mask & (1 << instrument)) != 0 && !self.mutes[instrument];
 
                 let velocity = if active {
@@ -154,7 +263,13 @@ impl Sequencer {
                     0.0
                 };
 
-                triggers[instrument] = (active, velocity);
+                triggers[instrument] = TriggerResult {
+                    should_trigger: active,
+                    velocity,
+                    step: source_step,
+                    fusion_pulse_count,
+                    fusion_span_cells,
+                };
                 track.previous_shifted_master = shifted_master;
                 track.previous_step = current_step;
             }
@@ -170,7 +285,8 @@ impl Sequencer {
         let total_master_steps = (position_beats * 4.0) as usize;
         for track in self.tracks.iter_mut() {
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
-            let shifted_beat = (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
+            let shifted_beat =
+                (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
             let shifted_master = groove::beat_to_step(shifted_beat, self.swing, self.groove_type);
             track.previous_shifted_master = shifted_master;
             track.step_counter = total_master_steps;
@@ -229,17 +345,7 @@ impl Sequencer {
     ) {
         self.master_length = master_length.clamp(1, 64);
         for i in 0..DrumVoice::COUNT {
-            // Si le track length est a sa valeur par defaut (16) et que master_length
-            // est different, on synchronise le track sur master_length. Cela permet
-            // a l'utilisateur d'agrandir le pattern sans changer manuellement chaque track.
-            // Si l'utilisateur veut vraiment un track a 16 avec un master > 16, il doit
-            // le remettre a 16 apres avoir change le master.
-            let track_len = if lengths[i] == 16 && master_length != 16 {
-                master_length
-            } else {
-                lengths[i]
-            };
-            self.tracks[i].track_length = track_len.clamp(1, self.master_length);
+            self.tracks[i].track_length = lengths[i].clamp(1, self.master_length);
             self.tracks[i].push_pull_ms = push_pulls[i];
             self.tracks[i].humanize_amount = humanizes[i].clamp(0.0, 1.0);
         }
@@ -306,7 +412,7 @@ mod tests {
         let mut triggers_count = 0;
         for _ in 0..6000 {
             let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
-            if triggers.iter().any(|(t, _)| *t) {
+            if triggers.iter().any(|trigger| trigger.should_trigger) {
                 triggers_count += 1;
             }
         }
@@ -332,7 +438,7 @@ mod tests {
         let mut step_triggers = Vec::new();
         for sample_idx in 0..total_samples {
             let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
-            if triggers.iter().any(|(t, _)| *t) {
+            if triggers.iter().any(|trigger| trigger.should_trigger) {
                 step_triggers.push(sample_idx);
             }
         }
@@ -342,7 +448,9 @@ mod tests {
         assert!(
             bar_2_drift.abs() <= 1,
             "Timing drift: bar 2 started at sample {} instead of {} (drift = {})",
-            start_of_bar_2, samples_per_bar_exact, bar_2_drift
+            start_of_bar_2,
+            samples_per_bar_exact,
+            bar_2_drift
         );
 
         let start_of_bar_11 = step_triggers[160];
@@ -370,7 +478,7 @@ mod tests {
         let mut straight_positions = Vec::new();
         for sample_idx in 0..(44100 * 2) {
             let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
-            if triggers.iter().any(|(t, _)| *t) {
+            if triggers.iter().any(|trigger| trigger.should_trigger) {
                 straight_positions.push(sample_idx);
             }
         }
@@ -380,7 +488,7 @@ mod tests {
         let mut swing_positions = Vec::new();
         for sample_idx in 0..(44100 * 2) {
             let triggers = seq.process_sample(bpm, sample_rate, 0.5, GrooveType::Swing16);
-            if triggers.iter().any(|(t, _)| *t) {
+            if triggers.iter().any(|trigger| trigger.should_trigger) {
                 swing_positions.push(sample_idx);
             }
         }
@@ -390,11 +498,16 @@ mod tests {
         assert!(
             step1_swing > step1_straight,
             "Step 1 with swing should be delayed (straight={}, swing={})",
-            step1_straight, step1_swing
+            step1_straight,
+            step1_swing
         );
 
         let step0_delta = (swing_positions[0] as isize - straight_positions[0] as isize).abs();
-        assert!(step0_delta <= 1, "Step 0 should not drift with swing (delta={})", step0_delta);
+        assert!(
+            step0_delta <= 1,
+            "Step 0 should not drift with swing (delta={})",
+            step0_delta
+        );
     }
 
     #[test]
@@ -417,7 +530,7 @@ mod tests {
 
             for sample_idx in 0..(samples_per_bar * 3 + 100) {
                 let triggers = seq.process_sample(bpm, sample_rate, swing, GrooveType::Swing16);
-                if triggers.iter().any(|(t, _)| *t) {
+                if triggers.iter().any(|trigger| trigger.should_trigger) {
                     triggers_seen += 1;
                     if triggers_seen % 16 == 1 && triggers_seen > 1 {
                         let measured_bar_duration = sample_idx - bar_start;
@@ -425,7 +538,8 @@ mod tests {
                         assert!(
                             drift.abs() <= 1,
                             "Swing={}: bar duration drift = {} samples",
-                            swing, drift
+                            swing,
+                            drift
                         );
                         bar_start = sample_idx;
                     }
@@ -455,23 +569,27 @@ mod tests {
 
         for _ in 0..(88200 * 4) {
             let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
-            if triggers[0].0 {
+            if triggers[0].should_trigger {
                 kick_steps.push(seq.tracks[0].previous_step);
             }
-            if triggers[1].0 {
+            if triggers[1].should_trigger {
                 snare_steps.push(seq.tracks[1].previous_step);
             }
         }
 
         // Kick should cycle 0..15 repeatedly
         assert!(
-            kick_steps.windows(16).any(|w| w == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]),
+            kick_steps
+                .windows(16)
+                .any(|w| w == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]),
             "Kick should cycle through all 16 steps"
         );
 
         // Snare should cycle 0..11 repeatedly
         assert!(
-            snare_steps.windows(12).any(|w| w == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
+            snare_steps
+                .windows(12)
+                .any(|w| w == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
             "Snare should cycle through all 12 steps"
         );
     }
@@ -500,10 +618,10 @@ mod tests {
         for sample_idx in 0..20000 {
             let t1 = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
             let t2 = seq_straight.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
-            if t1[0].0 {
+            if t1[0].should_trigger {
                 delayed_steps.push(sample_idx);
             }
-            if t2[0].0 {
+            if t2[0].should_trigger {
                 straight_steps.push(sample_idx);
             }
         }
@@ -516,7 +634,10 @@ mod tests {
         assert!(
             actual_delay >= expected_delay - 50 && actual_delay <= expected_delay + 50,
             "Push/pull delay mismatch: expected ~{}, got {} (delayed={}, straight={})",
-            expected_delay, actual_delay, step1_delayed, step1_straight
+            expected_delay,
+            actual_delay,
+            step1_delayed,
+            step1_straight
         );
     }
 
@@ -541,7 +662,7 @@ mod tests {
 
         for _ in 0..88200 {
             let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
-            if triggers[0].0 {
+            if triggers[0].should_trigger {
                 let current = seq.tracks[0].previous_step;
                 assert!(
                     current != last_step,
@@ -559,6 +680,81 @@ mod tests {
             "Expected ~16 triggers, got {} (no duplicates)",
             trigger_count
         );
+    }
+
+    #[test]
+    fn test_fusion_filters_invalid_groups() {
+        let shared_pattern = SharedPattern::new(&Pattern::empty());
+        let mut seq = Sequencer::new(shared_pattern);
+        seq.set_fusions_for_test(
+            0,
+            &[
+                FusedGroup {
+                    start_cell: 0,
+                    end_cell: 3,
+                    step_count: 3,
+                },
+                FusedGroup {
+                    start_cell: 5,
+                    end_cell: 5,
+                    step_count: 1,
+                }, // single-cell
+                FusedGroup {
+                    start_cell: 14,
+                    end_cell: 17,
+                    step_count: 3,
+                }, // crosses page
+            ],
+        );
+        let kick_fusions = &seq.fusions[0];
+        assert_eq!(
+            kick_fusions.count, 1,
+            "Invalid fusions should be filtered out"
+        );
+        assert_eq!(kick_fusions.groups[0].start_cell, 0);
+        assert_eq!(kick_fusions.groups[0].end_cell, 3);
+        assert_eq!(kick_fusions.groups[0].step_count, 3);
+    }
+
+    #[test]
+    fn test_fusion_triggers_only_start_cell_with_pulse_metadata() {
+        let shared_pattern = SharedPattern::new(&Pattern::empty());
+        // Start and internal cells are active to prove internals do not trigger independently.
+        for step in 0..=3 {
+            shared_pattern.set_step_mask(step, 0b0000_0000_0001);
+        }
+
+        let mut seq = Sequencer::new(shared_pattern);
+        seq.set_fusions_for_test(
+            0,
+            &[FusedGroup {
+                start_cell: 0,
+                end_cell: 3,
+                step_count: 3,
+            }],
+        );
+        seq.play();
+
+        let sample_rate = 44100.0;
+        let bpm = 120.0;
+        let samples_per_step = (60.0 / bpm / 4.0 * sample_rate) as usize;
+        let mut hits = Vec::new();
+        for _ in 0..(samples_per_step * 5) {
+            let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
+            if triggers[0].should_trigger {
+                hits.push(triggers[0]);
+            }
+        }
+
+        assert_eq!(
+            hits.len(),
+            1,
+            "Fusion internals should be suppressed by the sequencer"
+        );
+        assert_eq!(hits[0].step, 0);
+        assert_eq!(hits[0].fusion_pulse_count, 3);
+        assert_eq!(hits[0].fusion_span_cells, 4);
+        assert!(hits[0].is_fusion());
     }
 }
 

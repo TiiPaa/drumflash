@@ -30,56 +30,35 @@ pub const SNARE_ALGOS: &[AlgoDef] = &[
 
 // ── Snare 606 ───────────────────────────────────────────────────────────────
 
-pub const SNARE606_ALGOS: &[AlgoDef] = &[
-    AlgoDef { name: "Standard" },
-];
+pub const SNARE606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 
 // ── HiHat (closed & open share the same algo set) ───────────────────────────
 
-pub const HIHAT_ALGOS: &[AlgoDef] = &[
-    AlgoDef { name: "Standard" },
-    AlgoDef { name: "Bright" },
-];
+pub const HIHAT_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }, AlgoDef { name: "Bright" }];
 
 // ── Tom ─────────────────────────────────────────────────────────────────────
 
-pub const TOM_ALGOS: &[AlgoDef] = &[
-    AlgoDef { name: "Standard" },
-    AlgoDef { name: "Deep" },
-];
+pub const TOM_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }, AlgoDef { name: "Deep" }];
 
 // ── Clap ────────────────────────────────────────────────────────────────────
 
-pub const CLAP_ALGOS: &[AlgoDef] = &[
-    AlgoDef { name: "Standard" },
-    AlgoDef { name: "Tight" },
-];
+pub const CLAP_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }, AlgoDef { name: "Tight" }];
 
 // ── Ride ────────────────────────────────────────────────────────────────────
 
-pub const RIDE_ALGOS: &[AlgoDef] = &[
-    AlgoDef { name: "Standard" },
-    AlgoDef { name: "Bell" },
-];
+pub const RIDE_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }, AlgoDef { name: "Bell" }];
 
 // ── Cymbal ──────────────────────────────────────────────────────────────────
 
-pub const CYMBAL_ALGOS: &[AlgoDef] = &[
-    AlgoDef { name: "Standard" },
-];
+pub const CYMBAL_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 
 // ── 808 Bass Drum ───────────────────────────────────────────────────────────
 
-pub const BASSDRUM808_ALGOS: &[AlgoDef] = &[
-    AlgoDef { name: "Standard" },
-];
+pub const BASSDRUM808_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 
 // ── Perc1 ───────────────────────────────────────────────────────────────────
 
-pub const PERC1_ALGOS: &[AlgoDef] = &[
-    AlgoDef { name: "Sine" },
-    AlgoDef { name: "Saw" },
-];
+pub const PERC1_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Sine" }, AlgoDef { name: "Saw" }];
 
 // ── Registry helpers ────────────────────────────────────────────────────────
 

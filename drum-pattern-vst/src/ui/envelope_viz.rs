@@ -22,18 +22,18 @@ enum Phase {
 impl Phase {
     fn color(&self) -> Color32 {
         match self {
-            Phase::Attack => Color32::from_rgb(255, 220, 80),   // yellow
-            Phase::Hold   => Color32::from_rgb(140, 220, 255), // cyan
-            Phase::Decay  => Color32::from_rgb(100, 180, 255), // blue
-            Phase::Release=> Color32::from_rgb(180, 120, 255), // purple
+            Phase::Attack => Color32::from_rgb(255, 220, 80), // yellow
+            Phase::Hold => Color32::from_rgb(140, 220, 255),  // cyan
+            Phase::Decay => Color32::from_rgb(100, 180, 255), // blue
+            Phase::Release => Color32::from_rgb(180, 120, 255), // purple
         }
     }
 
     fn label(&self) -> &'static str {
         match self {
-            Phase::Attack  => "A",
-            Phase::Hold    => "H",
-            Phase::Decay   => "D",
+            Phase::Attack => "A",
+            Phase::Hold => "H",
+            Phase::Decay => "D",
             Phase::Release => "R",
         }
     }
@@ -57,7 +57,12 @@ pub fn draw_amp_envelope(
 
     // Background
     painter.rect_filled(rect, 4.0, Color32::from_gray(28));
-    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    painter.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0, Color32::from_gray(80)),
+        StrokeKind::Inside,
+    );
 
     // Inner padding so labels don't touch the border
     let pad_x = 14.0f32;
@@ -98,7 +103,11 @@ pub fn draw_amp_envelope(
             } else {
                 0.0
             };
-            if d >= r { Phase::Decay } else { Phase::Release }
+            if d >= r {
+                Phase::Decay
+            } else {
+                Phase::Release
+            }
         };
 
         let amp = match phase {
@@ -115,7 +124,8 @@ pub fn draw_amp_envelope(
                     0.0
                 }
             }
-        }.clamp(0.0, 1.0);
+        }
+        .clamp(0.0, 1.0);
 
         let y = graph.max.y - graph.height() * amp;
         let pos = Pos2::new(x, y);
@@ -142,7 +152,9 @@ pub fn draw_amp_envelope(
     // Draw each coloured segment
     let mut drawn_label = [false; 4];
     for (phase, seg) in &segments {
-        if seg.len() < 2 { continue; }
+        if seg.len() < 2 {
+            continue;
+        }
         painter.add(Shape::line(seg.clone(), Stroke::new(2.5, phase.color())));
 
         let idx = *phase as usize;
@@ -180,7 +192,12 @@ pub fn draw_filter_envelope(
     let painter = ui.painter_at(rect);
 
     painter.rect_filled(rect, 4.0, Color32::from_gray(28));
-    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    painter.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0, Color32::from_gray(80)),
+        StrokeKind::Inside,
+    );
 
     let pad_x = 14.0f32;
     let pad_y = 10.0f32;
@@ -203,7 +220,10 @@ pub fn draw_filter_envelope(
     }
 
     if !points.is_empty() {
-        painter.add(Shape::line(points, Stroke::new(2.5, Color32::from_rgb(255, 160, 60))));
+        painter.add(Shape::line(
+            points,
+            Stroke::new(2.5, Color32::from_rgb(255, 160, 60)),
+        ));
     }
 
     response

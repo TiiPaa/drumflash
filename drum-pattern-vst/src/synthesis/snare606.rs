@@ -142,14 +142,17 @@ impl Voice for Snare606Voice {
         }
         // analog = per-hit drift (breathing) ; digital = bit-identical hits.
         self.drift.trigger(self.settings.analog >= 0.5);
-        self.envelope.set_decay(self.settings.decay * self.drift.time);
+        self.envelope
+            .set_decay(self.settings.decay * self.drift.time);
         self.envelope
             .set_release(self.settings.release * self.drift.time);
         // Drift the resonator pitch so the tonal body varies per hit.
         let drifted_freq = self.settings.frequency * self.drift.pitch;
         let q = self.resonance_q();
-        self.resonator.set_bandpass(drifted_freq.max(80.0), q, self.sample_rate);
-        self.resonator_r.set_bandpass(drifted_freq.max(80.0), q, self.sample_rate);
+        self.resonator
+            .set_bandpass(drifted_freq.max(80.0), q, self.sample_rate);
+        self.resonator_r
+            .set_bandpass(drifted_freq.max(80.0), q, self.sample_rate);
         self.envelope.trigger();
         self.filter_env.trigger();
     }
@@ -199,10 +202,9 @@ impl Voice for Snare606Voice {
         let body_gain = 0.4 + tone * 0.6; // 0.4 .. 1.0
         let wires_gain = (1.0 - tone) * 0.5 + crisp * 0.4;
 
-        let mut mixed = (body * body_gain + wires_raw * wires_gain)
-            * self.settings.volume
-            * self.drift.level;
-        
+        let mut mixed =
+            (body * body_gain + wires_raw * wires_gain) * self.settings.volume * self.drift.level;
+
         // Apply saturation (post-filter by default)
         mixed = self.saturation.process(mixed);
 
@@ -255,13 +257,9 @@ impl Voice for Snare606Voice {
         let wires_gain = (1.0 - tone) * 0.5 + crisp * 0.4;
         let vol = self.settings.volume;
 
-        let mut left = (body_l * body_gain + wires_l * wires_gain)
-            * vol
-            * self.drift.level;
-        let mut right = (body_r * body_gain + wires_r * wires_gain)
-            * vol
-            * self.drift.level;
-        
+        let mut left = (body_l * body_gain + wires_l * wires_gain) * vol * self.drift.level;
+        let mut right = (body_r * body_gain + wires_r * wires_gain) * vol * self.drift.level;
+
         // Apply saturation (post-filter by default)
         left = self.dc_block_l.process(self.saturation.process(left));
         right = self.dc_block_r.process(self.saturation.process(right));
@@ -319,9 +317,10 @@ impl Voice for Snare606Voice {
         self.envelope.set_hold(self.settings.hold);
         self.filter_env
             .set_decay(settings.filter_env_decay.max(0.001));
-        
+
         // Update saturation config
-        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
@@ -331,7 +330,7 @@ impl Voice for Snare606Voice {
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
-    
+
     fn set_special_param(&mut self, index: usize, value: f32) {
         if index == 0 {
             self.settings.resonance = value;
@@ -346,7 +345,8 @@ impl Voice for Snare606Voice {
             self.settings.snap = value;
         } else if index == 3 {
             self.settings.saturation_type = value as u8;
-            self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+            self.saturation.saturation_type =
+                saturation::SaturationType::from(self.settings.saturation_type);
         } else if index == 4 {
             self.settings.saturation_amount = value;
             self.saturation.amount = value;

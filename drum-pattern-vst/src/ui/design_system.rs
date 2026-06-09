@@ -4,8 +4,7 @@
  * Tokens visuels et widgets réutilisables.
  * Source de vérité : docs/design/DESIGN-SYSTEM.md
  */
-
-use nih_plug_egui::egui::{self, Color32, RichText, Stroke, Vec2, Ui, Response};
+use nih_plug_egui::egui::{self, Color32, Response, RichText, Stroke, Ui, Vec2};
 
 // ============================================================
 // 1. Palette — Couleurs
@@ -75,40 +74,74 @@ pub struct Typography;
 
 impl Typography {
     pub fn h1(text: &str) -> RichText {
-        egui::RichText::new(text).size(20.0).strong().color(Palette::default().ink)
+        egui::RichText::new(text)
+            .size(20.0)
+            .strong()
+            .color(Palette::default().ink)
     }
     pub fn h2(text: &str) -> RichText {
-        egui::RichText::new(text).size(14.0).strong().color(Palette::default().ink)
+        egui::RichText::new(text)
+            .size(14.0)
+            .strong()
+            .color(Palette::default().ink)
     }
     pub fn h3(text: &str) -> RichText {
-        egui::RichText::new(text).size(12.0).strong().color(Palette::default().ink2)
+        egui::RichText::new(text)
+            .size(12.0)
+            .strong()
+            .color(Palette::default().ink2)
     }
     pub fn body(text: &str) -> RichText {
-        egui::RichText::new(text).size(11.0).color(Palette::default().ink)
+        egui::RichText::new(text)
+            .size(11.0)
+            .color(Palette::default().ink)
     }
     pub fn body2(text: &str) -> RichText {
-        egui::RichText::new(text).size(11.0).color(Palette::default().ink2)
+        egui::RichText::new(text)
+            .size(11.0)
+            .color(Palette::default().ink2)
     }
     pub fn mono(text: &str) -> RichText {
-        egui::RichText::new(text).size(11.0).monospace().color(Palette::default().ink2)
+        egui::RichText::new(text)
+            .size(11.0)
+            .monospace()
+            .color(Palette::default().ink2)
     }
     pub fn mono_edit(text: &str) -> RichText {
-        egui::RichText::new(text).size(11.0).monospace().color(Palette::default().ink_blue)
+        egui::RichText::new(text)
+            .size(11.0)
+            .monospace()
+            .color(Palette::default().ink_blue)
     }
     pub fn mono_faint(text: &str) -> RichText {
-        egui::RichText::new(text).size(10.0).monospace().color(Palette::default().ink_faint)
+        egui::RichText::new(text)
+            .size(10.0)
+            .monospace()
+            .color(Palette::default().ink_faint)
     }
     pub fn tag(text: &str) -> RichText {
-        egui::RichText::new(text).size(10.0).strong().color(Palette::default().ink2)
+        egui::RichText::new(text)
+            .size(10.0)
+            .strong()
+            .color(Palette::default().ink2)
     }
     pub fn tag_active(text: &str) -> RichText {
-        egui::RichText::new(text).size(10.0).strong().color(Palette::default().ink)
+        egui::RichText::new(text)
+            .size(10.0)
+            .strong()
+            .color(Palette::default().ink)
     }
     pub fn btn(text: &str) -> RichText {
-        egui::RichText::new(text).size(11.0).strong().color(Palette::default().ink)
+        egui::RichText::new(text)
+            .size(11.0)
+            .strong()
+            .color(Palette::default().ink)
     }
     pub fn btn_primary(text: &str) -> RichText {
-        egui::RichText::new(text).size(11.0).strong().color(Color32::WHITE)
+        egui::RichText::new(text)
+            .size(11.0)
+            .strong()
+            .color(Color32::WHITE)
     }
 }
 
@@ -194,7 +227,10 @@ pub fn tag(ui: &mut Ui, text: &str, active: bool) -> Response {
         (p.panel2, p.line2, p.ink2)
     };
     let btn = egui::Button::new(
-        egui::RichText::new(text).size(10.0).strong().color(text_color)
+        egui::RichText::new(text)
+            .size(10.0)
+            .strong()
+            .color(text_color),
     )
     .fill(fill)
     .stroke(Stroke::new(1.0, stroke_color))
@@ -209,14 +245,17 @@ pub fn toggle_led(ui: &mut Ui, label: &str, on: &mut bool) -> Response {
     ui.horizontal(|ui| {
         let led_color = if *on { p.blue } else { p.line };
         let led_size = 8.0;
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(led_size, led_size), egui::Sense::click());
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(led_size, led_size), egui::Sense::click());
         if response.clicked() {
             *on = !*on;
         }
-        ui.painter().circle_filled(rect.center(), led_size / 2.0, led_color);
+        ui.painter()
+            .circle_filled(rect.center(), led_size / 2.0, led_color);
         ui.label(Typography::body2(label));
         response
-    }).inner
+    })
+    .inner
 }
 
 /// En-tête de panneau

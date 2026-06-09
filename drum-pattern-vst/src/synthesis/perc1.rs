@@ -190,7 +190,8 @@ impl Voice for Perc1Voice {
         self.active = true;
         // analog = per-hit drift (breathing) ; digital = bit-identical hits.
         self.drift.trigger(self.settings.analog >= 0.5);
-        self.amp_env.set_decay(self.settings.decay * self.drift.time);
+        self.amp_env
+            .set_decay(self.settings.decay * self.drift.time);
         self.amp_env
             .set_release(self.settings.release * self.drift.time);
         self.rebuild_sweep();
@@ -365,7 +366,8 @@ impl Voice for Perc1Voice {
         self.rebuild_sweep();
 
         // Update amplitude envelope via setters — do NOT recreate to preserve tail state
-        self.amp_env.set_decay(self.settings.decay.max(0.01).min(2.0));
+        self.amp_env
+            .set_decay(self.settings.decay.max(0.01).min(2.0));
         self.amp_env
             .set_attack_ms((self.settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         self.amp_env.set_release(self.settings.release.max(0.001));
@@ -383,7 +385,8 @@ impl Voice for Perc1Voice {
         self.filter.set_cutoff(filter_freq, self.sample_rate);
 
         // Update saturation
-        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
@@ -393,7 +396,7 @@ impl Voice for Perc1Voice {
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
-    
+
     fn set_special_param(&mut self, index: usize, value: f32) {
         match index {
             0 => self.settings.sweep = value,
@@ -402,12 +405,25 @@ impl Voice for Perc1Voice {
             3 => self.settings.width = value,
             4 => {
                 self.settings.saturation_type = value as u8;
-                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
             }
-            5 => { self.settings.saturation_amount = value; self.saturation.amount = value; }
-            6 => { self.settings.saturation_mix = value; self.saturation.mix = value; }
-            7 => { self.settings.saturation_output_gain = value; self.saturation.output_gain = value; }
-            8 => { self.settings.saturation_pre_filter = value; self.saturation.pre_filter = value > 0.5; }
+            5 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            6 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            7 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
+            8 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
+            }
             _ => {}
         }
     }
@@ -455,7 +471,10 @@ mod tests {
         // tail jumped the body hard here. The intra-sweep per-sample steps that
         // follow are the legitimate (fast) laser pitch sweep, not a discontinuity,
         // so we only assert on the edge.
-        eprintln!("perc1 retrigger: last={:.4} first={:.4} edge={:.4}", last, first, edge);
+        eprintln!(
+            "perc1 retrigger: last={:.4} first={:.4} edge={:.4}",
+            last, first, edge
+        );
         assert!(
             edge < 0.05,
             "perc1 retrigger edge discontinuity (phase reset on tail?): {}",

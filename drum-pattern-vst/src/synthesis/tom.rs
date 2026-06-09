@@ -114,7 +114,8 @@ impl Voice for TomVoice {
         }
         // analog = per-hit drift (breathing) ; digital = bit-identical hits.
         self.drift.trigger(self.settings.analog >= 0.5);
-        self.amp_env.set_decay(self.settings.decay * self.drift.time);
+        self.amp_env
+            .set_decay(self.settings.decay * self.drift.time);
         self.amp_env
             .set_release(self.settings.release * self.drift.time);
         self.pitch_env.trigger();
@@ -136,7 +137,8 @@ impl Voice for TomVoice {
         if self.active {
             // Pitch sweep
             let pitch_ratio = self.pitch_env.next();
-            self.osc.set_freq(self.settings.frequency * pitch_ratio * self.drift.pitch);
+            self.osc
+                .set_freq(self.settings.frequency * pitch_ratio * self.drift.pitch);
 
             // Amplitude envelope
             let env = self.amp_env.next();
@@ -148,7 +150,8 @@ impl Voice for TomVoice {
                         // Deep: lower pitch, darker tone, less overtone
                         let pitch_ratio = self.pitch_env.next();
                         let deep_freq = self.settings.frequency * 0.7;
-                        self.osc.set_freq(deep_freq * pitch_ratio * self.drift.pitch);
+                        self.osc
+                            .set_freq(deep_freq * pitch_ratio * self.drift.pitch);
                         let fundamental = self.osc.next();
                         let overtone =
                             ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.12;
@@ -161,7 +164,8 @@ impl Voice for TomVoice {
                     _ => {
                         // Standard: sine + overtone, pitch sweep
                         let pitch_ratio = self.pitch_env.next();
-                        self.osc.set_freq(self.settings.frequency * pitch_ratio * self.drift.pitch);
+                        self.osc
+                            .set_freq(self.settings.frequency * pitch_ratio * self.drift.pitch);
                         let fundamental = self.osc.next();
                         let overtone =
                             ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
@@ -184,7 +188,8 @@ impl Voice for TomVoice {
             0.0
         };
 
-        self.dc_block.process(self.saturation.process(tone + attack))
+        self.dc_block
+            .process(self.saturation.process(tone + attack))
     }
 
     fn is_active(&self) -> bool {
@@ -203,7 +208,8 @@ impl Voice for TomVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = TomSettings::from(settings);
         self.update_derived_params();
-        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
@@ -213,18 +219,31 @@ impl Voice for TomVoice {
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
-    
+
     fn set_special_param(&mut self, index: usize, value: f32) {
         match index {
             0 => self.settings.stick_attack = value,
             1 => {
                 self.settings.saturation_type = value as u8;
-                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
             }
-            2 => { self.settings.saturation_amount = value; self.saturation.amount = value; }
-            3 => { self.settings.saturation_mix = value; self.saturation.mix = value; }
-            4 => { self.settings.saturation_output_gain = value; self.saturation.output_gain = value; }
-            5 => { self.settings.saturation_pre_filter = value; self.saturation.pre_filter = value > 0.5; }
+            2 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            3 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            4 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
+            5 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
+            }
             _ => {}
         }
     }

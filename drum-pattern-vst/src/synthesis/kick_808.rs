@@ -147,8 +147,10 @@ impl Voice for Kick808Voice {
         }
         self.osc.set_freq(base);
         // Per-hit envelope-time drift: scale decay/release so the tail length varies.
-        self.amp_env.set_decay(self.settings.decay * self.drift.time);
-        self.amp_env.set_release(self.settings.release * self.drift.time);
+        self.amp_env
+            .set_decay(self.settings.decay * self.drift.time);
+        self.amp_env
+            .set_release(self.settings.release * self.drift.time);
         self.snap_env.trigger();
         self.drop_env.trigger();
         self.amp_env.trigger();
@@ -172,10 +174,9 @@ impl Voice for Kick808Voice {
         let drop = self.drop_env.next();
 
         // Frequency modulation: base + snap_peak*env - drop_depth*env
-        let target_freq = (base + self.snap_depth_hz() * snap
-            - self.drop_depth_hz() * (1.0 - drop))
-            .max(10.0)
-            * self.drift.pitch;
+        let target_freq =
+            (base + self.snap_depth_hz() * snap - self.drop_depth_hz() * (1.0 - drop)).max(10.0)
+                * self.drift.pitch;
         let freq = self.freq_smoother.process(target_freq);
         self.osc.set_freq(freq);
 
@@ -186,10 +187,7 @@ impl Voice for Kick808Voice {
             return 0.0;
         }
 
-        let body = self.tone_filter.process(raw)
-            * env
-            * self.settings.volume
-            * self.drift.level;
+        let body = self.tone_filter.process(raw) * env * self.settings.volume * self.drift.level;
 
         let click = if self.accent_amount() > 0.0 && self.click.is_active() {
             self.click_filter.process(self.click.next()) * self.accent_amount()
@@ -216,7 +214,8 @@ impl Voice for Kick808Voice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = Kick808Settings::from(settings);
         self.update_derived_params();
-        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
@@ -225,7 +224,7 @@ impl Voice for Kick808Voice {
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
-    
+
     fn set_special_param(&mut self, index: usize, value: f32) {
         match index {
             0 => self.settings.accent = value,
@@ -234,7 +233,8 @@ impl Voice for Kick808Voice {
             3 => self.settings.click_tone = value,
             4 => {
                 self.settings.saturation_type = value as u8;
-                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
             }
             5 => {
                 self.settings.saturation_amount = value;
