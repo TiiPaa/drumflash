@@ -125,7 +125,8 @@ impl Voice for CymbalVoice {
         let noise = self.next_noise_l();
         self.fm_phase += self.fm_increment();
         self.fm_phase -= self.fm_phase.floor();
-        let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * self.settings.shimmer_amount + 1.0;
+        let fm =
+            (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * self.settings.shimmer_amount + 1.0;
         let modulated_cutoff = self.settings.filter_freq * fm;
         self.filter
             .set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
@@ -154,7 +155,8 @@ impl Voice for CymbalVoice {
 
         self.fm_phase += self.fm_increment();
         self.fm_phase -= self.fm_phase.floor();
-        let fm = (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * self.settings.shimmer_amount + 1.0;
+        let fm =
+            (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * self.settings.shimmer_amount + 1.0;
         let c = (self.settings.filter_freq * fm).max(1000.0);
         self.filter.set_cutoff(c, self.sample_rate);
         self.filter_r.set_cutoff(c, self.sample_rate);
@@ -276,10 +278,8 @@ mod tests {
     #[test]
     fn set_settings_updates_shimmer_freq() {
         let sample_rate = 44100.0;
-        let mut voice = CymbalVoice::new(
-            sample_rate,
-            CymbalSettings::from(VoiceSettings::cymbal()),
-        );
+        let mut voice =
+            CymbalVoice::new(sample_rate, CymbalSettings::from(VoiceSettings::cymbal()));
 
         // First trigger with fast shimmer
         let mut settings_fast = VoiceSettings::cymbal();

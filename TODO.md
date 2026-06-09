@@ -25,14 +25,27 @@
   - Bloque l'utilisation d'autres applications (navigateur, explorateur, etc.)
   - Potentiellement li� au workaround focus clavier (SetFocus sur HWND)
   - **Action** : identifier et corriger le hook/m�canisme qui force le focus
+  - [x] Regression Studio One menus corrigee (build 20260609-094555) : le workaround clavier ne refocalise plus le VST a chaque frame hors saisie texte
+- [x] [88] **Crash Studio One en manipulant le slider Master Volume dB** (CORRIGE - build 20260609-114803)
+  - Cause probable : `master_volume` autorise `0.0` (`-inf dB`) mais utilisait `SmoothingStyle::Logarithmic`, incompatible avec un range passant par zero.
+  - Correction : passage a `SmoothingStyle::Exponential(50.0)` pour conserver le lissage sans produire de valeurs non finies.
+  - Test : `master_volume_smoothing_stays_finite_from_silence`.
 
 ### Bugs P1 (UI/UX)
 
-- [x] [75] **Incoh�rence des ranges de volume** dans l'interface (CORRIG� - build 20260601-171606)
-  - Slider en haut du Sound Editor : range 0.0�2.0 (max 1.5 affich�)
-  - Slider en bas du Sound Editor : range 0.0�1.0
-  - Slider dans la lane de la grille : range 0.0�1.5
+- [x] [75] **Incoh�rence des ranges de volume** dans l'interface (CORRIG� - builds 20260601-171606, 20260609-152742, 20260609-160617)
+  - Slider en haut du Sound Editor : affiche en dB (`-inf dB` a `+6.0 dB`), stockage interne gain lineaire `0.0..2.0`.
+  - Slider dans la lane de la grille : courbe dB coherente, stockage interne gain lineaire `0.0..2.0`.
+  - Ancien slider Volume data-driven en bas du Sound Editor supprime.
   - **Action** : uniformiser � 0.0�2.0 partout (coh�rent avec le gain de sortie)
+  - Regression corrigee : Sound Editor garde uniquement le Volume du haut ; `StandardField::Volume` aligne a `0.0..2.0`.
+  - UX corrigee : double-clic sur un volume local reset a `0 dB`.
+- [x] [89] **Hauteur VST fixe pour eviter les sauts d'interface** (CORRIGE - builds 20260609-141438, 20260609-144118, 20260609-145809, 20260609-150545)
+  - `EguiState::from_size` passe a `1480x800`.
+  - `ResizableWindow::min_size` passe a `1480x800` avec `resizable(false)`.
+  - Fix Studio One : `ResizableWindow::fixed_size(1480x800)` force la taille effective et bloque l'ancien auto-resize par contenu a `850px`.
+  - Sound Editor : ajout d'un scroll interne pour les controles de synthese, avec le titre et les onglets instruments hors scroll.
+  - Objectif : conserver une hauteur stable lors des changements d'instruments.
 
 ### Features P1 (Parit� PoC / Impact fort)
 
@@ -279,7 +292,34 @@
   - mettre a jour `README.md`, `AGENTS.md` et les references croisees en consequence
 - [x] [32] Synchroniser `BACKLOG_VST.md` avec `TODO.md`
 - [x] [33] Reduire les warnings Rust inutiles (0 warning sur lib + bin + tests, release inclus)
-- [ ] **[REPRENDRE ICI]** [34] Garder les fichiers de sauvegarde hors de `src/`
+- [x] [34] Garder les fichiers de sauvegarde hors de `src/` — Dossier `drum-pattern-vst/backups/` créé, `.gitignore` déjà configuré
+- [x] **[87] Step Fusion V2** — Fusion de cellules pour tuplets/micro-rhythmes (build 20260607-131747)
+  - **Spécifications:**
+    - Shift+clic début → Shift+clic fin = sélection plage à fusionner
+    - Double-clic sur groupe fusionné = édition inline du nombre de steps
+    - Limites: 1-64 steps, par instrument, indépendant par ligne
+    - Générateur/Clear: suppriment les fusions (reset)
+    - Plocks: appliqués par cellule de départ (tous les pulses partagent le même plock sonore)
+    - Stutter seq-plock: désactivé/ignoré sur une fusion
+  - **Implémentation:**
+    - [x] Data model `FusedGroup { start_cell, end_cell, step_count }` par instrument
+    - [x] UI: grille fixe 16 colonnes/page, Shift+clic sélection page-local, double-clic édition pulses
+    - [x] Séquenceur: cellule de départ uniquement, cellules internes supprimées, métadonnées fusion vers audio
+    - [x] Audio: pulses régulièrement espacés sur la durée de la fusion via queue préallouée
+    - [x] Rendu visuel: cellules fixes avec bordure/couleur fusion + texte "pulses/cells" sur la cellule de départ
+    - [x] Fix UI build 20260608-190515: rendu en vrai bloc graphique unique, sans subdivisions internes visibles
+    - [x] Fix UX build 20260608-191352: style aligne cellules standard, edition inline du nombre de pulses, creation active par defaut
+    - [x] Fix build 20260608-192613: creation de fusion supprime les plocks sound/seq des cellules internes couvertes
+    - [x] Fix UI build 20260608-193357: indicateur "Maj for fusion mode" gris/bleu + "Select 2 cells" sous la grille
+    - [x] Fix build 20260608-194139: detection Maj robuste via Win32 `GetAsyncKeyState()` pour l'indicateur et Shift+clic fusion
+    - [x] Fix build 20260608-195857: `Copy/Paste Page` et `x2` copient aussi les groupes Step Fusion ; `Clear Page` supprime les fusions de la page
+    - [x] Fix UI build 20260609-100205: edition inline du nombre de pulses sans decalage de ligne ; clic exterieur ferme l'edition et garde la fusion active
+    - [x] Fix UI build 20260609-102249: panneau `Fusion x-y (cells) Steps` deplace dans une box Fusion reservee stable ; clic sur son champ `Steps` ne ferme plus l'edition
+    - [x] Fix UI build 20260609-112628: double-clic sur cellule fusionnee traite avant le clic simple, ouvre l'edition sans desactiver la fusion et sans toggle differe
+    - [x] Fix UI build 20260609-121512: premier Maj+clic de fusion colore le point central de la cellule source en bleu ; relacher Maj annule la selection et restaure la couleur normale
+    - [x] Fix UI build 20260609-124302: cellule source de selection Fusion rendue comme active temporaire (`X` + fond bleu clignotant + bordure bleue) pour etre plus visible
+    - [ ] Persistance DAW (champ `fusion-v1`)
+    - [x] Tests: filtrage invalides + suppression triggers internes + métadonnées pulses
 - [x] [34a] Corriger le click de retrigger kick (2 steps BD proches)
 - [x] [34b] Nettoyer le code mort dans `special_params.rs` (struct `SpecialParamDef`, tous les `*_SPECIALS`, helper `specials_for`, methodes trait `supported_algos`/`special_params`)
 - [x] [34c] Corriger les libelles obsoletes multi-out dans le code
@@ -290,6 +330,9 @@
 ## Bugs a corriger
 - [x] [70] Kick : click de retrigger quand la queue percute l'attaque du suivant � corrig� (ne pas retrigger le click pendant la tail) � build 20260529-172133\n
 - [x] [64] Revoir l'algo de polyrythmie (lane length) — comportement bizarre, longueurs mal synchronisées (Complexité: Moyenne, P1)
+  - Build 20260609-162726 : par defaut, chaque lane Len suit `Pattern Length`.
+  - Modifier manuellement une lane Len pose un override persistant ; clic droit sur Len permet de revenir a `Follow pattern length`.
+  - Migration legacy : les anciennes lanes non-default (`Len != 16`) sont conservees comme overrides.
 - [x] [65] Revoir les algos de generation pattern avec les nouveaux instruments (13 voix) — tous les générateurs gèrent 13 instruments; rôles musicaux enrichis pour Snare 606, B8, Perc1 dans le style Rock (démonstration)
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé

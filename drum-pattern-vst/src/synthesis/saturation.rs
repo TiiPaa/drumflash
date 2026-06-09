@@ -37,7 +37,7 @@ impl From<SaturationType> for u8 {
 }
 
 /// ## Paramètres de saturation
-/// 
+///
 /// - **Amount** (0-1) : Contrôle le gain d'entrée envoyé dans l'algorithme de saturation.
 ///   0 = pas de saturation (drive 1×), 1 = saturation maximale (drive 20×).
 ///   C'est le « bouton de distorsion » principal — plus il est haut, plus le signal est écrasé.
@@ -168,9 +168,13 @@ mod tests {
     #[test]
     fn algorithms_produce_different_outputs() {
         let mut configs = vec![];
-        for t in [SaturationType::SoftClip, SaturationType::Valve,
-                  SaturationType::Transistor, SaturationType::HardClip,
-                  SaturationType::Tape] {
+        for t in [
+            SaturationType::SoftClip,
+            SaturationType::Valve,
+            SaturationType::Transistor,
+            SaturationType::HardClip,
+            SaturationType::Tape,
+        ] {
             configs.push(SaturationConfig {
                 saturation_type: t,
                 amount: 0.7,
@@ -187,9 +191,18 @@ mod tests {
         let out4 = configs[4].process(input);
 
         // All should be different from each other (at least one differs by 0.01)
-        assert!((out0 - out1).abs() > 0.01, "SoftClip vs Valve should differ");
-        assert!((out1 - out2).abs() > 0.01, "Valve vs Transistor should differ");
-        assert!((out2 - out3).abs() > 0.01, "Transistor vs HardClip should differ");
+        assert!(
+            (out0 - out1).abs() > 0.01,
+            "SoftClip vs Valve should differ"
+        );
+        assert!(
+            (out1 - out2).abs() > 0.01,
+            "Valve vs Transistor should differ"
+        );
+        assert!(
+            (out2 - out3).abs() > 0.01,
+            "Transistor vs HardClip should differ"
+        );
         assert!((out3 - out4).abs() > 0.01, "HardClip vs Tape should differ");
     }
 
@@ -205,8 +218,17 @@ mod tests {
         let tape = tape(input, drive);
 
         // Hard clip should have lowest absolute output (most limited)
-        assert!(hard.abs() <= soft.abs(), "hard clip should be more limited than soft");
-        assert!(hard.abs() <= valve.abs(), "hard clip should be more limited than valve");
-        assert!(hard.abs() <= trans.abs(), "hard clip should be more limited than transistor");
+        assert!(
+            hard.abs() <= soft.abs(),
+            "hard clip should be more limited than soft"
+        );
+        assert!(
+            hard.abs() <= valve.abs(),
+            "hard clip should be more limited than valve"
+        );
+        assert!(
+            hard.abs() <= trans.abs(),
+            "hard clip should be more limited than transistor"
+        );
     }
 }

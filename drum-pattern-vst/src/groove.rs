@@ -144,13 +144,21 @@ mod tests {
         // Shuffle may still be on step 0 while Swing16 has moved to step 1.
         let s16_thresh = 0.5 * (0.5 + swing as f64 / 3.0);
         let shf_thresh = 0.5 * (0.5 + swing as f64 / 2.0);
-        assert!(shf_thresh > s16_thresh, "Shuffle should have larger threshold");
+        assert!(
+            shf_thresh > s16_thresh,
+            "Shuffle should have larger threshold"
+        );
     }
 
     #[test]
     fn test_total_bar_length_unchanged() {
         // Regardless of groove type / swing, one full bar must still map to 16 steps.
-        for groove in [GrooveType::Straight, GrooveType::Swing16, GrooveType::Shuffle, GrooveType::Mpc] {
+        for groove in [
+            GrooveType::Straight,
+            GrooveType::Swing16,
+            GrooveType::Shuffle,
+            GrooveType::Mpc,
+        ] {
             for swing in [-0.5_f32, -0.25, 0.0, 0.25, 0.5] {
                 let mut step_counts = [0usize; 16];
                 let samples = 10000;
@@ -164,7 +172,9 @@ mod tests {
                     assert!(
                         *count > 0,
                         "Groove {:?} swing={}: step {} was never visited",
-                        groove, swing, i
+                        groove,
+                        swing,
+                        i
                     );
                 }
             }

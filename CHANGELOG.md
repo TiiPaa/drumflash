@@ -1,5 +1,363 @@
 ﻿# Changelog
 
+## 2026-06-09 - Lane Length follow + override (build 20260609-162726)
+
+**Build:** `20260609-162726`
+**Commits:** Sequencer : lane length suit pattern length par defaut
+
+### Changes
+- **[64] Lane Length** : les longueurs par instrument suivent maintenant automatiquement `Pattern Length` tant qu'elles n'ont pas ete modifiees manuellement.
+- **[64] Override manuel** : modifier une cellule `Len` pose un bit d'override persistant pour cette lane, y compris si la valeur choisie est `16` avec un pattern plus long.
+- **[64] UI** : clic droit sur une cellule `Len` modifiee permet de revenir a `Follow pattern length`.
+- **[64] Migration** : les anciennes sessions sans masque d'override conservent les lanes non-default (`Len != 16`) comme overrides manuels.
+
+### Validation
+- `cargo test` : 90 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Volumes instruments en dB (build 20260609-160617)
+
+**Build:** `20260609-160617`
+**Commits:** UI : affichage dB pour volumes instruments
+
+### Changes
+- **[75] Sound Editor** : le slider `Volume` affiche maintenant une valeur musicale en dB (`-inf dB` a `+6.0 dB`) au lieu du gain lineaire `0..2`.
+- **[75] Grille** : les sliders `Vol` des lanes utilisent aussi une courbe dB, tout en stockant toujours le gain lineaire interne.
+- **[75] UX** : double-clic sur un slider volume local reset a `0 dB` (unity gain), pas au milieu numerique de la range.
+
+### Validation
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Sound Editor Volume unique (build 20260609-152742)
+
+**Build:** `20260609-152742`
+**Commits:** UI : volume instrument unique dans Sound Editor
+
+### Changes
+- **[75] Sound Editor** : le champ `Volume` data-driven n'est plus rendu dans la section Output, pour eviter un deuxieme slider pour le meme instrument.
+- **[75] Ranges** : les definitions internes `StandardField::Volume` passent de `0..1.5` a `0..2.0` pour rester coherentes avec le slider principal et les volumes de lane.
+- **[75] UX** : le Sound Editor garde uniquement le slider `Volume` du haut.
+
+### Validation
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Taille editeur VST forcee (build 20260609-150545)
+
+**Build:** `20260609-150545`
+**Commits:** UI : taille editor forcee a 1480x800
+
+### Changes
+- **[89] UI Layout** : ajout d'un mode `fixed_size()` dans le wrapper `ResizableWindow` vendore.
+- **[89] Studio One** : l'editeur demande maintenant explicitement `1480x800` meme si le host ou l'etat UI restaure une ancienne hauteur.
+- **[89] Regression** : evite que l'ancien auto-resize par hauteur de contenu remonte la fenetre a `850px`.
+
+### Validation
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Hauteur editeur VST reduite (build 20260609-145809)
+
+**Build:** `20260609-145809`
+**Commits:** UI : hauteur editor fixee a 800 px
+
+### Changes
+- **[89] UI Layout** : taille initiale de l'editeur passee de `1480x850` a `1480x800`.
+- **[89] Stabilite visuelle** : hauteur minimale de la `ResizableWindow` passee a `800px` avec `resizable(false)`.
+- **[89] Sound Editor** : le scroll interne reste actif pour absorber les instruments avec beaucoup de parametres dans la hauteur reduite.
+
+### Validation
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Scroll interne Sound Editor (build 20260609-144118)
+
+**Build:** `20260609-144118`
+**Commits:** UI : scroll Sound Editor dans hauteur VST fixe
+
+### Changes
+- **[89] UI Layout** : le titre `Sound Editor` et les onglets instruments restent fixes dans la colonne droite.
+- **[89] Sound Editor** : les controles de synthese sont maintenant enveloppes dans un `ScrollArea::vertical()` limite a la hauteur disponible.
+- **[89] Stabilite visuelle** : les instruments avec beaucoup de parametres n'agrandissent plus la fenetre VST fixe `1480x850`.
+
+### Validation
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Hauteur editeur VST fixe (build 20260609-141438)
+
+**Build:** `20260609-141438`
+**Commits:** UI : hauteur editor fixee a 850 px
+
+### Changes
+- **[89] UI Layout** : taille initiale de l'editeur passee de `1480x520` a `1480x850`.
+- **[89] Stabilite visuelle** : hauteur minimale de la `ResizableWindow` passee a `850px` avec `resizable(false)` pour eviter les sauts lors des changements d'instruments.
+
+### Validation
+- `cargo check`
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Step Fusion selection blink (build 20260609-124302)
+
+**Build:** `20260609-124302`
+**Commits:** UI Step Fusion : cellule source de selection clignotante
+
+### Changes
+- **[87] Fusion Mode** : la premiere cellule selectionnee par Maj+clic apparait maintenant comme une cellule active temporaire (`X` + fond bleu).
+- **[87] Visibilite** : la cellule source clignote entre le fond actif bleu et son fond normal, avec une bordure bleue.
+- **[87] Interaction** : relacher Maj annule toujours la selection temporaire et restaure l'affichage normal.
+
+### Validation
+- `cargo check`
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Step Fusion selection highlight (build 20260609-121512)
+
+**Build:** `20260609-121512`
+**Commits:** UI Step Fusion : highlight de cellule source pendant selection
+
+### Changes
+- **[87] Fusion Mode** : apres le premier Maj+clic d'une creation de fusion, le point central de la cellule source devient bleu.
+- **[87] Interaction** : si Maj est relachee avant la deuxieme cellule, la selection temporaire est annulee et le point reprend sa couleur normale.
+- **[87] UI** : le highlight reutilise l'etat existant `fusion_selection_start`, sans changer le scheduling audio ni les donnees de fusion.
+
+### Validation
+- `cargo check`
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Master Volume crash fix (build 20260609-114803)
+
+**Build:** `20260609-114803`
+**Commits:** Audio params : smoothing master volume compatible silence
+
+### Changes
+- **[88] Crash Studio One** : correction du lissage du slider `Master Volume` en haut a gauche.
+- **[88] Audio** : remplacement de `SmoothingStyle::Logarithmic(50.0)` par `SmoothingStyle::Exponential(50.0)`, car le range du gain master inclut `0.0` (`-inf dB`).
+- **[88] Regression test** : ajout d'un test verifiant que le smoothing du master volume reste fini depuis le silence.
+
+### Validation
+- `cargo check`
+- `cargo test` : 86 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Step Fusion double-clic edition (build 20260609-112628)
+
+**Build:** `20260609-112628`
+**Commits:** UI Step Fusion : double-clic fusion traite avant le toggle simple
+
+### Changes
+- **[87] Interaction** : le double-clic sur une cellule fusionnee ouvre l'edition Fusion avant la logique de clic simple.
+- **[87] Regression** : evite que le premier clic du double-clic desactive la cellule source de la fusion.
+- **[87] UX** : conserve le clic simple immediat, sans retour au mecanisme de toggle differe/pending toggle rejete.
+
+### Validation
+- `cargo check`
+- `cargo test` : 85 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Revert toggle differe Step Fusion (build 20260609-105752)
+
+**Build:** `20260609-105752`
+**Commits:** UI Step Fusion : retrait du pending toggle du double-clic
+
+### Changes
+- **[87] Revert** : suppression du mecanisme de toggle differe ajoute au build `20260609-104936`.
+- **[87] Interaction** : retour au comportement immediat precedent pour le clic sur une cellule fusionnee.
+- **[87] Suivi** : retrait de l'entree TODO du build rejete `20260609-104936`.
+
+### Validation
+- `cargo check`
+- `cargo test` : 85 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Step Fusion edit box reservee (build 20260609-102249)
+
+**Build:** `20260609-102249`
+**Commits:** UI Step Fusion : panneau d'edition dans une box reservee stable
+
+### Changes
+- **[87] Fusion box** : le panneau `Fusion x-y (cells) Steps ... Delete Close` est maintenant dessine dans une boite Fusion fixe sous la grille, a cote du mode plock/fusion.
+- **[87] Layout stable** : la boite Fusion est toujours reservee ; son apparition/disparition ne decale plus l'interface.
+- **[87] Edition** : cliquer sur le champ `Steps` de la boite ne ferme plus immediatement le mode edition.
+- **[87] Clic exterieur** : pendant l'edition, les clics sur la grille sont neutralises ; un clic hors cellule inline et hors boite Fusion ferme l'edition et garde la cellule source active.
+
+### Validation
+- `cargo check`
+- `cargo test` : 85 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Step Fusion edition inline stable (build 20260609-100205)
+
+**Build:** `20260609-100205`
+**Commits:** UI Step Fusion : edition inline contrainte et sortie par clic exterieur
+
+### Changes
+- **[87] Edition inline** : le champ `DragValue` du nombre de pulses remplace maintenant le bouton fusionne avec exactement la meme taille, au lieu d'etre dessine en overlay ; la ligne ne se decale plus pendant l'edition.
+- **[87] Clic exterieur** : un clic hors de la cellule fusionnee quitte le mode edition et remet la cellule source en mode normal actif.
+- **[87] Clavier** : `Enter` et `Escape` quittent aussi le mode edition.
+
+### Validation
+- `cargo check`
+- `cargo test` : 85 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-09 - Focus Studio One menus avec VST ouvert (build 20260609-094555)
+
+**Build:** `20260609-094555`
+**Commits:** Vendor nih-plug-egui : focus clavier Windows non-intrusif
+
+### Changes
+- **Windows/Studio One** : le workaround clavier ne force plus `SetFocus(plugin)` a chaque frame quand egui ne saisit pas de texte.
+- **Focus host** : `set_keyboard_focus()` ne refocalise le VST que si le focus ou le curseur est deja dans l'editeur, ce qui laisse les menus de Studio One s'ouvrir pendant que le VST est visible.
+- **Saisie texte plugin** : la redirection vers la message window reste active quand egui veut une saisie clavier.
+
+### Validation
+- `cargo check`
+- `cargo test` : 85 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-08 - Step Fusion Copy/Paste Page + x2 (build 20260608-195857)
+
+**Build:** `20260608-195857`
+**Commits:** UI : copie des fusions dans les operations de page et de duplication
+
+### Changes
+- **[87] Copy Page** : le clipboard de page embarque maintenant les groupes Step Fusion par instrument, avec start/end locaux et nombre de pulses.
+- **[87] Paste Page** : remappe les fusions vers la page cible, remplace les anciennes fusions de cette page, conserve l'etat ON/OFF de la cellule de depart et nettoie les plocks couverts.
+- **[87] x2** : duplique les groupes Step Fusion avec offset `current_len`, en respectant les limites page-locales.
+- **[87] Clear Page** : supprime aussi les fusions de la page videe.
+
+### Validation
+- `cargo check`
+- `cargo test` : 85 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
+## 2026-06-08 - Step Fusion Shift detection robuste (build 20260608-194139)
+
+**Build:** `20260608-194139`
+**Commits:** UI : detection Maj stable via Win32 GetAsyncKeyState
+
+### Changes
+- **[87] Fusion Mode** : l'indicateur `Maj for fusion mode` et le Shift+clic utilisent maintenant une detection centralisee.
+- **[87] Windows/Studio One** : ajout d'un fallback Win32 `GetAsyncKeyState()` pour lire l'etat reel de Maj gauche/droite, car les modifiers egui peuvent etre aleatoires dans un VST selon le focus clavier du host.
+- **[87] Comportement** : la couleur bleue de l'indicateur et la creation de fusion reposent sur la meme detection.
+
+---
+
+## 2026-06-08 - Step Fusion mode indicator (build 20260608-193357)
+
+**Build:** `20260608-193357`
+**Commits:** UI : indicateur Maj pour mode fusion
+
+### Changes
+- **[87] UI Fusion Mode** : ajout d'une section a droite du mode plock sous la grille.
+- **[87] Feedback clavier** : affiche `Maj for fusion mode` en gris au repos, puis en bleu quand Maj/Shift est maintenu.
+- **[87] Guidance** : quand Maj est actif, affiche aussi `Select 2 cells` pour clarifier la creation de fusion.
+
+---
+
+## 2026-06-08 - Step Fusion nettoie les plocks couverts (build 20260608-192613)
+
+**Build:** `20260608-192613`
+**Commits:** Step Fusion : suppression des plocks sous cellules couvertes
+
+### Changes
+- **[87] Creation de fusion** : lors d'une fusion, les plocks sound et sequencer des cellules internes couvertes sont supprimes.
+- **[87] Source unique** : les plocks de la cellule de depart sont conserves, car c'est la seule cellule source lue par l'audio pour la fusion.
+- **[87] UX** : evite les plocks caches/inactifs sous une fusion qui pourraient reapparaitre de facon confuse apres suppression de la fusion.
+
+---
+
+## 2026-06-08 - Step Fusion UX polish (build 20260608-191352)
+
+**Build:** `20260608-191352`
+**Commits:** Step Fusion : style standard, edition inline, activation par defaut
+
+### Changes
+- **[87] Style cellule fusionnee** : le bloc fusionne reprend les couleurs des cellules standard (active, plock, seq-plock, current) au lieu d'utiliser un style bleu/cyan dedie.
+- **[87] Edition inline** : double-clic sur une fusion ouvre maintenant l'edition du nombre de pulses directement dans la cellule ; le menu contextuel propose aussi "Edit Fusion Steps".
+- **[87] Interaction** : le double-clic n'active/desactive plus accidentellement la fusion avant d'entrer en edition.
+- **[87] Creation** : une fusion nouvellement creee est activee par defaut sur sa cellule source.
+
+---
+
+## 2026-06-08 - Step Fusion UI: vraie fusion graphique (build 20260608-190515)
+
+**Build:** `20260608-190515`
+**Commits:** Rendu UI Step Fusion en bloc continu
+
+### Changes
+- **[87] Step Fusion UI** : les cellules fusionnees sont maintenant rendues comme un seul widget large couvrant toute la plage fusionnee.
+- **[87] Alignement grille** : la largeur du bloc fusionne inclut les espacements internes des cellules remplacees, ce qui garde les colonnes suivantes alignees avec la grille 16 pas.
+- **[87] Interaction** : le clic, double-clic et menu contextuel restent portes par la fusion, en utilisant la cellule de depart comme source des triggers/plocks.
+
+---
+
+## 2026-06-07 — Step Fusion V2 from scratch (build 20260607-131747)
+
+**Build:** `20260607-131747`
+**Commits:** Refonte Step Fusion : grille fixe + pulses audio + stutter seq-plock désactivé
+
+### Changes
+- **[87] Step Fusion V2 — grille fixe** : suppression du rendu en bouton large qui supprimait des colonnes et décalait la grid. Les 16 cellules de page restent toujours rendues avec une largeur fixe.
+- **[87] Step Fusion V2 — vrai scheduling audio** : une fusion active déclenche `N` pulses régulièrement espacés sur la durée des cellules fusionnées, au lieu de remapper les steps vers d'autres cellules.
+- **[87] Step Fusion V2 — source unique** : la cellule de départ porte l'état ON/OFF et les plocks sonores ; les cellules internes ne déclenchent plus indépendamment.
+- **[87] Step Fusion V2 — page-local only** : les fusions qui traversent une page 16-step sont rejetées.
+- **[87] Step Fusion V2 — stutter seq-plock désactivé** : le stutter est ignoré côté audio sur une fusion, et l'UI du plock séquenceur l'affiche comme indisponible.
+- **[87] Temps réel** : sync fusion UI→audio via buffer fixe préalloué (`load_fusions_into`) ; plus de `Vec` alloué dans `process()` pour les fusions.
+- **Tests** : ajout de tests séquenceur pour filtrage des fusions invalides et suppression des triggers internes avec métadonnées de pulses.
+
+---
+
+## 2026-06-07 — Step Fusion fixes : audio, 1-cell, visual overflow (build 20260607-103006)
+
+**Build:** `20260607-103006`
+**Commits:** Correction audio + UI des cellules fusionnées
+
+### Changes
+- **[87] Step Fusion — audio fix** : `map_step_to_cell` prend maintenant `track_length` et fait une recherche modulaire. Une fusion sur les cellules globales 16-19 avec `track_length=16` s'applique correctement aux steps 0-3 (car 16≡0 mod 16).
+- **[87] Step Fusion — single-cell filter** : `set_fusions` rejette les fusions à 1 cellule (pas d'effet rythmique).
+- **[87] Step Fusion — UI clamp to page** : le rendu des fusions est coupé à la fin de la page courante (pas de débordement visuel). Les cellules appartenant à une fusion commencée avant la page sont sautées.
+- **[87] Step Fusion — UI no 1-cell creation** : Shift+clic sur une seule cellule ne crée plus de fusion.
+
+---
+
 ## 2026-06-05 — Session Pattern Bank : plocks, Clear, Generate, Presets (build 20260605-180924)
 
 **Build:** `20260605-180924`

@@ -980,8 +980,8 @@ impl AnalogDrift {
     /// too subtle; decrease if it feels too extreme.
     /// Calibrated for a clearly audible "breathing" on a dense 16-step pattern.
     pub const PITCH_DEPTH: f32 = 0.075; // ±7.5 % detune (~130 cents)
-    pub const LEVEL_DEPTH: f32 = 0.25;  // ±25 % level (~2 dB)
-    pub const TIME_DEPTH: f32 = 0.50;   // ±50 % envelope time (tail length)
+    pub const LEVEL_DEPTH: f32 = 0.25; // ±25 % level (~2 dB)
+    pub const TIME_DEPTH: f32 = 0.50; // ±50 % envelope time (tail length)
 
     pub fn new(seed: u32) -> Self {
         Self {

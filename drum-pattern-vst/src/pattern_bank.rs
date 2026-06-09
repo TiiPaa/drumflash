@@ -9,8 +9,7 @@ pub const SLOT_COUNT: usize = 8;
 
 /// Max serialized size for sound plock state.
 /// Uses actual constants so the buffer never under-allocates when FIELD_COUNT grows.
-pub const MAX_PLOCK_BYTES: usize =
-    crate::sequencer::pattern::INSTRUMENT_COUNT
+pub const MAX_PLOCK_BYTES: usize = crate::sequencer::pattern::INSTRUMENT_COUNT
         * crate::sequencer::pattern::STEP_COUNT
         * crate::plock::FIELD_COUNT
         * 4 // values
@@ -20,8 +19,7 @@ pub const MAX_PLOCK_BYTES: usize =
         * 8; // field_masks
 
 /// Max serialized size for sequencer plock state.
-pub const MAX_SEQ_PLOCK_BYTES: usize =
-    crate::sequencer::pattern::INSTRUMENT_COUNT
+pub const MAX_SEQ_PLOCK_BYTES: usize = crate::sequencer::pattern::INSTRUMENT_COUNT
         * crate::sequencer::pattern::STEP_COUNT
         * 4
         * 4 // 4 fields per cell
@@ -131,16 +129,23 @@ impl PatternSlot {
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
                 for field in 0..FIELD_COUNT {
-                    self.plock_bytes.extend_from_slice(&plock_state.values.get(inst, step, field).to_le_bytes());
+                    self.plock_bytes.extend_from_slice(
+                        &plock_state.values.get(inst, step, field).to_le_bytes(),
+                    );
                 }
             }
         }
         for inst in 0..INSTRUMENT_COUNT {
-            self.plock_bytes.extend_from_slice(&plock_state.masks.masks[inst].load(Ordering::Relaxed).to_le_bytes());
+            self.plock_bytes.extend_from_slice(
+                &plock_state.masks.masks[inst]
+                    .load(Ordering::Relaxed)
+                    .to_le_bytes(),
+            );
         }
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
-                self.plock_bytes.extend_from_slice(&plock_state.field_masks.get(inst, step).to_le_bytes());
+                self.plock_bytes
+                    .extend_from_slice(&plock_state.field_masks.get(inst, step).to_le_bytes());
             }
         }
 
@@ -149,19 +154,34 @@ impl PatternSlot {
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
                 self.seq_plock_bytes.extend_from_slice(
-                    &f32::from_bits(seq_plock_state.probabilities[inst][step].load(Ordering::Relaxed)).to_le_bytes(),
+                    &f32::from_bits(
+                        seq_plock_state.probabilities[inst][step].load(Ordering::Relaxed),
+                    )
+                    .to_le_bytes(),
                 );
                 self.seq_plock_bytes.extend_from_slice(
-                    &f32::from_bits(seq_plock_state.stutters[inst][step].load(Ordering::Relaxed)).to_le_bytes(),
+                    &f32::from_bits(seq_plock_state.stutters[inst][step].load(Ordering::Relaxed))
+                        .to_le_bytes(),
                 );
-                self.seq_plock_bytes.extend_from_slice(&seq_plock_state.conditions[inst][step].load(Ordering::Relaxed).to_le_bytes());
                 self.seq_plock_bytes.extend_from_slice(
-                    &f32::from_bits(seq_plock_state.microtimings[inst][step].load(Ordering::Relaxed)).to_le_bytes(),
+                    &seq_plock_state.conditions[inst][step]
+                        .load(Ordering::Relaxed)
+                        .to_le_bytes(),
+                );
+                self.seq_plock_bytes.extend_from_slice(
+                    &f32::from_bits(
+                        seq_plock_state.microtimings[inst][step].load(Ordering::Relaxed),
+                    )
+                    .to_le_bytes(),
                 );
             }
         }
         for inst in 0..INSTRUMENT_COUNT {
-            self.seq_plock_bytes.extend_from_slice(&seq_plock_state.masks[inst].load(Ordering::Relaxed).to_le_bytes());
+            self.seq_plock_bytes.extend_from_slice(
+                &seq_plock_state.masks[inst]
+                    .load(Ordering::Relaxed)
+                    .to_le_bytes(),
+            );
         }
 
         self.pattern_length = pattern_length.clamp(1, 64);
@@ -185,7 +205,8 @@ impl PatternSlot {
         let plock_len = self.plock_bytes.len().min(plock_bytes_out.len());
         let seq_plock_len = self.seq_plock_bytes.len().min(seq_plock_bytes_out.len());
         plock_bytes_out[..plock_len].copy_from_slice(&self.plock_bytes[..plock_len]);
-        seq_plock_bytes_out[..seq_plock_len].copy_from_slice(&self.seq_plock_bytes[..seq_plock_len]);
+        seq_plock_bytes_out[..seq_plock_len]
+            .copy_from_slice(&self.seq_plock_bytes[..seq_plock_len]);
 
         Some(self.pattern_length)
     }
@@ -210,8 +231,12 @@ impl PatternSlot {
         // Detect field count from data size to support legacy slots (FIELD_COUNT=18)
         // and current slots (FIELD_COUNT=46).
         let legacy_field_count = 18usize;
-        let current_expected = INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4 + INSTRUMENT_COUNT * 8 + INSTRUMENT_COUNT * STEP_COUNT * 8;
-        let legacy_expected = INSTRUMENT_COUNT * STEP_COUNT * legacy_field_count * 4 + INSTRUMENT_COUNT * 8 + INSTRUMENT_COUNT * STEP_COUNT * 8;
+        let current_expected = INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4
+            + INSTRUMENT_COUNT * 8
+            + INSTRUMENT_COUNT * STEP_COUNT * 8;
+        let legacy_expected = INSTRUMENT_COUNT * STEP_COUNT * legacy_field_count * 4
+            + INSTRUMENT_COUNT * 8
+            + INSTRUMENT_COUNT * STEP_COUNT * 8;
 
         let field_count = if self.plock_bytes.len() >= current_expected {
             FIELD_COUNT
@@ -227,8 +252,10 @@ impl PatternSlot {
                 for step in 0..STEP_COUNT {
                     for field in 0..field_count {
                         let val = f32::from_le_bytes([
-                            self.plock_bytes[offset], self.plock_bytes[offset + 1],
-                            self.plock_bytes[offset + 2], self.plock_bytes[offset + 3],
+                            self.plock_bytes[offset],
+                            self.plock_bytes[offset + 1],
+                            self.plock_bytes[offset + 2],
+                            self.plock_bytes[offset + 3],
                         ]);
                         plock_state.values.set(inst, step, field, val);
                         offset += 4;
@@ -237,8 +264,14 @@ impl PatternSlot {
             }
             for inst in 0..INSTRUMENT_COUNT {
                 let mask = u64::from_le_bytes([
-                    self.plock_bytes[offset], self.plock_bytes[offset + 1], self.plock_bytes[offset + 2], self.plock_bytes[offset + 3],
-                    self.plock_bytes[offset + 4], self.plock_bytes[offset + 5], self.plock_bytes[offset + 6], self.plock_bytes[offset + 7],
+                    self.plock_bytes[offset],
+                    self.plock_bytes[offset + 1],
+                    self.plock_bytes[offset + 2],
+                    self.plock_bytes[offset + 3],
+                    self.plock_bytes[offset + 4],
+                    self.plock_bytes[offset + 5],
+                    self.plock_bytes[offset + 6],
+                    self.plock_bytes[offset + 7],
                 ]);
                 offset += 8;
                 plock_state.masks.masks[inst].store(mask, Ordering::Release);
@@ -246,8 +279,14 @@ impl PatternSlot {
             for inst in 0..INSTRUMENT_COUNT {
                 for step in 0..STEP_COUNT {
                     let mask = u64::from_le_bytes([
-                        self.plock_bytes[offset], self.plock_bytes[offset + 1], self.plock_bytes[offset + 2], self.plock_bytes[offset + 3],
-                        self.plock_bytes[offset + 4], self.plock_bytes[offset + 5], self.plock_bytes[offset + 6], self.plock_bytes[offset + 7],
+                        self.plock_bytes[offset],
+                        self.plock_bytes[offset + 1],
+                        self.plock_bytes[offset + 2],
+                        self.plock_bytes[offset + 3],
+                        self.plock_bytes[offset + 4],
+                        self.plock_bytes[offset + 5],
+                        self.plock_bytes[offset + 6],
+                        self.plock_bytes[offset + 7],
                     ]);
                     offset += 8;
                     plock_state.field_masks.set(inst, step, mask as usize);
@@ -263,32 +302,53 @@ impl PatternSlot {
             for inst in 0..INSTRUMENT_COUNT {
                 for step in 0..STEP_COUNT {
                     let prob = f32::from_le_bytes([
-                        self.seq_plock_bytes[offset], self.seq_plock_bytes[offset + 1], self.seq_plock_bytes[offset + 2], self.seq_plock_bytes[offset + 3],
+                        self.seq_plock_bytes[offset],
+                        self.seq_plock_bytes[offset + 1],
+                        self.seq_plock_bytes[offset + 2],
+                        self.seq_plock_bytes[offset + 3],
                     ]);
                     offset += 4;
                     let stutter = f32::from_le_bytes([
-                        self.seq_plock_bytes[offset], self.seq_plock_bytes[offset + 1], self.seq_plock_bytes[offset + 2], self.seq_plock_bytes[offset + 3],
+                        self.seq_plock_bytes[offset],
+                        self.seq_plock_bytes[offset + 1],
+                        self.seq_plock_bytes[offset + 2],
+                        self.seq_plock_bytes[offset + 3],
                     ]);
                     offset += 4;
                     let condition = u32::from_le_bytes([
-                        self.seq_plock_bytes[offset], self.seq_plock_bytes[offset + 1], self.seq_plock_bytes[offset + 2], self.seq_plock_bytes[offset + 3],
+                        self.seq_plock_bytes[offset],
+                        self.seq_plock_bytes[offset + 1],
+                        self.seq_plock_bytes[offset + 2],
+                        self.seq_plock_bytes[offset + 3],
                     ]);
                     offset += 4;
                     let micro = f32::from_le_bytes([
-                        self.seq_plock_bytes[offset], self.seq_plock_bytes[offset + 1], self.seq_plock_bytes[offset + 2], self.seq_plock_bytes[offset + 3],
+                        self.seq_plock_bytes[offset],
+                        self.seq_plock_bytes[offset + 1],
+                        self.seq_plock_bytes[offset + 2],
+                        self.seq_plock_bytes[offset + 3],
                     ]);
                     offset += 4;
 
-                    seq_plock_state.probabilities[inst][step].store(prob.to_bits(), Ordering::Release);
-                    seq_plock_state.stutters[inst][step].store(stutter.to_bits(), Ordering::Release);
+                    seq_plock_state.probabilities[inst][step]
+                        .store(prob.to_bits(), Ordering::Release);
+                    seq_plock_state.stutters[inst][step]
+                        .store(stutter.to_bits(), Ordering::Release);
                     seq_plock_state.conditions[inst][step].store(condition, Ordering::Release);
-                    seq_plock_state.microtimings[inst][step].store(micro.to_bits(), Ordering::Release);
+                    seq_plock_state.microtimings[inst][step]
+                        .store(micro.to_bits(), Ordering::Release);
                 }
             }
             for inst in 0..INSTRUMENT_COUNT {
                 let mask = u64::from_le_bytes([
-                    self.seq_plock_bytes[offset], self.seq_plock_bytes[offset + 1], self.seq_plock_bytes[offset + 2], self.seq_plock_bytes[offset + 3],
-                    self.seq_plock_bytes[offset + 4], self.seq_plock_bytes[offset + 5], self.seq_plock_bytes[offset + 6], self.seq_plock_bytes[offset + 7],
+                    self.seq_plock_bytes[offset],
+                    self.seq_plock_bytes[offset + 1],
+                    self.seq_plock_bytes[offset + 2],
+                    self.seq_plock_bytes[offset + 3],
+                    self.seq_plock_bytes[offset + 4],
+                    self.seq_plock_bytes[offset + 5],
+                    self.seq_plock_bytes[offset + 6],
+                    self.seq_plock_bytes[offset + 7],
                 ]);
                 offset += 8;
                 seq_plock_state.masks[inst].store(mask, Ordering::Release);
@@ -319,8 +379,12 @@ pub fn restore_from_buffers(
     // Detect field count from data size to support legacy slots (FIELD_COUNT=18)
     // and current slots (FIELD_COUNT=46).
     let legacy_field_count = 18usize;
-    let current_expected = INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4 + INSTRUMENT_COUNT * 8 + INSTRUMENT_COUNT * STEP_COUNT * 8;
-    let legacy_expected = INSTRUMENT_COUNT * STEP_COUNT * legacy_field_count * 4 + INSTRUMENT_COUNT * 8 + INSTRUMENT_COUNT * STEP_COUNT * 8;
+    let current_expected = INSTRUMENT_COUNT * STEP_COUNT * FIELD_COUNT * 4
+        + INSTRUMENT_COUNT * 8
+        + INSTRUMENT_COUNT * STEP_COUNT * 8;
+    let legacy_expected = INSTRUMENT_COUNT * STEP_COUNT * legacy_field_count * 4
+        + INSTRUMENT_COUNT * 8
+        + INSTRUMENT_COUNT * STEP_COUNT * 8;
 
     let (field_count, has_plock_data) = if plock_bytes.len() >= current_expected {
         (FIELD_COUNT, true)
@@ -336,8 +400,10 @@ pub fn restore_from_buffers(
             for step in 0..STEP_COUNT {
                 for field in 0..field_count {
                     let val = f32::from_le_bytes([
-                        plock_bytes[offset], plock_bytes[offset + 1],
-                        plock_bytes[offset + 2], plock_bytes[offset + 3],
+                        plock_bytes[offset],
+                        plock_bytes[offset + 1],
+                        plock_bytes[offset + 2],
+                        plock_bytes[offset + 3],
                     ]);
                     plock_state.values.set(inst, step, field, val);
                     offset += 4;
@@ -346,8 +412,14 @@ pub fn restore_from_buffers(
         }
         for inst in 0..INSTRUMENT_COUNT {
             let mask = u64::from_le_bytes([
-                plock_bytes[offset], plock_bytes[offset + 1], plock_bytes[offset + 2], plock_bytes[offset + 3],
-                plock_bytes[offset + 4], plock_bytes[offset + 5], plock_bytes[offset + 6], plock_bytes[offset + 7],
+                plock_bytes[offset],
+                plock_bytes[offset + 1],
+                plock_bytes[offset + 2],
+                plock_bytes[offset + 3],
+                plock_bytes[offset + 4],
+                plock_bytes[offset + 5],
+                plock_bytes[offset + 6],
+                plock_bytes[offset + 7],
             ]);
             offset += 8;
             plock_state.masks.masks[inst].store(mask, Ordering::Release);
@@ -355,8 +427,14 @@ pub fn restore_from_buffers(
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
                 let mask = u64::from_le_bytes([
-                    plock_bytes[offset], plock_bytes[offset + 1], plock_bytes[offset + 2], plock_bytes[offset + 3],
-                    plock_bytes[offset + 4], plock_bytes[offset + 5], plock_bytes[offset + 6], plock_bytes[offset + 7],
+                    plock_bytes[offset],
+                    plock_bytes[offset + 1],
+                    plock_bytes[offset + 2],
+                    plock_bytes[offset + 3],
+                    plock_bytes[offset + 4],
+                    plock_bytes[offset + 5],
+                    plock_bytes[offset + 6],
+                    plock_bytes[offset + 7],
                 ]);
                 offset += 8;
                 plock_state.field_masks.set(inst, step, mask as usize);
@@ -371,19 +449,31 @@ pub fn restore_from_buffers(
         for inst in 0..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
                 let prob = f32::from_le_bytes([
-                    seq_plock_bytes[offset], seq_plock_bytes[offset + 1], seq_plock_bytes[offset + 2], seq_plock_bytes[offset + 3],
+                    seq_plock_bytes[offset],
+                    seq_plock_bytes[offset + 1],
+                    seq_plock_bytes[offset + 2],
+                    seq_plock_bytes[offset + 3],
                 ]);
                 offset += 4;
                 let stutter = f32::from_le_bytes([
-                    seq_plock_bytes[offset], seq_plock_bytes[offset + 1], seq_plock_bytes[offset + 2], seq_plock_bytes[offset + 3],
+                    seq_plock_bytes[offset],
+                    seq_plock_bytes[offset + 1],
+                    seq_plock_bytes[offset + 2],
+                    seq_plock_bytes[offset + 3],
                 ]);
                 offset += 4;
                 let condition = u32::from_le_bytes([
-                    seq_plock_bytes[offset], seq_plock_bytes[offset + 1], seq_plock_bytes[offset + 2], seq_plock_bytes[offset + 3],
+                    seq_plock_bytes[offset],
+                    seq_plock_bytes[offset + 1],
+                    seq_plock_bytes[offset + 2],
+                    seq_plock_bytes[offset + 3],
                 ]);
                 offset += 4;
                 let micro = f32::from_le_bytes([
-                    seq_plock_bytes[offset], seq_plock_bytes[offset + 1], seq_plock_bytes[offset + 2], seq_plock_bytes[offset + 3],
+                    seq_plock_bytes[offset],
+                    seq_plock_bytes[offset + 1],
+                    seq_plock_bytes[offset + 2],
+                    seq_plock_bytes[offset + 3],
                 ]);
                 offset += 4;
 
@@ -395,8 +485,14 @@ pub fn restore_from_buffers(
         }
         for inst in 0..INSTRUMENT_COUNT {
             let mask = u64::from_le_bytes([
-                seq_plock_bytes[offset], seq_plock_bytes[offset + 1], seq_plock_bytes[offset + 2], seq_plock_bytes[offset + 3],
-                seq_plock_bytes[offset + 4], seq_plock_bytes[offset + 5], seq_plock_bytes[offset + 6], seq_plock_bytes[offset + 7],
+                seq_plock_bytes[offset],
+                seq_plock_bytes[offset + 1],
+                seq_plock_bytes[offset + 2],
+                seq_plock_bytes[offset + 3],
+                seq_plock_bytes[offset + 4],
+                seq_plock_bytes[offset + 5],
+                seq_plock_bytes[offset + 6],
+                seq_plock_bytes[offset + 7],
             ]);
             offset += 8;
             seq_plock_state.masks[inst].store(mask, Ordering::Release);
@@ -491,10 +587,15 @@ mod tests {
         assert_eq!(restored_len, Some(32));
 
         // Verify restored state
-        assert_eq!(pattern.load_step_mask(0), Pattern::rock_pattern().step_masks()[0]);
+        assert_eq!(
+            pattern.load_step_mask(0),
+            Pattern::rock_pattern().step_masks()[0]
+        );
         assert_eq!(plock.values.get(0, 5, 0), 0.75);
         assert_eq!(
-            f32::from_bits(seq_plock.probabilities[0][5].load(std::sync::atomic::Ordering::Relaxed)),
+            f32::from_bits(
+                seq_plock.probabilities[0][5].load(std::sync::atomic::Ordering::Relaxed)
+            ),
             0.5
         );
     }
@@ -589,7 +690,9 @@ mod tests {
         assert_eq!(target_plock.values.get(0, 5, 2), 0.75);
         assert!(target_seq_plock.is_active(0, 5));
         assert_eq!(
-            f32::from_bits(target_seq_plock.probabilities[0][5].load(std::sync::atomic::Ordering::Relaxed)),
+            f32::from_bits(
+                target_seq_plock.probabilities[0][5].load(std::sync::atomic::Ordering::Relaxed)
+            ),
             0.5
         );
         // Pattern B plocks should NOT be present
@@ -606,11 +709,19 @@ mod tests {
         assert_eq!(target_plock.values.get(1, 10, 2), 0.9);
         assert!(target_seq_plock.is_active(1, 10));
         assert_eq!(
-            f32::from_bits(target_seq_plock.probabilities[1][10].load(std::sync::atomic::Ordering::Relaxed)),
+            f32::from_bits(
+                target_seq_plock.probabilities[1][10].load(std::sync::atomic::Ordering::Relaxed)
+            ),
             0.25
         );
         // Pattern A plocks should NOT be present anymore
-        assert!(!target_plock.masks.is_active(0, 5), "Plock from pattern A leaked into pattern B!");
-        assert!(!target_seq_plock.is_active(0, 5), "Seq plock from pattern A leaked into pattern B!");
+        assert!(
+            !target_plock.masks.is_active(0, 5),
+            "Plock from pattern A leaked into pattern B!"
+        );
+        assert!(
+            !target_seq_plock.is_active(0, 5),
+            "Seq plock from pattern A leaked into pattern B!"
+        );
     }
 }

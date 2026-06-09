@@ -111,8 +111,10 @@ impl Voice for SnareVoice {
         }
         // analog = per-hit drift (breathing) ; digital = bit-identical hits.
         self.drift.trigger(self.settings.analog >= 0.5);
-        self.osc.set_freq(self.settings.frequency * self.drift.pitch);
-        self.envelope.set_decay(self.settings.decay * self.drift.time);
+        self.osc
+            .set_freq(self.settings.frequency * self.drift.pitch);
+        self.envelope
+            .set_decay(self.settings.decay * self.drift.time);
         self.envelope
             .set_release(self.settings.release * self.drift.time);
         self.envelope.trigger();
@@ -237,7 +239,9 @@ impl Voice for SnareVoice {
 
         let vol = env * self.settings.volume * self.drift.level;
         let l = self.dc_block_l.process(self.saturation.process(left * vol));
-        let r = self.dc_block_r.process(self.saturation.process(right * vol));
+        let r = self
+            .dc_block_r
+            .process(self.saturation.process(right * vol));
         (l, r)
     }
 
@@ -274,7 +278,8 @@ impl Voice for SnareVoice {
         self.envelope.set_hold(self.settings.hold);
         self.filter_env
             .set_decay(self.settings.filter_env_decay.max(0.001));
-        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
@@ -284,13 +289,14 @@ impl Voice for SnareVoice {
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
-    
+
     fn set_special_param(&mut self, index: usize, value: f32) {
         match index {
             0 => self.settings.snap = value,
             1 => {
                 self.settings.saturation_type = value as u8;
-                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
             }
             2 => {
                 self.settings.saturation_amount = value;

@@ -168,7 +168,7 @@ impl Voice for RideVoice {
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
-    
+
     fn set_special_param(&mut self, _index: usize, _value: f32) {
         // Ride has no special parameters
     }

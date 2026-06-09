@@ -1,11 +1,11 @@
 use nih_plug::prelude::*;
 use nih_plug::{
-    params::persist::{deserialize_field, serialize_field},
+    params::persist::{deserialize_field, serialize_field, PersistentField},
     wrapper::state::{ParamValue, PluginState},
 };
 use nih_plug_egui::EguiState;
 use std::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU32, Ordering},
     Arc,
 };
 
@@ -15,11 +15,11 @@ mod instrument_registry;
 mod midi_export;
 mod pattern_bank;
 mod plock;
+mod preset_dumps;
 mod sequencer;
 mod sound_settings;
 mod synthesis;
 mod ui;
-mod preset_dumps;
 
 use generator::{GeneratorType, Style};
 use plock::{PersistentPlockState, PersistentSequencerPlockState};
@@ -53,6 +53,94 @@ const STEP_COUNT: usize = 64;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v2";
 
+#[derive(Clone)]
+pub struct PersistentTrackLengthOverrides {
+    mask: Arc<AtomicU16>,
+}
+
+impl PersistentTrackLengthOverrides {
+    pub fn new() -> Self {
+        Self {
+            mask: Arc::new(AtomicU16::new(0)),
+        }
+    }
+
+    pub fn load_mask(&self) -> u16 {
+        self.mask.load(Ordering::Relaxed)
+    }
+
+    pub fn is_overridden(&self, instrument: usize) -> bool {
+        instrument < DrumVoice::COUNT && (self.load_mask() & (1u16 << instrument)) != 0
+    }
+
+    pub fn set_overridden(&self, instrument: usize, overridden: bool) {
+        if instrument >= DrumVoice::COUNT {
+            return;
+        }
+        let bit = 1u16 << instrument;
+        if overridden {
+            self.mask.fetch_or(bit, Ordering::Relaxed);
+        } else {
+            self.mask.fetch_and(!bit, Ordering::Relaxed);
+        }
+    }
+
+    fn load_mask_with_legacy_migration(&self, raw_lengths: &[usize; DrumVoice::COUNT]) -> u16 {
+        let mask = self.load_mask();
+        if mask != 0 {
+            return mask;
+        }
+
+        // Older sessions had no explicit override bit. Preserve non-default
+        // polyrhythm lanes while keeping untouched length=16 lanes in follow mode.
+        let legacy_mask = legacy_track_length_override_mask(raw_lengths);
+        if legacy_mask != 0 {
+            self.mask.store(legacy_mask, Ordering::Relaxed);
+        }
+        legacy_mask
+    }
+}
+
+impl Default for PersistentTrackLengthOverrides {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> PersistentField<'a, u16> for PersistentTrackLengthOverrides {
+    fn set(&self, new_value: u16) {
+        let valid_bits = (1u16 << DrumVoice::COUNT).wrapping_sub(1);
+        self.mask.store(new_value & valid_bits, Ordering::Relaxed);
+    }
+
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&u16) -> R,
+    {
+        let mask = self.load_mask();
+        f(&mask)
+    }
+}
+
+fn legacy_track_length_override_mask(raw_lengths: &[usize; DrumVoice::COUNT]) -> u16 {
+    let mut mask = 0u16;
+    for (instrument, &length) in raw_lengths.iter().enumerate() {
+        if length != 16 {
+            mask |= 1u16 << instrument;
+        }
+    }
+    mask
+}
+
+fn resolve_track_length(raw_length: usize, master_length: usize, overridden: bool) -> usize {
+    let master_length = master_length.clamp(1, 64);
+    if overridden {
+        raw_length.clamp(1, master_length)
+    } else {
+        master_length
+    }
+}
+
 pub struct DrumFlashVst {
     params: Arc<DrumFlashParams>,
     sequencer: Sequencer,
@@ -69,11 +157,11 @@ pub struct DrumFlashVst {
     last_host_pos: Option<f64>,
     /// Simple LCG RNG state for probability checks (audio-thread safe).
     rng_state: AtomicU32,
-    /// Pending stutter triggers: (samples_until, voice_idx, velocity, step).
+    /// Pending delayed triggers: (samples_until, voice_idx, velocity, step, hard).
     /// Fixed-size queue for audio-thread safety (no allocation).
     /// Max: 13 voices × 7 extra triggers = 91, rounded up to 128.
-    pending_stutters: [(u32, usize, f32, u32); 128],
-    pending_stutter_count: usize,
+    pending_triggers: [(u32, usize, f32, u32, bool); 128],
+    pending_trigger_count: usize,
     /// Pattern save request from UI: slot index + 1 (0 = none).
     save_pattern_request: Arc<AtomicU32>,
     /// Pattern load request from UI: slot index + 1 (0 = none).
@@ -116,6 +204,9 @@ pub struct DrumFlashParams {
 
     #[persist = "pattern-bank-v1"]
     pub pattern_bank: pattern_bank::PersistentPatternBank,
+
+    #[persist = "track-len-overrides-v1"]
+    pub track_length_overrides: PersistentTrackLengthOverrides,
 
     #[id = "master_vol"]
     pub master_volume: FloatParam,
@@ -507,19 +598,21 @@ impl Default for DrumFlashParams {
         let pattern_state = PersistentPattern::new(&default_pattern);
 
         Self {
-            editor_state: EguiState::from_size(1480, 520),
+            editor_state: EguiState::from_size(1480, 800),
             pattern_state,
             sound_settings: PersistentSoundSettings::new(),
             plock_state: PersistentPlockState::new(),
             seq_plock_state: PersistentSequencerPlockState::new(),
             pattern_bank: pattern_bank::PersistentPatternBank::new(),
+            track_length_overrides: PersistentTrackLengthOverrides::new(),
 
             master_volume: FloatParam::new(
                 "Master Volume",
                 0.8,
                 FloatRange::Linear { min: 0.0, max: 2.0 },
             )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            // The slider can reach 0.0 (-inf dB), so logarithmic smoothing is unsafe here.
+            .with_smoother(SmoothingStyle::Exponential(50.0))
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2)),
 
@@ -1171,7 +1264,10 @@ impl Default for DrumFlashParams {
             cymbal_shimmer_freq: FloatParam::new(
                 "Cymbal Shimmer Freq",
                 15.0,
-                FloatRange::Linear { min: 1.0, max: 50.0 },
+                FloatRange::Linear {
+                    min: 1.0,
+                    max: 50.0,
+                },
             )
             .with_smoother(SmoothingStyle::Linear(10.0))
             .with_unit(" Hz"),
@@ -1404,8 +1500,8 @@ impl Default for DrumFlashVst {
             last_sound_settings_version: 0,
             last_host_pos: None,
             rng_state: AtomicU32::new(0xACE1_0000),
-            pending_stutters: [(0, 0, 0.0, 0); 128],
-            pending_stutter_count: 0,
+            pending_triggers: [(0, 0, 0.0, 0, false); 128],
+            pending_trigger_count: 0,
             save_pattern_request: Arc::new(AtomicU32::new(0)),
             load_pattern_request: Arc::new(AtomicU32::new(0)),
             clear_plocks_request: Arc::new(AtomicBool::new(false)),
@@ -1497,21 +1593,8 @@ impl DrumFlashVst {
     /// merging global settings with any per-step plock override.
     fn voice_settings_at_step(&self, voice_idx: usize, step: usize) -> synthesis::VoiceSettings {
         let inst = &self.sound_settings_state.instruments[voice_idx];
-        let (
-            freq,
-            decay,
-            vol,
-            filt,
-            attack,
-            release,
-            dc,
-            rc,
-            hold,
-            fea,
-            fed,
-            analog,
-            stereo,
-        ) = inst.load();
+        let (freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed, analog, stereo) =
+            inst.load();
         let global = self.voice_settings_for(
             voice_idx, freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed, analog,
             stereo,
@@ -1540,7 +1623,8 @@ impl DrumFlashVst {
             nih_log!("Pattern saved to slot P{}", slot + 1);
         }
         // Mark this slot as the current one so the UI highlights it in green.
-        self.audio_last_loaded_slot.store(slot as u32, Ordering::Relaxed);
+        self.audio_last_loaded_slot
+            .store(slot as u32, Ordering::Relaxed);
     }
 
     /// Load a pattern from the bank slot.
@@ -1583,10 +1667,21 @@ impl DrumFlashVst {
         // 2. Wipe old plocks so nothing leaks from the previous pattern, then restore.
         let plock = &self.params.plock_state.state;
         let seq_plock = &self.params.seq_plock_state.state;
-        nih_log!("[LOAD] Slot P{}: plock_len={}, seq_plock_len={}, pattern_length={}", slot + 1, plock_len, seq_plock_len, pattern_length);
+        nih_log!(
+            "[LOAD] Slot P{}: plock_len={}, seq_plock_len={}, pattern_length={}",
+            slot + 1,
+            plock_len,
+            seq_plock_len,
+            pattern_length
+        );
         plock.clear_all();
         seq_plock.clear_all();
-        nih_log!("[LOAD] After clear_all: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
+        // Clear fusions (Step Fusion feature)
+        for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+            self.pattern.store_fusions(inst, &[]);
+        }
+        nih_log!(
+            "[LOAD] After clear_all: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
             plock.masks.masks[0].load(Ordering::Relaxed),
             seq_plock.masks[0].load(Ordering::Relaxed)
         );
@@ -1598,14 +1693,17 @@ impl DrumFlashVst {
             plock,
             seq_plock,
         );
-        nih_log!("[LOAD] After restore: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
+        nih_log!(
+            "[LOAD] After restore: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
             plock.masks.masks[0].load(Ordering::Relaxed),
             seq_plock.masks[0].load(Ordering::Relaxed)
         );
 
         // 3. Notify UI and record which slot the audio thread actually loaded.
-        self.pending_pattern_length.store(pattern_length as i32, Ordering::Relaxed);
-        self.audio_last_loaded_slot.store(slot as u32, Ordering::Relaxed);
+        self.pending_pattern_length
+            .store(pattern_length as i32, Ordering::Relaxed);
+        self.audio_last_loaded_slot
+            .store(slot as u32, Ordering::Relaxed);
         nih_log!("Pattern loaded from slot P{}", slot + 1);
     }
 
@@ -1742,12 +1840,20 @@ impl Plugin for DrumFlashVst {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // Process pattern save/load requests from UI
-        if let Some(slot) = self.save_pattern_request.swap(0, Ordering::Relaxed).checked_sub(1) {
+        if let Some(slot) = self
+            .save_pattern_request
+            .swap(0, Ordering::Relaxed)
+            .checked_sub(1)
+        {
             if (slot as usize) < pattern_bank::SLOT_COUNT {
                 self.save_pattern_to_slot(slot as usize);
             }
         }
-        if let Some(slot) = self.load_pattern_request.swap(0, Ordering::Relaxed).checked_sub(1) {
+        if let Some(slot) = self
+            .load_pattern_request
+            .swap(0, Ordering::Relaxed)
+            .checked_sub(1)
+        {
             if (slot as usize) < pattern_bank::SLOT_COUNT {
                 self.load_pattern_from_slot(slot as usize);
             }
@@ -1838,13 +1944,31 @@ impl Plugin for DrumFlashVst {
             }
         }
 
-        // Update per-track groove parameters once per buffer
+        // Update per-track groove parameters once per buffer.
+        // Lanes follow the global pattern length until explicitly overridden.
+        let master_length = self.params.pattern_length.value() as usize;
+        let raw_lengths: [usize; DrumVoice::COUNT] =
+            std::array::from_fn(|i| self.params.lengths()[i].value() as usize);
+        let override_mask = self
+            .params
+            .track_length_overrides
+            .load_mask_with_legacy_migration(&raw_lengths);
+        let effective_lengths = std::array::from_fn(|i| {
+            resolve_track_length(
+                raw_lengths[i],
+                master_length,
+                (override_mask & (1u16 << i)) != 0,
+            )
+        });
         self.sequencer.set_track_params(
-            std::array::from_fn(|i| self.params.lengths()[i].value() as usize),
+            effective_lengths,
             std::array::from_fn(|i| self.params.pushes()[i].value()),
             std::array::from_fn(|i| self.params.humanizes()[i].value()),
-            self.params.pattern_length.value() as usize,
+            master_length,
         );
+
+        // Sync fusions from pattern to sequencer without allocating in the audio thread.
+        self.sequencer.sync_fusions_from_pattern();
 
         // Hi-hat chokes open hi-hat
         let hihat_chokes_oh = self.params.hihat_chokes_oh.value();
@@ -1914,16 +2038,25 @@ impl Plugin for DrumFlashVst {
         };
 
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
-            // Process pending stutter triggers (decrement countdown, fire at 0).
+            // Process pending delayed triggers (stutter or fusion pulses).
             let mut i = 0;
-            while i < self.pending_stutter_count {
-                if self.pending_stutters[i].0 == 0 {
-                    let (_, voice_idx, velocity, step) = self.pending_stutters[i];
-                    self.fire_voice_trigger(voice_idx, velocity, step, sample_idx, context, hihat_chokes_oh, true);
-                    self.pending_stutters[i] = self.pending_stutters[self.pending_stutter_count - 1];
-                    self.pending_stutter_count -= 1;
+            while i < self.pending_trigger_count {
+                if self.pending_triggers[i].0 == 0 {
+                    let (_, voice_idx, velocity, step, hard) = self.pending_triggers[i];
+                    self.fire_voice_trigger(
+                        voice_idx,
+                        velocity,
+                        step,
+                        sample_idx,
+                        context,
+                        hihat_chokes_oh,
+                        hard,
+                    );
+                    self.pending_triggers[i] =
+                        self.pending_triggers[self.pending_trigger_count - 1];
+                    self.pending_trigger_count -= 1;
                 } else {
-                    self.pending_stutters[i].0 -= 1;
+                    self.pending_triggers[i].0 -= 1;
                     i += 1;
                 }
             }
@@ -1935,18 +2068,17 @@ impl Plugin for DrumFlashVst {
                     .sequencer
                     .process_sample(bpm, sample_rate, swing, groove_type);
 
-                let current_steps = self.sequencer.current_steps();
-                for (voice_idx, (should_trigger, velocity)) in triggers.iter().enumerate() {
-                    if *should_trigger {
-                        let step = current_steps[voice_idx] as usize;
+                for (voice_idx, trigger) in triggers.iter().enumerate() {
+                    if trigger.should_trigger {
+                        let step = trigger.step;
                         let seq_params = self.params.seq_plock_state.state.get(voice_idx, step);
-                        
+
                         // Apply sequencer probability
                         let prob = seq_params.map(|sp| sp.probability).unwrap_or(1.0);
                         if prob < 1.0 && self.next_rand() > prob {
                             continue; // Skip this trigger based on probability
                         }
-                        
+
                         // Apply step conditions
                         let loop_count = self.sequencer.loop_count();
                         let condition_passes = if let Some(sp) = seq_params {
@@ -1972,11 +2104,49 @@ impl Plugin for DrumFlashVst {
                             continue;
                         }
 
-                        let stutter = seq_params.as_ref().map(|sp| sp.stutter_count.max(1)).unwrap_or(1);
-                        let step_for_trigger = current_steps[voice_idx] as u32;
+                        let stutter = if trigger.is_fusion() {
+                            1
+                        } else {
+                            seq_params
+                                .as_ref()
+                                .map(|sp| sp.stutter_count.max(1))
+                                .unwrap_or(1)
+                        };
+                        let step_for_trigger = step as u32;
 
                         // Fire the first trigger immediately.
-                        self.fire_voice_trigger(voice_idx, *velocity, step_for_trigger, sample_idx, context, hihat_chokes_oh, false);
+                        self.fire_voice_trigger(
+                            voice_idx,
+                            trigger.velocity,
+                            step_for_trigger,
+                            sample_idx,
+                            context,
+                            hihat_chokes_oh,
+                            false,
+                        );
+
+                        // Fusion pulses are not stutter plocks: they are evenly
+                        // distributed over the whole fused-cell duration and use
+                        // the start cell's sound plock for every pulse.
+                        if trigger.is_fusion() && trigger.fusion_pulse_count > 1 {
+                            let spacing = (step_duration_samples
+                                * trigger.fusion_span_cells.max(1) as f32
+                                / trigger.fusion_pulse_count.max(1) as f32)
+                                .max(1.0) as u32;
+                            for k in 1..trigger.fusion_pulse_count {
+                                if self.pending_trigger_count < self.pending_triggers.len() {
+                                    self.pending_triggers[self.pending_trigger_count] = (
+                                        spacing * k as u32,
+                                        voice_idx,
+                                        trigger.velocity,
+                                        step_for_trigger,
+                                        false,
+                                    );
+                                    self.pending_trigger_count += 1;
+                                }
+                            }
+                            continue;
+                        }
 
                         // Schedule additional stutter triggers with temporal spacing.
                         // Spacing is derived from the current step duration (which itself
@@ -1985,14 +2155,15 @@ impl Plugin for DrumFlashVst {
                         if stutter > 1 {
                             let spacing = (step_duration_samples / stutter as f32).max(1.0) as u32;
                             for k in 1..stutter {
-                                if self.pending_stutter_count < self.pending_stutters.len() {
-                                    self.pending_stutters[self.pending_stutter_count] = (
+                                if self.pending_trigger_count < self.pending_triggers.len() {
+                                    self.pending_triggers[self.pending_trigger_count] = (
                                         spacing * k as u32,
                                         voice_idx,
-                                        *velocity,
+                                        trigger.velocity,
                                         step_for_trigger,
+                                        true,
                                     );
-                                    self.pending_stutter_count += 1;
+                                    self.pending_trigger_count += 1;
                                 }
                             }
                         }
@@ -2005,7 +2176,9 @@ impl Plugin for DrumFlashVst {
                         break;
                     }
                     if let NoteEvent::NoteOn { note, velocity, .. } = event {
-                        if let Some(voice_idx) = crate::instrument_registry::voice_idx_from_midi_note(note) {
+                        if let Some(voice_idx) =
+                            crate::instrument_registry::voice_idx_from_midi_note(note)
+                        {
                             let settings = self.voice_settings_at_step(voice_idx, 0);
                             let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                                 continue;
@@ -2137,7 +2310,9 @@ impl Plugin for DrumFlashVst {
                 new_masks[..16].copy_from_slice(&old_masks);
                 let wrapped = sequencer::pattern::PatternMasks(new_masks);
                 if let Ok(serialized) = serialize_field(&wrapped) {
-                    state.fields.insert(PATTERN_STATE_FIELD.to_string(), serialized);
+                    state
+                        .fields
+                        .insert(PATTERN_STATE_FIELD.to_string(), serialized);
                     return;
                 }
             }
@@ -2227,13 +2402,66 @@ mod tests {
     }
 
     #[test]
+    fn master_volume_smoothing_stays_finite_from_silence() {
+        let params = DrumFlashParams::default();
+
+        params.master_volume.smoothed.reset(0.0);
+        params.master_volume.smoothed.set_target(44_100.0, 0.8);
+
+        for _ in 0..2_205 {
+            assert!(params.master_volume.smoothed.next().is_finite());
+        }
+    }
+
+    #[test]
+    fn default_track_length_follows_master_length() {
+        assert_eq!(resolve_track_length(16, 64, false), 64);
+        assert_eq!(resolve_track_length(12, 32, false), 32);
+    }
+
+    #[test]
+    fn overridden_track_length_preserves_manual_value_including_16() {
+        assert_eq!(resolve_track_length(16, 64, true), 16);
+        assert_eq!(resolve_track_length(12, 64, true), 12);
+    }
+
+    #[test]
+    fn legacy_track_length_override_mask_marks_non_default_lengths_only() {
+        let mut lengths = [16usize; DrumVoice::COUNT];
+        lengths[1] = 12;
+        lengths[8] = 7;
+
+        let mask = legacy_track_length_override_mask(&lengths);
+
+        assert_eq!(mask & (1u16 << 0), 0);
+        assert_ne!(mask & (1u16 << 1), 0);
+        assert_ne!(mask & (1u16 << 8), 0);
+    }
+
+    #[test]
+    fn track_length_override_persistence_roundtrips_mask() {
+        let overrides = PersistentTrackLengthOverrides::new();
+        overrides.set_overridden(0, true);
+        overrides.set_overridden(12, true);
+
+        overrides.map(|mask| {
+            assert_eq!(*mask, (1u16 << 0) | (1u16 << 12));
+        });
+
+        let restored = PersistentTrackLengthOverrides::new();
+        restored.set((1u16 << 2) | (1u16 << 12));
+        assert!(!restored.is_overridden(0));
+        assert!(restored.is_overridden(2));
+        assert!(restored.is_overridden(12));
+    }
+
+    #[test]
     fn cymbal_shimmer_freq_propagates_through_voice_settings_for() {
         let vst = DrumFlashVst::default();
         let cy_idx = DrumVoice::Cymbal as usize;
 
         let settings = vst.voice_settings_for(
-            cy_idx,
-            6000.0, // freq
+            cy_idx, 6000.0, // freq
             2.0,    // decay
             0.4,    // volume
             8000.0, // filter_freq

@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::Write,
@@ -42,9 +42,19 @@ pub fn dump_preset(dump: &PresetDump) -> Result<PathBuf, String> {
     let safe_name = dump
         .name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>();
-    let filename = format!("{}_{}.json", dump.instrument_label.to_lowercase(), safe_name);
+    let filename = format!(
+        "{}_{}.json",
+        dump.instrument_label.to_lowercase(),
+        safe_name
+    );
     let path = dir.join(&filename);
 
     let json = serde_json::to_string_pretty(dump).map_err(|e| e.to_string())?;
