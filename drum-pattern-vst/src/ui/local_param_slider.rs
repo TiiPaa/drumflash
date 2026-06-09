@@ -1,5 +1,5 @@
-use nih_plug_egui::egui::{self, Color32, Response, Sense, Ui, Vec2, Widget};
 use nih_plug_egui::egui::emath::GuiRounding;
+use nih_plug_egui::egui::{self, Color32, Response, Sense, Ui, Vec2, Widget};
 use std::ops::RangeInclusive;
 
 /// When shift+dragging a parameter, one pixel dragged corresponds to this much change in the
@@ -16,6 +16,7 @@ pub struct LocalParamSlider<'a> {
     suffix: Option<&'a str>,
     draw_value: bool,
     slider_width: Option<f32>,
+    reset_value: Option<f32>,
 }
 
 impl<'a> LocalParamSlider<'a> {
@@ -28,6 +29,7 @@ impl<'a> LocalParamSlider<'a> {
             suffix: None,
             draw_value: true,
             slider_width: None,
+            reset_value: None,
         }
     }
 
@@ -52,6 +54,12 @@ impl<'a> LocalParamSlider<'a> {
     /// Set a custom width for the slider.
     pub fn with_width(mut self, width: f32) -> Self {
         self.slider_width = Some(width);
+        self
+    }
+
+    /// Set the value used on double-click reset.
+    pub fn reset_value(mut self, value: f32) -> Self {
+        self.reset_value = Some(value);
         self
     }
 
@@ -109,7 +117,7 @@ impl<'a> Widget for LocalParamSlider<'a> {
             .text_style_height(&egui::TextStyle::Body)
             .max(ui.spacing().interact_size.y * 0.8);
         let slider_height = (height * 0.8).round_to_pixels(ui.painter().pixels_per_point());
-        
+
         let mut response = ui.allocate_response(
             egui::vec2(slider_width, slider_height),
             Sense::click_and_drag(),
@@ -127,19 +135,19 @@ impl<'a> Widget for LocalParamSlider<'a> {
                 response.mark_changed();
             } else {
                 // Normal drag - map click position to normalized value
-                let proportion = egui::emath::remap_clamp(
-                    click_pos.x,
-                    response.rect.x_range(),
-                    0.0..=1.0,
-                ) as f64;
+                let proportion =
+                    egui::emath::remap_clamp(click_pos.x, response.rect.x_range(), 0.0..=1.0)
+                        as f64;
                 self.set_normalized_value(proportion as f32);
                 response.mark_changed();
             }
         }
 
         if response.double_clicked() {
-            // Double-click to reset to default (middle of range)
-            *self.value = (self.range.start() + self.range.end()) / 2.0;
+            // Double-click to reset to default (middle of range unless overridden)
+            *self.value = self
+                .reset_value
+                .unwrap_or_else(|| (self.range.start() + self.range.end()) / 2.0);
             response.mark_changed();
         }
 
@@ -156,7 +164,8 @@ impl<'a> Widget for LocalParamSlider<'a> {
                 filled_rect.set_width(response.rect.width() * filled_proportion);
                 let filled_bg = if response.dragged() {
                     // Slightly brighter when dragging
-                    let mut hsv = egui::epaint::Hsva::from(egui::Rgba::from(ui.visuals().selection.bg_fill));
+                    let mut hsv =
+                        egui::epaint::Hsva::from(egui::Rgba::from(ui.visuals().selection.bg_fill));
                     hsv.v += 0.1;
                     hsv.a = 1.0;
                     egui::Color32::from(hsv)
@@ -178,14 +187,17 @@ impl<'a> Widget for LocalParamSlider<'a> {
         // Draw the value text if enabled
         if self.draw_value {
             let text = self.string_value();
-            let text_galley = ui.fonts(|f| f.layout_no_wrap(text, egui::TextStyle::Button.resolve(ui.style()), Color32::WHITE));
+            let text_galley = ui.fonts(|f| {
+                f.layout_no_wrap(
+                    text,
+                    egui::TextStyle::Button.resolve(ui.style()),
+                    Color32::WHITE,
+                )
+            });
             let text_size = text_galley.size();
             let padding = ui.spacing().button_padding;
 
-            let text_response = ui.allocate_response(
-                text_size + (padding * 2.0),
-                Sense::click(),
-            );
+            let text_response = ui.allocate_response(text_size + (padding * 2.0), Sense::click());
 
             if ui.is_rect_visible(text_response.rect) {
                 let text_pos = ui

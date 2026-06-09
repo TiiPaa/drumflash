@@ -3,9 +3,34 @@
 use nih_plug::params::persist::PersistentField;
 use std::array;
 use std::sync::{
-    atomic::{AtomicU16, Ordering},
+    atomic::{AtomicU16, AtomicU32, Ordering},
     Arc,
 };
+
+/// Maximum fused groups per instrument in SharedPattern.
+pub const MAX_FUSIONS: usize = 16;
+
+/// Pack a FusedGroup into a u32 for atomic storage.
+/// Bits 0-7: start_cell, 8-15: end_cell, 16-23: pulse count, 24: active.
+fn pack_fusion(group: &FusedGroup) -> u32 {
+    (group.start_cell as u32)
+        | ((group.end_cell as u32) << 8)
+        | ((group.step_count.clamp(1, 64) as u32) << 16)
+        | (1u32 << 24)
+}
+
+/// Unpack a u32 into an Option<FusedGroup>.
+fn unpack_fusion(packed: u32) -> Option<FusedGroup> {
+    if (packed >> 24) & 1 == 0 {
+        return None;
+    }
+    let group = FusedGroup {
+        start_cell: (packed & 0xFF) as u8,
+        end_cell: ((packed >> 8) & 0xFF) as u8,
+        step_count: ((packed >> 16) & 0xFF) as u8,
+    };
+    group.is_valid().then_some(group)
+}
 
 pub const INSTRUMENT_COUNT: usize = 13;
 pub const STEP_COUNT: usize = 64;
@@ -39,12 +64,69 @@ impl Step {
     }
 }
 
+/// A fused cell group for Step Fusion (tuplets / micro-rhythms).
+///
+/// A group is one UI button spanning consecutive cells on a single 16-step
+/// page. When its start cell is active, the audio engine emits `step_count`
+/// evenly-spaced pulses over the duration of the whole group. Sound plocks are
+/// read from `start_cell`; sequencer stutter is ignored for fused cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FusedGroup {
+    /// First cell index (0-63) inclusive.
+    pub start_cell: u8,
+    /// Last cell index (0-63) inclusive.
+    pub end_cell: u8,
+    /// Number of pulses generated across this group (1-64).
+    pub step_count: u8,
+}
+
+impl Default for FusedGroup {
+    fn default() -> Self {
+        Self {
+            start_cell: 0,
+            end_cell: 0,
+            step_count: 0,
+        }
+    }
+}
+
+impl FusedGroup {
+    pub fn cell_span(&self) -> usize {
+        self.end_cell.saturating_sub(self.start_cell) as usize + 1
+    }
+
+    pub fn page(&self) -> usize {
+        self.start_cell as usize / 16
+    }
+
+    pub fn is_page_local(&self) -> bool {
+        self.start_cell / 16 == self.end_cell / 16
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let start = self.start_cell as usize;
+        let end = self.end_cell as usize;
+        start < end && end < STEP_COUNT && self.step_count >= 1 && self.is_page_local()
+    }
+
+    /// Returns true if the given cell index is inside this group.
+    pub fn contains(&self, cell: usize) -> bool {
+        cell >= self.start_cell as usize && cell <= self.end_cell as usize
+    }
+
+    pub fn is_start(&self, cell: usize) -> bool {
+        cell == self.start_cell as usize
+    }
+}
+
 /// A 64-step pattern for drum sequencing (4 pages of 16 steps).
 #[derive(Clone, Debug)]
 pub struct Pattern {
     ///  steps, each with  instrument triggers.
     pub steps: [Step; STEP_COUNT],
     pub name: String,
+    /// Per-instrument fused cell groups (Step Fusion feature).
+    pub fusions: [Vec<FusedGroup>; INSTRUMENT_COUNT],
 }
 
 impl Pattern {
@@ -53,6 +135,7 @@ impl Pattern {
         Self {
             steps: array::from_fn(|_| Step::empty()),
             name: "Empty".to_string(),
+            fusions: array::from_fn(|_| Vec::new()),
         }
     }
 
@@ -207,13 +290,14 @@ impl Pattern {
 /// Lock-free pattern storage shared between the audio thread and the UI.
 pub struct SharedPattern {
     steps: [AtomicU16; STEP_COUNT],
+    /// Fused groups per instrument, packed as u32.
+    /// Index: instrument * MAX_FUSIONS + group_index.
+    /// The first element for each instrument stores the count (packed as count | (1<<24)).
+    fusions: [AtomicU32; INSTRUMENT_COUNT * MAX_FUSIONS],
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct PatternMasks(
-    #[serde(with = "serde_arrays")]
-    pub [u16; STEP_COUNT],
-);
+pub struct PatternMasks(#[serde(with = "serde_arrays")] pub [u16; STEP_COUNT]);
 
 #[derive(Clone)]
 pub struct PersistentPattern {
@@ -234,10 +318,89 @@ impl PersistentPattern {
 
 impl SharedPattern {
     pub fn new(pattern: &Pattern) -> Arc<Self> {
+        let fusions = array::from_fn(|i| {
+            let inst = i / MAX_FUSIONS;
+            let group_idx = i % MAX_FUSIONS;
+            if group_idx == 0 {
+                // First slot stores count
+                AtomicU32::new((pattern.fusions[inst].len() as u32) | (1u32 << 24))
+            } else if group_idx <= pattern.fusions[inst].len() {
+                AtomicU32::new(pack_fusion(&pattern.fusions[inst][group_idx - 1]))
+            } else {
+                AtomicU32::new(0)
+            }
+        });
         let shared = Arc::new(Self {
             steps: array::from_fn(|step| AtomicU16::new(pattern.get_step(step).bitmask())),
+            fusions,
         });
         shared
+    }
+
+    /// Load fused groups for an instrument.
+    pub fn load_fusions(&self, instrument: usize) -> Vec<FusedGroup> {
+        if instrument >= INSTRUMENT_COUNT {
+            return Vec::new();
+        }
+        let base = instrument * MAX_FUSIONS;
+        let count_packed = self.fusions[base].load(Ordering::Relaxed);
+        let count = (count_packed & 0xFF) as usize;
+        let mut groups = Vec::with_capacity(count.min(MAX_FUSIONS - 1));
+        for i in 0..count.min(MAX_FUSIONS - 1) {
+            if let Some(group) = unpack_fusion(self.fusions[base + 1 + i].load(Ordering::Relaxed)) {
+                groups.push(group);
+            }
+        }
+        groups
+    }
+
+    /// Load fused groups into a caller-provided fixed buffer. This is used by
+    /// the audio thread to avoid allocating while syncing UI state.
+    pub fn load_fusions_into(
+        &self,
+        instrument: usize,
+        out: &mut [FusedGroup; MAX_FUSIONS],
+    ) -> usize {
+        if instrument >= INSTRUMENT_COUNT {
+            return 0;
+        }
+        let base = instrument * MAX_FUSIONS;
+        let count_packed = self.fusions[base].load(Ordering::Relaxed);
+        let count = (count_packed & 0xFF) as usize;
+        let mut written = 0usize;
+        for i in 0..count.min(MAX_FUSIONS - 1) {
+            if let Some(group) = unpack_fusion(self.fusions[base + 1 + i].load(Ordering::Relaxed)) {
+                if written < out.len() {
+                    out[written] = group;
+                    written += 1;
+                }
+            }
+        }
+        written
+    }
+
+    /// Store fused groups for an instrument.
+    pub fn store_fusions(&self, instrument: usize, groups: &[FusedGroup]) {
+        if instrument >= INSTRUMENT_COUNT {
+            return;
+        }
+        let base = instrument * MAX_FUSIONS;
+        let mut count = 0usize;
+        for group in groups
+            .iter()
+            .copied()
+            .filter(FusedGroup::is_valid)
+            .take(MAX_FUSIONS - 1)
+        {
+            self.fusions[base + 1 + count].store(pack_fusion(&group), Ordering::Relaxed);
+            count += 1;
+        }
+        // Clear remaining slots
+        for i in count..(MAX_FUSIONS - 1) {
+            self.fusions[base + 1 + i].store(0, Ordering::Relaxed);
+        }
+        // Update count
+        self.fusions[base].store((count as u32) | (1u32 << 24), Ordering::Relaxed);
     }
 
     pub fn load_step_mask(&self, step: usize) -> u16 {

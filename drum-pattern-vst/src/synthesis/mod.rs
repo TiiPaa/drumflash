@@ -4,12 +4,12 @@ mod clap;
 mod cymbal;
 mod dsp;
 mod hihat;
-mod saturation;
 mod kick;
 mod kick_808;
 mod open_hihat;
 mod perc1;
 mod ride;
+mod saturation;
 mod settings;
 mod snare;
 mod snare606;
@@ -26,21 +26,21 @@ pub use clap::ClapVoice;
 pub use cymbal::CymbalVoice;
 pub use hihat::HiHatVoice;
 pub use kick::KickVoice;
-pub use settings::kick::KickSettings;
-pub use settings::snare::SnareSettings;
-pub use settings::hihat::HiHatSettings;
-pub use settings::open_hihat::OpenHiHatSettings;
-pub use settings::tom::TomSettings;
-pub use settings::clap::ClapSettings;
-pub use settings::ride::RideSettings;
-pub use settings::cymbal::CymbalSettings;
-pub use settings::snare606::Snare606Settings;
-pub use settings::kick_808::Kick808Settings;
-pub use settings::perc1::Perc1Settings;
 pub use kick_808::Kick808Voice;
 pub use open_hihat::OpenHiHatVoice;
 pub use perc1::Perc1Voice;
 pub use ride::RideVoice;
+pub use settings::clap::ClapSettings;
+pub use settings::cymbal::CymbalSettings;
+pub use settings::hihat::HiHatSettings;
+pub use settings::kick::KickSettings;
+pub use settings::kick_808::Kick808Settings;
+pub use settings::open_hihat::OpenHiHatSettings;
+pub use settings::perc1::Perc1Settings;
+pub use settings::ride::RideSettings;
+pub use settings::snare::SnareSettings;
+pub use settings::snare606::Snare606Settings;
+pub use settings::tom::TomSettings;
 pub use snare::SnareVoice;
 pub use snare606::Snare606Voice;
 pub use tom::TomVoice;
@@ -182,7 +182,10 @@ impl VoiceSettings {
             analog: 0.3,
             stereo: 0.0,
             algo: 0,
-            special: [0.5, 0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.01, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -202,7 +205,10 @@ impl VoiceSettings {
             analog: 0.3,
             stereo: 1.0,
             algo: 0,
-            special: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -222,7 +228,10 @@ impl VoiceSettings {
             analog: 1.0,
             stereo: 1.0,
             algo: 0,
-            special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -242,7 +251,10 @@ impl VoiceSettings {
             analog: 1.0,
             stereo: 0.0,
             algo: 0,
-            special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -262,7 +274,10 @@ impl VoiceSettings {
             analog: 0.3,
             stereo: 0.0,
             algo: 0,
-            special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -282,7 +297,10 @@ impl VoiceSettings {
             analog: 0.3,
             stereo: 0.0,
             algo: 0,
-            special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -302,7 +320,10 @@ impl VoiceSettings {
             analog: 0.3,
             stereo: 0.0,
             algo: 0,
-            special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -322,7 +343,10 @@ impl VoiceSettings {
             analog: 1.0,
             stereo: 1.0,
             algo: 0,
-            special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -342,7 +366,10 @@ impl VoiceSettings {
             analog: 1.0,
             stereo: 1.0,
             algo: 0,
-            special: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -362,7 +389,10 @@ impl VoiceSettings {
             analog: 0.3,
             stereo: 1.0,
             algo: 0,
-            special: [15.0, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                15.0, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -385,7 +415,10 @@ impl VoiceSettings {
             // special[0] = Resonance (Q)
             // special[1] = Tone (body vs wires balance)
             // special[2] = Snap (crispness of wires layer)
-            special: [4.5, 0.55, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                4.5, 0.55, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -409,7 +442,10 @@ impl VoiceSettings {
             // special[1] = Snap (pitch sweep depth)
             // special[2] = Pitch Drop amount
             // Defaults at 0 so the user hears the difference when raising sliders.
-            special: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 
@@ -433,7 +469,10 @@ impl VoiceSettings {
             // special[1] = Sweep speed (ms)
             // special[2] = Bite (FM amount)
             // special[3] = Width (stereo + slap delay)
-            special: [0.5, 80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            special: [
+                0.5, 80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
         }
     }
 }
@@ -805,7 +844,11 @@ mod tests {
         // 1. Trigger B8 and verify it produces sound
         synth.trigger(b8_idx, 1.0);
         let out1 = sum_voice_output(&mut synth, b8_idx, 100);
-        assert!(out1 > 0.0, "B8 should produce sound on first trigger: {}", out1);
+        assert!(
+            out1 > 0.0,
+            "B8 should produce sound on first trigger: {}",
+            out1
+        );
 
         // 2. Change Cymbal settings while B8 is potentially still ringing
         let mut cymbal_settings = VoiceSettings::cymbal();
@@ -816,7 +859,11 @@ mod tests {
         // 3. Trigger B8 again and verify it STILL produces sound
         synth.trigger(b8_idx, 1.0);
         let out2 = sum_voice_output(&mut synth, b8_idx, 100);
-        assert!(out2 > 0.0, "B8 should still produce sound after Cymbal set_voice_settings: {}", out2);
+        assert!(
+            out2 > 0.0,
+            "B8 should still produce sound after Cymbal set_voice_settings: {}",
+            out2
+        );
     }
 
     #[test]
@@ -829,7 +876,11 @@ mod tests {
         // 1. Trigger B8 and verify it produces sound
         synth.trigger(b8_idx, 1.0);
         let out1 = sum_voice_output(&mut synth, b8_idx, 100);
-        assert!(out1 > 0.0, "B8 should produce sound on first trigger: {}", out1);
+        assert!(
+            out1 > 0.0,
+            "B8 should produce sound on first trigger: {}",
+            out1
+        );
 
         // 2. Call set_voice_settings on ALL voices (like lib.rs does when sound_settings_state.version changes)
         let all_settings = [
@@ -855,7 +906,11 @@ mod tests {
         // 3. Trigger B8 again and verify it STILL produces sound
         synth.trigger(b8_idx, 1.0);
         let out2 = sum_voice_output(&mut synth, b8_idx, 100);
-        assert!(out2 > 0.0, "B8 should still produce sound after all set_voice_settings: {}", out2);
+        assert!(
+            out2 > 0.0,
+            "B8 should still produce sound after all set_voice_settings: {}",
+            out2
+        );
     }
 
     #[test]
@@ -872,7 +927,11 @@ mod tests {
         // Trigger B8 while Cymbal is ringing
         synth.trigger(b8_idx, 1.0);
         let out1 = sum_voice_output(&mut synth, b8_idx, 50);
-        assert!(out1 > 0.0, "B8 should produce sound when triggered alongside Cymbal: {}", out1);
+        assert!(
+            out1 > 0.0,
+            "B8 should produce sound when triggered alongside Cymbal: {}",
+            out1
+        );
 
         // Now modify Cymbal settings while both are active
         let mut cymbal_settings = VoiceSettings::cymbal();
@@ -883,7 +942,11 @@ mod tests {
         // Trigger B8 again
         synth.trigger(b8_idx, 1.0);
         let out2 = sum_voice_output(&mut synth, b8_idx, 100);
-        assert!(out2 > 0.0, "B8 should still produce sound after Cymbal settings changed while active: {}", out2);
+        assert!(
+            out2 > 0.0,
+            "B8 should still produce sound after Cymbal settings changed while active: {}",
+            out2
+        );
     }
 
     /// Helper: checks whether any sample in the output is NaN.
@@ -907,7 +970,10 @@ mod tests {
 
         // Trigger B8
         synth.trigger(b8_idx, 1.0);
-        assert!(!contains_nan(&mut synth, b8_idx, 10), "B8 should not produce NaN initially");
+        assert!(
+            !contains_nan(&mut synth, b8_idx, 10),
+            "B8 should not produce NaN initially"
+        );
 
         // Change Cymbal with extreme values
         let mut cy_settings = VoiceSettings::cymbal();
@@ -920,7 +986,10 @@ mod tests {
 
         // Trigger B8 again
         synth.trigger(b8_idx, 1.0);
-        assert!(!contains_nan(&mut synth, b8_idx, 200), "B8 should not produce NaN after Cymbal extreme settings");
+        assert!(
+            !contains_nan(&mut synth, b8_idx, 200),
+            "B8 should not produce NaN after Cymbal extreme settings"
+        );
 
         // Now change ALL voices with edge-case values while B8 is active
         let edge = VoiceSettings {
@@ -942,17 +1011,30 @@ mod tests {
         };
 
         for voice in [
-            DrumVoice::Kick, DrumVoice::Snare, DrumVoice::HiHat,
-            DrumVoice::OpenHiHat, DrumVoice::Tom1, DrumVoice::Tom2,
-            DrumVoice::Tom3, DrumVoice::Clap, DrumVoice::Ride,
-            DrumVoice::Cymbal, DrumVoice::Snare606, DrumVoice::BassDrum808,
+            DrumVoice::Kick,
+            DrumVoice::Snare,
+            DrumVoice::HiHat,
+            DrumVoice::OpenHiHat,
+            DrumVoice::Tom1,
+            DrumVoice::Tom2,
+            DrumVoice::Tom3,
+            DrumVoice::Clap,
+            DrumVoice::Ride,
+            DrumVoice::Cymbal,
+            DrumVoice::Snare606,
+            DrumVoice::BassDrum808,
             DrumVoice::Perc1,
-        ].iter() {
+        ]
+        .iter()
+        {
             synth.set_voice_settings(*voice, edge);
         }
 
         synth.trigger(b8_idx, 1.0);
-        assert!(!contains_nan(&mut synth, b8_idx, 200), "B8 should not produce NaN after all edge-case settings");
+        assert!(
+            !contains_nan(&mut synth, b8_idx, 200),
+            "B8 should not produce NaN after all edge-case settings"
+        );
     }
 
     #[test]
@@ -974,12 +1056,20 @@ mod tests {
 
         // Continue processing B8 tail
         let tail = sum_voice_output(&mut synth, b8_idx, 500);
-        assert!(tail > 0.0, "B8 tail should remain audible after Cymbal set_voice_settings: {}", tail);
+        assert!(
+            tail > 0.0,
+            "B8 tail should remain audible after Cymbal set_voice_settings: {}",
+            tail
+        );
 
         // Trigger B8 again after the tail
         synth.trigger(b8_idx, 1.0);
         let after = sum_voice_output(&mut synth, b8_idx, 100);
-        assert!(after > 0.0, "B8 retrigger should still produce sound: {}", after);
+        assert!(
+            after > 0.0,
+            "B8 retrigger should still produce sound: {}",
+            after
+        );
     }
 
     /// Test the specific attack_time=0 envelope corruption scenario.
@@ -1000,7 +1090,10 @@ mod tests {
         for _ in 0..5 {
             synth.process_voice_samples_stereo(&mut outputs);
         }
-        assert!(outputs[b8_idx][0].is_finite(), "B8 should produce finite output during attack");
+        assert!(
+            outputs[b8_idx][0].is_finite(),
+            "B8 should produce finite output during attack"
+        );
 
         // 2. WHILE B8 is in attack phase, change its attack to 0.0
         // This simulates what would happen if set_voice_settings is called
@@ -1029,7 +1122,10 @@ mod tests {
                 break;
             }
         }
-        assert!(has_finite_output, "B8 should recover and produce finite output after attack corruption");
+        assert!(
+            has_finite_output,
+            "B8 should recover and produce finite output after attack corruption"
+        );
     }
 
     /// Regression test for the "plock click" bug.
@@ -1121,9 +1217,7 @@ mod tests {
             max_delta = max_delta.max((samples[i + 1] - samples[i]).abs());
         }
 
-        eprintln!(
-            "\n=== kick_no_click_when_settings_changed_mid_envelope ==="
-        );
+        eprintln!("\n=== kick_no_click_when_settings_changed_mid_envelope ===");
         eprintln!("HF ratio around change: {}", hf_ratio);
         eprintln!("Max sample delta:       {}", max_delta);
 
