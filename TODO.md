@@ -330,9 +330,8 @@
 ## Bugs a corriger
 - [x] [70] Kick : click de retrigger quand la queue percute l'attaque du suivant � corrig� (ne pas retrigger le click pendant la tail) � build 20260529-172133\n
 - [x] [64] Revoir l'algo de polyrythmie (lane length) — comportement bizarre, longueurs mal synchronisées (Complexité: Moyenne, P1)
-  - Build 20260609-162726 : par defaut, chaque lane Len suit `Pattern Length`.
-  - Modifier manuellement une lane Len pose un override persistant ; clic droit sur Len permet de revenir a `Follow pattern length`.
-  - Migration legacy : les anciennes lanes non-default (`Len != 16`) sont conservees comme overrides.
+  - Build 20260609-173417 : lane length clamp au pattern length global. Pas de systeme d'override.
+  - Si lane > pattern, lane = pattern. Sinon lane conserve sa valeur.
 - [x] [65] Revoir les algos de generation pattern avec les nouveaux instruments (13 voix) — tous les générateurs gèrent 13 instruments; rôles musicaux enrichis pour Snare 606, B8, Perc1 dans le style Rock (démonstration)
 - [x] [45] Sauts de volume general dans Reaper — diagnostique externe (driver audio, reproduit avec d'autres plugins)
 - [x] [46] Revert du code Perc1 au commit 5ae1286 (Zap) — build stable réinstallé

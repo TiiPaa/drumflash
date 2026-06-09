@@ -1,11 +1,11 @@
 use nih_plug::prelude::*;
 use nih_plug::{
-    params::persist::{deserialize_field, serialize_field, PersistentField},
+    params::persist::{deserialize_field, serialize_field},
     wrapper::state::{ParamValue, PluginState},
 };
 use nih_plug_egui::EguiState;
 use std::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU32, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
     Arc,
 };
 
@@ -53,92 +53,10 @@ const STEP_COUNT: usize = 64;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v2";
 
-#[derive(Clone)]
-pub struct PersistentTrackLengthOverrides {
-    mask: Arc<AtomicU16>,
-}
 
-impl PersistentTrackLengthOverrides {
-    pub fn new() -> Self {
-        Self {
-            mask: Arc::new(AtomicU16::new(0)),
-        }
-    }
-
-    pub fn load_mask(&self) -> u16 {
-        self.mask.load(Ordering::Relaxed)
-    }
-
-    pub fn is_overridden(&self, instrument: usize) -> bool {
-        instrument < DrumVoice::COUNT && (self.load_mask() & (1u16 << instrument)) != 0
-    }
-
-    pub fn set_overridden(&self, instrument: usize, overridden: bool) {
-        if instrument >= DrumVoice::COUNT {
-            return;
-        }
-        let bit = 1u16 << instrument;
-        if overridden {
-            self.mask.fetch_or(bit, Ordering::Relaxed);
-        } else {
-            self.mask.fetch_and(!bit, Ordering::Relaxed);
-        }
-    }
-
-    fn load_mask_with_legacy_migration(&self, raw_lengths: &[usize; DrumVoice::COUNT]) -> u16 {
-        let mask = self.load_mask();
-        if mask != 0 {
-            return mask;
-        }
-
-        // Older sessions had no explicit override bit. Preserve non-default
-        // polyrhythm lanes while keeping untouched length=16 lanes in follow mode.
-        let legacy_mask = legacy_track_length_override_mask(raw_lengths);
-        if legacy_mask != 0 {
-            self.mask.store(legacy_mask, Ordering::Relaxed);
-        }
-        legacy_mask
-    }
-}
-
-impl Default for PersistentTrackLengthOverrides {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<'a> PersistentField<'a, u16> for PersistentTrackLengthOverrides {
-    fn set(&self, new_value: u16) {
-        let valid_bits = (1u16 << DrumVoice::COUNT).wrapping_sub(1);
-        self.mask.store(new_value & valid_bits, Ordering::Relaxed);
-    }
-
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&u16) -> R,
-    {
-        let mask = self.load_mask();
-        f(&mask)
-    }
-}
-
-fn legacy_track_length_override_mask(raw_lengths: &[usize; DrumVoice::COUNT]) -> u16 {
-    let mut mask = 0u16;
-    for (instrument, &length) in raw_lengths.iter().enumerate() {
-        if length != 16 {
-            mask |= 1u16 << instrument;
-        }
-    }
-    mask
-}
-
-fn resolve_track_length(raw_length: usize, master_length: usize, overridden: bool) -> usize {
+fn resolve_track_length(raw_length: usize, master_length: usize) -> usize {
     let master_length = master_length.clamp(1, 64);
-    if overridden {
-        raw_length.clamp(1, master_length)
-    } else {
-        master_length
-    }
+    raw_length.clamp(1, master_length)
 }
 
 pub struct DrumFlashVst {
@@ -204,9 +122,6 @@ pub struct DrumFlashParams {
 
     #[persist = "pattern-bank-v1"]
     pub pattern_bank: pattern_bank::PersistentPatternBank,
-
-    #[persist = "track-len-overrides-v1"]
-    pub track_length_overrides: PersistentTrackLengthOverrides,
 
     #[id = "master_vol"]
     pub master_volume: FloatParam,
@@ -604,7 +519,6 @@ impl Default for DrumFlashParams {
             plock_state: PersistentPlockState::new(),
             seq_plock_state: PersistentSequencerPlockState::new(),
             pattern_bank: pattern_bank::PersistentPatternBank::new(),
-            track_length_overrides: PersistentTrackLengthOverrides::new(),
 
             master_volume: FloatParam::new(
                 "Master Volume",
@@ -1945,19 +1859,14 @@ impl Plugin for DrumFlashVst {
         }
 
         // Update per-track groove parameters once per buffer.
-        // Lanes follow the global pattern length until explicitly overridden.
+        // Lane lengths are clamped to the global pattern length.
         let master_length = self.params.pattern_length.value() as usize;
         let raw_lengths: [usize; DrumVoice::COUNT] =
             std::array::from_fn(|i| self.params.lengths()[i].value() as usize);
-        let override_mask = self
-            .params
-            .track_length_overrides
-            .load_mask_with_legacy_migration(&raw_lengths);
         let effective_lengths = std::array::from_fn(|i| {
             resolve_track_length(
                 raw_lengths[i],
                 master_length,
-                (override_mask & (1u16 << i)) != 0,
             )
         });
         self.sequencer.set_track_params(
@@ -2414,45 +2323,11 @@ mod tests {
     }
 
     #[test]
-    fn default_track_length_follows_master_length() {
-        assert_eq!(resolve_track_length(16, 64, false), 64);
-        assert_eq!(resolve_track_length(12, 32, false), 32);
-    }
-
-    #[test]
-    fn overridden_track_length_preserves_manual_value_including_16() {
-        assert_eq!(resolve_track_length(16, 64, true), 16);
-        assert_eq!(resolve_track_length(12, 64, true), 12);
-    }
-
-    #[test]
-    fn legacy_track_length_override_mask_marks_non_default_lengths_only() {
-        let mut lengths = [16usize; DrumVoice::COUNT];
-        lengths[1] = 12;
-        lengths[8] = 7;
-
-        let mask = legacy_track_length_override_mask(&lengths);
-
-        assert_eq!(mask & (1u16 << 0), 0);
-        assert_ne!(mask & (1u16 << 1), 0);
-        assert_ne!(mask & (1u16 << 8), 0);
-    }
-
-    #[test]
-    fn track_length_override_persistence_roundtrips_mask() {
-        let overrides = PersistentTrackLengthOverrides::new();
-        overrides.set_overridden(0, true);
-        overrides.set_overridden(12, true);
-
-        overrides.map(|mask| {
-            assert_eq!(*mask, (1u16 << 0) | (1u16 << 12));
-        });
-
-        let restored = PersistentTrackLengthOverrides::new();
-        restored.set((1u16 << 2) | (1u16 << 12));
-        assert!(!restored.is_overridden(0));
-        assert!(restored.is_overridden(2));
-        assert!(restored.is_overridden(12));
+    fn track_length_clamped_to_master_length() {
+        assert_eq!(resolve_track_length(16, 64), 16);
+        assert_eq!(resolve_track_length(32, 16), 16);
+        assert_eq!(resolve_track_length(64, 32), 32);
+        assert_eq!(resolve_track_length(12, 64), 12);
     }
 
     #[test]
