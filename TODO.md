@@ -330,7 +330,7 @@
 ## Bugs a corriger
 - [x] [70] Kick : click de retrigger quand la queue percute l'attaque du suivant � corrig� (ne pas retrigger le click pendant la tail) � build 20260529-172133\n
 - [x] [64] Revoir l'algo de polyrythmie (lane length) — comportement bizarre, longueurs mal synchronisées (Complexité: Moyenne, P1)
-  - Build 20260609-184928 : comportement lock/follow clarifie.
+  - Build 20260609-185930 : fix affichage valeur effective dans l'UI.
   - Par defaut suit Pattern Length. Drag = verrouille sur cette valeur.
   - Si Pattern > valeur verrouillee → garde valeur (polyrythmie).
   - Si Pattern <= valeur verrouillee → suit pattern (trop court).

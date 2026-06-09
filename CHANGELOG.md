@@ -1,5 +1,25 @@
 ﻿# Changelog
 
+## 2026-06-09 - Lane Length lock/follow v2 (build 20260609-185930)
+
+**Build:** `20260609-185930`
+**Commits:** Sequencer : lane length avec verrouillage — fix affichage effectif
+
+### Changes
+- **[64] Fix UI** : la cellule `Len` affiche maintenant la valeur **effective** (pas la valeur stockée). Quand pattern=48 et lane verrouillée à 50, l'UI affiche 48 (car pattern ≤ valeur verrouillée).
+- **[64] Lane Length** : comportement inchangé :
+  - **Par defaut** : suit `Pattern Length`.
+  - **Drag la cellule `Len`** : verrouille sur cette valeur.
+  - **Pattern > valeur verrouillee** : garde valeur (polyrythmie).
+  - **Pattern <= valeur verrouillee** : suit pattern.
+- **[64] Clic droit** : "Follow pattern length" pour déverrouiller.
+
+### Validation
+- `cargo test` : 90 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installé
+
+---
+
 ## 2026-06-09 - Lane Length lock/follow (build 20260609-184928)
 
 **Build:** `20260609-184928`
