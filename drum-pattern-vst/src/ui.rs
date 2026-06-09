@@ -117,22 +117,46 @@ fn draw_volume_db_slider(
 fn draw_track_length_control(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
-    _params: &DrumFlashParams,
+    params: &DrumFlashParams,
     length_param: &IntParam,
-    _instrument: usize,
+    instrument: usize,
     master_length: usize,
 ) {
-    let mut length_value = length_param.value();
+    let locked = params.lane_length_locks.is_locked(instrument);
+    let mut length_value = if locked {
+        length_param.value()
+    } else {
+        master_length as i32
+    };
 
     let response = ui.add_sized(
         Vec2::new(35.0, 20.0),
         egui::DragValue::new(&mut length_value)
             .speed(1.0)
-            .range(1..=master_length as i32),
+            .range(1..=64),
     );
+    let changed = response.changed();
+    let response = response.on_hover_text(if locked {
+        "Locked lane length. Right-click to follow pattern length."
+    } else {
+        "Follows pattern length. Drag to lock this lane."
+    });
 
-    if response.changed() {
-        setter.set_parameter(length_param, length_value.clamp(1, master_length as i32));
+    response.context_menu(|ui| {
+        if locked {
+            if ui.button("Follow pattern length").clicked() {
+                params.lane_length_locks.set_locked(instrument, false);
+                setter.set_parameter(length_param, master_length as i32);
+                ui.close_menu();
+            }
+        } else {
+            ui.label("Already follows pattern length");
+        }
+    });
+
+    if changed {
+        params.lane_length_locks.set_locked(instrument, true);
+        setter.set_parameter(length_param, length_value.clamp(1, 64));
     }
 }
 
