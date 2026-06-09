@@ -117,48 +117,22 @@ fn draw_volume_db_slider(
 fn draw_track_length_control(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
-    params: &DrumFlashParams,
+    _params: &DrumFlashParams,
     length_param: &IntParam,
-    instrument: usize,
+    _instrument: usize,
     master_length: usize,
 ) {
-    let follows_pattern = !params.track_length_overrides.is_overridden(instrument);
-    let mut length_value = if follows_pattern {
-        master_length as i32
-    } else {
-        length_param.value()
-    };
+    let mut length_value = length_param.value();
 
     let response = ui.add_sized(
         Vec2::new(35.0, 20.0),
         egui::DragValue::new(&mut length_value)
             .speed(1.0)
-            .range(1..=64),
+            .range(1..=master_length as i32),
     );
-    let changed = response.changed();
-    let response = response.on_hover_text(if follows_pattern {
-        "Follows pattern length. Drag to override this lane."
-    } else {
-        "Manual lane length. Right-click to follow pattern length."
-    });
 
-    response.context_menu(|ui| {
-        if follows_pattern {
-            ui.label("Already follows pattern length");
-        } else if ui.button("Follow pattern length").clicked() {
-            params
-                .track_length_overrides
-                .set_overridden(instrument, false);
-            setter.set_parameter(length_param, master_length as i32);
-            ui.close_menu();
-        }
-    });
-
-    if changed {
-        params
-            .track_length_overrides
-            .set_overridden(instrument, true);
-        setter.set_parameter(length_param, length_value.clamp(1, 64));
+    if response.changed() {
+        setter.set_parameter(length_param, length_value.clamp(1, master_length as i32));
     }
 }
 
