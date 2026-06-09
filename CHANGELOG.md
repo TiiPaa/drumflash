@@ -1,5 +1,25 @@
 ﻿# Changelog
 
+## 2026-06-09 - Lane Length lock/follow (build 20260609-184928)
+
+**Build:** `20260609-184928`
+**Commits:** Sequencer : lane length avec verrouillage
+
+### Changes
+- **[64] Lane Length** : comportement final clarifie :
+  - **Par defaut** : chaque lane suit `Pattern Length` (follow).
+  - **Drag la cellule `Len`** : la lane se verrouille sur cette valeur (polyrythmie).
+  - **Si Pattern > valeur verrouillee** : la lane garde sa valeur (ex: pattern 64, kick 12 → kick sur 12).
+  - **Si Pattern <= valeur verrouillee** : la lane suit le pattern (ex: pattern 16, kick 32 → kick sur 16).
+- **[64] Clic droit** : "Follow pattern length" pour deverrouiller une lane.
+- **[64] Persistance** : `LaneLengthLocks` (masque `AtomicU16` persistant `lane-locks-v1`) conserve l'etat verrouille/deverrouille par session DAW.
+
+### Validation
+- `cargo test` : 90 tests lib + 61 tests standalone OK
+- `build.ps1 -Install` OK, VST3 installe
+
+---
+
 ## 2026-06-09 - Lane Length clamp (build 20260609-173417)
 
 **Build:** `20260609-173417`

@@ -1,11 +1,11 @@
 use nih_plug::prelude::*;
 use nih_plug::{
-    params::persist::{deserialize_field, serialize_field},
+    params::persist::{deserialize_field, serialize_field, PersistentField},
     wrapper::state::{ParamValue, PluginState},
 };
 use nih_plug_egui::EguiState;
 use std::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU32, Ordering},
     Arc,
 };
 
@@ -53,10 +53,63 @@ const STEP_COUNT: usize = 64;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v2";
 
+#[derive(Clone)]
+pub struct LaneLengthLocks {
+    mask: Arc<AtomicU16>,
+}
 
-fn resolve_track_length(raw_length: usize, master_length: usize) -> usize {
+impl LaneLengthLocks {
+    pub fn new() -> Self {
+        Self {
+            mask: Arc::new(AtomicU16::new(0)),
+        }
+    }
+
+    pub fn is_locked(&self, instrument: usize) -> bool {
+        instrument < DrumVoice::COUNT && (self.mask.load(Ordering::Relaxed) & (1u16 << instrument)) != 0
+    }
+
+    pub fn set_locked(&self, instrument: usize, locked: bool) {
+        if instrument >= DrumVoice::COUNT {
+            return;
+        }
+        let bit = 1u16 << instrument;
+        if locked {
+            self.mask.fetch_or(bit, Ordering::Relaxed);
+        } else {
+            self.mask.fetch_and(!bit, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Default for LaneLengthLocks {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> PersistentField<'a, u16> for LaneLengthLocks {
+    fn set(&self, new_value: u16) {
+        let valid_bits = (1u16 << DrumVoice::COUNT).wrapping_sub(1);
+        self.mask.store(new_value & valid_bits, Ordering::Relaxed);
+    }
+
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&u16) -> R,
+    {
+        let mask = self.mask.load(Ordering::Relaxed);
+        f(&mask)
+    }
+}
+
+fn resolve_track_length(raw_length: usize, master_length: usize, locked: bool) -> usize {
     let master_length = master_length.clamp(1, 64);
-    raw_length.clamp(1, master_length)
+    if locked && master_length > raw_length {
+        raw_length.clamp(1, master_length)
+    } else {
+        master_length
+    }
 }
 
 pub struct DrumFlashVst {
@@ -122,6 +175,9 @@ pub struct DrumFlashParams {
 
     #[persist = "pattern-bank-v1"]
     pub pattern_bank: pattern_bank::PersistentPatternBank,
+
+    #[persist = "lane-locks-v1"]
+    pub lane_length_locks: LaneLengthLocks,
 
     #[id = "master_vol"]
     pub master_volume: FloatParam,
@@ -519,6 +575,7 @@ impl Default for DrumFlashParams {
             plock_state: PersistentPlockState::new(),
             seq_plock_state: PersistentSequencerPlockState::new(),
             pattern_bank: pattern_bank::PersistentPatternBank::new(),
+            lane_length_locks: LaneLengthLocks::new(),
 
             master_volume: FloatParam::new(
                 "Master Volume",
@@ -1867,6 +1924,7 @@ impl Plugin for DrumFlashVst {
             resolve_track_length(
                 raw_lengths[i],
                 master_length,
+                self.params.lane_length_locks.is_locked(i),
             )
         });
         self.sequencer.set_track_params(
@@ -2323,11 +2381,45 @@ mod tests {
     }
 
     #[test]
-    fn track_length_clamped_to_master_length() {
-        assert_eq!(resolve_track_length(16, 64), 16);
-        assert_eq!(resolve_track_length(32, 16), 16);
-        assert_eq!(resolve_track_length(64, 32), 32);
-        assert_eq!(resolve_track_length(12, 64), 12);
+    fn track_length_follows_master_when_unlocked() {
+        // Unlocked : toujours master
+        assert_eq!(resolve_track_length(16, 64, false), 64);
+        assert_eq!(resolve_track_length(32, 16, false), 16);
+        assert_eq!(resolve_track_length(12, 32, false), 32);
+    }
+
+    #[test]
+    fn track_length_locked_uses_raw_when_master_is_longer() {
+        // Locked et master > raw : polyrythmie
+        assert_eq!(resolve_track_length(12, 64, true), 12);
+        assert_eq!(resolve_track_length(16, 32, true), 16);
+    }
+
+    #[test]
+    fn track_length_locked_follows_master_when_master_is_shorter_or_equal() {
+        // Locked et master <= raw : suit le pattern (trop court)
+        assert_eq!(resolve_track_length(32, 16, true), 16);
+        assert_eq!(resolve_track_length(16, 16, true), 16);
+        assert_eq!(resolve_track_length(64, 8, true), 8);
+    }
+
+    #[test]
+    fn lane_length_locks_persistence_roundtrips() {
+        let locks = LaneLengthLocks::new();
+        locks.set_locked(0, true);
+        locks.set_locked(5, true);
+        locks.set_locked(12, true);
+
+        locks.map(|mask| {
+            assert_eq!(*mask, (1u16 << 0) | (1u16 << 5) | (1u16 << 12));
+        });
+
+        let restored = LaneLengthLocks::new();
+        restored.set((1u16 << 2) | (1u16 << 12));
+        assert!(!restored.is_locked(0));
+        assert!(restored.is_locked(2));
+        assert!(restored.is_locked(12));
+        assert!(!restored.is_locked(5));
     }
 
     #[test]
