@@ -123,8 +123,9 @@ fn draw_track_length_control(
     master_length: usize,
 ) {
     let locked = params.lane_length_locks.is_locked(instrument);
-    let mut length_value = if locked {
-        length_param.value()
+    let raw = length_param.value() as usize;
+    let mut length_value = if locked && master_length > raw {
+        raw as i32
     } else {
         master_length as i32
     };
