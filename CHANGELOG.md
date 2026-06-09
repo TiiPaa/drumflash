@@ -1,5 +1,21 @@
 ﻿# Changelog
 
+## 2026-06-09 - Lane Length clamp (build 20260609-173417)
+
+**Build:** `20260609-173417`
+**Commits:** Sequencer : simplification lane length — clamp au pattern length
+
+### Changes
+- **[64] Lane Length** : les longueurs par instrument sont simplement clampees au `Pattern Length` global. Si une lane fait `32` et le pattern passe a `16`, la lane passe a `16`.
+- **[64] Suppression** : le systeme d'override persistant (`PersistentTrackLengthOverrides`) a ete retire. Plus de suivi complexe, plus de migration legacy.
+- **[64] UI** : la cellule `Len` est un simple `DragValue` borne a `1..master_length`. Pas de menu contextuel, pas d'etat verrouille/deverrouille.
+
+### Validation
+- `cargo test` : 87 tests lib + 61 tests standalone OK
+- VST3 installe (copie manuelle apres echec permission build.ps1)
+
+---
+
 ## 2026-06-09 - Lane Length follow + override (build 20260609-162726)
 
 **Build:** `20260609-162726`
