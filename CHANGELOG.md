@@ -1,5 +1,28 @@
 ﻿# Changelog
 
+## 2026-06-09 — Session : Lane Length lock/follow + volumes dB + taille VST fixe
+
+**Session du 2026-06-09** — Builds : `20260609-152742`, `20260609-160617`, `20260609-162726`, `20260609-173417`, `20260609-184928`, `20260609-185930`
+
+### Résumé de la session
+- **[64] Lane Length** : implémentation finale du comportement lock/follow pour les longueurs de lane.
+  - Par défaut, chaque lane suit `Pattern Length`.
+  - Drag sur `Len` = verrouille la lane sur cette valeur (polyrythmie).
+  - Si Pattern > valeur verrouillée → lane garde sa valeur.
+  - Si Pattern ≤ valeur verrouillée → lane suit le pattern (trop court).
+  - Clic droit = "Follow pattern length" pour déverrouiller.
+  - Persistance DAW via `LaneLengthLocks` (`lane-locks-v1`).
+  - Fix UI : la cellule `Len` affiche la valeur effective, pas la valeur stockée.
+- **[75] Volumes en dB** : sliders de volume affichent `-inf dB` à `+6.0 dB`, stockage interne en gain linéaire `0..2`.
+- **[89] Taille VST fixe** : fenêtre forcée à `1480×800`, scroll interne dans le Sound Editor.
+- **Commits** : 3 commits sur la session (`4c5fccd`, `b500527`, `14bc83d`, `091d979`).
+
+### Validation globale
+- `cargo test` : 90 tests lib + 61 tests standalone OK (dernier build `20260609-185930`)
+- `build.ps1 -Install` OK sur les builds finaux
+
+---
+
 ## 2026-06-09 - Lane Length lock/follow v2 (build 20260609-185930)
 
 **Build:** `20260609-185930`
