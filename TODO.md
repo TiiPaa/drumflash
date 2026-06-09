@@ -177,7 +177,7 @@
 - [x] [63] Bug B8 se coupe quand on modifie CY : corrigé division par zéro dans `ExpDecayEnvelope::set_attack_ms`
   - Quand attack_time passe à 0 pendant un ramp actif → snap à peak immédiat pour éviter NaN
   - Bouton "T" (Test) : appelle maintenant `set_voice_settings` avant `trigger`
-- [ ] [82] **Intégrer les éléments graphiques définis avec Claude Design**
+- [ ] **REPRENDRE ICI** [82] **Intégrer les éléments graphiques définis avec Claude Design**
   - Assets UI (icônes, couleurs, fonts, layout) produits par Claude Design
   - Remplacer les widgets egui basiques par des widgets custom avec le design system
   - **Complexité : Moyenne-Élevée, 1-2 semaines, P2**
