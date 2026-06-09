@@ -1,8 +1,8 @@
 //! Style definitions for musical pattern generation.
 //! Each style provides *structured* rhythmic roles rather than raw probabilities.
 
-use nih_plug::prelude::*;
 use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT, STEP_COUNT};
+use nih_plug::prelude::*;
 
 /// Available musical styles.
 #[derive(Enum, Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1022,7 +1022,11 @@ impl MusicalTemplate {
 
 /// Generate a pattern from a musical template with density control.
 /// Uses a two-pass approach: anchors first, then candidates with musical rules.
-pub fn generate_from_template(template: &MusicalTemplate, density: f32, rng: &mut impl FnMut() -> f32) -> Pattern {
+pub fn generate_from_template(
+    template: &MusicalTemplate,
+    density: f32,
+    rng: &mut impl FnMut() -> f32,
+) -> Pattern {
     let mut pattern = Pattern::empty();
     pattern.name = "Generated".to_string();
     let d = density.clamp(0.0, 1.0);
@@ -1076,7 +1080,9 @@ pub fn generate_from_template(template: &MusicalTemplate, density: f32, rng: &mu
     // Density-based ghost note suppression for kick at low density
     if d < 0.4 {
         for step in 0..STEP_COUNT {
-            if pattern.steps[step].instruments[0] && !(step == 0 || step == 8 || step == 4 || step == 12) {
+            if pattern.steps[step].instruments[0]
+                && !(step == 0 || step == 8 || step == 4 || step == 12)
+            {
                 if rng() < 0.5 {
                     pattern.steps[step].instruments[0] = false;
                 }
@@ -1093,11 +1099,14 @@ pub fn mix_templates(a: &MusicalTemplate, b: &MusicalTemplate, t: f32) -> Musica
     let mut roles = a.roles.clone();
     for inst in 0..INSTRUMENT_COUNT {
         // Interpolate candidate probabilities
-        roles[inst].candidate_prob = a.roles[inst].candidate_prob * (1.0 - mix) + b.roles[inst].candidate_prob * mix;
+        roles[inst].candidate_prob =
+            a.roles[inst].candidate_prob * (1.0 - mix) + b.roles[inst].candidate_prob * mix;
     }
     MusicalTemplate {
         roles,
-        bpm_range: (a.bpm_range.0 * (1.0 - mix) + b.bpm_range.0 * mix,
-                    a.bpm_range.1 * (1.0 - mix) + b.bpm_range.1 * mix),
+        bpm_range: (
+            a.bpm_range.0 * (1.0 - mix) + b.bpm_range.0 * mix,
+            a.bpm_range.1 * (1.0 - mix) + b.bpm_range.1 * mix,
+        ),
     }
 }

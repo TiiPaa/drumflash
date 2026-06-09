@@ -27,7 +27,7 @@ pub mod stress_tests {
 
         for sample_idx in 0..total_samples {
             let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
-            if triggers.iter().any(|(t, _)| *t) {
+            if triggers.iter().any(|trigger| trigger.should_trigger) {
                 triggers_count += 1;
             }
 
@@ -39,7 +39,11 @@ pub mod stress_tests {
                 let current_step = seq.current_step();
                 assert!(current_step < 16, "Step should be within 0-15 range");
                 // Vérifier que nous avons bien des déclenchements (le séquenceur fonctionne)
-                assert!(triggers_count > 0, "Should have some triggers after {} seconds", elapsed);
+                assert!(
+                    triggers_count > 0,
+                    "Should have some triggers after {} seconds",
+                    elapsed
+                );
             }
         }
 
@@ -62,7 +66,7 @@ pub mod stress_tests {
         let mut pattern_changes = 0;
 
         for sample_idx in 0..total_samples {
-            let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
+            let _triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
 
             // Changer de pattern toutes les 2 secondes
             if sample_idx % (2 * sample_rate as usize) == 0 {
@@ -80,7 +84,10 @@ pub mod stress_tests {
         }
 
         assert!(pattern_changes > 0, "Pattern changes should have occurred");
-        println!("Pattern changes test: {} changes performed", pattern_changes);
+        println!(
+            "Pattern changes test: {} changes performed",
+            pattern_changes
+        );
     }
 
     /// Test de scénarios de synchronisation DAW
@@ -107,7 +114,10 @@ pub mod stress_tests {
 
         // Vérifier que le séquenceur est bien synchronisé
         let current_step = seq.current_step();
-        assert_eq!(current_step, 8, "Sequencer should be at step 8 after sync to beat 2.0");
+        assert_eq!(
+            current_step, 8,
+            "Sequencer should be at step 8 after sync to beat 2.0"
+        );
 
         // Simuler un stop puis un play
         seq.stop();
@@ -140,7 +150,10 @@ pub mod stress_tests {
 
         for _ in 0..total_samples {
             let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Swing16);
-            let active_triggers = triggers.iter().filter(|(t, _)| *t).count();
+            let active_triggers = triggers
+                .iter()
+                .filter(|trigger| trigger.should_trigger)
+                .count();
             total_triggers += active_triggers;
             if active_triggers > max_triggers_per_sample {
                 max_triggers_per_sample = active_triggers;
@@ -148,10 +161,15 @@ pub mod stress_tests {
         }
 
         // Vérifier que le séquenceur gère bien la charge
-        assert!(max_triggers_per_sample <= DrumVoice::COUNT, "Too many triggers per sample");
+        assert!(
+            max_triggers_per_sample <= DrumVoice::COUNT,
+            "Too many triggers per sample"
+        );
         assert!(total_triggers > 0, "Should have triggers in dense pattern");
-        println!("High CPU load test: max {} triggers/sample, {} total triggers", 
-                 max_triggers_per_sample, total_triggers);
+        println!(
+            "High CPU load test: max {} triggers/sample, {} total triggers",
+            max_triggers_per_sample, total_triggers
+        );
     }
 
     /// Test de stabilité du timing avec différents grooves
@@ -178,26 +196,30 @@ pub mod stress_tests {
 
             for sample_idx in 0..total_samples {
                 let triggers = seq.process_sample(bpm, sample_rate, 0.0, groove);
-                for (triggered, _) in triggers.iter().filter(|(t, _)| *t) {
-                    if *triggered {
-                        let beat_pos = seq.beat_position();
-                        step_positions.push((sample_idx as f32 / sample_rate, beat_pos));
-                    }
+                for _trigger in triggers.iter().filter(|trigger| trigger.should_trigger) {
+                    let beat_pos = seq.beat_position();
+                    step_positions.push((sample_idx as f32 / sample_rate, beat_pos));
                 }
             }
 
             // Vérifier que les déclenchements sont régulièrement espacés
             if !step_positions.is_empty() {
-                let avg_interval: f32 = step_positions.windows(2)
+                let avg_interval: f32 = step_positions
+                    .windows(2)
                     .map(|w| w[1].0 - w[0].0)
-                    .sum::<f32>() / step_positions.len() as f32;
-                
+                    .sum::<f32>()
+                    / step_positions.len() as f32;
+
                 let expected_interval = 60.0 / bpm / 4.0; // Intervalle en secondes pour 16e notes
                 let tolerance = expected_interval * 0.1; // 10% de tolérance
-                
-                assert!((avg_interval - expected_interval).abs() < tolerance,
-                        "Timing drift for groove {:?}: expected {}, got {}", 
-                        groove, expected_interval, avg_interval);
+
+                assert!(
+                    (avg_interval - expected_interval).abs() < tolerance,
+                    "Timing drift for groove {:?}: expected {}, got {}",
+                    groove,
+                    expected_interval,
+                    avg_interval
+                );
             }
         }
     }
@@ -223,14 +245,19 @@ pub mod stress_tests {
             for _ in 0..total_samples {
                 // Simuler l'effet du push/pull en ajustant le temps
                 let adjusted_time = push_pull / 1000.0;
-                let triggers = seq.process_sample(bpm, sample_rate, adjusted_time, GrooveType::Straight);
-                if triggers.iter().any(|(t, _)| *t) {
+                let triggers =
+                    seq.process_sample(bpm, sample_rate, adjusted_time, GrooveType::Straight);
+                if triggers.iter().any(|trigger| trigger.should_trigger) {
                     triggers_with_push += 1;
                 }
             }
 
             // Vérifier que le nombre de déclenchements reste cohérent
-            assert!(triggers_with_push > 0, "Should have triggers with push/pull = {}", push_pull);
+            assert!(
+                triggers_with_push > 0,
+                "Should have triggers with push/pull = {}",
+                push_pull
+            );
         }
     }
 }

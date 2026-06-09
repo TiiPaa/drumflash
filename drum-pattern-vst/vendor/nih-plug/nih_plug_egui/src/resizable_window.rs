@@ -11,6 +11,7 @@ use crate::EguiState;
 pub struct ResizableWindow {
     id: Id,
     min_size: Vec2,
+    fixed_size: Option<Vec2>,
     resizable: bool,
 }
 
@@ -19,6 +20,7 @@ impl ResizableWindow {
         Self {
             id: Id::new(id_source),
             min_size: Vec2::splat(16.0),
+            fixed_size: None,
             resizable: true,
         }
     }
@@ -36,6 +38,13 @@ impl ResizableWindow {
         self
     }
 
+    /// Forces the host editor window to this exact size when possible.
+    #[inline]
+    pub fn fixed_size(mut self, fixed_size: impl Into<Vec2>) -> Self {
+        self.fixed_size = Some(fixed_size.into());
+        self
+    }
+
     pub fn show<R>(
         self,
         context: &Context,
@@ -50,8 +59,19 @@ impl ResizableWindow {
 
                 let ret = add_contents(&mut content_ui);
 
+                if let Some(fixed_size) = self.fixed_size {
+                    let desired_size = fixed_size.max(self.min_size);
+                    let current_size = ui_rect.size();
+                    if (current_size.x - desired_size.x).abs() > 1.0
+                        || (current_size.y - desired_size.y).abs() > 1.0
+                    {
+                        egui_state.set_requested_size((
+                            desired_size.x.round() as u32,
+                            desired_size.y.round() as u32,
+                        ));
+                    }
                 // Auto-resize window height to fit content when not user-resizable
-                if !self.resizable {
+                } else if !self.resizable {
                     let content_rect = content_ui.min_rect();
                     let desired_height = content_rect.height().max(self.min_size.y) + 8.0;
                     let current_height = ui_rect.height();

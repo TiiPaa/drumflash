@@ -1,4 +1,4 @@
-﻿//! Kick drum synthesizer â€” grey-box model with retrig-safe state.
+//! Kick drum synthesizer â€” grey-box model with retrig-safe state.
 //!
 //! Architecture (informed by the TR-808/909 retrig analysis under
 //! `resources/roland-kick-rust/docs/retrigger-and-sequencer.md`):
@@ -52,39 +52,39 @@ pub struct KickVoice {
     settings: KickSettings,
     sample_rate: f32,
 
-     osc_sine: dsp::SineOsc,
-     osc_square: dsp::SquareOsc,
-     fm_carrier: dsp::SineOsc,
-     fm_mod: dsp::SineOsc,
-     // LowPass filter â€” cutoff opens then closes after trigger for extra punch.
-     // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 8.0)
-     filter: dsp::OnePoleFilter,
+    osc_sine: dsp::SineOsc,
+    osc_square: dsp::SquareOsc,
+    fm_carrier: dsp::SineOsc,
+    fm_mod: dsp::SineOsc,
+    // LowPass filter â€” cutoff opens then closes after trigger for extra punch.
+    // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 8.0)
+    filter: dsp::OnePoleFilter,
 
-     // Additive Î”-Hz envelope: target_freq = base_freq + pitch_env.next().
-     pitch_env: dsp::ExpDecayEnvelope,
-     // Smooths sub-sample frequency jumps caused by pitch_env retriggering.
-     freq_smoother: dsp::OnePoleSmoother,
-     // Smooths filter cutoff jumps caused by parameter changes or plocks.
-     filter_cutoff_smoother: dsp::OnePoleSmoother,
-     // Body amplitude (decay + release stages), with 1.5 ms attack ramp.
-     amp_env: dsp::DecayReleaseEnvelope,
-     // Filter envelope: modulates cutoff for extra punch.
-     filter_env: dsp::ExpDecayEnvelope,
-     // Removes DC drift accumulated by asymmetric retriggers.
-     dc_block: dsp::DcBlocker,
+    // Additive Î”-Hz envelope: target_freq = base_freq + pitch_env.next().
+    pitch_env: dsp::ExpDecayEnvelope,
+    // Smooths sub-sample frequency jumps caused by pitch_env retriggering.
+    freq_smoother: dsp::OnePoleSmoother,
+    // Smooths filter cutoff jumps caused by parameter changes or plocks.
+    filter_cutoff_smoother: dsp::OnePoleSmoother,
+    // Body amplitude (decay + release stages), with 1.5 ms attack ramp.
+    amp_env: dsp::DecayReleaseEnvelope,
+    // Filter envelope: modulates cutoff for extra punch.
+    filter_env: dsp::ExpDecayEnvelope,
+    // Removes DC drift accumulated by asymmetric retriggers.
+    dc_block: dsp::DcBlocker,
 
-     // Attack transient (the audible "click"), kept fully separate.
-     click: dsp::ClickGenerator,
-     /// Saturation stage for analog character.
-     saturation: saturation::SaturationConfig,
+    // Attack transient (the audible "click"), kept fully separate.
+    click: dsp::ClickGenerator,
+    /// Saturation stage for analog character.
+    saturation: saturation::SaturationConfig,
 
-     active: bool,
-     /// Per-hit "analog" drift state. In analog mode each trigger pulls small
-     /// random offsets so hits vary; in digital mode they stay exactly 1.0.
-     drift_rng: dsp::WhiteNoise,
-     drift_pitch: f32,
-     drift_level: f32,
-     drift_decay: f32,
+    active: bool,
+    /// Per-hit "analog" drift state. In analog mode each trigger pulls small
+    /// random offsets so hits vary; in digital mode they stay exactly 1.0.
+    drift_rng: dsp::WhiteNoise,
+    drift_pitch: f32,
+    drift_level: f32,
+    drift_decay: f32,
 }
 
 impl KickVoice {
@@ -106,46 +106,50 @@ impl KickVoice {
         let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         filter.set_cutoff(settings.filter_freq, sample_rate);
 
-         Self {
-             settings,
-             sample_rate,
-             osc_sine,
-             osc_square,
-             fm_carrier,
-             fm_mod,
-             filter,
-             pitch_env: dsp::ExpDecayEnvelope::new(sample_rate, PITCH_CURVE, PITCH_DECAY_SECONDS),
-             freq_smoother: dsp::OnePoleSmoother::new(sample_rate, FREQ_SMOOTH_MS, base_freq),
-             filter_cutoff_smoother: dsp::OnePoleSmoother::new(sample_rate, FREQ_SMOOTH_MS, settings.filter_freq),
-             amp_env: dsp::DecayReleaseEnvelope::new(
-                 sample_rate,
-                 settings.decay_curve,
-                 settings.decay,
-                 settings.release_curve,
-                 settings.release,
-             )
-             .with_attack_ms((settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS)),
-             filter_env: dsp::ExpDecayEnvelope::new(
-                 sample_rate,
-                 8.0,
-                 settings.filter_env_decay.max(0.001),
-             )
-             .with_attack_ms(0.5),
-             dc_block: dsp::DcBlocker::default(),
-              click: Self::make_click_generator(sample_rate, 1),
-             saturation: saturation::SaturationConfig {
-                 saturation_type: saturation::SaturationType::None,
-                 amount: 0.0,
-                 mix: 1.0,
-                 output_gain: 1.0,
-                 pre_filter: false,
-             },
-             active: false,
-             drift_rng: dsp::WhiteNoise::new(0x9E37_79B9),
-             drift_pitch: 1.0,
-             drift_level: 1.0,
-             drift_decay: 1.0,
-         }
+        Self {
+            settings,
+            sample_rate,
+            osc_sine,
+            osc_square,
+            fm_carrier,
+            fm_mod,
+            filter,
+            pitch_env: dsp::ExpDecayEnvelope::new(sample_rate, PITCH_CURVE, PITCH_DECAY_SECONDS),
+            freq_smoother: dsp::OnePoleSmoother::new(sample_rate, FREQ_SMOOTH_MS, base_freq),
+            filter_cutoff_smoother: dsp::OnePoleSmoother::new(
+                sample_rate,
+                FREQ_SMOOTH_MS,
+                settings.filter_freq,
+            ),
+            amp_env: dsp::DecayReleaseEnvelope::new(
+                sample_rate,
+                settings.decay_curve,
+                settings.decay,
+                settings.release_curve,
+                settings.release,
+            )
+            .with_attack_ms((settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS)),
+            filter_env: dsp::ExpDecayEnvelope::new(
+                sample_rate,
+                8.0,
+                settings.filter_env_decay.max(0.001),
+            )
+            .with_attack_ms(0.5),
+            dc_block: dsp::DcBlocker::default(),
+            click: Self::make_click_generator(sample_rate, 1),
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::None,
+                amount: 0.0,
+                mix: 1.0,
+                output_gain: 1.0,
+                pre_filter: false,
+            },
+            active: false,
+            drift_rng: dsp::WhiteNoise::new(0x9E37_79B9),
+            drift_pitch: 1.0,
+            drift_level: 1.0,
+            drift_decay: 1.0,
+        }
     }
 
     fn base_freq(&self) -> f32 {
@@ -179,7 +183,7 @@ impl KickVoice {
     fn make_click_generator(sample_rate: f32, click_type: u8) -> dsp::ClickGenerator {
         match click_type {
             0 => dsp::ClickGenerator::new(sample_rate, 30.0, 0.8, 0.4), // Soft: long decay, noisy, quiet
-            2 => dsp::ClickGenerator::new(sample_rate, 2.0, 0.0, 2.5),  // Hard: ultra-short, pure impulse, loud
+            2 => dsp::ClickGenerator::new(sample_rate, 2.0, 0.0, 2.5), // Hard: ultra-short, pure impulse, loud
             _ => dsp::ClickGenerator::new(sample_rate, 10.0, 0.3, 1.0), // Medium: balanced
         }
     }
@@ -229,8 +233,10 @@ impl Voice for KickVoice {
         // so the audible TAIL LENGTH varies in analog (the most audible part of the
         // "breathing"). Drifting decay alone is nearly inaudible because the long
         // tail is carried by the release stage. Exact times in digital.
-        self.amp_env.set_decay(self.settings.decay * self.drift_decay);
-        self.amp_env.set_release(self.settings.release * self.drift_decay);
+        self.amp_env
+            .set_decay(self.settings.decay * self.drift_decay);
+        self.amp_env
+            .set_release(self.settings.release * self.drift_decay);
         // Amplitude / filter envelopes attack-ramp from their current value, so a
         // retrigger during a ringing tail is continuous (no jump to/from zero).
         self.amp_env.trigger();
@@ -317,7 +323,8 @@ impl Voice for KickVoice {
         }
         self.update_derived_params();
         // Update saturation config
-        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
@@ -328,13 +335,14 @@ impl Voice for KickVoice {
         self.settings.algo = algo;
         self.update_derived_params();
     }
-    
+
     fn set_special_param(&mut self, index: usize, value: f32) {
         if index == 0 {
             self.settings.click_level = value;
         } else if index == 1 {
             self.settings.saturation_type = value as u8;
-            self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
+            self.saturation.saturation_type =
+                saturation::SaturationType::from(self.settings.saturation_type);
         } else if index == 2 {
             self.settings.saturation_amount = value;
             self.saturation.amount = value;
@@ -511,7 +519,10 @@ mod tests {
                 kick.process_sample();
                 guard += 1;
             }
-            assert!(!kick.is_active(), "voice should be silent before cold re-trigger");
+            assert!(
+                !kick.is_active(),
+                "voice should be silent before cold re-trigger"
+            );
             kick.trigger();
             let mut prev = 0.0f32; // true silence baseline
             let mut cold_max = 0.0f32;
@@ -688,112 +699,114 @@ mod tests {
         );
     }
 
-     #[test]
-     fn test_kick_dense_retriggers_stay_finite() {
-         // Stress test inspired by `resources/roland-kick-rust`: fire bursts of
-         // closely-spaced retriggers and verify the output stays bounded and
-         // free of NaN/Inf.
-         let sr = 44100.0;
-         let mut kick = KickVoice::new(sr, KickSettings::default_at(sr));
-         let triggers = [0usize, 2_400, 4_800, 4_960, 9_600, 9_840];
-         let mut idx = 0usize;
-         let mut peak = 0.0f32;
-         for n in 0..12_000 {
-             if idx < triggers.len() && triggers[idx] == n {
-                 kick.trigger();
-                 idx += 1;
-             }
-             let s = kick.process_sample();
-             assert!(s.is_finite(), "non-finite sample at n={}: {}", n, s);
-             peak = peak.max(s.abs());
-         }
-         assert!(peak > 0.01);
-         assert!(peak < 4.0, "output peak runaway: {}", peak);
-     }
+    #[test]
+    fn test_kick_dense_retriggers_stay_finite() {
+        // Stress test inspired by `resources/roland-kick-rust`: fire bursts of
+        // closely-spaced retriggers and verify the output stays bounded and
+        // free of NaN/Inf.
+        let sr = 44100.0;
+        let mut kick = KickVoice::new(sr, KickSettings::default_at(sr));
+        let triggers = [0usize, 2_400, 4_800, 4_960, 9_600, 9_840];
+        let mut idx = 0usize;
+        let mut peak = 0.0f32;
+        for n in 0..12_000 {
+            if idx < triggers.len() && triggers[idx] == n {
+                kick.trigger();
+                idx += 1;
+            }
+            let s = kick.process_sample();
+            assert!(s.is_finite(), "non-finite sample at n={}: {}", n, s);
+            peak = peak.max(s.abs());
+        }
+        assert!(peak > 0.01);
+        assert!(peak < 4.0, "output peak runaway: {}", peak);
+    }
 
-     #[test]
-     fn test_kick_no_frequency_click_on_retrigger() {
-         // Verify that frequency smoother reset eliminates the click parasite
-         // that occurred when freq_smoother.current was not reset to the new
-         // target frequency, causing a discontinuity in the first sample after trigger.
-         let mut settings = KickSettings::default_at(44100.0);
-         settings.analog = 0.0; // Digital mode
-         settings.click_level = 0.0; // Disable click to isolate body discontinuities
-         
-         let mut kick = KickVoice::new(44100.0, settings);
-         
-         // First trigger
-         kick.trigger();
-         // Run for a while to let the tail develop
-         for _ in 0..2000 {
-             kick.process_sample();
-         }
-         
-         // Second trigger - this is where the click parasite would occur
-         kick.trigger();
-         let first_sample = kick.process_sample();
-         let second_sample = kick.process_sample();
-         
-         // The discontinuity should be small (no abrupt frequency jump)
-         let step = (second_sample - first_sample).abs();
-         assert!(
-             step < 0.05,
-             "Frequency discontinuity too large: first={}, second={}, step={}",
-             first_sample, second_sample, step
-         );
-     }
+    #[test]
+    fn test_kick_no_frequency_click_on_retrigger() {
+        // Verify that frequency smoother reset eliminates the click parasite
+        // that occurred when freq_smoother.current was not reset to the new
+        // target frequency, causing a discontinuity in the first sample after trigger.
+        let mut settings = KickSettings::default_at(44100.0);
+        settings.analog = 0.0; // Digital mode
+        settings.click_level = 0.0; // Disable click to isolate body discontinuities
 
-     #[test]
-     fn test_kick_plock_frequency_change_no_click() {
-         // Simulate a plock that changes frequency between two triggers.
-         // The first trigger uses 60 Hz, the second (after a settings change)
-         // uses 120 Hz.  We measure the peak of the first sample after the
-         // second trigger; it should not contain a click spike.
-         let mut settings = KickSettings::default_at(44100.0);
-         settings.analog = 0.0; // Digital mode â€” test with reset
-         settings.click_level = 0.0;
-         settings.filter_freq = 1000.0;
-         settings.filter_env_amount = 0.0; // disable filter env modulation for isolation
+        let mut kick = KickVoice::new(44100.0, settings);
 
-         let mut kick = KickVoice::new(44100.0, settings);
+        // First trigger
+        kick.trigger();
+        // Run for a while to let the tail develop
+        for _ in 0..2000 {
+            kick.process_sample();
+        }
 
-         // First trigger at 60 Hz
-         kick.trigger();
-         let mut last = 0.0f32;
-         for _ in 0..500 {
-             last = kick.process_sample();
-         }
+        // Second trigger - this is where the click parasite would occur
+        kick.trigger();
+        let first_sample = kick.process_sample();
+        let second_sample = kick.process_sample();
 
-         // Plock-style settings change: double the frequency
-         let mut new_settings = settings;
-         new_settings.frequency = 120.0;
-         kick.set_settings(new_settings.into());
+        // The discontinuity should be small (no abrupt frequency jump)
+        let step = (second_sample - first_sample).abs();
+        assert!(
+            step < 0.05,
+            "Frequency discontinuity too large: first={}, second={}, step={}",
+            first_sample,
+            second_sample,
+            step
+        );
+    }
 
-         // Second trigger at 120 Hz. Baseline = the last tail sample, so we measure
-         // the *real* discontinuity across the retrigger. (Earlier this test seeded
-         // `prev = 0.0`, which only made sense when the digital path reset phase to
-         // zero â€” it then conflated "first sample is non-zero" with "click". Phase
-         // is now continuous, so the first sample is legitimately non-zero.)
-         kick.trigger();
-         let mut max_step = 0.0f32;
-         let mut prev = last;
-         for _ in 0..10 {
-             let s = kick.process_sample();
-             max_step = max_step.max((s - prev).abs());
-             prev = s;
-         }
+    #[test]
+    fn test_kick_plock_frequency_change_no_click() {
+        // Simulate a plock that changes frequency between two triggers.
+        // The first trigger uses 60 Hz, the second (after a settings change)
+        // uses 120 Hz.  We measure the peak of the first sample after the
+        // second trigger; it should not contain a click spike.
+        let mut settings = KickSettings::default_at(44100.0);
+        settings.analog = 0.0; // Digital mode â€” test with reset
+        settings.click_level = 0.0;
+        settings.filter_freq = 1000.0;
+        settings.filter_env_amount = 0.0; // disable filter env modulation for isolation
 
-         // A true click (discontinuity) would be > 0.3. With phase continuity the
-         // step across the retrigger is now a small fraction of that.
-         assert!(
-             max_step < 0.06,
-             "Click detected on plock frequency change: max_step={}",
-             max_step
-         );
-     }
+        let mut kick = KickVoice::new(44100.0, settings);
 
-     #[test]
-     fn test_kick_decay() {
+        // First trigger at 60 Hz
+        kick.trigger();
+        let mut last = 0.0f32;
+        for _ in 0..500 {
+            last = kick.process_sample();
+        }
+
+        // Plock-style settings change: double the frequency
+        let mut new_settings = settings;
+        new_settings.frequency = 120.0;
+        kick.set_settings(new_settings.into());
+
+        // Second trigger at 120 Hz. Baseline = the last tail sample, so we measure
+        // the *real* discontinuity across the retrigger. (Earlier this test seeded
+        // `prev = 0.0`, which only made sense when the digital path reset phase to
+        // zero â€” it then conflated "first sample is non-zero" with "click". Phase
+        // is now continuous, so the first sample is legitimately non-zero.)
+        kick.trigger();
+        let mut max_step = 0.0f32;
+        let mut prev = last;
+        for _ in 0..10 {
+            let s = kick.process_sample();
+            max_step = max_step.max((s - prev).abs());
+            prev = s;
+        }
+
+        // A true click (discontinuity) would be > 0.3. With phase continuity the
+        // step across the retrigger is now a small fraction of that.
+        assert!(
+            max_step < 0.06,
+            "Click detected on plock frequency change: max_step={}",
+            max_step
+        );
+    }
+
+    #[test]
+    fn test_kick_decay() {
         let settings = VoiceSettings {
             frequency: 60.0,
             decay: 0.01,
@@ -907,7 +920,10 @@ mod tests {
 
         eprintln!("\n=== Kick plock click analysis ===");
         eprintln!("WAV: {}", wav_path.display());
-        eprintln!("{:<8} {:<10} {:<12} {:<12}", "Trigger", "Freq(Hz)", "HF_ratio", "RMS");
+        eprintln!(
+            "{:<8} {:<10} {:<12} {:<12}",
+            "Trigger", "Freq(Hz)", "HF_ratio", "RMS"
+        );
         for (t, f, ratio, rms) in &results {
             eprintln!("{:<8} {:<10.0} {:<12.6} {:<12.6}", t, f, ratio, rms);
         }
