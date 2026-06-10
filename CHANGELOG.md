@@ -1,5 +1,20 @@
 ﻿# Changelog
 
+## 2026-06-10 — Fix boutons Export MIDI + Drag toujours visibles (build 20260610-085721)
+
+**Build:** `20260610-085721`
+**Commits:** UI : déplacement des boutons Export MIDI et Drag vers la Pattern Bank Bar
+
+### Changes
+- **[28] Drag & Drop MIDI** : les boutons **Export MIDI** et **Drag** ont été déplacés de la barre des presets (`draw_preset_bar`) vers la **Pattern Bank Bar** (`draw_pattern_bank`).
+- **[28] Fix** : ces boutons étaient cachés quand le mode **Song** était activé, car le panel generator (qui contient la barre des presets) est remplacé par le Song Editor en mode Song. Maintenant ils sont toujours visibles.
+
+### Validation
+- `cargo test` : 90 tests lib + 61 tests standalone OK
+- VST3 installé (copie manuelle car fichier verrouillé)
+
+---
+
 ## 2026-06-10 — Plock Volume en haut du menu + TODO mise à jour (build 20260610-082223)
 
 **Build:** `20260610-082223`
