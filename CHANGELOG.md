@@ -23,6 +23,72 @@ Voir `TODO.md` — section **[100] Redesign UI complet** (phases 1-5)
 
 ---
 
+## 2026-06-10 — Redesign UI Phase 1d — Page buttons + glow LED (build 20260610-203051)
+
+**Build:** `20260610-203051`
+**Commits:** UI : stylisation des boutons de page (1-4) avec tokens theme + glow sur LED de lecture
+
+### Changements
+- **Boutons de page** (1-4) :
+  - Actif : fond `BLUE` + bordure `BLUE`
+  - Inactif : fond `PANEL2` + bordure `LINE2`
+- **LED de lecture** : glow `RED` semi-transparent autour du point central
+
+---
+
+## 2026-06-10 — Redesign UI Phase 1c — Style global sombre (build 20260610-202742)
+
+**Build:** `20260610-202742`
+**Commits:** UI : style global sombre via `egui::Visuals`, fond BG, widgets PANEL2/P_HOVER/P_ACTIVE/BLUE
+
+### Changements
+- **Style global** : configuration `egui::Visuals::dark()` personnalisée dans le callback d'init :
+  - `panel_fill` = `window_fill` = `extreme_bg_color` = `BG` (10,10,15)
+  - `widgets.inactive.bg_fill` = `PANEL2` (28,28,36)
+  - `widgets.hovered.bg_fill` = `P_HOVER` (36,36,48)
+  - `widgets.active.bg_fill` = `P_ACTIVE` (42,42,56)
+  - `selection.bg_fill` = `BLUE` (74,158,255)
+  - `window_stroke` = `LINE` (42,42,53)
+
+---
+
+## 2026-06-10 — Redesign UI Phase 1b — Header style + widgets (build 20260610-202506)
+
+**Build:** `20260610-202506`
+**Commits:** UI : header redesign avec fond PANEL, bordure LINE, séparateurs verticaux, padding 14px
+
+### Changements
+- **Header redesign** :
+  - Fond `PANEL` (20,20,25) sur toute la largeur
+  - Bordure basse `LINE` (42,42,53) 1px
+  - Hauteur fixe `HEADER_H` = 44px
+  - Padding horizontal 14px
+  - Séparateurs verticaux `DIVIDER` entre les groupes (Brand / Sliders / Toggles)
+  - Typographie : `INK` pour le brand, `FAINT` pour le build ID
+
+---
+
+## 2026-06-10 — Redesign UI Phase 1a — Fondations (build 20260610-202115)
+
+**Build:** `20260610-202115`
+**Commits:** UI : création des widgets custom (ToggleLED, ToggleSwitch, StyledButton, SegmentedControl) + intégration dans header et plock mode
+
+### Changements
+- **`src/ui/theme.rs`** — Tokens design (palette IBM Plex, rayons, gaps, strokes, helpers)
+- **`src/ui/widgets.rs`** — Widgets custom :
+  - `ToggleSwitch` : 34×18 r10, pastille coulissante
+  - `ToggleLED` : pilule h26 r7 avec LED Ø7 et glow
+  - `StyledButton` : bouton coordonné h26 r6
+  - `SegmentedControl` : toggle groupé (Sound/Sequencer) avec retour d'index
+- **`src/ui/engine_registry.rs`** — Registre des moteurs (Synth/Sample/MIDI Out) + groupes de paramètres
+- **`src/ui.rs`** :
+  - Intégration `ToggleLED` dans le header (Seq, Choke, Auto-Edit, Song)
+  - Intégration `SegmentedControl` pour le mode Plock (Sound/Sequencer)
+  - Fix imports `ParamSlider` direct depuis `nih_plug_egui::widgets`
+- Fix `rect_stroke` 4 arguments (StrokeKind) pour egui 0.31.1
+
+---
+
 ## 2026-06-10 — Fix boutons Export MIDI + Drag toujours visibles (build 20260610-085721)
 
 **Build:** `20260610-085721`
