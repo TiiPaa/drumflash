@@ -2925,6 +2925,40 @@ fn draw_plock_menu(
     ui.label(RichText::new(mode_text).small());
     ui.separator();
 
+    // ------ Volume (most used, shown first) ------
+    {
+        let vol_field = crate::instrument_registry::StandardField::Volume.plock_field_index();
+        let mut vol_value = if plock.field_masks.is_set(instrument, step, vol_field) {
+            plock.values.get(instrument, step, vol_field)
+        } else {
+            global.2
+        };
+        let overridden = plock.field_masks.is_set(instrument, step, vol_field);
+        let label_text = if overridden {
+            RichText::new("Volume").strong()
+        } else {
+            RichText::new("Volume").weak()
+        };
+        let (changed, reset) = ui
+            .horizontal(|ui| {
+                ui.label(label_text);
+                let slider = LocalParamSlider::new(&mut vol_value, 0.0..=2.0)
+                    .with_width(120.0);
+                let response = ui.add(slider);
+                let c = response.changed();
+                let r = overridden && ui.small_button("Undo").clicked();
+                (c, r)
+            })
+            .inner;
+        if changed {
+            plock.set_field(instrument, step, vol_field, vol_value);
+        }
+        if reset {
+            plock.field_masks.clear(instrument, step, vol_field);
+        }
+    }
+    ui.separator();
+
     // ------ Helpers ------
     let draw_slider = |ui: &mut egui::Ui,
                        label: &str,
@@ -3005,6 +3039,10 @@ fn draw_plock_menu(
     // Data-driven standard params
     let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
     for def in inst_def.standard_params {
+        // Volume is already shown at the top of the menu
+        if def.field == crate::instrument_registry::StandardField::Volume {
+            continue;
+        }
         let field_index = def.field.plock_field_index();
         let mut value = if plock.field_masks.is_set(instrument, step, field_index) {
             plock.values.get(instrument, step, field_index)
