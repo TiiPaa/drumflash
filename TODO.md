@@ -384,6 +384,37 @@
 - [x] [73] caracteres esoteriques ont remplace aleatoirement les caracteres normaux dans les boutons/texte UI � CORRIGE (restauration UTF-8 via script Python) � build 20260529-174106 (Complexite: Faible, 1 jour, P1)
 - [x] [74] Proposer 3 types de clicks pour la BD (Kick) : soft/medium/hard ou impulse/noise/transient (Complexite: Moyenne, 3-5 jours, P2)
 
+## Bugs a corriger (Actifs)
+
+- [ ] [91] **Sortir automatiquement du mode edit quand on selectionne en dehors de la cellule** (P1, UI/UX)
+  - Actuellement, le mode edit reste actif meme si on clique ailleurs
+  - Comportement attendu : deselection de la cellule = sortie du mode edit
+  - Complexite : Faible
+
+- [ ] [92] **Valeurs du menu plock sound par defaut = valeurs globales de l'instrument** (P1, Donnees)
+  - Constate : la frequence de BD8 (BassDrum808) est a 0 dans le plock au lieu de la valeur globale
+  - Verifier que tous les instruments initialisent correctement les valeurs par defaut des plocks
+  - Complexite : Faible
+
+## Investigation & Features (A prioriser)
+
+- [ ] [93] **Son tres ecourte interessant quand on maintient un slider OSC appuye** (P2, Audio/Design)
+  - Quand on laisse un slider d'OSC appuye (sur n'importe quel instrument), un son tres court et interessant sort des Toms et HiHats
+  - Probablement du aux re-triggers continus lors du changement de parametre
+  - **Action :** expliquer le mecanisme et reproduire de facon controlee (effet design intentionnel ?)
+  - Complexite : Moyenne
+
+- [ ] [94] **Ajouter un parametre pitch LFO sur les Toms** (P2, Synthese)
+  - Intensite, Rate, Type de LFO (sine/triangle/square/saw), arrivee progressive
+  - Permet des variations de hauteur dynamiques sur les toms
+  - Complexite : Moyenne, 3-5 jours
+
+- [ ] [95] **Ajouter un instrument de type MIDI (avec MIDI out)** (P2/P3, Architecture MIDI)
+  - Voix virtuelle qui envoie des NoteOn/NoteOff MIDI sur une sortie MIDI externe
+  - Pas de synthese interne, juste du routage MIDI
+  - Permet de declencher des instruments externes depuis le sequencer
+  - Complexite : Moyenne-Elevee, 1-2 semaines
+
 ## Tests avances (Post-V1)
 
 - [x] [12] Ajouter un test de stress du sequencer (longue session, stabilite du timing) - 6 tests impl�ment�s

@@ -1,6 +1,6 @@
 ﻿# Changelog
 
-## 2026-06-10 — Plock Volume en haut du menu (build 20260610-082223)
+## 2026-06-10 — Plock Volume en haut du menu + TODO mise à jour (build 20260610-082223)
 
 **Build:** `20260610-082223`
 **Commits:** UI : Volume en premier dans le menu contextuel des plocks
@@ -8,6 +8,12 @@
 ### Changes
 - **[75] Plock UI** : le slider `Volume` est maintenant affiché en haut du menu contextuel des plocks, juste après l'indicateur de mode (Link/Snapshot/Mixed).
 - **[75] Plock UI** : le slider `Volume` n'est plus rendu dans la liste data-driven standard pour éviter le doublon.
+- **TODO.md** : ajout de 5 nouvelles tâches priorisées :
+  - **[91]** Sortir automatiquement du mode edit quand on sélectionne en dehors de la cellule (P1)
+  - **[92]** Valeurs du menu plock sound par défaut = valeurs globales de l'instrument (P1)
+  - **[93]** Investigation : son très écourté intéressant quand slider OSC maintenu (P2)
+  - **[94]** Ajouter un paramètre pitch LFO sur les Toms (P2)
+  - **[95]** Ajouter un instrument de type MIDI avec MIDI out (P2/P3)
 
 ### Validation
 - `cargo test` : 90 tests lib + 61 tests standalone OK
