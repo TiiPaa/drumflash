@@ -719,6 +719,65 @@ fn draw_pattern_bank(
                 state.save_mode_active = false;
             }
         }
+
+        ui.add_space(16.0);
+
+        // Export MIDI (always visible, even in Song mode)
+        ui.label(RichText::new("Export").strong().size(11.0));
+        let export_btn = egui::Button::new("MIDI");
+        let response = ui.add(export_btn);
+        if response.clicked() {
+            let bpm = params.bpm.value();
+            let pattern_length = params.pattern_length.value() as usize;
+            match export_midi_to_documents(pattern, bpm, pattern_length) {
+                Ok(path) => {
+                    nih_log!("MIDI exported to: {}", path.display());
+                    state.last_midi_export_path = Some(path.display().to_string());
+                    state.last_midi_export_error = None;
+                }
+                Err(e) => {
+                    nih_log!("MIDI export failed: {}", e);
+                    state.last_midi_export_path = None;
+                    state.last_midi_export_error = Some(e.to_string());
+                }
+            }
+        }
+        response.on_hover_text("Export MIDI file to Documents/Flash Drum/exports");
+
+        let drag_btn = egui::Button::new("Drag").sense(egui::Sense::click_and_drag());
+        let drag_response = ui.add(drag_btn);
+        if drag_response.clicked() || drag_response.drag_started() {
+            let bpm = params.bpm.value();
+            let pattern_length = params.pattern_length.value() as usize;
+            match export_midi_to_documents(pattern, bpm, pattern_length)
+                .and_then(|path| start_external_midi_drag(&path).map(|_| path))
+            {
+                Ok(path) => {
+                    nih_log!("MIDI drag helper started from: {}", path.display());
+                    state.last_midi_export_path = Some(path.display().to_string());
+                    state.last_midi_export_error = None;
+                }
+                Err(e) => {
+                    nih_log!("MIDI drag failed: {}", e);
+                    state.last_midi_export_path = None;
+                    state.last_midi_export_error = Some(e.to_string());
+                }
+            }
+        }
+        drag_response.on_hover_text("Open external MIDI drag handle");
+
+        if let Some(path) = &state.last_midi_export_path {
+            if ui.button("Copy Path").clicked() {
+                ui.ctx().copy_text(path.clone());
+            }
+            ui.label(RichText::new("Exported").size(10.0));
+        } else if state.last_midi_export_error.is_some() {
+            ui.label(
+                RichText::new("Export failed")
+                    .size(10.0)
+                    .color(Color32::from_rgb(248, 113, 113)),
+            );
+        }
     });
 }
 
@@ -963,64 +1022,6 @@ fn draw_preset_bar(
             state.last_loaded_slot = None;
         }
 
-        ui.add_space(16.0);
-
-        // Export MIDI (right)
-        ui.label(RichText::new("Export").strong().size(11.0));
-        let export_btn = egui::Button::new("MIDI");
-        let response = ui.add(export_btn);
-        if response.clicked() {
-            let bpm = params.bpm.value();
-            let pattern_length = params.pattern_length.value() as usize;
-            match export_midi_to_documents(pattern, bpm, pattern_length) {
-                Ok(path) => {
-                    nih_log!("MIDI exported to: {}", path.display());
-                    state.last_midi_export_path = Some(path.display().to_string());
-                    state.last_midi_export_error = None;
-                }
-                Err(e) => {
-                    nih_log!("MIDI export failed: {}", e);
-                    state.last_midi_export_path = None;
-                    state.last_midi_export_error = Some(e.to_string());
-                }
-            }
-        }
-        response.on_hover_text("Export MIDI file to Documents/Flash Drum/exports");
-
-        let drag_btn = egui::Button::new("Drag").sense(egui::Sense::click_and_drag());
-        let drag_response = ui.add(drag_btn);
-        if drag_response.clicked() || drag_response.drag_started() {
-            let bpm = params.bpm.value();
-            let pattern_length = params.pattern_length.value() as usize;
-            match export_midi_to_documents(pattern, bpm, pattern_length)
-                .and_then(|path| start_external_midi_drag(&path).map(|_| path))
-            {
-                Ok(path) => {
-                    nih_log!("MIDI drag helper started from: {}", path.display());
-                    state.last_midi_export_path = Some(path.display().to_string());
-                    state.last_midi_export_error = None;
-                }
-                Err(e) => {
-                    nih_log!("MIDI drag failed: {}", e);
-                    state.last_midi_export_path = None;
-                    state.last_midi_export_error = Some(e.to_string());
-                }
-            }
-        }
-        drag_response.on_hover_text("Open external MIDI drag handle");
-
-        if let Some(path) = &state.last_midi_export_path {
-            if ui.button("Copy Path").clicked() {
-                ui.ctx().copy_text(path.clone());
-            }
-            ui.label(RichText::new("Exported").size(10.0));
-        } else if state.last_midi_export_error.is_some() {
-            ui.label(
-                RichText::new("Export failed")
-                    .size(10.0)
-                    .color(Color32::RED),
-            );
-        }
     });
 }
 
