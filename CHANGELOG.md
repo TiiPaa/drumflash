@@ -1,5 +1,28 @@
 ﻿# Changelog
 
+## 2026-06-11 — Réception du design pack complet (designer)
+
+**Livrable** : `design-pack/Flash_Drum_design_11062026/flash-drum-source/`
+
+### Contenu du design
+- **`DESIGN-SYSTEM.md`** — Tokens visuels (palette IBM Plex, typo, widgets, ADSR, états p-lock)
+- **`LAYOUT.md`** — Architecture (lanes modulaires, moteurs, layout 2 colonnes, séquenceur, éditeur)
+- **`assets/fd-data.js`** — Schémas de paramètres par moteur (synth/sample/midi)
+- **`index.html`** — Maquette interactive fonctionnelle
+
+### Architecture proposée (à implémenter)
+- **Lanes modulaires** : 4 au départ (BD/SD/HH/TOM), ajoutables jusqu'à 14, réordonnables
+- **Registre de moteurs** : Synth (7 types), Sample, Sample FX, MIDI Out
+- **Éditeur dynamique** : contenu selon le moteur assigné, aucun paramètre codé en dur
+- **Header** : Transport (▶/■/●) + source MIDI (Internal/Ext) + toggles LED
+- **Sound Editor** : Sections dynamiques (OSC/ENV/FILTER/SAT/OUTPUT)
+- **Generator/Song** : Panneau partagé avec toggle segmented
+
+### Plan d'implémentation
+Voir `TODO.md` — section **[100] Redesign UI complet** (phases 1-5)
+
+---
+
 ## 2026-06-10 — Fix boutons Export MIDI + Drag toujours visibles (build 20260610-085721)
 
 **Build:** `20260610-085721`

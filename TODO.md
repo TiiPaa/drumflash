@@ -396,6 +396,56 @@
   - Verifier que tous les instruments initialisent correctement les valeurs par defaut des plocks
   - Complexite : Faible
 
+## [100] Redesign UI complet (design pack 2026-06-11) — EN COURS
+
+> **Livrable designer** : `design-pack/Flash_Drum_design_11062026/flash-drum-source/`
+> Fichiers clés : `DESIGN-SYSTEM.md` (tokens), `LAYOUT.md` (architecture), `assets/fd-data.js` (schémas moteurs)
+
+### Architecture (invariants du design)
+- **Système de lanes modulaires** : 4 lanes au départ (BD/SD/HH/TOM), ajoutables jusqu'à 14, réordonnables par drag
+- **Registre de moteurs** : Synth (kick/snare/tom/hat/cymbal/clap/perc), Sample, Sample FX, MIDI Out
+- **Éditeur dynamique** : contenu reconstruit selon le moteur assigné, aucun paramètre codé en dur
+- **Séparation données ↔ rendu** : ajouter instrument/paramètre = éditer une donnée
+
+### Phases d'implémentation
+
+#### Phase 1 — Fondations (structure + tokens)
+- [ ] [100a] **Mettre à jour `design_system.rs`** avec nouveaux tokens (palette IBM Plex, rayons, gaps, strokes)
+- [ ] [100b] **Intégrer polices IBM Plex** (Sans + Mono) via `FontDefinitions` egui
+- [ ] [100c] **Créer `theme.rs`** — constants `Color32` et helpers (`blue_glow`, `white_a`)
+- [ ] [100d] **Créer `widgets.rs`** — widgets custom coordonnés (Slider, Freq, Select, Switch, ToggleLED, Knob)
+- [ ] [100e] **Créer `engine_registry.rs`** — struct `Engine`, `EngineGroup`, `schema_for_engine()`, registre `ENGINES`
+
+#### Phase 2 — Layout général (header + colonnes)
+- [ ] [100f] **Header redesign** — Brand + Transport (▶/■/●) + Master/Swing/Groove + Seq source (Internal/Ext MIDI segmented) + toggles LED
+- [ ] [100g] **Layout 2 colonnes** — Gauche (~910px) : séquenceur + page-bar + p-lock-bar + patterns + generator/song | Droite (~568px) : Sound Editor
+- [ ] [100h] **Sound Editor** — En-tête dynamique (nom + Engine selector) + onglets instruments (14) + zone scroll avec sections
+
+#### Phase 3 — Séquenceur (grille + lanes)
+- [ ] [100i] **Lane modulaire** — Poignée drag, nom cliquable, menu clic-droit (rename, assign engine, remove), tag M/S/T
+- [ ] [100j] **Grille de steps** — 16 colonnes visibles, états p-lock (Sound/Sequencer exclusifs), playhead, fusion
+- [ ] [100k] **Page/Length bar** — Pages 1-4, Follow ON/OFF, Len slider 1-64, presets 16/32/48/64, ×2
+- [ ] [100l] **P-lock modes** — Toggle segmented Sound/Sequencer, menus contextuels (Volume en premier, undo ↺)
+
+#### Phase 4 — Panneaux bas (patterns + generator/song)
+- [ ] [100m] **Pattern Bank** — Save/Load, slots P1-P8, Clear, Export MIDI, Drag MIDI
+- [ ] [100n] **Generator/Song panel** — Segmented toggle Generator|Song, Generator = type + A/B + Mix/Dens/Var + Random + GENERATE
+- [ ] [100o] **Song arranger** — Chaîne de blocs pattern × répétitions, toggle Song Enabled
+
+#### Phase 5 — Polish & validation
+- [ ] [100p] **ADSR visualization** — Inline à droite des sliders ENV (courbes Attack/Decay/Release)
+- [ ] [100q] **Animations** — Hover transitions, step playback glow, toggle LED
+- [ ] [100r] **Tests** — Vérifier que tous les moteurs rendent correctement, pas de régression audio
+- [ ] [100s] **Build + install** — VST3 fonctionnel avec nouveau design
+
+### Notes
+- **Volume** : range -60 dB à +6 dB (actuellement 0..2 linéaire, à convertir)
+- **Norme de casse** : Title Case partout
+- **Pas de gradients** : aplats + ombres/glow subtils
+- **Contrainte egui** : tout en primitives (rect, cercle, texte), pas d'images
+
+---
+
 ## Investigation & Features (A prioriser)
 
 - [ ] [93] **Son tres ecourte interessant quand on maintient un slider OSC appuye** (P2, Audio/Design)
