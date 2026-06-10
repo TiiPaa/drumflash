@@ -177,7 +177,12 @@
 - [x] [63] Bug B8 se coupe quand on modifie CY : corrigé division par zéro dans `ExpDecayEnvelope::set_attack_ms`
   - Quand attack_time passe à 0 pendant un ramp actif → snap à peak immédiat pour éviter NaN
   - Bouton "T" (Test) : appelle maintenant `set_voice_settings` avant `trigger`
-- [ ] **REPRENDRE ICI** [82] **Intégrer les éléments graphiques définis avec Claude Design**
+- [x] [82] **Intégrer les éléments graphiques définis avec Claude Design**
+  - Phase 1a : Widgets custom (ToggleLED, ToggleSwitch, StyledButton, SegmentedControl)
+  - Phase 1b : Header redesign (fond PANEL, bordure LINE, séparateurs DIVIDER, padding 14px)
+  - Phase 1c : Style global sombre (BG, PANEL2, P_HOVER, P_ACTIVE, BLUE via egui::Visuals)
+  - Phase 1d : Boutons page 1-4 stylisés + glow LED lecture
+  - **REPRENDRE ICI** [100a] **Mettre à jour `design_system.rs`** avec nouveaux tokens (palette IBM Plex, rayons, gaps, strokes)
   - Assets UI (icônes, couleurs, fonts, layout) produits par Claude Design
   - Remplacer les widgets egui basiques par des widgets custom avec le design system
   - **Complexité : Moyenne-Élevée, 1-2 semaines, P2**
@@ -412,12 +417,12 @@
 #### Phase 1 — Fondations (structure + tokens)
 - [ ] [100a] **Mettre à jour `design_system.rs`** avec nouveaux tokens (palette IBM Plex, rayons, gaps, strokes)
 - [ ] [100b] **Intégrer polices IBM Plex** (Sans + Mono) via `FontDefinitions` egui
-- [ ] [100c] **Créer `theme.rs`** — constants `Color32` et helpers (`blue_glow`, `white_a`)
-- [ ] [100d] **Créer `widgets.rs`** — widgets custom coordonnés (Slider, Freq, Select, Switch, ToggleLED, Knob)
-- [ ] [100e] **Créer `engine_registry.rs`** — struct `Engine`, `EngineGroup`, `schema_for_engine()`, registre `ENGINES`
+- [x] [100c] **Créer `theme.rs`** — constants `Color32` et helpers (`blue_glow`, `white_a`)
+- [x] [100d] **Créer `widgets.rs`** — widgets custom coordonnés (Slider, Freq, Select, Switch, ToggleLED, Knob)
+- [x] [100e] **Créer `engine_registry.rs`** — struct `Engine`, `EngineGroup`, `schema_for_engine()`, registre `ENGINES`
 
 #### Phase 2 — Layout général (header + colonnes)
-- [ ] [100f] **Header redesign** — Brand + Transport (▶/■/●) + Master/Swing/Groove + Seq source (Internal/Ext MIDI segmented) + toggles LED
+- [x] [100f] **Header redesign** — Brand + Transport (▶/■/●) + Master/Swing/Groove + Seq source (Internal/Ext MIDI segmented) + toggles LED
 - [ ] [100g] **Layout 2 colonnes** — Gauche (~910px) : séquenceur + page-bar + p-lock-bar + patterns + generator/song | Droite (~568px) : Sound Editor
 - [ ] [100h] **Sound Editor** — En-tête dynamique (nom + Engine selector) + onglets instruments (14) + zone scroll avec sections
 
@@ -425,7 +430,7 @@
 - [ ] [100i] **Lane modulaire** — Poignée drag, nom cliquable, menu clic-droit (rename, assign engine, remove), tag M/S/T
 - [ ] [100j] **Grille de steps** — 16 colonnes visibles, états p-lock (Sound/Sequencer exclusifs), playhead, fusion
 - [ ] [100k] **Page/Length bar** — Pages 1-4, Follow ON/OFF, Len slider 1-64, presets 16/32/48/64, ×2
-- [ ] [100l] **P-lock modes** — Toggle segmented Sound/Sequencer, menus contextuels (Volume en premier, undo ↺)
+- [x] [100l] **P-lock modes** — Toggle segmented Sound/Sequencer, menus contextuels (Volume en premier, undo ↺)
 
 #### Phase 4 — Panneaux bas (patterns + generator/song)
 - [ ] [100m] **Pattern Bank** — Save/Load, slots P1-P8, Clear, Export MIDI, Drag MIDI

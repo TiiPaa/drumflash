@@ -3,7 +3,7 @@ use nih_plug_egui::{
     create_egui_editor,
     egui::{self, Color32, RichText, Vec2},
     resizable_window::ResizableWindow,
-    widgets,
+    widgets::ParamSlider,
 };
 use std::{
     fs::create_dir_all,
@@ -29,12 +29,18 @@ use crate::{
 mod design_system;
 mod envelope_viz;
 mod local_param_slider;
+mod engine_registry;
 mod schema;
+mod theme;
+mod widgets;
 
 use design_system::*;
+use widgets::*;
+use engine_registry::*;
 use envelope_viz::{draw_amp_envelope, draw_filter_envelope};
 use local_param_slider::LocalParamSlider;
 use schema::{category_for_instrument, instrument_label, instrument_name, Category};
+use theme::*;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Frequency / Note conversion utilities
@@ -281,7 +287,22 @@ pub fn create_editor(
     create_egui_editor(
         params.editor_state.clone(),
         EditorUIState::default(),
-        |_egui_ctx, _state| {},
+        |egui_ctx, _state| {
+            // Style global sombre
+            let mut visuals = egui::Visuals::dark();
+            visuals.panel_fill = BG;
+            visuals.window_fill = BG;
+            visuals.extreme_bg_color = BG;
+            visuals.widgets.inactive.bg_fill = PANEL2;
+            visuals.widgets.hovered.bg_fill = P_HOVER;
+            visuals.widgets.active.bg_fill = P_ACTIVE;
+            visuals.selection.bg_fill = BLUE;
+            visuals.faint_bg_color = PANEL;
+            visuals.extreme_bg_color = BG;
+            visuals.window_stroke = egui::Stroke::new(1.0, LINE);
+            visuals.widgets.noninteractive.bg_fill = BG;
+            egui_ctx.set_visuals(visuals);
+        },
         move |egui_ctx, setter, state| {
             #[cfg(target_os = "windows")]
             nih_plug_egui::set_keyboard_focus(egui_ctx.wants_keyboard_input());
@@ -405,38 +426,77 @@ fn draw_header_bar(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
     params: &DrumFlashParams,
-    state: &mut EditorUIState,
+    _state: &mut EditorUIState,
     _save_pattern_request: &Arc<AtomicU32>,
     _load_pattern_request: &Arc<AtomicU32>,
     _song_mode: &Arc<AtomicBool>,
     _song_position: &Arc<AtomicU32>,
 ) {
-    ui.horizontal(|ui| {
-        // Brand
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("FLASH DRUM").strong().size(15.0));
+    let available = ui.available_size_before_wrap();
+    let header_height = HEADER_H;
+    let (rect, _) = ui.allocate_exact_size(
+        egui::Vec2::new(available.x, header_height),
+        egui::Sense::hover(),
+    );
+
+    // Fond PANEL + bordure basse LINE
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 0.0, PANEL);
+    painter.line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        egui::Stroke::new(1.0, LINE),
+    );
+
+    // Contenu avec padding horizontal
+    let content_rect = rect.shrink2(egui::Vec2::new(14.0, 0.0));
+    ui.allocate_ui_at_rect(content_rect, |ui| {
+        ui.horizontal_centered(|ui| {
+            ui.set_height(content_rect.height());
+
+            // Brand
+            ui.label(RichText::new("FLASH DRUM").strong().size(15.0).color(INK));
             ui.label(
                 RichText::new(format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID))
                     .monospace()
                     .size(10.0)
-                    .color(Color32::from_rgb(100, 100, 110)),
+                    .color(FAINT),
             );
+
+            ui.add_space(16.0);
+            // Séparateur vertical
+            ui.painter().line_segment(
+                [
+                    egui::Pos2::new(ui.cursor().left(), content_rect.center().y - 10.0),
+                    egui::Pos2::new(ui.cursor().left(), content_rect.center().y + 10.0),
+                ],
+                egui::Stroke::new(1.0, DIVIDER),
+            );
+            ui.add_space(16.0);
+
+            // Sliders
+            ui.add(ParamSlider::for_param(&params.master_volume, setter).with_width(80.0));
+            ui.add(ParamSlider::for_param(&params.swing, setter).with_width(80.0));
+            enum_combo(ui, setter, &params.groove_type, "");
+
+            ui.add_space(16.0);
+            ui.painter().line_segment(
+                [
+                    egui::Pos2::new(ui.cursor().left(), content_rect.center().y - 10.0),
+                    egui::Pos2::new(ui.cursor().left(), content_rect.center().y + 10.0),
+                ],
+                egui::Stroke::new(1.0, DIVIDER),
+            );
+            ui.add_space(16.0);
+
+            // Toggles
+            toggle_led_param(ui, setter, &params.use_internal_sequencer, "Seq");
+            ui.add_space(4.0);
+            toggle_led_param(ui, setter, &params.hihat_chokes_oh, "Choke");
+            ui.add_space(4.0);
+            toggle_led_param(ui, setter, &params.auto_edit, "Auto-Edit");
+            ui.add_space(4.0);
+            toggle_led_param(ui, setter, &params.song_mode, "Song");
         });
-
-        ui.separator();
-
-        // Sliders
-        ui.add(widgets::ParamSlider::for_param(&params.master_volume, setter).with_width(80.0));
-        ui.add(widgets::ParamSlider::for_param(&params.swing, setter).with_width(80.0));
-        enum_combo(ui, setter, &params.groove_type, "");
-
-        ui.separator();
-
-        // Toggles
-        bool_checkbox(ui, setter, &params.use_internal_sequencer, "Seq");
-        bool_checkbox(ui, setter, &params.hihat_chokes_oh, "Choke");
-        bool_checkbox(ui, setter, &params.auto_edit, "Auto-Edit");
-        bool_checkbox(ui, setter, &params.song_mode, "Song");
     });
 }
 
@@ -925,18 +985,18 @@ fn draw_song_editor(
 fn draw_top_bar(ui: &mut egui::Ui, setter: &ParamSetter, params: &DrumFlashParams) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Vol").strong());
-        ui.add(widgets::ParamSlider::for_param(&params.master_volume, setter).with_width(80.0));
+        ui.add(ParamSlider::for_param(&params.master_volume, setter).with_width(80.0));
 
         ui.add_space(16.0);
         ui.label(RichText::new("Swing").strong());
-        ui.add(widgets::ParamSlider::for_param(&params.swing, setter).with_width(80.0));
+        ui.add(ParamSlider::for_param(&params.swing, setter).with_width(80.0));
 
         ui.add_space(8.0);
         enum_combo(ui, setter, &params.groove_type, "Groove");
 
         ui.add_space(16.0);
         ui.label(RichText::new("Len").strong());
-        ui.add(widgets::ParamSlider::for_param(&params.pattern_length, setter).with_width(60.0));
+        ui.add(ParamSlider::for_param(&params.pattern_length, setter).with_width(60.0));
 
         ui.add_space(16.0);
         bool_checkbox(ui, setter, &params.hihat_chokes_oh, "Choke");
@@ -1041,11 +1101,11 @@ fn draw_generator_bar(
         enum_combo(ui, setter, &params.style_primary, "A");
         enum_combo(ui, setter, &params.style_secondary, "B");
         ui.label("Mix");
-        ui.add(widgets::ParamSlider::for_param(&params.style_mix, setter).with_width(50.0));
+        ui.add(ParamSlider::for_param(&params.style_mix, setter).with_width(50.0));
         ui.label("Dens");
-        ui.add(widgets::ParamSlider::for_param(&params.gen_density, setter).with_width(50.0));
+        ui.add(ParamSlider::for_param(&params.gen_density, setter).with_width(50.0));
         ui.label("Var");
-        ui.add(widgets::ParamSlider::for_param(&params.gen_variation, setter).with_width(50.0));
+        ui.add(ParamSlider::for_param(&params.gen_variation, setter).with_width(50.0));
 
         let gen_btn = egui::Button::new(RichText::new(" GENERATE ").strong().size(13.0))
             .fill(Color32::from_rgb(56, 132, 255));
@@ -1109,17 +1169,18 @@ fn draw_grid(
             let is_active = state.current_page == page;
             let btn = egui::Button::new(format!("{}", page + 1))
                 .min_size(Vec2::new(28.0, 22.0))
-                .fill(if is_active {
-                    Color32::from_rgb(56, 132, 255)
+                .fill(if is_active { BLUE } else { PANEL2 })
+                .stroke(if is_active {
+                    egui::Stroke::new(1.0, BLUE)
                 } else {
-                    Color32::from_rgb(40, 40, 40)
+                    egui::Stroke::new(1.0, LINE2)
                 });
             let response = ui.add(btn);
             // LED rouge sous le bouton de la page en cours de lecture
             if play_page == page && play_page < 4 {
                 let led_center = response.rect.center_bottom() + egui::vec2(0.0, 4.0);
-                ui.painter()
-                    .circle_filled(led_center, 3.0, Color32::from_rgb(255, 40, 40));
+                ui.painter().circle_filled(led_center, 3.0, RED);
+                ui.painter().circle_filled(led_center, 5.0, Color32::from_rgba_premultiplied(255, 40, 40, 40));
             }
             if response.clicked() {
                 state.current_page = page;
@@ -1220,7 +1281,7 @@ fn draw_grid(
         }
         ui.add_space(16.0);
         ui.label(RichText::new("Len:").strong());
-        ui.add(widgets::ParamSlider::for_param(&params.pattern_length, setter).with_width(60.0));
+        ui.add(ParamSlider::for_param(&params.pattern_length, setter).with_width(60.0));
         for &len in &[16, 32, 48, 64] {
             let is_active = params.pattern_length.value() == len;
             let btn = egui::Button::new(format!("{}", len))
@@ -1632,12 +1693,12 @@ fn draw_grid(
 
                 // Hum / Push / Len (compact sliders avec valeurs formatées stables)
                 ui.horizontal(|ui| {
-                    ui.add(widgets::ParamSlider::for_param(hums[inst], setter).with_width(32.0).without_value());
+                    ui.add(ParamSlider::for_param(hums[inst], setter).with_width(32.0).without_value());
                     let hum_pct = (hums[inst].value() * 100.0) as i32;
                     ui.label(RichText::new(format!("{:>3}%", hum_pct)).monospace().size(9.0)).on_hover_text("Humanize");
                 });
                 ui.horizontal(|ui| {
-                    ui.add(widgets::ParamSlider::for_param(pushes[inst], setter).with_width(32.0).without_value());
+                    ui.add(ParamSlider::for_param(pushes[inst], setter).with_width(32.0).without_value());
                     let push_val = pushes[inst].value() as i32;
                     ui.label(RichText::new(format!("{:>+3} ms", push_val)).monospace().size(9.0)).on_hover_text("Push/Pull");
                 });
@@ -1652,19 +1713,14 @@ fn draw_grid(
     ui.horizontal(|ui| {
         ui.add_space(32.0); // indent to align with grid
         ui.label(RichText::new("Plock mode:").strong().size(11.0));
-        let seq_btn = egui::Button::new(if state.sequencer_mode {
-            "Sequencer"
-        } else {
-            "Sound"
-        })
-        .min_size(Vec2::new(70.0, 22.0))
-        .fill(if state.sequencer_mode {
-            Color32::from_rgb(147, 51, 234) // violet
-        } else {
-            Color32::from_rgb(234, 120, 50) // orange
-        });
-        if ui.add(seq_btn).clicked() {
-            state.sequencer_mode = !state.sequencer_mode;
+        let selected = if state.sequencer_mode { 1 } else { 0 };
+        let (_response, new_selected) = segmented_control(
+            ui,
+            &["Sound", "Sequencer"],
+            selected,
+        );
+        if new_selected != selected {
+            state.sequencer_mode = new_selected == 1;
         }
         ui.label(
             RichText::new("Right-click steps for plocks")
@@ -2126,7 +2182,7 @@ fn draw_sound_panel(
                                             }
                                         });
                                 } else {
-                                    ui.add(widgets::ParamSlider::for_param(param, setter).with_width(120.0));
+                                    ui.add(ParamSlider::for_param(param, setter).with_width(120.0));
                                 }
                             });
                         }
@@ -2685,6 +2741,16 @@ fn bool_checkbox(ui: &mut egui::Ui, setter: &ParamSetter, param: &BoolParam, lab
     if ui.checkbox(&mut value, label).changed() {
         setter.begin_set_parameter(param);
         setter.set_parameter(param, value);
+        setter.end_set_parameter(param);
+    }
+}
+
+fn toggle_led_param(ui: &mut egui::Ui, setter: &ParamSetter, param: &BoolParam, label: &str) {
+    let value = param.value();
+    if ui.add(ToggleLED::new(label, value)).clicked() {
+        let new_value = !value;
+        setter.begin_set_parameter(param);
+        setter.set_parameter(param, new_value);
         setter.end_set_parameter(param);
     }
 }
