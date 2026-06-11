@@ -9,6 +9,7 @@
 //! reads like a standard synth envelope.  This makes it easy to later switch
 //! individual voices to a true sequential AHDSR without changing the UI.
 
+use crate::ui::theme::*;
 use nih_plug_egui::egui::{Color32, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -56,13 +57,8 @@ pub fn draw_amp_envelope(
     let painter = ui.painter_at(rect);
 
     // Background
-    painter.rect_filled(rect, 4.0, Color32::from_gray(28));
-    painter.rect_stroke(
-        rect,
-        4.0,
-        Stroke::new(1.0, Color32::from_gray(80)),
-        StrokeKind::Inside,
-    );
+    painter.rect_filled(rect, 4.0, PANEL);
+    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, LINE2), StrokeKind::Inside);
 
     // Inner padding so labels don't touch the border
     let pad_x = 14.0f32;
@@ -191,13 +187,8 @@ pub fn draw_filter_envelope(
     let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, Color32::from_gray(28));
-    painter.rect_stroke(
-        rect,
-        4.0,
-        Stroke::new(1.0, Color32::from_gray(80)),
-        StrokeKind::Inside,
-    );
+    painter.rect_filled(rect, 4.0, PANEL);
+    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, LINE2), StrokeKind::Inside);
 
     let pad_x = 14.0f32;
     let pad_y = 10.0f32;
