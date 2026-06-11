@@ -1,5 +1,104 @@
 ﻿# Changelog
 
+## 2026-06-11 — Redesign UI Sound Editor controls (build 20260611-201611)
+
+**Build:** `20260611-201611`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Remplacement des sliders natifs visibles dans le Sound Editor par des rows custom : label fixe, piste arrondie, fill bleu, valeur mono à droite.
+- Application du nouveau rendu aux paramètres standards et aux paramètres spéciaux, notamment Saturation Amount/Mix/Output Gain.
+- Ajout de switches custom pour les booléens d'éditeur.
+- Réduction de la hauteur du panneau Generator/Song de `136px` à `116px` pour limiter le vide en bas.
+
+---
+
+## 2026-06-11 — Redesign UI corrections clipping/pagebar (build 20260611-194657)
+
+**Build:** `20260611-194657`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Ajout d'un clipping explicite sur la colonne gauche pour empêcher les panneaux de peindre dans le Sound Editor.
+- Repeint du fond de colonne droite après la colonne gauche pour supprimer les traces de débordement.
+- Remplacement du panneau Generator/Song par un panneau à rectangle fixe, header/body clippés.
+- Correction de la pagebar : suppression du layout `right_to_left` qui décalait `Len`, ordre normal `Len · slider · steps · 16/32/48/64 · x2`.
+- Generator compacté en deux lignes : presets puis contrôles, combobox plus étroits, sliders sans valeur inline.
+
+---
+
+## 2026-06-11 — Redesign UI reprise structurelle (build 20260611-184532)
+
+**Build:** `20260611-184532`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Reprise du layout principal à partir du design pack `Flash_Drum_design_11062026` : body fixe en deux colonnes, gauche flexible et droite `568px`, bordure verticale `LINE`, padding gauche `14px`.
+- Remplacement du rendu de grille basé sur `egui::Grid` par un séquenceur custom : lanes `24px`, tags M/S/T `17px`, steps `21px`, cellules sans texte `X`/`.` et couleurs p-lock/playhead conformes au design system.
+- Page bar séparée au-dessus du séquenceur : pages 1-4, LED rouge de lecture, Follow, Len, presets `16/32/48/64`, `x2`.
+- Header principal : remplacement du simple toggle `Seq` par un segment `Internal | Ext MIDI` branché sur `use_internal_sequencer`.
+- Sound Editor : header et barre d'onglets avec zones fixes, onglets instruments sur une seule ligne au lieu de deux colonnes de tabs.
+- Bottom panel Generator/Song : panneau encadré avec header séparé et contenu en dessous.
+
+---
+
+## 2026-06-11 — Redesign UI Phase 2a — Layout 2 colonnes (build 20260611-102814)
+
+**Build:** `20260611-102814`
+**Commits:** UI : refactor layout principal en 2 colonnes selon design pack v2
+
+### Changements
+- **Layout 2 colonnes** (design pack §1, LAYOUT.md) :
+  - Colonne gauche : **912px**, padding 14h/11v, gap vertical 4px, bordure droite 1px `LINE`
+  - Colonne droite : **568px**, fond `PANEL` (20,20,25), bordure gauche 1px `LINE`
+  - Grid compact : spacing 2px, step buttons 18px, lignes 20px
+  - Suppression des `ui.separator()` entre sections (remplacés par le gap)
+  - Positionnement : `allocate_new_ui` avec rectangles fixes
+- **Header** (design pack §2) :
+  - Transport ▶ ■ ● ajoutés (green/red actif)
+  - Brand + version + séparateurs DIVIDER
+- **Page bar** (design pack §3) :
+  - Boutons 1-4 : 26×20px, radius 6px, label mono 10.5px
+  - Follow toggle : style coordonné (P_ACTIVE/PANEL2)
+  - Len slider compact (50px)
+  - Presets 16/32/48/64 : 26×20px boutons
+  - ×2 : 26×20px bouton
+- **P-lock mode bar** :
+  - Label "P-Lock Mode" INK3 10.5px
+  - Segmented Sound/Sequencer avec couleurs PL_LINK/SEQPL
+  - Fusion box sur même ligne, 380px
+- **Pattern Bank** :
+  - Save button : 44×22px
+  - Slots P1-P8 : 30×22px
+  - Export MIDI / Drag MIDI : boutons stylisés PANEL2/LINE2
+- **Bottom Panel** (design pack §6) :
+  - Toggle unifié Generator | Song (segmented)
+  - Partage le même espace
+- **Sound Editor** (design pack §6) :
+  - Header : "Sound Editor" + nom instrument + Engine selector placeholder
+  - Onglets instruments : grille responsive (7 colonnes)
+  - Volume en tête sans titre de section
+  - Titres de section : UPPERCASE mono 10px INK3
+  - Suppression des `ui.group` avec bordures
+- **Couleurs des steps** (design pack §6) :
+  - off pair/impair : #1b1b22 / #23232c
+  - on plock link : PL_LINK (255,140,0)
+  - on plock snapshot : PL_SNAP (220,50,50)
+  - off plock link : PL_LINK_DIM (180,100,0)
+  - off plock snapshot : PL_SNAP_DIM (160,30,30)
+  - Playhead : #30303c
+- **Réduction globale** :
+  - Tous les boutons et contrôles réduits pour tenir dans 800px
+  - Gaps entre sections : 4px
+  - Élimination du débordement bas
+  - Colonne gauche : **912px**, padding 14h/11v, gap vertical 10px, bordure droite 1px `LINE`
+  - Colonne droite : **568px**, fond `PANEL` (20,20,25), bordure gauche 1px `LINE`
+  - Ordre colonne gauche : séquenceur (page-bar + grille + plock mode) → pattern bank → generator/song
+  - Suppression des `ui.separator()` entre sections (remplacés par le gap de 10px)
+- **Positionnement** : utilisation de `allocate_new_ui` avec rectangles fixes pour un layout pixel-perfect
+
+---
+
 ## 2026-06-11 — Réception du design pack complet (designer)
 
 **Livrable** : `design-pack/Flash_Drum_design_11062026/flash-drum-source/`

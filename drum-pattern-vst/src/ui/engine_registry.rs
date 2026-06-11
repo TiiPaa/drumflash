@@ -1,5 +1,3 @@
-
-
 // ============================================================
 // Engine Registry — moteurs assignables par lane
 // ============================================================
@@ -70,9 +68,7 @@ pub fn schema_for_engine(engine: Engine) -> Vec<EngineGroup> {
             EngineGroup::Velocity,
             EngineGroup::FX,
         ],
-        Engine::MidiOut => vec![
-            EngineGroup::Midi,
-        ],
+        Engine::MidiOut => vec![EngineGroup::Midi],
     }
 }
 
