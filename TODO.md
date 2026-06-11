@@ -182,7 +182,7 @@
   - Phase 1b : Header redesign (fond PANEL, bordure LINE, séparateurs DIVIDER, padding 14px)
   - Phase 1c : Style global sombre (BG, PANEL2, P_HOVER, P_ACTIVE, BLUE via egui::Visuals)
   - Phase 1d : Boutons page 1-4 stylisés + glow LED lecture
-  - **REPRENDRE ICI** [100a] **Mettre à jour `design_system.rs`** avec nouveaux tokens (palette IBM Plex, rayons, gaps, strokes)
+  - Phase 2 reprise : layout fixe 2 colonnes, grille custom, Sound Editor et panneaux bas rapprochés du design pack (builds 20260611-184532, 20260611-194657, 20260611-201611)
   - Assets UI (icônes, couleurs, fonts, layout) produits par Claude Design
   - Remplacer les widgets egui basiques par des widgets custom avec le design system
   - **Complexité : Moyenne-Élevée, 1-2 semaines, P2**
@@ -415,33 +415,38 @@
 ### Phases d'implémentation
 
 #### Phase 1 — Fondations (structure + tokens)
-- [ ] [100a] **Mettre à jour `design_system.rs`** avec nouveaux tokens (palette IBM Plex, rayons, gaps, strokes)
-- [ ] [100b] **Intégrer polices IBM Plex** (Sans + Mono) via `FontDefinitions` egui
+- [x] [100a] **Mettre à jour `design_system.rs`** avec nouveaux tokens (palette IBM Plex, rayons, gaps, strokes)
+- [ ] **REPRENDRE ICI** [100b] **Intégrer polices IBM Plex** (Sans + Mono) via `FontDefinitions` egui
 - [x] [100c] **Créer `theme.rs`** — constants `Color32` et helpers (`blue_glow`, `white_a`)
 - [x] [100d] **Créer `widgets.rs`** — widgets custom coordonnés (Slider, Freq, Select, Switch, ToggleLED, Knob)
 - [x] [100e] **Créer `engine_registry.rs`** — struct `Engine`, `EngineGroup`, `schema_for_engine()`, registre `ENGINES`
 
 #### Phase 2 — Layout général (header + colonnes)
 - [x] [100f] **Header redesign** — Brand + Transport (▶/■/●) + Master/Swing/Groove + Seq source (Internal/Ext MIDI segmented) + toggles LED
-- [ ] [100g] **Layout 2 colonnes** — Gauche (~910px) : séquenceur + page-bar + p-lock-bar + patterns + generator/song | Droite (~568px) : Sound Editor
-- [ ] [100h] **Sound Editor** — En-tête dynamique (nom + Engine selector) + onglets instruments (14) + zone scroll avec sections
+- [x] [100g] **Layout 2 colonnes** — Gauche (~910px) : séquenceur + page-bar + p-lock-bar + patterns + generator/song | Droite (~568px) : Sound Editor
+- [x] [100h] **Sound Editor** — En-tête dynamique (nom + Engine selector) + onglets instruments (14) + zone scroll avec sections
 
 #### Phase 3 — Séquenceur (grille + lanes)
 - [ ] [100i] **Lane modulaire** — Poignée drag, nom cliquable, menu clic-droit (rename, assign engine, remove), tag M/S/T
-- [ ] [100j] **Grille de steps** — 16 colonnes visibles, états p-lock (Sound/Sequencer exclusifs), playhead, fusion
-- [ ] [100k] **Page/Length bar** — Pages 1-4, Follow ON/OFF, Len slider 1-64, presets 16/32/48/64, ×2
+- [x] [100j] **Grille de steps** — 16 colonnes visibles, états p-lock (Sound/Sequencer exclusifs), playhead, fusion
+- [x] [100k] **Page/Length bar** — Pages 1-4, Follow ON/OFF, Len slider 1-64, presets 16/32/48/64, ×2
 - [x] [100l] **P-lock modes** — Toggle segmented Sound/Sequencer, menus contextuels (Volume en premier, undo ↺)
 
 #### Phase 4 — Panneaux bas (patterns + generator/song)
-- [ ] [100m] **Pattern Bank** — Save/Load, slots P1-P8, Clear, Export MIDI, Drag MIDI
-- [ ] [100n] **Generator/Song panel** — Segmented toggle Generator|Song, Generator = type + A/B + Mix/Dens/Var + Random + GENERATE
+- [x] [100m] **Pattern Bank** — Save/Load, slots P1-P8, Clear, Export MIDI, Drag MIDI
+- [x] [100n] **Generator/Song panel** — Segmented toggle Generator|Song, Generator = type + A/B + Mix/Dens/Var + Random + GENERATE
 - [ ] [100o] **Song arranger** — Chaîne de blocs pattern × répétitions, toggle Song Enabled
 
 #### Phase 5 — Polish & validation
 - [ ] [100p] **ADSR visualization** — Inline à droite des sliders ENV (courbes Attack/Decay/Release)
 - [ ] [100q] **Animations** — Hover transitions, step playback glow, toggle LED
 - [ ] [100r] **Tests** — Vérifier que tous les moteurs rendent correctement, pas de régression audio
-- [ ] [100s] **Build + install** — VST3 fonctionnel avec nouveau design
+- [x] [100s] **Build + install** — VST3 fonctionnel avec nouveau design
+
+### Tâches découvertes pendant la reprise UI 2026-06-11
+- [ ] [100t] Nettoyer le code UI legacy devenu inutilisé (`draw_grid`, anciens helpers, warnings de dead code) après stabilisation visuelle.
+- [ ] [100u] Continuer le polish pixel : alignements fins Sound Editor, sliders/combos, pagebar et Generator d'après screenshots Studio One.
+- [ ] [100v] Rendre l'Engine selector fonctionnel et aligné avec le registre de moteurs prévu par le design pack.
 
 ### Notes
 - **Volume** : range -60 dB à +6 dB (actuellement 0..2 linéaire, à convertir)

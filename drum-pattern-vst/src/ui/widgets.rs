@@ -1,5 +1,5 @@
-use nih_plug_egui::egui::{self, Color32, Response, Sense, StrokeKind, Ui, Vec2, Widget};
 use crate::ui::theme::*;
+use nih_plug_egui::egui::{self, Color32, Response, Sense, StrokeKind, Ui, Vec2, Widget};
 
 // ============================================================
 // ToggleSwitch — 34×18 r10
@@ -28,16 +28,17 @@ impl Widget for ToggleSwitch {
         let r = rect.shrink(1.0);
 
         // Fond
-        let bg = if on {
-            blue_glow(64)
-        } else {
-            PANEL2
-        };
+        let bg = if on { blue_glow(64) } else { PANEL2 };
         painter.rect_filled(r, 10.0, bg);
 
         // Bordure
         let stroke_color = if on { BLUE } else { LINE2 };
-        painter.rect_stroke(r, 10.0, egui::Stroke::new(1.0, stroke_color), StrokeKind::Inside);
+        painter.rect_stroke(
+            r,
+            10.0,
+            egui::Stroke::new(1.0, stroke_color),
+            StrokeKind::Inside,
+        );
 
         // Pastille
         let knob_radius = 6.0;
@@ -90,7 +91,12 @@ impl Widget for ToggleLED {
 
         // Bordure
         let stroke_color = if on { BLUE } else { LINE2 };
-        painter.rect_stroke(r, RADIUS_PILL, egui::Stroke::new(1.0, stroke_color), StrokeKind::Inside);
+        painter.rect_stroke(
+            r,
+            RADIUS_PILL,
+            egui::Stroke::new(1.0, stroke_color),
+            StrokeKind::Inside,
+        );
 
         // LED Ø7
         let led_radius = 3.5;
@@ -160,12 +166,13 @@ impl Widget for StyledButton {
         painter.rect_filled(r, RADIUS_CTL, bg);
 
         // Bordure
-        let stroke_color = if self.active || hovered {
-            BLUE
-        } else {
-            LINE2
-        };
-        painter.rect_stroke(r, RADIUS_CTL, egui::Stroke::new(1.0, stroke_color), StrokeKind::Inside);
+        let stroke_color = if self.active || hovered { BLUE } else { LINE2 };
+        painter.rect_stroke(
+            r,
+            RADIUS_CTL,
+            egui::Stroke::new(1.0, stroke_color),
+            StrokeKind::Inside,
+        );
 
         // Texte
         let text_color = if self.active { Color32::WHITE } else { INK2 };
@@ -198,70 +205,56 @@ impl SegmentedControl {
     }
 }
 
-/// Fonction libre qui retourne le nouvel index sélectionné.
+/// Segmented control using real egui buttons (reliable interaction).
+/// Returns the selected index; if unchanged, no click occurred.
 pub fn segmented_control(ui: &mut Ui, options: &[&str], selected: usize) -> (Response, usize) {
     let n = options.len();
     let total_w = 140.0f32;
     let btn_w = total_w / n as f32;
-    let desired_size = Vec2::new(total_w, CTL_HEIGHT);
-    let (rect, _response) = ui.allocate_exact_size(desired_size, Sense::click());
-
-    let painter = ui.painter_at(rect);
     let mut new_selected = selected;
     let mut any_clicked = false;
 
-    for (i, label) in options.iter().enumerate() {
-        let x = rect.left() + i as f32 * btn_w;
-        let btn_rect = egui::Rect::from_min_size(
-            egui::Pos2::new(x, rect.top()),
-            Vec2::new(btn_w, rect.height()),
-        );
-        let is_selected = i == selected;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0; // no gap between segments
 
-        // Fond
-        let bg = if is_selected {
-            if *label == "Sequencer" { SEQPL } else { PL_LINK }
-        } else {
-            PANEL2
-        };
-        painter.rect_filled(btn_rect, 0.0, bg);
+        for (i, label) in options.iter().enumerate() {
+            let is_selected = i == selected;
 
-        // Bordure entre segments
-        if i > 0 {
-            painter.line_segment(
-                [btn_rect.left_top(), btn_rect.left_bottom()],
-                egui::Stroke::new(1.0, LINE2),
-            );
+            let bg = if is_selected {
+                if *label == "Sequencer" {
+                    SEQPL
+                } else {
+                    PL_LINK
+                }
+            } else {
+                PANEL2
+            };
+            let stroke_color = if is_selected {
+                if *label == "Sequencer" {
+                    SEQPL
+                } else {
+                    PL_LINK
+                }
+            } else {
+                LINE2
+            };
+            let text_color = if is_selected { Color32::WHITE } else { INK2 };
+
+            let btn = egui::Button::new(egui::RichText::new(*label).size(10.5).color(text_color))
+                .min_size(Vec2::new(btn_w, CTL_HEIGHT))
+                .fill(bg)
+                .stroke(egui::Stroke::new(1.0, stroke_color))
+                .corner_radius(0.0);
+
+            let response = ui.add(btn);
+            if response.clicked() {
+                new_selected = i;
+                any_clicked = true;
+            }
         }
+    });
 
-        // Texte
-        let text_color = if is_selected { Color32::WHITE } else { INK2 };
-        painter.text(
-            btn_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            *label,
-            egui::FontId::proportional(10.5),
-            text_color,
-        );
+    let response = ui.interact(ui.min_rect(), ui.id(), Sense::click());
 
-        // Interaction par segment
-        let segment_response = ui.interact(btn_rect, ui.id().with(i), Sense::click());
-        if segment_response.clicked() {
-            new_selected = i;
-            any_clicked = true;
-        }
-    }
-
-    // Bordure extérieure
-    painter.rect_stroke(rect, RADIUS_CTL, egui::Stroke::new(1.0, LINE2), StrokeKind::Inside);
-
-    // Construire un Response global
-    let global_response = ui.interact(rect, ui.id(), Sense::click());
-    let response = if any_clicked {
-        global_response // on pourrait enrichir mais suffisant
-    } else {
-        global_response
-    };
-
-    (response, new_selected)
+    (response, if any_clicked { new_selected } else { selected })
 }

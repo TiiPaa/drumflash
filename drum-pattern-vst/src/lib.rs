@@ -66,7 +66,8 @@ impl LaneLengthLocks {
     }
 
     pub fn is_locked(&self, instrument: usize) -> bool {
-        instrument < DrumVoice::COUNT && (self.mask.load(Ordering::Relaxed) & (1u16 << instrument)) != 0
+        instrument < DrumVoice::COUNT
+            && (self.mask.load(Ordering::Relaxed) & (1u16 << instrument)) != 0
     }
 
     pub fn set_locked(&self, instrument: usize, locked: bool) {
