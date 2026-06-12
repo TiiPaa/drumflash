@@ -1,4 +1,4 @@
-use nih_plug_egui::egui::Color32;
+use nih_plug_egui::egui::{Color32, FontFamily, FontId};
 
 // ============================================================
 // Surfaces
@@ -17,6 +17,8 @@ pub const DIVIDER: Color32 = Color32::from_rgb(31, 31, 40);
 // ============================================================
 pub const BLUE: Color32 = Color32::from_rgb(74, 158, 255);
 pub const BLUE_D: Color32 = Color32::from_rgb(47, 111, 208);
+// 50%-alpha blue (premultiplied: 74,158,255 × 0.5) — fusion mid-cell border.
+pub const BLUE_DIM: Color32 = Color32::from_rgba_premultiplied(37, 79, 128, 128);
 pub const GREEN: Color32 = Color32::from_rgb(74, 222, 128);
 pub const RED: Color32 = Color32::from_rgb(248, 113, 113);
 pub const AMBER: Color32 = Color32::from_rgb(251, 191, 36);
@@ -73,3 +75,43 @@ pub const HEADER_H: f32 = 44.0;
 pub const LANE_H: f32 = 24.0;
 pub const STEP_H: f32 = 21.0;
 pub const TAG_SIZE: f32 = 17.0;
+
+// ============================================================
+// Font helpers — weighted IBM Plex families (registered in install_egui_fonts).
+// Convention: "chiffre = mono, mot = sans" → mono_* for numbers/values/codes.
+// ============================================================
+#[allow(dead_code)]
+#[inline]
+pub fn f_sans(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Proportional)
+}
+#[allow(dead_code)]
+#[inline]
+pub fn f_sans_med(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name("sans_med".into()))
+}
+#[allow(dead_code)]
+#[inline]
+pub fn f_sans_sb(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name("sans_sb".into()))
+}
+#[allow(dead_code)]
+#[inline]
+pub fn f_sans_bold(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name("sans_bold".into()))
+}
+#[allow(dead_code)]
+#[inline]
+pub fn f_mono(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Monospace)
+}
+#[allow(dead_code)]
+#[inline]
+pub fn f_mono_med(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name("mono_med".into()))
+}
+#[allow(dead_code)]
+#[inline]
+pub fn f_mono_sb(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name("mono_sb".into()))
+}
