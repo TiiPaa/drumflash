@@ -1,5 +1,203 @@
 ﻿# Changelog
 
+## 2026-06-12 — Redesign UI: playhead indépendante du Push (build 20260612-210534)
+
+**Build:** `20260612-210534`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- La playhead visuelle de la grille utilise désormais `current_step` global non décalé.
+- Les valeurs `Push/Pull` continuent de décaler les déclenchements audio, mais ne déplacent plus l'anneau de lecture dans l'UI.
+- Les `current_steps` par piste restent produits côté moteur pour la logique interne, mais ne pilotent plus l'affichage de la tête de lecture.
+
+### Point d'attention
+- Retour utilisateur fin de session : le comportement Push/Pull est devenu incorrect (décalage énorme, difficile à annuler). Reprise prioritaire consignée dans `TODO.md` sous `[101]`.
+
+---
+
+## 2026-06-12 — Redesign UI: double-clic reset Hum/Push (build 20260612-205837)
+
+**Build:** `20260612-205837`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK après fermeture de Studio One
+
+### Changements
+- Double-clic sur les mini sliders `Hum` et `Push` : reset à la valeur par défaut du paramètre (`0%` / `0 ms`).
+- Le tooltip custom affiche immédiatement la valeur resetée après double-clic.
+
+---
+
+## 2026-06-12 — Redesign UI: tooltip custom Hum/Push (build 20260612-205255)
+
+**Build:** `20260612-205255`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Remplacement de `Response::on_hover_text()` par une bulle custom `Foreground` pour les mini sliders `Hum` et `Push`.
+- La bulle est ancrée au-dessus du slider et reste visible au hover comme pendant le drag.
+- Valeurs affichées : `Humanize: xx%` et `Push/Pull: +x ms`.
+
+---
+
+## 2026-06-12 — Redesign UI: tooltip Hum/Push corrigé (build 20260612-174601)
+
+**Build:** `20260612-174601`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Correction du tooltip des mini sliders `Hum` / `Push` : suppression du tooltip vide qui masquait la valeur.
+- `Push/Pull` affiche désormais explicitement l'unité `ms` dans le hover.
+
+---
+
+## 2026-06-12 — Redesign UI: valeurs Hum/Push en tooltip (build 20260612-173557)
+
+**Build:** `20260612-173557`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK après fermeture de Studio One
+
+### Changements
+- Suppression du texte incrusté dans les mini sliders `Hum` et `Push`.
+- Le hover affiche maintenant la valeur utile : `Humanize: xx%` ou `Push/Pull: +x`.
+- Le tooltip générique seul (`Humanize`, `Push/Pull`) a été remplacé par la valeur formatée.
+
+---
+
+## 2026-06-12 — Redesign UI: Hum/Push + switch p-lock (build 20260612-164416)
+
+**Build:** `20260612-164416`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Les colonnes `Hum` et `Push` affichent à nouveau leurs valeurs directement dans les mini sliders (`%` pour Hum, valeur signée pour Push).
+- Sliders `Hum` et `Push` harmonisés sur la même couleur bleue.
+- Remplacement du switch `P-Lock Mode` par un contrôle custom fiable et coordonné : `Sound` orange / `Sequencer` violet, hauteur 26 px, rayon 6, bordure `LINE2`.
+- Suppression de helpers UI devenus morts après le recâblage (`segmented_control`, ancien mini slider param sans valeur).
+
+---
+
+## 2026-06-12 — Redesign UI: sliders constants + Note/Freq (build 20260612-162103)
+
+**Build:** `20260612-162103`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Largeur de colonne paramètres fixée à `340 px` pour toutes les sections du Sound Editor : les sliders gardent désormais la même longueur avec ou sans graphe ENV/Filter.
+- Extraction du rendu de piste slider pour partager exactement les mêmes dimensions entre les rangées.
+- Remplacement de la checkbox `Notes` des bass drums par un mini sélecteur segmenté `Hz | Note` intégré à la rangée Frequency.
+- Mode Note : contrôles `-` / note mono / `+` alignés dans la rangée, sans titre ni checkbox parasite.
+
+---
+
+## 2026-06-12 — Redesign UI: labels ADSR dans le graphe (build 20260612-151646)
+
+**Build:** `20260612-151646`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Réintroduction des labels `A`, `D`, `S`, `R` directement dans le cadre du graphe ADSR.
+- Les labels restent discrets en IBM Plex Mono Medium gris clair et sont clampés pour ne pas sortir du graphe.
+- La légende externe sous les contrôles d'enveloppe reste supprimée.
+
+---
+
+## 2026-06-12 — Redesign UI: enveloppe ADSR sans légendes (build 20260612-150813)
+
+**Build:** `20260612-150813`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK après fermeture de Studio One
+
+### Changements
+- Suppression des légendes A/H/D/R affichées sous les paramètres d'enveloppe dans le Sound Editor.
+- Refonte du graphe d'amplitude en lecture ADSR simplifiée conforme à la maquette : attaque ambre, decay bleu, release violet.
+- Ajout des 5 lignes verticales de grille `white_a(13)` dans le cadre du graphe.
+- Suppression des lettres A/D/R/H dans le canvas : le graphe ne garde que les courbes et la grille.
+
+---
+
+## 2026-06-12 — Redesign UI: Select stylé maquette (build 20260612-145130)
+
+**Build:** `20260612-145130`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Remplacement des `ComboBox` egui restants par un widget Select custom aligné sur `.selbox` : hauteur 26 px, fond `PANEL2`, bordure `LINE2`, hover bleu, texte courant en IBM Plex Mono Medium.
+- Application aux selects Sound Editor : Saturation Type, Noise Type, Click Type et Algorithm.
+- Application aux selects header/bas de page : Groove, Generator type, Style A et Style B.
+- Menu déroulant custom : fond `P_ACTIVE`, bordure `LINE2`, options en IBM Plex Sans Medium, hover bleu + texte blanc.
+
+---
+
+## 2026-06-12 — Redesign UI: Sound Editor réorganisé + finitions (build 20260612-142330)
+
+**Build:** `20260612-142330`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements (suite au retour : sliders trop longs, intitulés non alignés, graphes serrés)
+- **Colonne de paramètres à largeur contrainte** par section : les sliders flexent dans cette colonne (uniformes, plus courts) au lieu de s'étirer sur toute la largeur.
+- **Graphes d'enveloppe** : la colonne de params réserve désormais ~196 px + un gap de 16 px pour le graphe ENV/Filter → il n'est plus serré contre la droite ; cadre redessiné (fond #0c0c11, rayon 7, ~104 px de haut, remplit la largeur dispo).
+- **Intitulés alignés** : tous les labels sur la même colonne de 138 px (Algorithm et Mix utilisaient avant un label nu non aligné).
+- **Titres de section** : noms complets (Oscillator / Envelope / Filter / Saturation / Output) en sans 600 INK3 au lieu d'abréviations mono MAJUSCULES.
+- **Mix** : ToggleSwitch aligné à droite (au lieu d'une checkbox egui brute).
+- **Intitulés alignés à gauche** : colonne label 138 px rendue en `left_to_right` (avant centrés/flottants via `add_sized`).
+- **Slider Volume** ramené à la largeur des sections (340 px) — fin de l'incohérence.
+- **Sections vides masquées** : une famille sans paramètre pour l'instrument (ex. Saturation sur l'OpenHiHat) n'affiche plus de titre orphelin.
+
+---
+
+## 2026-06-12 — Redesign UI: Sound Editor (sliders / switches / en-tête) (build 20260612-114809)
+
+**Build:** `20260612-114809`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Slider rows de l'éditeur** : piste fine à largeur **fixe (190 px)** sans bordure (aplat PANEL2 + fill bleu + poignée au survol), valeur mono à droite ; label sans 500. (Une piste *flex* a été abandonnée : elle consommait l'espace horizontal réservé au graphe d'enveloppe inline → sliders trop longs + graphes disparus.)
+- **Padding du Sound Editor** : contenu du scroll encadré (14 px gauche/droite, 6 px haut) — les labels ne touchent plus le bord gauche.
+- **Switch rows** : le ToggleSwitch est poussé au bord droit (space-between) ; label sans 500.
+- **En-tête éditeur** : titre « Sound Editor » en blanc/bold ; nom d'instrument en mono ; bouton « Engine ▾ » inerte retiré (réservé à la future phase modulaire).
+
+### À suivre (éditeur)
+- Modèle de section (filet DIVIDER au lieu de `separator`, espacements), combos → Select stylé, ADSR inline réécrit (modèle 3 segments), toggle Notes en pilule.
+
+---
+
+## 2026-06-12 — Redesign UI: grille séquenceur + page-bar (build 20260612-104952)
+
+**Build:** `20260612-104952`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Grille séquenceur** : cellules pleines vives + bordure nette par état (hit bleu, link orange, snapshot rouge, seq violet) — pas de glow externe (il bavait sur les pas adjacents, egui n'a pas de flou) ; playhead = anneau blanc inset dessiné par-dessus (conserve la bordure d'état) ; tags M/S/T avec texte lisible (T blanc sur bleu, M sur ambre, S sur vert) ; noms de lane sans bordure au repos (contour bleu si sélectionné), police mono 600 ; poignée de drag en matrice de points 2×3 ; en-têtes de colonnes M/S/T ; bordure des cellules fusion-mid en `BLUE_DIM` (50% bleu).
+- **Page/Length bar** : slider Len en piste fine custom (`header_param_slider` bare-track) ; bouton Follow ON en bleu plein + texte blanc ; LED rouge sous la page en lecture, z-order corrigé (halo puis point) ; lecture « {n} steps » en deux runs (nombre mono 12 + unité sans 9.5).
+- **`header_param_slider`** étendu (label/valeur optionnels) et réutilisé pour Master/Swing/Len.
+
+---
+
+## 2026-06-12 — Redesign UI: nettoyage migration + fondations design system (build 20260612-102825)
+
+**Build:** `20260612-102825`
+**Validation:** `cargo check` OK, `cargo test --no-run` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Nettoyage migration** : suppression de ~1300 lignes de code mort (anciens `draw_grid`, `draw_top_bar`, `draw_song_bar`, `draw_generator_panel`, helpers volume-dB, `bool_checkbox`, `draw_bool_toggle`) + suppression des modules morts `src/ui/schema.rs` et `src/ui/engine_registry.rs`. Un seul chemin de rendu (`*_v2`) reste actif. Helpers du menu page Copy/Paste/Clear conservés sous `#[allow(dead_code)]` pour recâblage ultérieur.
+- **Polices multi-graisses** : ajout des faces IBM Plex Sans Medium/SemiBold/Bold + Mono Medium/SemiBold dans `assets/fonts/`. `install_egui_fonts` enregistre des familles nommées par graisse (`sans_med/sb/bold`, `mono_med/sb`) → fin du faux-gras `.strong()`.
+- **Visuals globales** : coins r6, bordures hairline (LINE/LINE2), hover bleu, sans expansion sur les widgets egui par défaut.
+- **Header refait à la maquette** : transport ▶■● et toggle Song retirés ; sliders Master/Swing en pilule fine (fill bleu, poignée au survol, valeur mono à droite) ; Groove ; segmented Seq Internal/Ext MIDI avec LED ; Choke/Auto-Edit en pilules LED ; séparateurs 1px LINE.
+
+### À suivre
+- Propagation du langage visuel aux zones restantes : grille séquenceur, éditeur, page-bar, menus p-lock (284px), patterns/generator.
+
+---
+
+## 2026-06-12 — Redesign UI IBM Plex fonts (build 20260612-090421)
+
+**Build:** `20260612-090421`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Ajout des assets `IBMPlexSans-Regular.ttf` et `IBMPlexMono-Regular.ttf` dans `drum-pattern-vst/assets/fonts/`.
+- Chargement des polices via `egui::FontDefinitions` au demarrage de l'editeur.
+- IBM Plex Sans devient la police proportionnelle prioritaire et IBM Plex Mono la police monospace prioritaire.
+
+---
+
 ## 2026-06-11 — Redesign UI Sound Editor controls (build 20260611-201611)
 
 **Build:** `20260611-201611`
