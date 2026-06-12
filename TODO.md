@@ -391,6 +391,12 @@
 
 ## Bugs a corriger (Actifs)
 
+- [ ] **REPRENDRE ICI** [101] **Regression Push/Pull apres correction playhead** (P1, Sequencer/UI)
+  - Constat utilisateur fin de session 2026-06-12 : avec du Push, le decalage devient enorme et impossible a annuler correctement.
+  - Dernier changement suspect : build `20260612-210534`, UI playhead decouplee de `current_steps` et basee sur `current_step` global.
+  - A verifier en priorité : interaction entre `Sequencer::current_step()`, `current_steps()`, `sync_to_host()`, `TrackState::step_counter` et `push_pull_ms`.
+  - Objectif : garder un timing audio Push/Pull correct, conserver une playhead visuelle stable, et assurer que double-clic reset Push remet bien le comportement neutre.
+
 - [ ] [91] **Sortir automatiquement du mode edit quand on selectionne en dehors de la cellule** (P1, UI/UX)
   - Actuellement, le mode edit reste actif meme si on clique ailleurs
   - Comportement attendu : deselection de la cellule = sortie du mode edit
@@ -416,7 +422,7 @@
 
 #### Phase 1 — Fondations (structure + tokens)
 - [x] [100a] **Mettre à jour `design_system.rs`** avec nouveaux tokens (palette IBM Plex, rayons, gaps, strokes)
-- [ ] **REPRENDRE ICI** [100b] **Intégrer polices IBM Plex** (Sans + Mono) via `FontDefinitions` egui
+- [x] [100b] **Intégrer polices IBM Plex** (Sans + Mono) via `FontDefinitions` egui (build 20260612-090421)
 - [x] [100c] **Créer `theme.rs`** — constants `Color32` et helpers (`blue_glow`, `white_a`)
 - [x] [100d] **Créer `widgets.rs`** — widgets custom coordonnés (Slider, Freq, Select, Switch, ToggleLED, Knob)
 - [x] [100e] **Créer `engine_registry.rs`** — struct `Engine`, `EngineGroup`, `schema_for_engine()`, registre `ENGINES`
