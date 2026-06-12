@@ -46,6 +46,22 @@ Use the web files mainly to:
 - Synthesis: `drum-pattern-vst/src/synthesis/`
 - UI work: `drum-pattern-vst/src/ui.rs`
 
+## UI Redesign (active) — read before editing `src/ui/`
+
+A visual reskin of the existing **fixed 13-voice** plugin to the designer mockup is in progress.
+**Read `docs/design/UI-REDESIGN-HANDOFF.md` first** — scope, design-fidelity rules, remaining worklist, and pitfalls already hit. Non-negotiables:
+
+- **Source of truth = the rendered mockup** `design-pack/Flash_Drum_design_11062026/flash-drum-source/` (`index.html` + `assets/fd-base.css` + `assets/fd-core.js`). Where `DESIGN-SYSTEM.md`/`LAYOUT.md` disagree with the rendered CSS/JS, the mockup wins.
+- **Scope = visual only** on the 13 fixed voices. The modular lanes / Sample / MIDI-Out / song-arranger architecture is a **later phase** — don't start it as part of "apply the design".
+- **Transport (play/stop/rec) was removed from the header on purpose** (a VST follows host transport); `src/ui/schema.rs` + `src/ui/engine_registry.rs` were deleted as dead stubs. Don't reintroduce them.
+- Use `theme.rs` tokens + the font-weight helpers (`f_sans_med/_sb/_bold`, `f_mono_med/_sb`) — never faux-bold via `.strong()`.
+
+### Pitfalls already hit (do not repeat)
+- **egui has no blur**: don't fake `box-shadow`/glow with an expanded translucent rect — on adjacent step cells the hard halos overlap and smear. Use flat fills + crisp 1px borders.
+- **Flex widths eat inline neighbours**: a slider track sized from `ui.available_width()` consumed the space reserved for the inline ADSR graph (graph vanished, sliders stretched). Constrain a section's params-column width (`ui.set_max_width`) when it has an inline graph; constrain standalone rows (Volume) to the same width.
+- **`add_sized(W, Label)` centers** the label — use a left-to-right layout (`editor_label`) for left-aligned form labels.
+- **Skip empty sections** — no orphan section title when an instrument lacks that family's params.
+
 ## Architecture — read these before editing
 
 The plugin is a single `nih-plug` VST3 with an internal step sequencer, modular drum synthesis, and an `egui` UI. Layers:
@@ -141,7 +157,9 @@ cargo run --bin test_standalone    # headless audio engine harness
 
 There is no lint config beyond `cargo`’s default warnings.
 
-**Studio One file lock:** the DAW must be fully closed during install because it locks the VST3 DLL.
+**Studio One file lock:** the DAW must be fully closed during install because it locks the VST3 DLL (otherwise the copy to `Program Files` fails with *Access denied*).
+
+**Run `build.ps1 -Install` PLAINLY in the foreground.** Do not pipe or redirect it: in PowerShell 5.1, `2>&1` / `2>$null` make PS wrap cargo's stderr as a `NativeCommandError` and abort the run; a *backgrounded* `... 2>$null` once spawned two contending `cargo` processes deadlocked on the build-directory lock (0% CPU for ~30 min). If a build looks stuck, check `Get-Process cargo,rustc` (CPU/StartTime), kill them, and re-run plainly. Pass an absolute `--manifest-path` to `cargo` (the working dir can drift, e.g. after a `cd`).
 
 ## Agent Workflow Rule
 
