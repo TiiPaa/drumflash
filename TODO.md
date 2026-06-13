@@ -391,13 +391,13 @@
 
 ## Bugs a corriger (Actifs)
 
-- [x] **REPRENDRE ICI** [101] **Regression Push/Pull apres correction playhead** (P1, Sequencer/UI)
+- [x] [101] **Regression Push/Pull apres correction playhead** (P1, Sequencer/UI)
   - Constat utilisateur fin de session 2026-06-12 : avec du Push, le decalage devient enorme et impossible a annuler correctement.
   - Dernier changement suspect : build `20260612-210534`, UI playhead decouplee de `current_steps` et basee sur `current_step` global.
-  - Correctif (build `20260613-104101`) :
+  - Correctif (build `20260613-105028`) :
     - `sync_to_host` recalcule `step_counter` depuis la timeline shifted (position hote - push/pull) au lieu de la timeline master.
-    - UI grille : playhead cellulaire repasse sur `current_steps[inst]` ; en-tetes/page-bar restent sur `current_step` global.
-  - Objectif atteint : timing audio Push/Pull correct, playhead visuelle stable par piste, reset double-clic Push = retour neutre.
+    - UI grille : playhead alignee sur `current_step` global ; Push/Pull ne deplace plus l'anneau de lecture, seul le timing audio est decale.
+  - Objectif atteint : timing audio Push/Pull correct et annulable, playhead visuelle stable quand on module Push.
 
 - [ ] [91] **Sortir automatiquement du mode edit quand on selectionne en dehors de la cellule** (P1, UI/UX)
   - Actuellement, le mode edit reste actif meme si on clique ailleurs
