@@ -80,7 +80,7 @@
   Algorithm, Groove, Generator type/A/B.
 - **Graphe ADSR** passé au modèle maquette (3 segments colorés, grille, labels A/D/S/R dans le cadre).
 - **Grille** : tooltips custom Hum/Push, reset double-clic Hum/Push, switch P-Lock Mode custom.
-- **Playhead Push/Pull** : playhead cellulaire alignée sur `current_steps[inst]` (timing décalé par piste) ; en-têtes/page-bar sur `current_step` global.
+- **Playhead Push/Pull** : playhead alignée sur `current_step` global. Push/Pull décale le timing audio, pas la grille visuelle.
 
 ## 4. Reste à faire (par priorité)
 
