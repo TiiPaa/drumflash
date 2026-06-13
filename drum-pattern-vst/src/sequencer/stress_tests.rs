@@ -225,10 +225,14 @@ pub mod stress_tests {
     }
 
     /// Test de synchronisation avec décalage de piste (push/pull)
-    /// Vérifie que les décalages sont appliqués correctement
+    /// Vérifie que les décalages sont appliqués correctement et que le nombre
+    /// de déclenchements reste stable.
     #[test]
     fn test_track_push_pull_stability() {
-        let shared_pattern = SharedPattern::new(&Pattern::rock_pattern());
+        let shared_pattern = SharedPattern::new(&Pattern::empty());
+        for step in 0..16 {
+            shared_pattern.set_step_mask(step, 0b0000_0000_0001); // kick on every step
+        }
         let mut seq = Sequencer::new(shared_pattern);
         let sample_rate = 44100.0;
         let bpm = 120.0;
@@ -239,14 +243,13 @@ pub mod stress_tests {
         let push_pull_values = vec![-50.0, -25.0, 0.0, 25.0, 50.0]; // ms
 
         for &push_pull in &push_pull_values {
+            seq.tracks[0].push_pull_ms = push_pull;
             let mut triggers_with_push = 0;
             let total_samples = (2.0 * sample_rate) as usize; // 2 secondes par test
 
             for _ in 0..total_samples {
-                // Simuler l'effet du push/pull en ajustant le temps
-                let adjusted_time = push_pull / 1000.0;
                 let triggers =
-                    seq.process_sample(bpm, sample_rate, adjusted_time, GrooveType::Straight);
+                    seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
                 if triggers.iter().any(|trigger| trigger.should_trigger) {
                     triggers_with_push += 1;
                 }

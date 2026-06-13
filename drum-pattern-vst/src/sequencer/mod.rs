@@ -281,15 +281,19 @@ impl Sequencer {
     pub fn sync_to_host(&mut self, position_beats: f64, bpm: f32, _sample_rate: f32) {
         let master_beat_length = self.master_length as f64 * 0.25;
         self.beat_position = position_beats.rem_euclid(master_beat_length);
-        // Reconstruct total master steps elapsed so polyrhythms keep their phase.
-        let total_master_steps = (position_beats * 4.0) as usize;
         for track in self.tracks.iter_mut() {
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
             let shifted_beat =
                 (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
             let shifted_master = groove::beat_to_step(shifted_beat, self.swing, self.groove_type);
             track.previous_shifted_master = shifted_master;
-            track.step_counter = total_master_steps;
+
+            // Reconstruct the number of shifted step boundaries crossed so far.
+            // Using the shifted timeline (master position minus push/pull offset)
+            // keeps each track's phase correct after a seek, instead of snapping
+            // every track to the master step count.
+            let shifted_steps = ((position_beats - push_pull_beats) / 0.25).floor() as i64;
+            track.step_counter = shifted_steps as usize;
             track.previous_step = track.step_counter % track.track_length.max(1);
         }
     }
@@ -639,6 +643,101 @@ mod tests {
             step1_delayed,
             step1_straight
         );
+    }
+
+    #[test]
+    fn test_push_pull_sync_to_host_preserves_phase() {
+        // Kick on every step, with +30 ms push/pull.
+        // Verify that after a sync_to_host the push/pull track keeps a stable
+        // ~30 ms offset relative to a straight track, and that triggers stay
+        // regular (no skipped or doubled steps).
+        let shared_pattern = SharedPattern::new(&Pattern::empty());
+        for step in 0..16 {
+            shared_pattern.set_step_mask(step, 0b0000_0000_0001);
+        }
+
+        let mut seq = Sequencer::new(shared_pattern.clone());
+        seq.tracks[0].push_pull_ms = 30.0;
+        seq.play();
+
+        let mut straight = Sequencer::new(shared_pattern);
+        straight.play();
+
+        let sample_rate = 44100.0;
+        let bpm = 120.0;
+        let samples_per_step = (60.0 / bpm / 4.0 * sample_rate) as usize;
+
+        // Run 2 bars, then sync to beat 2.0 in the third bar, then run 2 more bars.
+        for _ in 0..(samples_per_step * 32) {
+            seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
+            straight.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
+        }
+        seq.sync_to_host(2.0, bpm, sample_rate);
+        straight.sync_to_host(2.0, bpm, sample_rate);
+
+        let mut delayed_samples = Vec::new();
+        let mut straight_samples = Vec::new();
+        for sample_idx in 0..(samples_per_step * 32) {
+            let t1 = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
+            let t2 = straight.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
+            if t1[0].should_trigger {
+                delayed_samples.push(sample_idx);
+            }
+            if t2[0].should_trigger {
+                straight_samples.push(sample_idx);
+            }
+        }
+
+        // Roughly the same number of triggers after the sync (±1 because the
+        // sync can land on either side of a step boundary).
+        assert!(
+            delayed_samples.len().abs_diff(straight_samples.len()) <= 1,
+            "Push/pull and straight should produce roughly the same number of triggers after sync ({} vs {})",
+            delayed_samples.len(),
+            straight_samples.len()
+        );
+        assert!(
+            straight_samples.len() >= 30 && straight_samples.len() <= 34,
+            "Expected ~32 triggers after sync, got {}",
+            straight_samples.len()
+        );
+
+        // Intervals between consecutive triggers must stay regular (one step
+        // apart). Allow a small tolerance for the first interval after sync.
+        for i in 1..delayed_samples.len() {
+            let interval = delayed_samples[i] - delayed_samples[i - 1];
+            assert!(
+                interval >= samples_per_step - 10 && interval <= samples_per_step + 10,
+                "Irregular push/pull interval at trigger {}: {} samples (expected ~{})",
+                i,
+                interval,
+                samples_per_step
+            );
+        }
+
+        // Average offset to the nearest straight trigger should be ~30 ms.
+        let expected_delay = (0.030 * sample_rate as f64) as usize;
+        let mut total_delay = 0_usize;
+        let mut count = 0_usize;
+        for &d in &delayed_samples {
+            // Find the nearest straight trigger.
+            let nearest = straight_samples
+                .iter()
+                .map(|&s| s.abs_diff(d))
+                .min()
+                .unwrap_or(0);
+            total_delay += nearest;
+            count += 1;
+        }
+        if count > 0 {
+            let avg_delay = total_delay / count;
+            assert!(
+                avg_delay >= expected_delay - 100 && avg_delay <= expected_delay + 100,
+                "Average delay mismatch: expected ~{}, got {} (expected_ms=30)",
+                expected_delay,
+                avg_delay
+            );
+        }
     }
 
     #[test]
