@@ -1,5 +1,39 @@
 ﻿# Changelog
 
+## 2026-06-13 — Redesign UI: panneau Generator en deux lignes (build 20260613-210831)
+
+**Build:** `20260613-210831`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK après fermeture de Studio One
+
+### Changements
+- Réécriture propre du layout du panneau Generator en deux lignes fixes.
+  - Ligne 1 : `Generator` / `Type` / `A` / `B` + sliders `Mix` / `Dens` / `Var` sur une seule ligne horizontale.
+  - Ligne 2 : bouton `GENERATE` déplacé en dessous, aligné à droite.
+  - Espacements et largeurs de combos/sliders constants via constantes locales.
+
+## 2026-06-13 — Redesign UI: alignement panneau Generator v2 (build 20260613-203430)
+
+**Build:** `20260613-203430`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK après fermeture de Studio One
+
+### Changements
+- Correction du layout panneau Generator après screenshot utilisateur.
+  - Suppression du sous-layout `right_to_left` qui compressait le bouton `GENERATE`.
+  - Le bouton `GENERATE` est poussé à droite via `ui.add_space()` calculé dans le `horizontal` parent.
+  - Le bloc de sliders (morph A/B + Mix/Dens/Var) est centré dans l'espace restant.
+  - Largeur des combos A/B harmonisée à 92 px.
+
+## 2026-06-13 — Redesign UI: alignement panneau Generator (build 20260613-193615)
+
+**Build:** `20260613-193615`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK après fermeture de Studio One
+
+### Changements
+- Réalignement des sliders `Mix`, `Dens`, `Var` et du bouton `GENERATE` dans le panneau Generator.
+  - Le bloc de paramètres est désormais centré dans l'espace disponible entre les combos A/B et le bouton.
+  - Le bouton `GENERATE` est ancré à droite et sa largeur passe à 96 px pour matcher la maquette.
+  - Espacements harmonisés via des constantes locales.
+
 ## 2026-06-13 — Correction régression Push/Pull (build 20260613-105028)
 
 **Build:** `20260613-105028`
