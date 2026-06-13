@@ -19,6 +19,8 @@ pub const BLUE: Color32 = Color32::from_rgb(74, 158, 255);
 pub const BLUE_D: Color32 = Color32::from_rgb(47, 111, 208);
 // 50%-alpha blue (premultiplied: 74,158,255 × 0.5) — fusion mid-cell border.
 pub const BLUE_DIM: Color32 = Color32::from_rgba_premultiplied(37, 79, 128, 128);
+// 25%-alpha blue glow fill for active toggles (matches --blue-glow in design pack).
+pub const BLUE_GLOW: Color32 = Color32::from_rgba_premultiplied(19, 40, 64, 255);
 pub const GREEN: Color32 = Color32::from_rgb(74, 222, 128);
 pub const RED: Color32 = Color32::from_rgb(248, 113, 113);
 pub const AMBER: Color32 = Color32::from_rgb(251, 191, 36);
@@ -74,7 +76,7 @@ pub const CTL_HEIGHT: f32 = 26.0;
 pub const HEADER_H: f32 = 44.0;
 pub const LANE_H: f32 = 24.0;
 pub const STEP_H: f32 = 21.0;
-pub const TAG_SIZE: f32 = 17.0;
+pub const TAG_SIZE: f32 = 21.0;
 
 // ============================================================
 // Font helpers — weighted IBM Plex families (registered in install_egui_fonts).

@@ -455,6 +455,7 @@
 - [ ] [100t] Nettoyer le code UI legacy devenu inutilisé (`draw_grid`, anciens helpers, warnings de dead code) après stabilisation visuelle.
 - [ ] [100u] Continuer le polish pixel : alignements fins Sound Editor, sliders/combos, pagebar et Generator d'après screenshots Studio One.
 - [ ] [100v] Rendre l'Engine selector fonctionnel et aligné avec le registre de moteurs prévu par le design pack.
+- [ ] **[100w] Bouton GENERATE invisible après refonte en 2 lignes** — REPRENDRE ICI. Le layout vertical du panneau Generator coupe le bouton ; probablement hauteur de panel insuffisante ou `ui.allocate` qui ne réserve pas la place. Vérifier dans `draw_generator_panel_content` et le panneau parent.
 
 ### Notes
 - **Volume** : range -60 dB à +6 dB (actuellement 0..2 linéaire, à convertir)
