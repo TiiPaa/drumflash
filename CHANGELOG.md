@@ -1,5 +1,25 @@
 ﻿# Changelog
 
+## 2026-06-13 — Correction régression Push/Pull (build 20260613-104101)
+
+**Build:** `20260613-104101`
+**Validation:** `cargo test` OK (91 lib + 62 standalone), `cargo check --release` OK, `build.ps1 -Install` OK
+
+### Changements
+- `Sequencer::sync_to_host` recalcule `step_counter` depuis la timeline *shifted* (position hôte moins le décalage Push/Pull) au lieu de la timeline master.
+  - Évite le décalage de phase qui apparaissait après un seek/loop quand une piste avait du Push/Pull.
+  - Garde la polyrythmie et les conditions de step stables après resync.
+- UI grille : la playhead par cellule repasse sur `current_steps[inst]` (step de piste décalé par Push/Pull) tandis que les en-têtes de colonnes et la page-bar restent sur `current_step` global.
+  - L'anneau de lecture suit à nouveau le timing audio de chaque piste.
+- Tests ajoutés/corrigés :
+  - `test_push_pull_sync_to_host_preserves_phase` valide la stabilité après `sync_to_host` avec +30 ms.
+  - `test_track_push_pull_stability` corrigé : applique réellement `push_pull_ms` au lieu de passer la valeur comme `swing`.
+
+### Point d'attention résolu
+- `[101]` Régression Push/Pull : le décalage ne doit plus devenir énorme après lecture/seek ; le reset double-clic à `0 ms` ramène bien à un comportement neutre.
+
+---
+
 ## 2026-06-12 — Redesign UI: playhead indépendante du Push (build 20260612-210534)
 
 **Build:** `20260612-210534`

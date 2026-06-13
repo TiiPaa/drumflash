@@ -80,11 +80,10 @@
   Algorithm, Groove, Generator type/A/B.
 - **Graphe ADSR** passé au modèle maquette (3 segments colorés, grille, labels A/D/S/R dans le cadre).
 - **Grille** : tooltips custom Hum/Push, reset double-clic Hum/Push, switch P-Lock Mode custom.
-- **Attention** : dernière correction playhead/Push est suspecte (voir priorité 0 ci-dessous).
+- **Playhead Push/Pull** : playhead cellulaire alignée sur `current_steps[inst]` (timing décalé par piste) ; en-têtes/page-bar sur `current_step` global.
 
 ## 4. Reste à faire (par priorité)
 
-0. **URGENT — régression Push/Pull (build 20260612-210534)** : après la tentative de découpler la playhead visuelle du `Push/Pull`, le retour utilisateur indique un décalage énorme et impossible à annuler correctement. Reprendre par `TODO.md` `[101]`. Vérifier l'interaction `Sequencer::current_step()` / `current_steps()` / `sync_to_host()` / `TrackState::step_counter` / `push_pull_ms`. Objectif : audio Push/Pull correct, playhead visuelle stable, reset double-clic de Push = retour neutre fiable.
 1. **Panneau bas Patterns / Generator** (slots P1-8, chips Export/Drag MIDI, segmented Generator|Song).
 2. **Menus clic-droit p-lock** → style `.plk` (largeur 284, P_ACTIVE, r9, ombre), Volume en tête, ↺ undo
     par rangée, toggle de mode Sound=orange / Sequencer=violet.

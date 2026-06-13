@@ -1306,7 +1306,7 @@ fn draw_grid_v2(
     pattern: &SharedPattern,
     voice_test_triggers: &[AtomicBool; DrumVoice::COUNT],
     current_step: &AtomicU32,
-    _current_steps: &[AtomicU32; DrumVoice::COUNT],
+    current_steps: &[AtomicU32; DrumVoice::COUNT],
     sound_settings: &SoundSettingsState,
     plock: &PlockState,
     state: &mut EditorUIState,
@@ -1476,9 +1476,10 @@ fn draw_grid_v2(
                             let is_fusion_mid = fusion_group.is_some() && !is_fusion_start;
 
                             let active = !beyond_len && pattern.is_active(source_step, inst);
+                            let track_step = current_steps[inst].load(Ordering::Relaxed) as usize;
                             let is_current = fusion_group
-                                .map(|group| group.contains(play_step))
-                                .unwrap_or(play_step == global_step);
+                                .map(|group| group.contains(track_step))
+                                .unwrap_or(track_step == global_step);
                             let has_sound_plock =
                                 !beyond_len && plock.masks.is_active(inst, source_step);
                             let field_mask = if has_sound_plock {
