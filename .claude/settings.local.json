@@ -25,7 +25,8 @@
       "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\" | Select-Object -Last 4; \"EXIT=$LASTEXITCODE\")",
       "PowerShell(& \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\install.ps1\" | Select-Object -Last 5; \"EXIT=$LASTEXITCODE\")",
       "Bash(wc -l src/lib.rs src/ui.rs src/sequencer/mod.rs src/synthesis/mod.rs src/instrument_registry.rs)",
-      "Bash(ls -d src/*/)"
+      "Bash(ls -d src/*/)",
+      "PowerShell(git *)"
     ]
   }
 }

@@ -446,16 +446,22 @@
 - [ ] [100o] **Song arranger** — Chaîne de blocs pattern × répétitions, toggle Song Enabled
 
 #### Phase 5 — Polish & validation
-- [ ] [100p] **ADSR visualization** — Inline à droite des sliders ENV (courbes Attack/Decay/Release)
+- [x] [100p] **ADSR visualization** — graphe inline réécrit (modèle 3 segments colorés A/D/R, cadre #0c0c11, espacé)
 - [ ] [100q] **Animations** — Hover transitions, step playback glow, toggle LED
 - [ ] [100r] **Tests** — Vérifier que tous les moteurs rendent correctement, pas de régression audio
 - [x] [100s] **Build + install** — VST3 fonctionnel avec nouveau design
 
 ### Tâches découvertes pendant la reprise UI 2026-06-11
-- [ ] [100t] Nettoyer le code UI legacy devenu inutilisé (`draw_grid`, anciens helpers, warnings de dead code) après stabilisation visuelle.
-- [ ] [100u] Continuer le polish pixel : alignements fins Sound Editor, sliders/combos, pagebar et Generator d'après screenshots Studio One.
-- [ ] [100v] Rendre l'Engine selector fonctionnel et aligné avec le registre de moteurs prévu par le design pack.
-- [ ] **[100w] Bouton GENERATE invisible après refonte en 2 lignes** — REPRENDRE ICI. Le layout vertical du panneau Generator coupe le bouton ; probablement hauteur de panel insuffisante ou `ui.allocate` qui ne réserve pas la place. Vérifier dans `draw_generator_panel_content` et le panneau parent.
+- [x] [100t] Nettoyer le code UI legacy (~1300 lignes : `draw_grid` & helpers morts + modules `schema.rs` et `engine_registry.rs` supprimés). Restent des warnings de scaffolding (`design_system.rs`, `StyledButton`) — cf. `docs/design/UI-REDESIGN-HANDOFF.md` §4.
+- [x] [100u] Polish pixel : Sound Editor (sliders/labels/sections/ADSR), combos → Select stylé, page-bar, bloc Generator réorganisé en 2 rangées + knob non tronqué (jusqu'au build 20260614-205742).
+- [ ] [100v] **(Phase B / modulaire)** Engine selector fonctionnel + registre de moteurs — **reporté** ; le selector inerte a été retiré du Sound Editor.
+- [x] [100w] Bouton GENERATE invisible après refonte en 2 lignes — corrigé en revenant à une seule ligne horizontale avec le bouton poussé à droite (build 20260614-092628).
+
+#### Reste à faire (worklist détaillée : `docs/design/UI-REDESIGN-HANDOFF.md` §4)
+- [ ] **REPRENDRE ICI** [100x] Menus clic-droit p-lock → style `.plk` (284px, fond P_ACTIVE, r9, ombre), Volume en tête, ↺ undo par rangée, mode Sound=orange / Sequencer=violet.
+- [ ] [100y] Recâbler le menu page Copy/Paste/Clear sur la page-bar (helpers conservés sous `#[allow(dead_code)]` : `clear_page_fusions_for_ui`, `replace_page_fusions_for_ui`).
+- [ ] [100z] Animations .14s (hover/toggle) — basse priorité.
+- [ ] [100aa] Nettoyage final : adopter `StyledButton` (hover chrome), retirer `design_system.rs`/`SegmentedControl` non câblés, remplacer `allocate_ui_at_rect` (déprécié) par `allocate_new_ui`.
 
 ### Notes
 - **Volume** : range -60 dB à +6 dB (actuellement 0..2 linéaire, à convertir)
