@@ -159,7 +159,7 @@ There is no lint config beyond `cargo`’s default warnings.
 
 **Studio One file lock:** the DAW must be fully closed during install because it locks the VST3 DLL (otherwise the copy to `Program Files` fails with *Access denied*).
 
-**Run `build.ps1 -Install` PLAINLY in the foreground.** Do not pipe or redirect it: in PowerShell 5.1, `2>&1` / `2>$null` make PS wrap cargo's stderr as a `NativeCommandError` and abort the run; a *backgrounded* `... 2>$null` once spawned two contending `cargo` processes deadlocked on the build-directory lock (0% CPU for ~30 min). If a build looks stuck, check `Get-Process cargo,rustc` (CPU/StartTime), kill them, and re-run plainly. Pass an absolute `--manifest-path` to `cargo` (the working dir can drift, e.g. after a `cd`).
+**Run `build.ps1 -Install` PLAINLY in the foreground.** Do not pipe or redirect it: in PowerShell 5.1, `2>&1` / `2>$null` make PS wrap cargo's stderr as a `NativeCommandError` and abort the run; a *backgrounded* `... 2>$null` once spawned two contending `cargo` processes deadlocked on the build-directory lock (0% CPU for ~30 min). If a build looks stuck, check `Get-Process cargo,rustc` (CPU/StartTime), kill them, and re-run plainly. **`build.ps1` runs `cargo build` in the *current* directory** (no `--manifest-path`), so run it from `drum-pattern-vst` (`Set-Location "E:\…\drum-pattern-vst"` first) — the shell cwd can drift back to the repo root and break the build with `could not find Cargo.toml`. For raw `cargo`, pass an absolute `--manifest-path`.
 
 ## Agent Workflow Rule
 

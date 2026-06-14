@@ -1,5 +1,53 @@
 ﻿# Changelog
 
+## 2026-06-14 — Redesign UI: bloc Generator réorganisé (build 20260614-205742)
+
+**Build:** `20260614-205742`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Bloc Generator refondu en 2 rangées alignées** (avant : 3 rangées tassées + labels décalés d'un cran, avec un label « B » orphelin sans combo).
+  - Rangée 1 (moteur) : combo algorithme · **A**/**B** = styles à morpher · sliders pilule **Mix/Dens/Var** (slider du design system, fini les `ParamSlider` bruts) · **GENERATE** poussé à droite.
+  - Rangée 2 (raccourcis) : Presets Rock/Funk/Disco + ⟳ Random.
+- Labels corrigés (A = style primaire, B = style secondaire) ; selects `.selbox` + contrôles h26, cohérents avec header/éditeur. Import `ParamSlider` retiré (plus utilisé).
+- **Sliders pilule** : la poignée Ø11 réserve désormais son rayon à chaque extrémité (`header_param_slider`) — plus de troncature à 0 %/100 % (corrige aussi le slider Len de la page-bar).
+- **Labels complets** : « Mix · Densité · Variation » (largeurs ajustées pour garder des pistes lisibles).
+
+---
+
+## 2026-06-14 — Redesign UI: panneau Generator en 3 lignes propre (build 20260614-102408)
+
+**Build:** `20260614-102408`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK après fermeture de Studio One
+
+### Changements
+- Panneau Generator retravaillé en **3 lignes** suite au feedback utilisateur.
+  - Ligne 1 : `Generator` / `Type` / `A` / `B` avec les combos.
+  - Ligne 2 : sliders `Mix` / `Density` / `Variation` avec labels alignés et noms complets.
+  - Ligne 3 : bouton `GENERATE` à gauche, texte centré manuellement.
+- Hauteur du bottom panel augmentée à `190 px` pour accueillir les 3 lignes.
+
+## 2026-06-14 — Bouton GENERATE à la ligne + centré (build 20260614-095451)
+
+**Build:** `20260614-095451`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Bouton `GENERATE` remis sur une ligne dédiée sous les contrôles Generator.
+- Hauteur du bottom panel augmentée de 132 px à 168 px pour accueillir les deux lignes.
+- Centrage manuel du texte `GENERATE` dans le bouton via `ui.painter().galley()`.
+
+## 2026-06-14 — Fix bouton GENERATE invisible (build 20260614-092628)
+
+**Build:** `20260614-092628`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Correction du bouton `GENERATE` invisible dans le panneau Generator.
+  - Retour à une seule ligne horizontale pour éviter que le layout vertical ne dépasse la hauteur allouée au panel.
+  - Le bouton est poussé à droite avec un `add_space` calculé après les sliders.
+  - Réduction légère des largeurs de combos/sliders pour tenir dans la ligne.
+
 ## 2026-06-13 — Redesign UI: panneau Generator en deux lignes (build 20260613-210831)
 
 **Build:** `20260613-210831`

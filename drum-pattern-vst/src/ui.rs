@@ -3,7 +3,6 @@ use nih_plug_egui::{
     create_egui_editor,
     egui::{self, Color32, RichText, Vec2},
     resizable_window::ResizableWindow,
-    widgets::ParamSlider,
 };
 use std::{
     fs::create_dir_all,
@@ -480,6 +479,10 @@ fn header_param_slider<P: Param>(
     } else {
         rect.right()
     };
+    // Reserve the Ø11 knob radius at both ends so it isn't clipped at the extremes.
+    let knob_r = 6.0;
+    let track_left = track_left.max(rect.left() + knob_r);
+    let track_right = track_right.min(rect.right() - knob_r).max(track_left + 12.0);
     let track = egui::Rect::from_min_max(
         egui::pos2(track_left, cy - 3.0),
         egui::pos2(track_right, cy + 3.0),
@@ -958,7 +961,7 @@ fn draw_bottom_panel(
     song_position: &Arc<AtomicU32>,
 ) {
     let panel_w = ui.available_width();
-    let panel_h = 132.0;
+    let panel_h = 144.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(panel_w, panel_h), egui::Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, RADIUS_PANEL, PANEL);
@@ -984,7 +987,7 @@ fn draw_bottom_panel(
             // Generator | Song segmented tabs
             let _options = ["Generator", "Song"];
             let selected = if is_song { 1 } else { 0 };
-            let new_selected = p_lock_mode_segmented(ui, selected);
+            let new_selected = generator_song_segmented(ui, selected);
             if new_selected != selected {
                 setter.set_parameter(&params.song_mode, new_selected == 1);
             }
@@ -1027,8 +1030,8 @@ fn draw_bottom_panel(
     });
 
     let body_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + 12.0, rect.top() + 51.0),
-        egui::pos2(rect.right() - 12.0, rect.bottom() - 10.0),
+        egui::pos2(rect.left() + 12.0, rect.top() + 44.0),
+        egui::pos2(rect.right() - 12.0, rect.bottom() - 8.0),
     );
     ui.allocate_ui_at_rect(body_rect, |ui| {
         ui.set_clip_rect(body_rect);
@@ -1053,9 +1056,10 @@ fn draw_generator_panel_content(
     state: &mut EditorUIState,
 ) {
     ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 9.0;
-        draw_preset_bar(ui, pattern, params, setter, state);
+        ui.add_space(6.0);
+        ui.spacing_mut().item_spacing.y = 12.0;
         draw_generator_bar(ui, setter, params, pattern, state);
+        draw_preset_bar(ui, pattern, params, setter, state);
     });
 }
 
@@ -1116,97 +1120,77 @@ fn draw_generator_bar(
     pattern: &SharedPattern,
     state: &mut EditorUIState,
 ) {
-    const SLIDER_W: f32 = 46.0;
-    const LABEL_W: f32 = 30.0;
-    const GEN_TYPE_W: f32 = 104.0;
-    const STYLE_W: f32 = 88.0;
-    const GEN_BTN_W: f32 = 110.0;
-    const INNER_GAP: f32 = 5.0;
+    const GEN_TYPE_W: f32 = 116.0;
+    const STYLE_W: f32 = 70.0;
+    const GEN_BTN_W: f32 = 104.0;
 
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 8.0;
+    // Single aligned row: algorithm · style A → B · Mix/Dens/Var · GENERATE (right).
+    ui.horizontal(|ui| {
+        ui.set_height(CTL_HEIGHT);
+        ui.spacing_mut().item_spacing.x = 0.0;
 
-        // --- Row 1: generator / type / A / B / sliders ---
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = INNER_GAP;
-            ui.set_height(CTL_HEIGHT);
+        // Generator algorithm (Probabilistic / Euclidean / Markov / …)
+        enum_combo_compact(ui, setter, &params.generator_type, "gen_type", GEN_TYPE_W);
 
-            genrow_label(ui, "Generator", 62.0);
-            enum_combo_compact(ui, setter, &params.generator_type, "gen_type", GEN_TYPE_W);
-            ui.add_space(2.0);
-            genrow_label(ui, "Type", 30.0);
-            enum_combo_compact(ui, setter, &params.style_primary, "style_a", STYLE_W);
-            ui.add_space(2.0);
-            genrow_label(ui, "A", 14.0);
-            enum_combo_compact(ui, setter, &params.style_secondary, "style_b", STYLE_W);
-            ui.add_space(2.0);
-            genrow_label(ui, "B", 14.0);
+        // Style morph A → B
+        ui.add_space(16.0);
+        genrow_label(ui, "A", 12.0);
+        ui.add_space(5.0);
+        enum_combo_compact(ui, setter, &params.style_primary, "style_a", STYLE_W);
+        ui.add_space(12.0);
+        genrow_label(ui, "B", 12.0);
+        ui.add_space(5.0);
+        enum_combo_compact(ui, setter, &params.style_secondary, "style_b", STYLE_W);
 
-            ui.add_space(18.0);
+        // Amounts (design-system pill sliders)
+        ui.add_space(18.0);
+        header_param_slider(ui, setter, &params.style_mix, 92.0, "Mix", false);
+        ui.add_space(10.0);
+        header_param_slider(ui, setter, &params.gen_density, 122.0, "Densité", false);
+        ui.add_space(10.0);
+        header_param_slider(ui, setter, &params.gen_variation, 130.0, "Variation", false);
 
-            // Morph slider (A -> B) has no label
-            ui.add(
-                ParamSlider::for_param(&params.style_mix, setter)
-                    .with_width(SLIDER_W)
-                    .without_value(),
-            );
-            ui.add_space(INNER_GAP);
+        // GENERATE, pushed to the right edge
+        let space = (ui.available_width() - GEN_BTN_W).max(10.0);
+        ui.add_space(space);
+        let gen_btn_response = ui.add_sized(
+            Vec2::new(GEN_BTN_W, CTL_HEIGHT),
+            egui::Button::new(
+                RichText::new("GENERATE")
+                    .font(f_sans_sb(11.0))
+                    .color(Color32::WHITE),
+            )
+            .fill(BLUE)
+            .stroke(egui::Stroke::new(1.0, BLUE))
+            .corner_radius(6.0),
+        );
 
-            genrow_label(ui, "Mix", LABEL_W);
-            ui.add(
-                ParamSlider::for_param(&params.gen_density, setter)
-                    .with_width(SLIDER_W)
-                    .without_value(),
-            );
-            ui.add_space(INNER_GAP);
-
-            genrow_label(ui, "Dens", LABEL_W);
-            ui.add(
-                ParamSlider::for_param(&params.gen_variation, setter)
-                    .with_width(SLIDER_W)
-                    .without_value(),
-            );
-            ui.add_space(INNER_GAP);
-
-            genrow_label(ui, "Var", LABEL_W);
-        });
-
-        // --- Row 2: GENERATE button aligned right ---
-        ui.horizontal(|ui| {
-            ui.set_height(CTL_HEIGHT);
-            ui.add_space(ui.available_width() - GEN_BTN_W);
-            let gen_btn = egui::Button::new(RichText::new("GENERATE").font(f_sans_sb(11.0)))
-                .min_size(Vec2::new(GEN_BTN_W, CTL_HEIGHT))
-                .fill(BLUE)
-                .stroke(egui::Stroke::new(1.0, BLUE))
-                .corner_radius(6.0);
-            if ui.add(gen_btn).clicked() {
-                params.plock_state.state.clear_all();
-                params.seq_plock_state.state.clear_all();
-                let gen_params = generator::GeneratorParams {
-                    generator_type: params.generator_type.value(),
-                    style_primary: params.style_primary.value(),
-                    style_secondary: params.style_secondary.value(),
-                    style_mix: params.style_mix.value(),
-                    density: params.gen_density.value(),
-                    variation: params.gen_variation.value(),
-                };
-                let seed = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|duration| duration.as_nanos() as u64)
-                    .unwrap_or(0);
-                let mut rng_state = seed;
-                let mut rng = || {
-                    rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
-                    (rng_state as f32) / (u64::MAX as f32)
-                };
-                let generated = generator::generate(&gen_params, &mut rng);
-                let pattern_length = params.pattern_length.value() as usize;
-                clear_all_fusions(pattern);
-                load_pattern_for_ui_with_length(pattern, &generated, pattern_length);
-                state.last_loaded_slot = None;
-            }
-        });
+        if gen_btn_response.clicked() {
+            params.plock_state.state.clear_all();
+            params.seq_plock_state.state.clear_all();
+            let gen_params = generator::GeneratorParams {
+                generator_type: params.generator_type.value(),
+                style_primary: params.style_primary.value(),
+                style_secondary: params.style_secondary.value(),
+                style_mix: params.style_mix.value(),
+                density: params.gen_density.value(),
+                variation: params.gen_variation.value(),
+            };
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos() as u64)
+                .unwrap_or(0);
+            let mut rng_state = seed;
+            let mut rng = || {
+                rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                (rng_state as f32) / (u64::MAX as f32)
+            };
+            let generated = generator::generate(&gen_params, &mut rng);
+            let pattern_length = params.pattern_length.value() as usize;
+            clear_all_fusions(pattern);
+            load_pattern_for_ui_with_length(pattern, &generated, pattern_length);
+            state.last_loaded_slot = None;
+        }
     });
 }
 fn draw_song_editor(
@@ -2164,6 +2148,10 @@ fn draw_mini_slider_value_tooltip(ui: &egui::Ui, response: &egui::Response, text
 
 fn p_lock_mode_segmented(ui: &mut egui::Ui, selected: usize) -> usize {
     text_segmented(ui, "plock_mode", &[("Sound", PL_LINK), ("Sequencer", SEQPL)], selected)
+}
+
+fn generator_song_segmented(ui: &mut egui::Ui, selected: usize) -> usize {
+    text_segmented(ui, "gen_song_mode", &[("Generator", BLUE), ("Song", PL_LINK)], selected)
 }
 
 fn text_segmented(
