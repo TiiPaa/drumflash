@@ -222,13 +222,18 @@ pub fn styled_select(
         f_mono_med(11.0),
         INK,
     );
-    painter.text(
-        egui::pos2(rect.right() - 9.0, rect.center().y - 0.5),
-        egui::Align2::RIGHT_CENTER,
-        "v",
-        f_sans_med(9.0),
+    // Down-pointing triangle caret
+    let caret_size = 5.0;
+    let caret_center = egui::pos2(rect.right() - 11.0, rect.center().y + 0.5);
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(caret_center.x - caret_size, caret_center.y - caret_size * 0.4),
+            egui::pos2(caret_center.x + caret_size, caret_center.y - caret_size * 0.4),
+            egui::pos2(caret_center.x, caret_center.y + caret_size * 0.9),
+        ],
         INK3,
-    );
+        egui::Stroke::NONE,
+    ));
 
     let mut picked = None;
     if popup_open {
