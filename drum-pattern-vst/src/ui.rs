@@ -1144,11 +1144,12 @@ fn draw_generator_bar(
 
         // Amounts (design-system pill sliders)
         ui.add_space(18.0);
-        header_param_slider(ui, setter, &params.style_mix, 92.0, "Mix", false);
+        const SLIDER_TOTAL_W: f32 = 110.0;
+        header_param_slider(ui, setter, &params.style_mix, SLIDER_TOTAL_W, "Mix A/B", false);
         ui.add_space(10.0);
-        header_param_slider(ui, setter, &params.gen_density, 122.0, "Densité", false);
+        header_param_slider(ui, setter, &params.gen_density, SLIDER_TOTAL_W, "Density", false);
         ui.add_space(10.0);
-        header_param_slider(ui, setter, &params.gen_variation, 130.0, "Variation", false);
+        header_param_slider(ui, setter, &params.gen_variation, SLIDER_TOTAL_W, "Variation", false);
 
         // GENERATE, pushed to the right edge
         let space = (ui.available_width() - GEN_BTN_W).max(10.0);
