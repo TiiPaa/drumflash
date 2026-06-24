@@ -9,7 +9,7 @@
 //!   settings) — this is the difference between a clap and a hi-hat
 //! - Exponential decay envelope per burst, with release tail for the room
 
-use super::{dsp, settings::clap::ClapSettings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::clap::ClapSettings, Voice, VoiceSettings};
 
 /// Lowpass cutoff for the first burst, expressed as a multiple of the highpass
 /// cutoff. 2.5 gives a roughly 1.3-octave bandpass — wide enough for body,
@@ -53,6 +53,7 @@ pub struct ClapVoice {
     /// "paper / dry slap" end of the spectrum.
     snap_hp: dsp::OnePoleFilter,
     snap_hp_r: dsp::OnePoleFilter,
+    saturation: saturation::SaturationConfig,
 
     burst_count: usize,
     samples_since_trigger: usize,
@@ -102,6 +103,13 @@ impl ClapVoice {
             snap_r: dsp::ClickGenerator::new(sample_rate, 2.0, 0.9, 0.6),
             snap_hp,
             snap_hp_r,
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::from(settings.saturation_type),
+                amount: settings.saturation_amount,
+                mix: settings.saturation_mix,
+                output_gain: settings.saturation_output_gain,
+                pre_filter: settings.saturation_pre_filter > 0.5,
+            },
             burst_count: 0,
             samples_since_trigger: 0,
             active: false,
@@ -224,7 +232,7 @@ impl Voice for ClapVoice {
             0.0
         };
 
-        body + snap_signal
+        self.saturation.process(body + snap_signal)
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -279,7 +287,10 @@ impl Voice for ClapVoice {
             0.0
         };
 
-        (body_l + snap_l, body_r + snap_r)
+        (
+            self.saturation.process(body_l + snap_l),
+            self.saturation.process(body_r + snap_r),
+        )
     }
 
     fn is_active(&self) -> bool {
@@ -295,6 +306,12 @@ impl Voice for ClapVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = ClapSettings::from(settings);
         self.update_derived_params();
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -302,8 +319,30 @@ impl Voice for ClapVoice {
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
-        if index == 0 {
-            self.settings.echo = value;
+        match index {
+            0 => self.settings.echo = value,
+            1 => {
+                self.settings.saturation_type = value as u8;
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
+            }
+            2 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            3 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            4 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
+            5 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
+            }
+            _ => {}
         }
     }
 }

@@ -1,3 +1,3 @@
-- ajout un instrument de type midi (avec du midi out)
-- virer le play / bpm (sera toujours synchroniser au DAW)
+- le drag n drop a disparu
+
 

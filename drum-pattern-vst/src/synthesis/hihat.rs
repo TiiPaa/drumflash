@@ -5,7 +5,7 @@
 //! - Highpass filter (metallic sound)
 //! - Short exponential decay (closed hi-hat)
 
-use super::{dsp, settings::hihat::HiHatSettings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::hihat::HiHatSettings, Voice, VoiceSettings};
 
 /// Anti-click floor for the amplitude attack (a true 0 ms attack is a step = click).
 const MIN_AMP_ATTACK_MS: f32 = 0.2;
@@ -33,6 +33,8 @@ pub struct HiHatVoice {
     envelope: dsp::DecayReleaseEnvelope,
     // Filter envelope for splash decay.
     filter_env: dsp::ExpDecayEnvelope,
+    // Saturation stage
+    saturation: saturation::SaturationConfig,
     // DC blockers (per channel) — clean any offset from the tanh saturation.
     dc_block_l: dsp::DcBlocker,
     dc_block_r: dsp::DcBlocker,
@@ -79,6 +81,13 @@ impl HiHatVoice {
                 settings.filter_env_decay.max(0.001),
             )
             .with_attack_ms(0.3),
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::from(settings.saturation_type),
+                amount: settings.saturation_amount,
+                mix: settings.saturation_mix,
+                output_gain: settings.saturation_output_gain,
+                pre_filter: settings.saturation_pre_filter > 0.5,
+            },
             dc_block_l: dsp::DcBlocker::default(),
             dc_block_r: dsp::DcBlocker::default(),
             active: false,
@@ -122,7 +131,7 @@ impl Voice for HiHatVoice {
                 let noise = self.noise.next();
                 let peaked = self.peaking.process(noise);
                 let filtered = self.filter.process(peaked);
-                let saturated = filtered.tanh() * 1.2;
+                let saturated = self.saturation.process(filtered);
                 saturated * env * self.settings.volume
             }
             _ => {
@@ -185,7 +194,10 @@ impl Voice for HiHatVoice {
         let filtered_r = self.filter_r.process(peaked_r);
 
         let (left, right) = if saturated {
-            (filtered_l.tanh() * 1.2, filtered_r.tanh() * 1.2)
+            (
+                self.saturation.process(filtered_l),
+                self.saturation.process(filtered_r),
+            )
         } else {
             (filtered_l, filtered_r)
         };
@@ -246,14 +258,43 @@ impl Voice for HiHatVoice {
         self.envelope.set_hold(self.settings.hold);
         self.filter_env
             .set_decay(self.settings.filter_env_decay.max(0.001));
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, _index: usize, _value: f32) {
-        // HiHat has no special parameters
+    fn set_special_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => {
+                self.settings.saturation_type = value as u8;
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
+            }
+            1 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            2 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            3 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
+            4 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
+            }
+            _ => {}
+        }
     }
 }
 

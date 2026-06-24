@@ -2,7 +2,6 @@ use crate::synthesis::VoiceSettings;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClapSettings {
-    pub frequency: f32,
     pub attack: f32,
     pub decay: f32,
     pub decay_curve: f32,
@@ -13,13 +12,17 @@ pub struct ClapSettings {
     pub analog: f32,
     pub stereo: f32,
     pub echo: f32,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
     pub algo: u8,
 }
 
 impl From<VoiceSettings> for ClapSettings {
     fn from(v: VoiceSettings) -> Self {
         Self {
-            frequency: v.frequency,
             attack: v.attack,
             decay: v.decay,
             decay_curve: v.decay_curve,
@@ -30,6 +33,11 @@ impl From<VoiceSettings> for ClapSettings {
             analog: v.analog,
             stereo: v.stereo,
             echo: v.special[0],
+            saturation_type: v.special[1] as u8,
+            saturation_amount: v.special[2],
+            saturation_mix: v.special[3],
+            saturation_output_gain: v.special[4],
+            saturation_pre_filter: v.special[5],
             algo: v.algo,
         }
     }
@@ -39,8 +47,13 @@ impl From<ClapSettings> for VoiceSettings {
     fn from(c: ClapSettings) -> Self {
         let mut special = [0.0f32; 32];
         special[0] = c.echo;
+        special[1] = c.saturation_type as f32;
+        special[2] = c.saturation_amount;
+        special[3] = c.saturation_mix;
+        special[4] = c.saturation_output_gain;
+        special[5] = c.saturation_pre_filter;
         Self {
-            frequency: c.frequency,
+            frequency: 1000.0,
             attack: c.attack,
             decay: c.decay,
             decay_curve: c.decay_curve,

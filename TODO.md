@@ -399,12 +399,13 @@
     - UI grille : playhead alignee sur `current_step` global ; Push/Pull ne deplace plus l'anneau de lecture, seul le timing audio est decale.
   - Objectif atteint : timing audio Push/Pull correct et annulable, playhead visuelle stable quand on module Push.
 
-- [ ] [91] **Sortir automatiquement du mode edit quand on selectionne en dehors de la cellule** (P1, UI/UX)
+- [x] [91] **Sortir automatiquement du mode edit quand on selectionne en dehors de la cellule** (P1, UI/UX)
   - Actuellement, le mode edit reste actif meme si on clique ailleurs
   - Comportement attendu : deselection de la cellule = sortie du mode edit
   - Complexite : Faible
+  - Correctif (build `20260623-120806`) : lors d'un clic normal, si le clic ne porte pas sur le groupe fusionné en cours d'édition, `finish_fusion_editing_for_ui` est appelé avant de traiter le toggle.
 
-- [ ] [92] **Valeurs du menu plock sound par defaut = valeurs globales de l'instrument** (P1, Donnees)
+- [ ] **[REPRENDRE ICI]** [92] **Valeurs du menu plock sound par defaut = valeurs globales de l'instrument** (P1, Donnees)
   - Constate : la frequence de BD8 (BassDrum808) est a 0 dans le plock au lieu de la valeur globale
   - Verifier que tous les instruments initialisent correctement les valeurs par defaut des plocks
   - Complexite : Faible
@@ -458,10 +459,15 @@
 - [x] [100w] Bouton GENERATE invisible après refonte en 2 lignes — corrigé en revenant à une seule ligne horizontale avec le bouton poussé à droite (build 20260614-092628).
 
 #### Reste à faire (worklist détaillée : `docs/design/UI-REDESIGN-HANDOFF.md` §4)
-- [ ] **REPRENDRE ICI** [100x] Menus clic-droit p-lock → style `.plk` (284px, fond P_ACTIVE, r9, ombre), Volume en tête, ↺ undo par rangée, mode Sound=orange / Sequencer=violet.
-- [ ] [100y] Recâbler le menu page Copy/Paste/Clear sur la page-bar (helpers conservés sous `#[allow(dead_code)]` : `clear_page_fusions_for_ui`, `replace_page_fusions_for_ui`).
+- [x] [100x] Menus clic-droit p-lock → style `.plk` (284px, fond P_ACTIVE, r9, bordure LINE2), Volume en tête, mode Sound=orange / Sequencer=violet (build 20260616-203617).
+- [x] [100y] Recâbler le menu page Copy/Paste/Clear sur la page-bar (helpers conservés sous `#[allow(dead_code)]` : `clear_page_fusions_for_ui`, `replace_page_fusions_for_ui`).
+  - Bouton droit sur les numéros de page pour ouvrir le menu.
+  - Actions : Copy Page, Paste Page, Clear Page.
+  - Warnings de confirmation avant Paste (écrase la page cible) et Clear (supprime grille + plocks + fusions de la page).
+  - Build `20260623-124600`.
 - [ ] [100z] Animations .14s (hover/toggle) — basse priorité.
 - [ ] [100aa] Nettoyage final : adopter `StyledButton` (hover chrome), retirer `design_system.rs`/`SegmentedControl` non câblés, remplacer `allocate_ui_at_rect` (déprécié) par `allocate_new_ui`.
+- [x] [100ab] Dropdown Algo dynamique dans le menu p-lock (plage selon algo_count, nom affiché, masquage si 1 algo) - build 20260624-171823.
 
 ### Notes
 - **Volume** : range -60 dB à +6 dB (actuellement 0..2 linéaire, à convertir)

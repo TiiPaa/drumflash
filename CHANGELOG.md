@@ -1,5 +1,285 @@
 ﻿# Changelog
 
+## 2026-06-24 — Fix: dropdown Algo dynamique dans le menu p-lock (build 20260624-171823)
+
+**Build:** `20260624-171823`
+**Validation:** `cargo check` OK, `cargo test` OK (153 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Le slider Algo du menu p-lock était fixe 0→3 et affichait un chiffre.**
+  - Il est remplacé par un dropdown qui liste seulement les algorithmes disponibles pour l'instrument courant.
+  - Le nom de l'algorithme est affiché (ex: `Sine`, `Square`, `FM`) au lieu de son index.
+- **La ligne Algo est masquée quand l'instrument n'a qu'un seul algorithme.**
+  - Concerné : Cymbal, Snare606, BassDrum808.
+- **Les valeurs de plock existantes hors plage sont clampées** vers l'index valide le plus proche au moment de l'affichage.
+
+---
+
+## 2026-06-23 — Fix: suppression du slider Frequency inactif sur le Clap (build 20260623-163320)
+
+**Build:** `20260623-163320`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK (après fermeture de Studio One)
+
+### Changements
+- **Le slider Frequency (onglet OSC) du Clap ne faisait rien** car le synthé Clap n'utilise que `filter_freq` (le filtre passe-bande HP/LP).
+- Le Clap utilise maintenant `NO_FREQ_STD` (comme le Cymbal) : plus de slider Frequency inutile.
+- `ClapSettings` n'expose plus `frequency` pour éviter toute confusion.
+- Vérification des autres instruments non tonaux :
+  - HiHat / OpenHiHat : Frequency contrôle le peaking filter → utilisé.
+  - Ride : Frequency contrôle les oscillateurs inharmoniques → utilisé.
+  - Cymbal : n'avait déjà pas de slider Frequency → cohérent.
+  - Seul le Clap avait ce problème.
+
+---
+
+## 2026-06-23 — Feature: saturation ajoutée à HiHat, OpenHiHat, Clap, Ride, Cymbal (build 20260623-153112)
+
+**Build:** `20260623-153112`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Saturation complète pour les 5 instruments qui n'en avaient pas.**
+  - HiHat, OpenHiHat, Ride : 5 paramètres saturation (type, amount, mix, output gain, pre-filter) en `special[0..4]`.
+  - Clap : echo reste en `special[0]`, saturation en `special[1..5]`.
+  - Cymbal : shimmer/noise restent en `special[0..2]`, saturation en `special[3..7]`.
+  - `DrumFlashParams` expose 25 nouveaux `FloatParam` (5 × 5 instruments).
+  - Chaque voix DSP initialise un `SaturationConfig`, l'applique sur le signal de sortie, et réagit aux changements via `set_special_param`.
+
+---
+
+## 2026-06-23 — Fix: resync du séquenceur quand `pattern_length` change (build 20260623-151154)
+
+**Build:** `20260623-151154`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Le séquenceur est resynchronisé avec le transport hôte dès que `pattern_length` change.**
+  - Avant, changer `Len` pendant la lecture (ex: 16 → 48) ne mettait pas à jour `loop_count` ni `beat_position` par rapport à la nouvelle longueur.
+  - Cela pouvait créer un décalage permanent entre la page affichée et la page réellement lue, surtout avec des conditions de step dépendant du loop count.
+  - `process()` détecte maintenant le changement de `master_length` et appelle `sync_to_host(position_beats)` pour recaler le séquenceur.
+
+---
+
+## 2026-06-23 — Fix: paste de page étend automatiquement la longueur du pattern (build 20260623-145953)
+
+**Build:** `20260623-145953`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK (après fermeture de Studio One)
+
+### Changements
+- **Coller une page au-delà de la longueur actuelle étend automatiquement `pattern_length`.**
+  - Avant, coller sur la page 2, 3 ou 4 avec `Len = 16` copiait bien les notes mais elles n'étaient pas jouées, ce qui donnait l'impression que l'ordre des pages ne se lisait pas.
+  - Maintenant, après un `Paste Page`, si la page cible dépasse `pattern_length`, le paramètre `Len` est augmenté au multiple de 16 nécessaire (jusqu'à 64).
+  - Cela concerne aussi le menu page Copy → Paste, pas seulement les presets/générateurs.
+
+---
+
+## 2026-06-23 — UX: confirmations page en lignes verticales (build 20260623-143214)
+
+**Build:** `20260623-143214`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Layout des confirmations Paste/Clear revu.**
+  - Au lieu de boutons Yes/No collés côte à côte, les confirmations affichent une ligne d'info puis deux boutons pleine largeur empilés : "Yes, overwrite" / "No, cancel" et "Yes, clear" / "No, cancel".
+  - Le label d'info n'est plus un faux bouton inactif.
+
+---
+
+## 2026-06-23 — UX: menu page se ferme sur Copy (build 20260623-142847)
+
+**Build:** `20260623-142847`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Clic sur "Copy" dans le menu page ferme immédiatement le popup.**
+
+---
+
+## 2026-06-23 — UX: menu page plus compact (build 20260623-142211)
+
+**Build:** `20260623-142211`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Menu page réduit d'environ moitié.**
+  - Nouveau `page_menu_frame` : min 130 px / max 150 px (vs 260/284 px pour les plocks).
+  - Labels raccourcis : Copy / Paste / Clear, puis "Overwrite?" / "Clear?" + Yes / No en confirmation.
+  - Header sans sous-titre "Step N".
+
+---
+
+## 2026-06-23 — Fix: synchronisation fusions lors du chargement de pattern (build 20260623-144724)
+
+**Build:** `20260623-144724`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **`load_pattern_for_ui` et `load_pattern_for_ui_with_length` copient maintenant aussi les fusions.**
+  - Avant, seuls les step masks étaient copiés ; les fusions de l'ancien pattern persistaient dans `SharedPattern`.
+  - Le séquenceur audio pouvait donc jouer des fusions fantômes qui n'étaient plus visibles sur le grid après un preset / génération / clear.
+  - Les fusions du `Pattern` source sont maintenant écrites dans `SharedPattern` pour chaque instrument.
+
+---
+
+## 2026-06-23 — UX: menu page restylé comme les menus p-lock (build 20260623-141809)
+
+**Build:** `20260623-141809`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK (après fermeture de Studio One)
+
+### Changements
+- **Le menu contextuel des pages reprend le style `.plk` des menus p-lock.**
+  - `plock_menu_frame` + `plock_menu_header` + `plock_menu_action_row` pleine largeur.
+  - Barre d'accent bleue en haut, fond `P_ACTIVE`, bordure `LINE2`, radius 9.
+  - Copy Page (bleu), Paste Page (orange `PL_LINK` si dispo, sinon grisé), Clear Page (rouge).
+  - Les confirmations Paste/Clear apparaissent comme des lignes d'action dans le même menu.
+
+---
+
+## 2026-06-23 — UX: menu Copy/Paste/Clear sur les boutons de page (build 20260623-124600)
+
+**Build:** `20260623-124600`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **[100y] Menu contextuel sur les boutons de page (1-4).**
+  - Clic droit sur un numéro de page : ouvre un menu avec Copy Page / Paste Page / Clear Page.
+  - Les fonctions Copy/Paste/Clear du pattern (P1-P8) restent intactes.
+  - Copy Page : copie les triggers, les sound plocks et les fusions de la page dans `EditorUIState.page_clipboard`.
+  - Paste Page : demande confirmation avant d'écraser la page cible.
+  - Clear Page : demande confirmation avant de vider la page (triggers + plocks + fusions).
+  - Popup maison `egui::Area` avec le style `.plk` (fond `P_ACTIVE`, bordure `LINE2`, radius 9).
+
+---
+
+## 2026-06-23 — UX: focus auto sur le champ step-count en édition fusion (build 20260623-122425)
+
+**Build:** `20260623-122425`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Double-clic sur une fusion : le champ "Steps" reçoit le focus et son texte est sélectionné.**
+  - Remplacement du `DragValue` par un `TextEdit` singleline pour permettre la sélection complète.
+  - `EditorUIState.fusion_edit_focus_request` déclenché à l'ouverture de l'édition.
+  - Focus + sélection `CCursorRange` de 0 à len appliqués sur le `TextEditOutput`.
+- La valeur est parsée et clampée 1..64 à la perte de focus ou au changement.
+
+---
+
+## 2026-06-23 — UX: sortie auto du mode édition fusion (build 20260623-120806)
+
+**Build:** `20260623-120806`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **[91] Sortie automatique du mode edit quand on clique en dehors de la cellule fusionnée.**
+  - Lors d'un clic sur une autre cellule, si le clic ne porte pas sur le groupe fusionné en cours d'édition, l'édition est terminée avant de traiter le toggle.
+  - Conserve le comportement si on reclique sur le même groupe fusionné (l'édition reste active).
+
+---
+
+## 2026-06-23 — Réinstallation du VST3 (build 20260623-113150)
+
+**Build:** `20260623-113150`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Réinstallation du bundle VST3 après suppression.**
+  - Aucun changement de code ; rebuild + install du dernier état source.
+  - Bundle déployé dans `C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3`.
+
+---
+
+## 2026-06-16 — Redesign UI: fusion couleur d'édition + texte centré (build 20260616-211439)
+
+**Build:** `20260616-211439`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Fusion : la cellule de départ reprend sa couleur normale en sortie d'édition.**
+  - `is_fusion_start` n'applique plus la couleur bleue foncée quand `is_editing` est actif ; seul le mode édition clignote.
+  - Après fermeture de la boîte d'édition, le bloc fusionné redevient bleu standard.
+- **Le nombre de triggers (`step_count`) est centré dans le bloc fusionné entier**, plus seulement dans la première cellule.
+
+---
+
+## 2026-06-16 — Redesign UI: rendu continu des cellules fusionnées (build 20260616-210639)
+
+**Build:** `20260616-210639`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Les cellules fusionnées (Step Fusion) sont à nouveau rendues comme un bloc continu.**
+  - `draw_step_cell_v2` étend le rectangle de la cellule de départ pour recouvrir l'ensemble du groupe fusionné, gaps compris.
+  - Les cellules internes restent transparentes : pas de bordure ni de fond qui cassent le bloc.
+  - L'indicateur "pulses" (`step_count`) est affiché sur la cellule de départ.
+- **Le mode édition d'une fusion fait de nouveau clignoter l'ensemble du bloc.**
+  - `is_editing` est recalculé depuis `state.fusion_editing` dans `draw_grid_v2`.
+  - Toutes les cellules du groupe en édition pulsent en bleu de manière synchronisée.
+- **Playhead sur une fusion restreint à la cellule exacte du curseur.**
+  - `is_current` ne met plus l'anneau playhead sur toutes les cellules du groupe, seulement sur la cellule active.
+
+---
+
+## 2026-06-16 — Redesign UI: suppression undo par paramètre dans menus p-lock (build 20260616-203617)
+
+**Build:** `20260616-203617`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Bouton "↺" (undo) retiré de chaque rangée de paramètre dans les menus p-lock.**
+  - Il décalait les sliders et n'apportait pas assez de valeur par rapport aux actions globales `Clear Plock` / `Copy Plock`.
+  - `plock_menu_row` passe de 7 à 6 arguments (suppression du callback `on_undo`).
+  - Tous les appelants mis à jour : Volume, Display, Freq notes, standard params, Algo, specials, Probability, Stutter.
+
+---
+
+## 2026-06-15 — Redesign UI: menus p-lock bordure + cellule d'édition clignotante (build 20260615-165139)
+
+**Build:** `20260615-165139`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Bordure fine claire (`LINE2`) ajoutée autour du menu p-lock.**
+  - Stroke 1 px sur le `plock_menu_frame`, cohérent avec les autres panneaux.
+- **Cellule en cours d'édition clignote.**
+  - Quand un menu p-lock est ouvert, la step source pulse en bleu (fond interpolé + bordure `BLUE` 1.5 px).
+  - Utilise `ctx.input(|i| i.time)` pour un clignotement sinusoïdal à 4 Hz.
+  - `step_colors_v2` reçoit un paramètre `is_editing` ; `draw_grid_v2` passe l'état du popup.
+
+---
+
+## 2026-06-15 — Redesign UI: menus p-lock popup maison (build 20260615-160242)
+
+**Build:** `20260615-160242`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Remplacement du `context_menu` egui par un popup maison.**
+  - Le cadre noir venait de `Frame::menu` de egui, non contrôlable par `window_stroke`.
+  - Le clic droit sur une step ouvre maintenant un `egui::Area` personnalisé avec notre propre `Frame::NONE` rempli `P_ACTIVE` r9.
+  - Plus de bordure, plus d'ombre parasite.
+  - État `plock_popup` dans `EditorUIState` avec fermeture au clic à l'extérieur.
+  - Fusion "Edit/Delete" toujours disponible en mode Sound ; Sequencer inchangé.
+
+---
+
+## 2026-06-15 — Redesign UI: menus clic-droit p-lock reskinés (build 20260615-122058)
+
+**Build:** `20260615-122058`
+**Validation:** `cargo check` OK, `cargo test` OK (91 + 62 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[100x] Menus clic-droit p-lock reskinés.**
+  - Menu Sound (`draw_plock_menu`) utilise le frame `.plk` (fond `P_ACTIVE`, radius 9, barre d'accent orange `PL_LINK`, ombre).
+  - Menu Sequencer (`draw_sequencer_plock_menu`) réécrit avec le même style, accent violet `SEQPL`.
+  - Header "Seq Plock {instrument}" + "Step N", indicateur Mode Active/Inactive.
+  - Probability et Stutter en rangées avec slider `LocalParamSlider` et valeur en ligne.
+  - Grille Condition en 3 colonnes avec boutons stylisés (accent sélectionné).
+  - Actions "Create Seq Plock" / "Clear Seq Plock" stylisées comme les actions Sound.
+- Uniformisation des helpers `plock_menu_frame`, `plock_menu_header`, `plock_menu_row`, `plock_menu_action_row` partagés entre Sound et Sequencer.
+
+---
+
 ## 2026-06-14 — Redesign UI: bloc Generator réorganisé (build 20260614-205742)
 
 **Build:** `20260614-205742`

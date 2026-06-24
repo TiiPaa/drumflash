@@ -146,6 +146,8 @@ pub struct DrumFlashVst {
     song_position: Arc<AtomicU32>,
     /// Last observed loop count to detect pattern wrap.
     last_loop_count: usize,
+    /// Last observed master length so we can resync the sequencer when it changes.
+    last_master_length: usize,
     /// Pending pattern length update after a slot load (1-64, 0 = none).
     /// The UI thread applies this to the IntParam on the next frame.
     pending_pattern_length: Arc<AtomicI32>,
@@ -501,6 +503,30 @@ pub struct DrumFlashParams {
     #[id = "snare_sat_pre"]
     pub snare_saturation_pre_filter: FloatParam,
 
+    // Hi-Hat saturation parameters
+    #[id = "hihat_sat_type"]
+    pub hihat_saturation_type: FloatParam,
+    #[id = "hihat_sat_amt"]
+    pub hihat_saturation_amount: FloatParam,
+    #[id = "hihat_sat_mix"]
+    pub hihat_saturation_mix: FloatParam,
+    #[id = "hihat_sat_out"]
+    pub hihat_saturation_output_gain: FloatParam,
+    #[id = "hihat_sat_pre"]
+    pub hihat_saturation_pre_filter: FloatParam,
+
+    // Open Hi-Hat saturation parameters
+    #[id = "oh_sat_type"]
+    pub open_hihat_saturation_type: FloatParam,
+    #[id = "oh_sat_amt"]
+    pub open_hihat_saturation_amount: FloatParam,
+    #[id = "oh_sat_mix"]
+    pub open_hihat_saturation_mix: FloatParam,
+    #[id = "oh_sat_out"]
+    pub open_hihat_saturation_output_gain: FloatParam,
+    #[id = "oh_sat_pre"]
+    pub open_hihat_saturation_pre_filter: FloatParam,
+
     // Hi-hat chokes open hi-hat when triggered
     #[id = "hihat_chokes_oh"]
     pub hihat_chokes_oh: BoolParam,
@@ -513,6 +539,18 @@ pub struct DrumFlashParams {
     // 0 = collapse to a single burst, 1 = default 12 ms spread, 2 = wider.
     #[id = "clap_echo"]
     pub clap_echo: FloatParam,
+
+    // Clap saturation parameters
+    #[id = "clap_sat_type"]
+    pub clap_saturation_type: FloatParam,
+    #[id = "clap_sat_amt"]
+    pub clap_saturation_amount: FloatParam,
+    #[id = "clap_sat_mix"]
+    pub clap_saturation_mix: FloatParam,
+    #[id = "clap_sat_out"]
+    pub clap_saturation_output_gain: FloatParam,
+    #[id = "clap_sat_pre"]
+    pub clap_saturation_pre_filter: FloatParam,
 
     // Snare 606 specials: bridged-T resonator fine-tuning.
     #[id = "sn606_res"]
@@ -532,6 +570,18 @@ pub struct DrumFlashParams {
     pub snare606_saturation_output_gain: FloatParam,
     #[id = "sn606_sat_pre"]
     pub snare606_saturation_pre_filter: FloatParam,
+
+    // Ride saturation parameters
+    #[id = "ride_sat_type"]
+    pub ride_saturation_type: FloatParam,
+    #[id = "ride_sat_amt"]
+    pub ride_saturation_amount: FloatParam,
+    #[id = "ride_sat_mix"]
+    pub ride_saturation_mix: FloatParam,
+    #[id = "ride_sat_out"]
+    pub ride_saturation_output_gain: FloatParam,
+    #[id = "ride_sat_pre"]
+    pub ride_saturation_pre_filter: FloatParam,
 
     // Perc1 special parameters
     #[id = "perc1_sweep"]
@@ -561,6 +611,17 @@ pub struct DrumFlashParams {
     pub cymbal_noise_type: FloatParam,
     #[id = "cy_shimmer_amt"]
     pub cymbal_shimmer_amount: FloatParam,
+    // Cymbal saturation parameters
+    #[id = "cy_sat_type"]
+    pub cymbal_saturation_type: FloatParam,
+    #[id = "cy_sat_amt"]
+    pub cymbal_saturation_amount: FloatParam,
+    #[id = "cy_sat_mix"]
+    pub cymbal_saturation_mix: FloatParam,
+    #[id = "cy_sat_out"]
+    pub cymbal_saturation_output_gain: FloatParam,
+    #[id = "cy_sat_pre"]
+    pub cymbal_saturation_pre_filter: FloatParam,
 }
 
 impl Default for DrumFlashParams {
@@ -1111,11 +1172,107 @@ impl Default for DrumFlashParams {
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
+            hihat_saturation_type: FloatParam::new(
+                "HiHat Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            hihat_saturation_amount: FloatParam::new(
+                "HiHat Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            hihat_saturation_mix: FloatParam::new(
+                "HiHat Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            hihat_saturation_output_gain: FloatParam::new(
+                "HiHat Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            hihat_saturation_pre_filter: FloatParam::new(
+                "HiHat Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            open_hihat_saturation_type: FloatParam::new(
+                "OpenHiHat Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            open_hihat_saturation_amount: FloatParam::new(
+                "OpenHiHat Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            open_hihat_saturation_mix: FloatParam::new(
+                "OpenHiHat Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            open_hihat_saturation_output_gain: FloatParam::new(
+                "OpenHiHat Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            open_hihat_saturation_pre_filter: FloatParam::new(
+                "OpenHiHat Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
             hihat_chokes_oh: BoolParam::new("HiHat Chokes OpenHH", true),
             auto_edit: BoolParam::new("Auto Edit", true),
 
             clap_echo: FloatParam::new("Clap Echo", 1.0, FloatRange::Linear { min: 0.0, max: 3.0 })
                 .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            clap_saturation_type: FloatParam::new(
+                "Clap Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            clap_saturation_amount: FloatParam::new(
+                "Clap Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            clap_saturation_mix: FloatParam::new(
+                "Clap Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            clap_saturation_output_gain: FloatParam::new(
+                "Clap Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            clap_saturation_pre_filter: FloatParam::new(
+                "Clap Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
 
             snare606_resonance: FloatParam::new(
                 "Snare 606 Resonance",
@@ -1165,6 +1322,38 @@ impl Default for DrumFlashParams {
             .with_smoother(SmoothingStyle::Linear(10.0)),
             snare606_saturation_pre_filter: FloatParam::new(
                 "Snare 606 Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+
+            ride_saturation_type: FloatParam::new(
+                "Ride Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            ride_saturation_amount: FloatParam::new(
+                "Ride Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            ride_saturation_mix: FloatParam::new(
+                "Ride Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            ride_saturation_output_gain: FloatParam::new(
+                "Ride Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            ride_saturation_pre_filter: FloatParam::new(
+                "Ride Saturation Pre-Filter",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -1260,6 +1449,38 @@ impl Default for DrumFlashParams {
             .with_smoother(SmoothingStyle::Linear(10.0))
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(2)),
+
+            cymbal_saturation_type: FloatParam::new(
+                "Cymbal Saturation Type",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
+            cymbal_saturation_amount: FloatParam::new(
+                "Cymbal Saturation Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            cymbal_saturation_mix: FloatParam::new(
+                "Cymbal Saturation Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            cymbal_saturation_output_gain: FloatParam::new(
+                "Cymbal Saturation Output Gain",
+                1.0,
+                FloatRange::Linear { min: 0.5, max: 2.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
+            cymbal_saturation_pre_filter: FloatParam::new(
+                "Cymbal Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
         }
     }
 }
@@ -1411,6 +1632,16 @@ impl DrumFlashParams {
             (1, 3) => Some(&self.snare_saturation_mix),
             (1, 4) => Some(&self.snare_saturation_output_gain),
             (1, 5) => Some(&self.snare_saturation_pre_filter),
+            (2, 0) => Some(&self.hihat_saturation_type),
+            (2, 1) => Some(&self.hihat_saturation_amount),
+            (2, 2) => Some(&self.hihat_saturation_mix),
+            (2, 3) => Some(&self.hihat_saturation_output_gain),
+            (2, 4) => Some(&self.hihat_saturation_pre_filter),
+            (3, 0) => Some(&self.open_hihat_saturation_type),
+            (3, 1) => Some(&self.open_hihat_saturation_amount),
+            (3, 2) => Some(&self.open_hihat_saturation_mix),
+            (3, 3) => Some(&self.open_hihat_saturation_output_gain),
+            (3, 4) => Some(&self.open_hihat_saturation_pre_filter),
             (4 | 5 | 6, 0) => Some(&self.tom_stick),
             (4 | 5 | 6, 1) => Some(&self.tom_saturation_type),
             (4 | 5 | 6, 2) => Some(&self.tom_saturation_amount),
@@ -1418,6 +1649,24 @@ impl DrumFlashParams {
             (4 | 5 | 6, 4) => Some(&self.tom_saturation_output_gain),
             (4 | 5 | 6, 5) => Some(&self.tom_saturation_pre_filter),
             (7, 0) => Some(&self.clap_echo),
+            (7, 1) => Some(&self.clap_saturation_type),
+            (7, 2) => Some(&self.clap_saturation_amount),
+            (7, 3) => Some(&self.clap_saturation_mix),
+            (7, 4) => Some(&self.clap_saturation_output_gain),
+            (7, 5) => Some(&self.clap_saturation_pre_filter),
+            (8, 0) => Some(&self.ride_saturation_type),
+            (8, 1) => Some(&self.ride_saturation_amount),
+            (8, 2) => Some(&self.ride_saturation_mix),
+            (8, 3) => Some(&self.ride_saturation_output_gain),
+            (8, 4) => Some(&self.ride_saturation_pre_filter),
+            (9, 0) => Some(&self.cymbal_shimmer_freq),
+            (9, 1) => Some(&self.cymbal_noise_type),
+            (9, 2) => Some(&self.cymbal_shimmer_amount),
+            (9, 3) => Some(&self.cymbal_saturation_type),
+            (9, 4) => Some(&self.cymbal_saturation_amount),
+            (9, 5) => Some(&self.cymbal_saturation_mix),
+            (9, 6) => Some(&self.cymbal_saturation_output_gain),
+            (9, 7) => Some(&self.cymbal_saturation_pre_filter),
             (10, 0) => Some(&self.snare606_resonance),
             (10, 1) => Some(&self.snare606_tone),
             (10, 2) => Some(&self.snare606_snap),
@@ -1443,9 +1692,6 @@ impl DrumFlashParams {
             (12, 6) => Some(&self.perc1_saturation_mix),
             (12, 7) => Some(&self.perc1_saturation_output_gain),
             (12, 8) => Some(&self.perc1_saturation_pre_filter),
-            (9, 0) => Some(&self.cymbal_shimmer_freq),
-            (9, 1) => Some(&self.cymbal_noise_type),
-            (9, 2) => Some(&self.cymbal_shimmer_amount),
             _ => None,
         }
     }
@@ -1480,6 +1726,7 @@ impl Default for DrumFlashVst {
             song_mode: Arc::new(AtomicBool::new(false)),
             song_position: Arc::new(AtomicU32::new(0)),
             last_loop_count: 0,
+            last_master_length: 16,
             pending_pattern_length: Arc::new(AtomicI32::new(0)),
             temp_plock_bytes: [0; pattern_bank::MAX_PLOCK_BYTES],
             temp_seq_plock_bytes: [0; pattern_bank::MAX_SEQ_PLOCK_BYTES],
@@ -1842,14 +2089,15 @@ impl Plugin for DrumFlashVst {
             .tempo
             .map(|tempo| tempo as f32)
             .unwrap_or_else(|| self.params.bpm.smoothed.next());
-        let host_reports_timeline = transport.pos_beats().is_some() || transport.tempo.is_some();
+        let position_beats_opt = transport.pos_beats();
+        let host_reports_timeline = position_beats_opt.is_some() || transport.tempo.is_some();
 
         if host_reports_timeline {
             if transport.playing != self.sequencer.is_playing() {
                 if transport.playing {
                     self.sequencer.play();
                     // Sync on play start
-                    if let Some(position_beats) = transport.pos_beats() {
+                    if let Some(position_beats) = position_beats_opt {
                         self.sequencer
                             .sync_to_host(position_beats, bpm, sample_rate);
                         // If starting near beat 0, force step 0 trigger.
@@ -1870,7 +2118,7 @@ impl Plugin for DrumFlashVst {
                 // resync fired, skipping steps and producing audible drops in
                 // the running mix. Studio One sends sample-accurate
                 // pos_beats so the bug never surfaced there.
-                if let Some(position_beats) = transport.pos_beats() {
+                if let Some(position_beats) = position_beats_opt {
                     let host_pos_mod = position_beats.rem_euclid(4.0);
                     let seq_pos_mod = self.sequencer.beat_position().rem_euclid(4.0);
                     let diff = (host_pos_mod - seq_pos_mod).abs();
@@ -1934,6 +2182,17 @@ impl Plugin for DrumFlashVst {
             std::array::from_fn(|i| self.params.humanizes()[i].value()),
             master_length,
         );
+
+        // If the pattern length changed, resync the sequencer to the host timeline
+        // so loop_count and beat_position stay consistent with the new master length.
+        if master_length != self.last_master_length {
+            self.last_master_length = master_length;
+            if transport.playing {
+                if let Some(position_beats) = position_beats_opt {
+                    self.sequencer.sync_to_host(position_beats, bpm, sample_rate);
+                }
+            }
+        }
 
         // Sync fusions from pattern to sequencer without allocating in the audio thread.
         self.sequencer.sync_fusions_from_pattern();
