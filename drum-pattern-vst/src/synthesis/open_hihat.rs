@@ -3,7 +3,7 @@
 //! Similar to the closed hi-hat but with a longer decay and a brighter tail.
 //! Peaking filter controlled by settings.frequency adds a pitched metallic peak.
 
-use super::{dsp, settings::open_hihat::OpenHiHatSettings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::open_hihat::OpenHiHatSettings, Voice, VoiceSettings};
 
 pub struct OpenHiHatVoice {
     settings: OpenHiHatSettings,
@@ -16,6 +16,7 @@ pub struct OpenHiHatVoice {
     filter: dsp::OnePoleFilter,
     filter_r: dsp::OnePoleFilter,
     envelope: dsp::DecayReleaseEnvelope,
+    saturation: saturation::SaturationConfig,
     active: bool,
     samples_elapsed: usize,
 }
@@ -52,6 +53,13 @@ impl OpenHiHatVoice {
             filter,
             filter_r,
             envelope,
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::from(settings.saturation_type),
+                amount: settings.saturation_amount,
+                mix: settings.saturation_mix,
+                output_gain: settings.saturation_output_gain,
+                pre_filter: settings.saturation_pre_filter > 0.5,
+            },
             active: false,
             samples_elapsed: 0,
         }
@@ -82,7 +90,7 @@ impl Voice for OpenHiHatVoice {
         let env = self.envelope.next().max(0.01);
 
         let time = self.samples_elapsed as f32 / self.sample_rate;
-        let output = filtered * env * self.settings.volume;
+        let output = self.saturation.process(filtered) * env * self.settings.volume;
         self.samples_elapsed += 1;
 
         if env <= 0.01 && time >= self.settings.decay {
@@ -119,7 +127,10 @@ impl Voice for OpenHiHatVoice {
             return (0.0, 0.0);
         }
 
-        (filtered_l * vol, filtered_r * vol)
+        (
+            self.saturation.process(filtered_l) * vol,
+            self.saturation.process(filtered_r) * vol,
+        )
     }
 
     fn is_active(&self) -> bool {
@@ -154,13 +165,42 @@ impl Voice for OpenHiHatVoice {
         )
         .with_attack_ms(self.settings.attack * 1000.0);
         self.envelope.set_hold(self.settings.hold);
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
         self.settings.algo = algo;
     }
 
-    fn set_special_param(&mut self, _index: usize, _value: f32) {
-        // OpenHiHat has no special parameters
+    fn set_special_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => {
+                self.settings.saturation_type = value as u8;
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
+            }
+            1 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            2 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            3 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
+            4 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
+            }
+            _ => {}
+        }
     }
 }

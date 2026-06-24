@@ -16,6 +16,11 @@ pub struct OpenHiHatSettings {
     pub analog: f32,
     pub stereo: f32,
     pub algo: u8,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
 }
 
 impl From<VoiceSettings> for OpenHiHatSettings {
@@ -35,12 +40,23 @@ impl From<VoiceSettings> for OpenHiHatSettings {
             analog: v.analog,
             stereo: v.stereo,
             algo: v.algo,
+            saturation_type: v.special[0] as u8,
+            saturation_amount: v.special[1],
+            saturation_mix: v.special[2],
+            saturation_output_gain: v.special[3],
+            saturation_pre_filter: v.special[4],
         }
     }
 }
 
 impl From<OpenHiHatSettings> for VoiceSettings {
     fn from(o: OpenHiHatSettings) -> Self {
+        let mut special = [0.0f32; 32];
+        special[0] = o.saturation_type as f32;
+        special[1] = o.saturation_amount;
+        special[2] = o.saturation_mix;
+        special[3] = o.saturation_output_gain;
+        special[4] = o.saturation_pre_filter;
         Self {
             frequency: o.frequency,
             attack: o.attack,
@@ -56,7 +72,7 @@ impl From<OpenHiHatSettings> for VoiceSettings {
             analog: o.analog,
             stereo: o.stereo,
             algo: o.algo,
-            special: [0.0; 32],
+            special,
         }
     }
 }
