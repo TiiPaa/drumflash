@@ -281,6 +281,9 @@ impl Sequencer {
     pub fn sync_to_host(&mut self, position_beats: f64, bpm: f32, _sample_rate: f32) {
         let master_beat_length = self.master_length as f64 * 0.25;
         self.beat_position = position_beats.rem_euclid(master_beat_length);
+        // Keep loop_count in sync with the host's absolute timeline so
+        // step conditions (1st loop, 2/2, etc.) work when driven by DAW transport.
+        self.loop_count = (position_beats / master_beat_length).floor() as usize;
         for track in self.tracks.iter_mut() {
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
             let shifted_beat =
@@ -300,6 +303,7 @@ impl Sequencer {
 
     pub fn reset(&mut self) {
         self.beat_position = 0.0;
+        self.loop_count = 0;
         let max_step = self.master_length.saturating_sub(1);
         for track in self.tracks.iter_mut() {
             track.previous_step = max_step;
@@ -311,6 +315,7 @@ impl Sequencer {
 
     pub fn play(&mut self) {
         self.is_playing = true;
+        self.loop_count = 0;
         let max_step = self.master_length.saturating_sub(1);
         for track in self.tracks.iter_mut() {
             track.previous_step = max_step; // Force trigger on next step 0

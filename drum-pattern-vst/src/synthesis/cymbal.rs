@@ -6,7 +6,7 @@
 //! - Very long exponential decay
 //! - Pitch modulation (FM) for the shimmering wash effect
 
-use super::{dsp, settings::cymbal::CymbalSettings, Voice, VoiceSettings};
+use super::{dsp, saturation, settings::cymbal::CymbalSettings, Voice, VoiceSettings};
 
 pub struct CymbalVoice {
     settings: CymbalSettings,
@@ -24,6 +24,7 @@ pub struct CymbalVoice {
     filter: dsp::OnePoleFilter,
     filter_r: dsp::OnePoleFilter,
     amp_env: dsp::DecayReleaseEnvelope,
+    saturation: saturation::SaturationConfig,
 
     // FM shimmer state
     fm_phase: f32,
@@ -59,6 +60,13 @@ impl CymbalVoice {
                 settings.release,
             )
             .with_attack_ms(settings.attack * 1000.0),
+            saturation: saturation::SaturationConfig {
+                saturation_type: saturation::SaturationType::from(settings.saturation_type),
+                amount: settings.saturation_amount,
+                mix: settings.saturation_mix,
+                output_gain: settings.saturation_output_gain,
+                pre_filter: settings.saturation_pre_filter > 0.5,
+            },
             fm_phase: 0.0,
             active: false,
         }
@@ -132,7 +140,7 @@ impl Voice for CymbalVoice {
             .set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
         let filtered = self.filter.process(noise);
 
-        filtered * env * self.settings.volume
+        self.saturation.process(filtered) * env * self.settings.volume
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -163,7 +171,10 @@ impl Voice for CymbalVoice {
         let filtered_l = self.filter.process(noise_l);
         let filtered_r = self.filter_r.process(noise_r);
         let vol = env * self.settings.volume;
-        (filtered_l * vol, filtered_r * vol)
+        (
+            self.saturation.process(filtered_l) * vol,
+            self.saturation.process(filtered_r) * vol,
+        )
     }
 
     fn is_active(&self) -> bool {
@@ -178,6 +189,12 @@ impl Voice for CymbalVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = CymbalSettings::from(settings);
         self.update_derived_params();
+        self.saturation.saturation_type =
+            saturation::SaturationType::from(self.settings.saturation_type);
+        self.saturation.amount = self.settings.saturation_amount;
+        self.saturation.mix = self.settings.saturation_mix;
+        self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -189,6 +206,27 @@ impl Voice for CymbalVoice {
             0 => self.settings.shimmer_freq = value,
             1 => self.settings.noise_type = value as u8,
             2 => self.settings.shimmer_amount = value,
+            3 => {
+                self.settings.saturation_type = value as u8;
+                self.saturation.saturation_type =
+                    saturation::SaturationType::from(self.settings.saturation_type);
+            }
+            4 => {
+                self.settings.saturation_amount = value;
+                self.saturation.amount = value;
+            }
+            5 => {
+                self.settings.saturation_mix = value;
+                self.saturation.mix = value;
+            }
+            6 => {
+                self.settings.saturation_output_gain = value;
+                self.saturation.output_gain = value;
+            }
+            7 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
+            }
             _ => {}
         }
     }

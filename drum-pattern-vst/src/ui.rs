@@ -52,6 +52,47 @@ fn note_to_freq(note: f32) -> f32 {
     440.0 * 2.0f32.powf((note - 69.0) / 12.0)
 }
 
+fn format_value_for_plock(
+    field: crate::instrument_registry::StandardField,
+    value: f32,
+    min: f32,
+    max: f32,
+) -> String {
+    match field {
+        crate::instrument_registry::StandardField::Volume => format!("{:.2}", value),
+        crate::instrument_registry::StandardField::Analog
+        | crate::instrument_registry::StandardField::Stereo => format!("{:.2}", value),
+        crate::instrument_registry::StandardField::Decay
+        | crate::instrument_registry::StandardField::Release
+        | crate::instrument_registry::StandardField::Attack
+        | crate::instrument_registry::StandardField::Hold
+        | crate::instrument_registry::StandardField::FilterEnvDecay => format!("{:.2}", value),
+        crate::instrument_registry::StandardField::DecayCurve
+        | crate::instrument_registry::StandardField::ReleaseCurve
+        | crate::instrument_registry::StandardField::FilterEnvAmount => format!("{:.2}", value),
+        crate::instrument_registry::StandardField::Freq
+        | crate::instrument_registry::StandardField::FilterFreq => {
+            let range = max - min;
+            if range >= 1000.0 || max >= 1000.0 {
+                format!("{:.1}", value)
+            } else {
+                format!("{:.2}", value)
+            }
+        }
+    }
+}
+
+fn format_value_for_plock_special(value: f32, min: f32, max: f32) -> String {
+    let range = max - min;
+    if range >= 1000.0 || max >= 1000.0 {
+        format!("{:.1}", value)
+    } else if range <= 1.0 {
+        format!("{:.2}", value)
+    } else {
+        format!("{:.2}", value)
+    }
+}
+
 fn note_name(note: f32) -> String {
     let note = note.round() as i32;
     let octave = (note / 12) - 1;
@@ -62,6 +103,116 @@ fn note_name(note: f32) -> String {
     format!("{}{}", names[note_idx as usize], octave)
 }
 
+
+fn plock_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mut egui::Ui)) {
+    // Remove the default context-menu border/shadow so our inner frame is the only chrome.
+    ui.visuals_mut().widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
+    ui.visuals_mut().widgets.noninteractive.corner_radius = egui::CornerRadius::same(0);
+
+    let frame = egui::Frame::NONE
+        .fill(P_ACTIVE)
+        .corner_radius(RADIUS_PANEL)
+        .inner_margin(egui::Margin::same(12));
+    frame.show(ui, |ui| {
+        ui.set_min_width(260.0);
+        ui.set_max_width(284.0);
+        // Top accent bar
+        let bar_rect = ui.available_rect_before_wrap();
+        let bar_rect = egui::Rect::from_min_max(
+            bar_rect.left_top(),
+            egui::pos2(bar_rect.right(), bar_rect.top() + 3.0),
+        );
+        ui.painter().rect_filled(bar_rect, 0.0, accent);
+        ui.add_space(8.0);
+        content(ui);
+    });
+}
+
+fn page_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mut egui::Ui)) {
+    ui.visuals_mut().widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
+    ui.visuals_mut().widgets.noninteractive.corner_radius = egui::CornerRadius::same(0);
+
+    let frame = egui::Frame::NONE
+        .fill(P_ACTIVE)
+        .corner_radius(RADIUS_PANEL)
+        .inner_margin(egui::Margin::same(10));
+    frame.show(ui, |ui| {
+        ui.set_min_width(130.0);
+        ui.set_max_width(150.0);
+        let bar_rect = ui.available_rect_before_wrap();
+        let bar_rect = egui::Rect::from_min_max(
+            bar_rect.left_top(),
+            egui::pos2(bar_rect.right(), bar_rect.top() + 3.0),
+        );
+        ui.painter().rect_filled(bar_rect, 0.0, accent);
+        ui.add_space(8.0);
+        content(ui);
+    });
+}
+
+fn plock_menu_header(ui: &mut egui::Ui, title: &str, step: usize, accent: Color32) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(title).font(f_sans_sb(11.0)).color(accent));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                RichText::new(format!("Step {}", step + 1))
+                    .font(f_mono_med(10.0))
+                    .color(FAINT),
+            );
+        });
+    });
+    ui.add_space(4.0);
+}
+
+fn page_menu_header(ui: &mut egui::Ui, title: &str, accent: Color32) {
+    ui.label(RichText::new(title).font(f_sans_sb(11.0)).color(accent));
+    ui.add_space(4.0);
+}
+
+fn plock_menu_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    accent: Color32,
+    overridden: bool,
+    value_text: Option<&str>,
+    content: impl FnOnce(&mut egui::Ui) -> egui::Response,
+) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.set_height(22.0);
+        let label_color = if overridden { accent } else { INK3 };
+        ui.label(RichText::new(label).font(f_sans_med(10.5)).color(label_color));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let response = content(ui);
+            if let Some(text) = value_text {
+                ui.add_space(8.0);
+                ui.allocate_ui_with_layout(
+                    Vec2::new(48.0, 22.0),
+                    egui::Layout::right_to_left(egui::Align::Center),
+                    |ui| {
+                        ui.label(
+                            RichText::new(text)
+                                .font(f_mono_med(10.0))
+                                .color(INK2),
+                        );
+                    },
+                );
+            }
+            response
+        })
+        .inner
+    })
+    .inner
+}
+
+fn plock_menu_action_row(ui: &mut egui::Ui, label: &str, accent: Color32) -> egui::Response {
+    ui.add_sized(
+        Vec2::new(ui.available_width(), 26.0),
+        egui::Button::new(RichText::new(label).font(f_sans_med(10.5)).color(accent))
+            .fill(PANEL2)
+            .stroke(egui::Stroke::new(1.0, LINE2))
+            .corner_radius(6.0),
+    )
+}
 
 fn install_egui_fonts(ctx: &egui::Context) {
     use egui::FontFamily;
@@ -261,6 +412,48 @@ struct EditorUIState {
     fusion_selection_start: [Option<usize>; DrumVoice::COUNT],
     /// Currently editing fusion group: (instrument, group_index).
     fusion_editing: Option<(usize, usize)>,
+    /// True when a fusion group just entered edit mode this frame; requests focus on the step-count field.
+    fusion_edit_focus_request: bool,
+    // Right-click plock popup state (replaces egui context_menu to control frame chrome).
+    plock_popup: Option<PlockPopup>,
+    // Right-click page popup state (Copy/Paste/Clear page).
+    page_popup: Option<PagePopup>,
+}
+
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct PlockPopup {
+    instrument: usize,
+    step: usize,
+    #[serde(with = "serde_pos2")]
+    screen_pos: egui::Pos2,
+}
+
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+enum PageMenuAction {
+    Paste,
+    Clear,
+}
+
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct PagePopup {
+    page: usize,
+    #[serde(with = "serde_pos2")]
+    screen_pos: egui::Pos2,
+    confirm_action: Option<PageMenuAction>,
+}
+
+mod serde_pos2 {
+    use nih_plug_egui::egui::Pos2;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(pos: &Pos2, s: S) -> Result<S::Ok, S::Error> {
+        [pos.x, pos.y].serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Pos2, D::Error> {
+        let [x, y] = <[f32; 2]>::deserialize(d)?;
+        Ok(Pos2::new(x, y))
+    }
 }
 
 pub fn create_editor(
@@ -309,7 +502,9 @@ pub fn create_editor(
             visuals.selection.bg_fill = BLUE;
             visuals.faint_bg_color = PANEL;
             visuals.extreme_bg_color = BG;
-            visuals.window_stroke = egui::Stroke::new(1.0, LINE);
+            visuals.window_stroke = egui::Stroke::NONE;
+            visuals.popup_shadow = egui::epaint::Shadow::NONE;
+            visuals.menu_corner_radius = egui::CornerRadius::same(RADIUS_PANEL as u8);
             visuals.widgets.noninteractive.bg_fill = BG;
 
             // Chrome tokens: rounded corners, hairline strokes, no hover-expansion.
@@ -431,6 +626,17 @@ pub fn create_editor(
                         ui.set_height(body_h);
                         draw_sound_panel(ui, &sound_settings_for_ui, &params_for_ui, setter, state);
                     });
+
+                    // Custom plock popup to avoid egui context_menu chrome.
+                    draw_plock_popup(
+                        egui_ctx,
+                        setter,
+                        &params_for_ui,
+                        &pattern_for_ui,
+                        &sound_settings_for_ui,
+                        &plock_for_ui,
+                        state,
+                    );
                 });
         },
     )
@@ -1494,9 +1700,11 @@ fn draw_grid_v2(
                             let is_fusion_mid = fusion_group.is_some() && !is_fusion_start;
 
                             let active = !beyond_len && pattern.is_active(source_step, inst);
-                            let is_current = fusion_group
-                                .map(|group| group.contains(play_step))
-                                .unwrap_or(play_step == global_step);
+                            let is_current = if let Some(group) = fusion_group {
+                                group.contains(play_step) && play_step == global_step
+                            } else {
+                                play_step == global_step
+                            };
                             let has_sound_plock =
                                 !beyond_len && plock.masks.is_active(inst, source_step);
                             let field_mask = if has_sound_plock {
@@ -1511,7 +1719,16 @@ fn draw_grid_v2(
                             let selection_start = fusion_mode_active
                                 && state.fusion_selection_start[inst] == Some(global_step);
 
+                            let is_editing = state
+                                .fusion_editing
+                                .map(|(ei, eidx)| {
+                                    ei == inst
+                                        && fusion_info.map(|(idx, _)| idx == eidx).unwrap_or(false)
+                                })
+                                .unwrap_or(false);
+
                             let (fill, stroke) = step_colors_v2(
+                                ui.ctx(),
                                 state.sequencer_mode,
                                 local_step,
                                 active,
@@ -1523,6 +1740,7 @@ fn draw_grid_v2(
                                 selection_start,
                                 is_fusion_start,
                                 is_fusion_mid,
+                                is_editing,
                             );
                             let text = if is_fusion_start {
                                 fusion_group
@@ -1530,6 +1748,11 @@ fn draw_grid_v2(
                                     .unwrap_or_default()
                             } else {
                                 String::new()
+                            };
+                            let fusion_span = if is_fusion_start {
+                                fusion_group.map(|g| g.cell_span())
+                            } else {
+                                None
                             };
                             let response = draw_step_cell_v2(
                                 ui,
@@ -1539,11 +1762,14 @@ fn draw_grid_v2(
                                 &text,
                                 !beyond_len,
                                 is_current && !beyond_len,
+                                is_fusion_mid,
+                                fusion_span,
                             );
 
                             if !beyond_len && response.double_clicked() {
                                 if let Some((idx, _)) = fusion_info {
                                     state.fusion_editing = Some((inst, idx));
+                                    state.fusion_edit_focus_request = true;
                                     fusion_editing_started_this_frame = true;
                                 }
                             } else if !beyond_len && response.clicked() && fusion_mode_active {
@@ -1558,6 +1784,16 @@ fn draw_grid_v2(
                                     &mut state.fusion_selection_start[inst],
                                 );
                             } else if !beyond_len && response.clicked() {
+                                // Clicking outside the currently edited fusion exits edit mode.
+                                if let Some((edit_inst, edit_idx)) = state.fusion_editing {
+                                    let editing_this_group = fusion_info
+                                        .map(|(idx, _)| edit_inst == inst && edit_idx == idx)
+                                        .unwrap_or(false);
+                                    if !editing_this_group {
+                                        finish_fusion_editing_for_ui(pattern, state);
+                                    }
+                                }
+
                                 if let Some(group) = fusion_group {
                                     toggle_fusion_for_ui(pattern, group, inst);
                                 } else {
@@ -1569,47 +1805,14 @@ fn draw_grid_v2(
                                 state.fusion_selection_start[inst] = None;
                             }
 
-                            if !beyond_len {
-                                response.context_menu(|ui| {
-                                    if let Some((idx, _)) = fusion_info {
-                                        if ui.button("Edit Fusion Steps").clicked() {
-                                            state.fusion_editing = Some((inst, idx));
-                                            fusion_editing_started_this_frame = true;
-                                            ui.close_menu();
-                                        }
-                                        if ui.button("Delete Fusion").clicked() {
-                                            let mut new_fusions = fusions.clone();
-                                            if idx < new_fusions.len() {
-                                                new_fusions.remove(idx);
-                                                pattern.store_fusions(inst, &new_fusions);
-                                            }
-                                            ui.close_menu();
-                                        }
-                                        ui.separator();
-                                    }
-                                    if state.sequencer_mode {
-                                        draw_sequencer_plock_menu(
-                                            ui,
-                                            params,
-                                            setter,
-                                            inst,
-                                            source_step,
-                                            state,
-                                            fusion_group.is_some(),
-                                        );
-                                    } else {
-                                        draw_plock_menu(
-                                            ui,
-                                            plock,
-                                            sound_settings,
-                                            params,
-                                            setter,
-                                            inst,
-                                            source_step,
-                                            state,
-                                        );
-                                    }
-                                });
+                            if !beyond_len && response.secondary_clicked() {
+                                if let Some(pos) = response.interact_pointer_pos() {
+                                    state.plock_popup = Some(PlockPopup {
+                                        instrument: inst,
+                                        step: source_step,
+                                        screen_pos: pos,
+                                    });
+                                }
                             }
                         }
                     });
@@ -1668,6 +1871,99 @@ fn draw_grid_v2(
     if !fusion_editing_started_this_frame {
         close_fusion_editing_on_outside_click(ui, pattern, state, None, fusion_edit_box_rect);
     }
+
+    draw_page_popup_if_any(ui, setter, pattern, params, plock, state);
+}
+
+fn draw_page_popup_if_any(
+    ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    pattern: &SharedPattern,
+    params: &DrumFlashParams,
+    plock: &PlockState,
+    state: &mut EditorUIState,
+) {
+    let Some(mut popup) = state.page_popup else { return };
+
+    let page = popup.page;
+    let has_clipboard = state.page_clipboard.is_some();
+    let confirm_action = popup.confirm_action;
+    let accent = BLUE;
+
+    let area_id = ui.id().with("page_popup");
+    let response = egui::Area::new(area_id)
+        .kind(egui::UiKind::Popup)
+        .order(egui::Order::Foreground)
+        .fixed_pos(popup.screen_pos)
+        .show(ui.ctx(), |ui| {
+            page_menu_frame(ui, accent, |ui| {
+                page_menu_header(ui, &format!("Page {}", page + 1), accent);
+
+                if plock_menu_action_row(ui, "Copy", accent).clicked() {
+                    state.page_clipboard = Some(copy_page_to_clipboard(pattern, plock, params, page));
+                    state.page_popup = None;
+                }
+
+                if confirm_action == Some(PageMenuAction::Paste) {
+                    ui.label(
+                        RichText::new("Overwrite page?")
+                            .font(f_sans_med(10.0))
+                            .color(INK3),
+                    );
+                    if plock_menu_action_row(ui, "Yes, overwrite", PL_LINK).clicked() {
+                        if let Some(ref clipboard) = state.page_clipboard {
+                            paste_page_from_clipboard(pattern, plock, params, page, clipboard);
+                            // Auto-extend pattern length so the pasted page is actually played.
+                            let required_len = ((page + 1) * 16).clamp(1, 64) as i32;
+                            let current_len = params.pattern_length.value().clamp(1, 64) as i32;
+                            if required_len > current_len {
+                                setter.set_parameter(&params.pattern_length, required_len);
+                            }
+                        }
+                        state.page_popup = None;
+                    }
+                    if plock_menu_action_row(ui, "No, cancel", INK3).clicked() {
+                        state.page_popup = None;
+                    }
+                } else {
+                    let paste_enabled = has_clipboard;
+                    let paste_color = if paste_enabled { PL_LINK } else { INK3 };
+                    if plock_menu_action_row(ui, "Paste", paste_color).clicked() && paste_enabled {
+                        popup.confirm_action = Some(PageMenuAction::Paste);
+                        state.page_popup = Some(popup);
+                    }
+                }
+
+                if confirm_action == Some(PageMenuAction::Clear) {
+                    ui.label(
+                        RichText::new("Clear page?")
+                            .font(f_sans_med(10.0))
+                            .color(INK3),
+                    );
+                    if plock_menu_action_row(ui, "Yes, clear", RED).clicked() {
+                        clear_page_for_ui(pattern, plock, params, page);
+                        state.page_popup = None;
+                    }
+                    if plock_menu_action_row(ui, "No, cancel", INK3).clicked() {
+                        state.page_popup = None;
+                    }
+                } else {
+                    if plock_menu_action_row(ui, "Clear", RED).clicked() {
+                        popup.confirm_action = Some(PageMenuAction::Clear);
+                        state.page_popup = Some(popup);
+                    }
+                }
+            });
+        })
+        .response;
+
+    // Close popup when clicking outside.
+    let clicked_outside = ui.input(|input| {
+        input.pointer.any_pressed() && input.pointer.interact_pos().map_or(false, |pos| !response.rect.contains(pos))
+    });
+    if clicked_outside {
+        state.page_popup = None;
+    }
 }
 
 fn draw_page_bar_v2(
@@ -1690,31 +1986,40 @@ fn draw_page_bar_v2(
         for page in 0..4 {
             let enabled = page < page_count.max(1);
             let active = state.current_page == page;
-            let response = ui.add_enabled(
-                enabled,
-                egui::Button::new(
-                    RichText::new(format!("{}", page + 1))
-                        .monospace()
-                        .size(10.5),
-                )
-                .min_size(Vec2::new(28.0, CTL_HEIGHT))
-                .fill(if active { BLUE } else { PANEL2 })
-                .stroke(egui::Stroke::new(1.0, if active { BLUE } else { LINE2 }))
-                .corner_radius(6.0),
-            );
-            if play_page == page {
-                let led = response.rect.center_bottom() + egui::vec2(0.0, 6.0);
-                ui.painter().circle_filled(
-                    led,
-                    5.0,
-                    Color32::from_rgba_unmultiplied(248, 113, 113, 45),
-                );
-                ui.painter().circle_filled(led, 2.5, RED);
-            }
-            if response.clicked() {
-                state.current_page = page;
-            }
-        }
+                            let response = ui.add_enabled(
+                                enabled,
+                                egui::Button::new(
+                                    RichText::new(format!("{}", page + 1))
+                                        .monospace()
+                                        .size(10.5),
+                                )
+                                .min_size(Vec2::new(28.0, CTL_HEIGHT))
+                                .fill(if active { BLUE } else { PANEL2 })
+                                .stroke(egui::Stroke::new(1.0, if active { BLUE } else { LINE2 }))
+                                .corner_radius(6.0),
+                            );
+                            if play_page == page {
+                                let led = response.rect.center_bottom() + egui::vec2(0.0, 6.0);
+                                ui.painter().circle_filled(
+                                    led,
+                                    5.0,
+                                    Color32::from_rgba_unmultiplied(248, 113, 113, 45),
+                                );
+                                ui.painter().circle_filled(led, 2.5, RED);
+                            }
+                            if response.clicked() {
+                                state.current_page = page;
+                            }
+                            if response.secondary_clicked() {
+                                if let Some(pos) = response.interact_pointer_pos() {
+                                    state.page_popup = Some(PagePopup {
+                                        page,
+                                        screen_pos: pos,
+                                        confirm_action: None,
+                                    });
+                                }
+                            }
+                        }
 
         let follow = egui::Button::new(
             RichText::new(if state.follow_mode {
@@ -1957,6 +2262,8 @@ fn draw_step_cell_v2(
     text: &str,
     enabled: bool,
     playhead: bool,
+    is_fusion_mid: bool,
+    fusion_span: Option<usize>,
 ) -> egui::Response {
     let sense = if enabled {
         egui::Sense::click()
@@ -1964,14 +2271,33 @@ fn draw_step_cell_v2(
         egui::Sense::hover()
     };
     let (rect, response) = ui.allocate_exact_size(size, sense);
-    let stroke = if response.hovered() && enabled {
+
+    // Fusion block: the start cell draws one continuous rectangle spanning all
+    // merged cells (including the gaps between them). Mid cells stay transparent
+    // so the start cell's block remains unbroken.
+    let block_rect = if let Some(span) = fusion_span {
+        let mut r = rect;
+        let extra = (size.x + GAP_TIGHT) * (span.saturating_sub(1) as f32);
+        r.set_right(r.right() + extra);
+        r
+    } else {
+        rect
+    };
+
+    let stroke = if response.hovered() && enabled && !is_fusion_mid {
         egui::Stroke::new(1.0, BLUE)
     } else {
         stroke
     };
-    ui.painter().rect_filled(rect, 4.0, fill);
-    ui.painter()
-        .rect_stroke(rect, 4.0, stroke, egui::StrokeKind::Inside);
+
+    if !is_fusion_mid {
+        ui.painter().rect_filled(block_rect, 4.0, fill);
+        if stroke.width > 0.0 && stroke.color.a() > 0 {
+            ui.painter()
+                .rect_stroke(block_rect, 4.0, stroke, egui::StrokeKind::Inside);
+        }
+    }
+
     // Playhead: an inset white ring drawn ON TOP of the state border.
     if playhead {
         ui.painter().rect_stroke(
@@ -1983,7 +2309,7 @@ fn draw_step_cell_v2(
     }
     if !text.is_empty() {
         ui.painter().text(
-            rect.center(),
+            block_rect.center(),
             egui::Align2::CENTER_CENTER,
             text,
             f_mono_sb(10.0),
@@ -1994,6 +2320,7 @@ fn draw_step_cell_v2(
 }
 
 fn step_colors_v2(
+    ctx: &egui::Context,
     sequencer_mode: bool,
     local_step: usize,
     active: bool,
@@ -2005,6 +2332,7 @@ fn step_colors_v2(
     selection_start: bool,
     is_fusion_start: bool,
     is_fusion_mid: bool,
+    is_editing: bool,
 ) -> (Color32, egui::Stroke) {
     if disabled {
         return (
@@ -2015,11 +2343,12 @@ fn step_colors_v2(
     if selection_start {
         return (Color32::from_rgb(20, 34, 58), egui::Stroke::new(1.5, BLUE));
     }
-    if is_fusion_start {
+    if is_fusion_start && !is_editing {
         return (Color32::from_rgb(20, 34, 58), egui::Stroke::new(1.0, BLUE));
     }
-    if is_fusion_mid {
-        return (Color32::from_rgb(15, 24, 40), egui::Stroke::new(1.0, BLUE_DIM));
+    if is_fusion_mid && !is_editing {
+        // Mid cells are visually merged into the start cell's continuous block.
+        return (Color32::TRANSPARENT, egui::Stroke::NONE);
     }
 
     let empty = if local_step % 4 == 0 {
@@ -2060,6 +2389,25 @@ fn step_colors_v2(
     } else {
         (empty, LINE)
     };
+
+    if is_editing {
+        let time = ctx.input(|i| i.time) as f32;
+        let pulse = ((time * 4.0).sin() + 1.0) * 0.5;
+        // When editing a fused group, pulse every cell of the group using the
+        // same blue fusion base so the block flashes as one unit.
+        let fusion_fill = if is_fusion_start || is_fusion_mid {
+            Color32::from_rgb(20, 34, 58)
+        } else {
+            fill
+        };
+        let edit_color = Color32::from_rgba_unmultiplied(
+            (BLUE.r() as f32 * pulse + fusion_fill.r() as f32 * (1.0 - pulse)) as u8,
+            (BLUE.g() as f32 * pulse + fusion_fill.g() as f32 * (1.0 - pulse)) as u8,
+            (BLUE.b() as f32 * pulse + fusion_fill.b() as f32 * (1.0 - pulse)) as u8,
+            255,
+        );
+        return (edit_color, egui::Stroke::new(1.5, BLUE));
+    }
 
     (fill, egui::Stroke::new(1.0, border))
 }
@@ -3117,6 +3465,9 @@ fn store_field(
 fn load_pattern_for_ui(pattern_for_ui: &SharedPattern, pattern: &Pattern) {
     let masks = pattern.step_masks();
     pattern_for_ui.load_step_masks(&masks);
+    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+        pattern_for_ui.store_fusions(inst, &pattern.fusions[inst]);
+    }
 }
 
 fn load_pattern_for_ui_with_length(
@@ -3130,6 +3481,9 @@ fn load_pattern_for_ui_with_length(
         masks[step] = 0;
     }
     pattern_for_ui.load_step_masks(&masks);
+    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+        pattern_for_ui.store_fusions(inst, &pattern.fusions[inst]);
+    }
 }
 
 fn toggle_step_for_ui(pattern_for_ui: &SharedPattern, step: usize, instrument: usize) {
@@ -3286,20 +3640,40 @@ fn draw_fusion_edit_box(
                             );
                             ui.label(RichText::new("Steps:").size(11.0));
 
-                            let mut step_count = group.step_count as i32;
-                            if ui
-                                .add_sized(
+                            let mut step_text = group.step_count.to_string();
+                            let step_edit_id = ui.id().with("fusion_step_count");
+                            let text_edit = egui::TextEdit::singleline(&mut step_text)
+                                .id(step_edit_id)
+                                .desired_width(48.0)
+                                .font(egui::TextStyle::Monospace);
+                            let output = ui
+                                .allocate_ui_with_layout(
                                     Vec2::new(48.0, 18.0),
-                                    egui::DragValue::new(&mut step_count)
-                                        .speed(1.0)
-                                        .range(1..=64),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| text_edit.show(ui),
                                 )
-                                .changed()
-                            {
-                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                                if let Some(group) = new_fusions.get_mut(index) {
-                                    group.step_count = step_count as u8;
-                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
+                                .inner;
+                            let te_response = output.response;
+                            if state.fusion_edit_focus_request {
+                                state.fusion_edit_focus_request = false;
+                                te_response.request_focus();
+                                let mut new_state = output.state;
+                                let text_len = step_text.chars().count();
+                                let all = egui::text::CCursorRange::two(
+                                    egui::text::CCursor::default(),
+                                    egui::text::CCursor::new(text_len),
+                                );
+                                new_state.cursor.set_char_range(Some(all));
+                                new_state.store(ui.ctx(), step_edit_id);
+                            }
+                            if te_response.lost_focus() || te_response.changed() {
+                                if let Ok(value) = step_text.parse::<u8>() {
+                                    let clamped = value.clamp(1, 64);
+                                    let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                                    if let Some(group) = new_fusions.get_mut(index) {
+                                        group.step_count = clamped;
+                                        pattern_for_ui.store_fusions(instrument, &new_fusions);
+                                    }
                                 }
                             }
 
@@ -3393,6 +3767,127 @@ fn clear_page_fusions_for_ui(pattern_for_ui: &SharedPattern, page: usize) {
             .collect();
         pattern_for_ui.store_fusions(inst, &retained);
     }
+}
+
+fn copy_page_to_clipboard(
+    pattern_for_ui: &SharedPattern,
+    plock: &PlockState,
+    params: &DrumFlashParams,
+    page: usize,
+) -> PageClipboard {
+    let page_start = page * 16;
+    let page_end = (page_start + 16).min(crate::sequencer::pattern::STEP_COUNT);
+    let mut triggers = [0u16; 16];
+    for (i, step) in (page_start..page_end).enumerate() {
+        triggers[i] = pattern_for_ui.load_step_mask(step);
+    }
+
+    let mut plocks = Vec::new();
+    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+        for (i, step) in (page_start..page_end).enumerate() {
+            if plock.masks.is_active(inst, step) {
+                let field_mask = plock.field_masks.get_raw(inst, step);
+                let mut values = vec![0.0f32; crate::plock::FIELD_COUNT];
+                for field in 0..crate::plock::FIELD_COUNT {
+                    values[field] = plock.values.get(inst, step, field);
+                }
+                plocks.push(PlockClipboardEntry {
+                    instrument: inst,
+                    step: i,
+                    field_mask,
+                    values,
+                });
+            }
+            let seq_plock = &params.seq_plock_state.state;
+            if seq_plock.is_active(inst, step) {
+                // Seq plocks are stored per step in PageClipboard via an extension field.
+                // For now, sound plocks only. Seq plocks will be added if needed.
+                let _ = seq_plock;
+            }
+        }
+    }
+
+    let mut fusions = Vec::new();
+    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+        for group in pattern_for_ui.load_fusions(inst) {
+            let group_start = group.start_cell as usize;
+            let group_end = group.end_cell as usize;
+            if group_start >= page_start && group_end < page_end {
+                fusions.push(FusionClipboardEntry {
+                    instrument: inst,
+                    start_step: group_start - page_start,
+                    end_step: group_end - page_start,
+                    step_count: group.step_count,
+                });
+            }
+        }
+    }
+
+    PageClipboard {
+        triggers,
+        plocks,
+        fusions,
+    }
+}
+
+fn paste_page_from_clipboard(
+    pattern_for_ui: &SharedPattern,
+    plock: &PlockState,
+    params: &DrumFlashParams,
+    page: usize,
+    clipboard: &PageClipboard,
+) {
+    let page_start = page * 16;
+    let page_end = (page_start + 16).min(crate::sequencer::pattern::STEP_COUNT);
+
+    // Triggers
+    for (i, step) in (page_start..page_end).enumerate() {
+        pattern_for_ui.set_step_mask(step, clipboard.triggers[i]);
+    }
+
+    // Clear existing plocks on the page
+    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+        for step in page_start..page_end {
+            plock.clear(inst, step);
+            params.seq_plock_state.state.clear(inst, step);
+        }
+    }
+
+    // Sound plocks
+    for entry in &clipboard.plocks {
+        let step = page_start + entry.step;
+        if step >= page_end {
+            continue;
+        }
+        plock.masks.set_active(entry.instrument, step, true);
+        plock.field_masks.set_raw(entry.instrument, step, entry.field_mask);
+        for (field, &value) in entry.values.iter().enumerate() {
+            plock.values.set(entry.instrument, step, field, value);
+        }
+    }
+
+    // Fusions
+    replace_page_fusions_for_ui(pattern_for_ui, params, plock, page, &clipboard.fusions);
+}
+
+fn clear_page_for_ui(
+    pattern_for_ui: &SharedPattern,
+    plock: &PlockState,
+    params: &DrumFlashParams,
+    page: usize,
+) {
+    let page_start = page * 16;
+    let page_end = (page_start + 16).min(crate::sequencer::pattern::STEP_COUNT);
+
+    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+        for step in page_start..page_end {
+            set_step_active_for_ui(pattern_for_ui, step, inst, false);
+            plock.clear(inst, step);
+            params.seq_plock_state.state.clear(inst, step);
+        }
+    }
+
+    clear_page_fusions_for_ui(pattern_for_ui, page);
 }
 
 #[allow(dead_code)] // retained: per-page Copy/Paste/Clear menu, re-wired in the Page-bar phase
@@ -3758,390 +4253,488 @@ fn draw_plock_menu(
 ) {
     use crate::plock::{FIELD_COUNT, SPECIAL_FIELD_START};
 
-    ui.label(
-        RichText::new(format!(
-            "Plock {} --- Step {}",
-            crate::instrument_registry::INSTRUMENTS[instrument].label,
-            step + 1
-        ))
-        .strong(),
-    );
-    ui.separator();
+    const ACCENT: Color32 = PL_LINK;
+    let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
+    let title = format!("Plock {}", inst_def.label);
 
-    let inst = &sound_settings.instruments[instrument];
-    let global = inst.load();
+    plock_menu_frame(ui, ACCENT, |ui| {
+        plock_menu_header(ui, &title, step, ACCENT);
 
-    let has_plock = plock.masks.is_active(instrument, step);
+        let inst = &sound_settings.instruments[instrument];
+        let global = inst.load();
+        let has_plock = plock.masks.is_active(instrument, step);
 
-    // ------ Creation ------
-    if !has_plock {
-        ui.label("Create plock:");
-        if ui.button("Link to global").clicked() {
-            plock.masks.set_active(instrument, step, true);
-        }
-        if ui.button("Snapshot current settings").clicked() {
-            let mut special = [0.0f32; 32];
-            for def in crate::instrument_registry::special_params(instrument) {
-                if def.special_index < special.len() {
-                    special[def.special_index] = params
-                        .special_param(instrument, def.special_index)
-                        .map(|param| param.value())
-                        .unwrap_or(def.default);
+        // ------ Creation ------
+        if !has_plock {
+            ui.label(RichText::new("Create Plock").font(f_sans_sb(10.0)).color(INK2));
+            ui.add_space(6.0);
+            if plock_menu_action_row(ui, "Link to Global", ACCENT).clicked() {
+                plock.masks.set_active(instrument, step, true);
+            }
+            if plock_menu_action_row(ui, "Snapshot Current Settings", ACCENT).clicked() {
+                let mut special = [0.0f32; 32];
+                for def in crate::instrument_registry::special_params(instrument) {
+                    if def.special_index < special.len() {
+                        special[def.special_index] = params
+                            .special_param(instrument, def.special_index)
+                            .map(|param| param.value())
+                            .unwrap_or(def.default);
+                    }
+                }
+                let algo = params.algos()[instrument].value() as u8;
+                let settings = VoiceSettings {
+                    frequency: global.0,
+                    decay: global.1,
+                    volume: global.2,
+                    filter_freq: global.3,
+                    attack: global.4,
+                    release: global.5,
+                    decay_curve: global.6,
+                    release_curve: global.7,
+                    hold: global.8,
+                    filter_env_amount: global.9,
+                    filter_env_decay: global.10,
+                    analog: global.11,
+                    stereo: global.12,
+                    algo,
+                    special,
+                };
+                plock.set_settings(instrument, step, &settings);
+            }
+            if let Some(ref entry) = state.plock_clipboard {
+                if entry.instrument == instrument {
+                    if plock_menu_action_row(ui, "Paste Plock", ACCENT).clicked() {
+                        plock.masks.set_active(instrument, step, true);
+                        plock.field_masks.set_raw(instrument, step, entry.field_mask);
+                        for (field, &value) in entry.values.iter().enumerate() {
+                            plock.values.set(instrument, step, field, value);
+                        }
+                    }
                 }
             }
-            let algo = params.algos()[instrument].value() as u8;
-            let settings = VoiceSettings {
-                frequency: global.0,
-                decay: global.1,
-                volume: global.2,
-                filter_freq: global.3,
-                attack: global.4,
-                release: global.5,
-                decay_curve: global.6,
-                release_curve: global.7,
-                hold: global.8,
-                filter_env_amount: global.9,
-                filter_env_decay: global.10,
-                analog: global.11,
-                stereo: global.12,
-                algo,
-                special,
-            };
-            plock.set_settings(instrument, step, &settings);
+            return;
         }
-        // Paste plock from clipboard (even if no plock exists here yet)
+
+        // ------ Mode indicator ------
+        let mask = plock.field_masks.get(instrument, step);
+        let all_bits = if FIELD_COUNT >= 64 {
+            0xFFFFFFFFFFFFFFFFu64
+        } else {
+            (1u64 << FIELD_COUNT) - 1
+        };
+        let mode_text = if mask == 0 {
+            "Linked to Global"
+        } else if mask == all_bits {
+            "Full Snapshot"
+        } else {
+            "Mixed"
+        };
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new(mode_text).font(f_mono_med(10.0)).color(ACCENT));
+            });
+        });
+        ui.add_space(8.0);
+
+        // ------ Volume (most used, shown first) ------
+        {
+            let vol_field = crate::instrument_registry::StandardField::Volume.plock_field_index();
+            let mut vol_value = if plock.field_masks.is_set(instrument, step, vol_field) {
+                plock.values.get(instrument, step, vol_field)
+            } else {
+                global.2
+            };
+            let overridden = plock.field_masks.is_set(instrument, step, vol_field);
+            let vol_response = plock_menu_row(
+                ui,
+                "Volume",
+                ACCENT,
+                overridden,
+                Some(&format!("{:.2}", vol_value)),
+                |ui| {
+                    ui.add(
+                        LocalParamSlider::new(&mut vol_value, 0.0..=2.0)
+                            .with_width(120.0)
+                            .without_value(),
+                    )
+                },
+            );
+            if vol_response.changed() {
+                plock.masks.set_active(instrument, step, true);
+                plock.field_masks.set(instrument, step, vol_field);
+                plock.set_field(instrument, step, vol_field, vol_value);
+            }
+        }
+
+        // ------ Standard fields ------
+        let get_global_value =
+            |field: crate::instrument_registry::StandardField| -> f32 {
+                match field {
+                    crate::instrument_registry::StandardField::Freq => global.0,
+                    crate::instrument_registry::StandardField::Decay => global.1,
+                    crate::instrument_registry::StandardField::Volume => global.2,
+                    crate::instrument_registry::StandardField::FilterFreq => global.3,
+                    crate::instrument_registry::StandardField::Attack => global.4,
+                    crate::instrument_registry::StandardField::Release => global.5,
+                    crate::instrument_registry::StandardField::DecayCurve => global.6,
+                    crate::instrument_registry::StandardField::ReleaseCurve => global.7,
+                    crate::instrument_registry::StandardField::Hold => global.8,
+                    crate::instrument_registry::StandardField::FilterEnvAmount => global.9,
+                    crate::instrument_registry::StandardField::FilterEnvDecay => global.10,
+                    crate::instrument_registry::StandardField::Analog => global.11,
+                    crate::instrument_registry::StandardField::Stereo => global.12,
+                }
+            };
+
+        let is_bass_drum_plock = instrument == 0 || instrument == 11;
+        let freq_in_notes_plock = if is_bass_drum_plock {
+            let freq_mode_param = if instrument == 0 {
+                &params.freq_mode_kick
+            } else {
+                &params.freq_mode_bassdrum808
+            };
+            freq_mode_param.value()
+        } else {
+            false
+        };
+
+        // Note display toggle for bass drums in plock
+        if is_bass_drum_plock {
+            let freq_mode_param = if instrument == 0 {
+                &params.freq_mode_kick
+            } else {
+                &params.freq_mode_bassdrum808
+            };
+            let freq_in_notes = freq_mode_param.value();
+            let label = if freq_in_notes { "Notes" } else { "Hz" };
+            plock_menu_row(
+                ui,
+                "Display",
+                ACCENT,
+                false,
+                None,
+                |ui| {
+                    if plock_menu_action_row(ui, label, ACCENT).clicked() {
+                        setter.set_parameter(freq_mode_param, !freq_in_notes);
+                    }
+                    ui.allocate_response(Vec2::new(1.0, 1.0), egui::Sense::hover())
+                },
+            );
+        }
+
+        for def in inst_def.standard_params {
+            if def.field == crate::instrument_registry::StandardField::Volume {
+                continue;
+            }
+            let field_index = def.field.plock_field_index();
+            let mut value = if plock.field_masks.is_set(instrument, step, field_index) {
+                plock.values.get(instrument, step, field_index)
+            } else {
+                get_global_value(def.field)
+            };
+            let overridden = plock.field_masks.is_set(instrument, step, field_index);
+
+            // Special case: frequency in note mode for bass drums
+            if def.field == crate::instrument_registry::StandardField::Freq && freq_in_notes_plock {
+                let ratio = inst_def.freq_display_ratio;
+                let note_val = freq_to_note(value * ratio).round();
+                let label = format!("{} {}", def.label, note_name(note_val));
+                plock_menu_row(
+                    ui,
+                    &label,
+                    ACCENT,
+                    overridden,
+                    None,
+                    |ui| {
+                        let mut changed = false;
+                        if ui.small_button("-").clicked() {
+                            let new_note = (note_val - 1.0).max(0.0);
+                            value = note_to_freq(new_note) / ratio;
+                            changed = true;
+                        }
+                        if ui.small_button("+").clicked() {
+                            let new_note = (note_val + 1.0).min(127.0);
+                            value = note_to_freq(new_note) / ratio;
+                            changed = true;
+                        }
+                        if changed {
+                            plock.set_field(instrument, step, field_index, value);
+                        }
+                        ui.allocate_response(Vec2::new(1.0, 1.0), egui::Sense::hover())
+                    },
+                );
+                continue;
+            }
+
+            match &def.widget {
+                crate::instrument_registry::ParamWidget::Slider {
+                    min,
+                    max,
+                    logarithmic,
+                    ..
+                } => {
+                    let value_text = format_value_for_plock(def.field, value, *min, *max);
+                    let row_response = plock_menu_row(
+                        ui,
+                        def.label,
+                        ACCENT,
+                        overridden,
+                        Some(&value_text),
+                        |ui| {
+                            ui.add(
+                                LocalParamSlider::new(&mut value, *min..=*max)
+                                    .logarithmic(*logarithmic)
+                                    .with_width(120.0)
+                                    .without_value(),
+                            )
+                        },
+                    );
+                    if row_response.changed() {
+                        plock.masks.set_active(instrument, step, true);
+                        plock.field_masks.set(instrument, step, field_index);
+                        plock.set_field(instrument, step, field_index, value);
+                    }
+                }
+                crate::instrument_registry::ParamWidget::Checkbox => {
+                    plock_menu_row(
+                        ui,
+                        def.label,
+                        ACCENT,
+                        overridden,
+                        None,
+                        |ui| {
+                            let mut checked = value >= 0.5;
+                            let response = ui.add(egui::Checkbox::new(
+                                &mut checked,
+                                RichText::new("").font(f_sans_med(10.0)),
+                            ));
+                            if response.changed() {
+                                value = if checked { 1.0 } else { 0.0 };
+                            }
+                            response
+                        },
+                    );
+                    if overridden {
+                        plock.set_field(instrument, step, field_index, value);
+                    }
+                }
+            }
+        }
+
+        // ------ Algo ------
+        {
+            let algo_count = crate::instrument_registry::algo_count(instrument);
+            if algo_count > 1 {
+                let voice = DrumVoice::from_index(instrument).expect("valid instrument");
+                let algos = synthesis::algos_for(voice);
+                let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
+
+                let mut algo_val = if plock.field_masks.is_set(instrument, step, 13) {
+                    plock.values.get(instrument, step, 13) as u8
+                } else {
+                    params.algos()[instrument].value() as u8
+                };
+                let algo_overridden = plock.field_masks.is_set(instrument, step, 13);
+
+                let max_algo = (algo_count - 1) as u8;
+                if algo_val > max_algo {
+                    algo_val = max_algo;
+                }
+
+                let mut selected = algo_val as usize;
+                let current_name = algo_names.get(selected).copied().unwrap_or("?");
+                let _algo_response = plock_menu_row(
+                    ui,
+                    "Algo",
+                    ACCENT,
+                    algo_overridden,
+                    Some(current_name),
+                    |ui| {
+                        let (response, picked) =
+                            styled_select(ui, "plock_algo", selected, &algo_names, 120.0);
+                        if let Some(picked) = picked {
+                            selected = picked;
+                        }
+                        response
+                    },
+                );
+                if selected != algo_val as usize {
+                    plock.masks.set_active(instrument, step, true);
+                    plock.field_masks.set(instrument, step, 13);
+                    plock.set_field(instrument, step, 13, selected as f32);
+                }
+            }
+        }
+
+        // ------ Special params ------
+        let special_defs = crate::instrument_registry::special_params(instrument);
+        for def in special_defs {
+            if def.special_index >= 8 {
+                continue;
+            }
+            let field = SPECIAL_FIELD_START + def.special_index;
+            let mut value = if plock.field_masks.is_set(instrument, step, field) {
+                plock.values.get(instrument, step, field)
+            } else {
+                params
+                    .special_param(instrument, def.special_index)
+                    .map(|p| p.value())
+                    .unwrap_or(def.default)
+            };
+            let overridden = plock.field_masks.is_set(instrument, step, field);
+            let log = def.min > 0.0 && def.max / def.min >= 20.0;
+            let value_text = format_value_for_plock_special(value, def.min, def.max);
+            let special_response = plock_menu_row(
+                ui,
+                def.label,
+                ACCENT,
+                overridden,
+                Some(&value_text),
+                |ui| {
+                    ui.add(
+                        LocalParamSlider::new(&mut value, def.min..=def.max)
+                            .logarithmic(log)
+                            .with_width(120.0)
+                            .without_value(),
+                    )
+                },
+            );
+            if special_response.changed() {
+                plock.masks.set_active(instrument, step, true);
+                plock.field_masks.set(instrument, step, field);
+                plock.set_field(instrument, step, field, value);
+            }
+        }
+
+        // ------ Actions ------
+        ui.add_space(8.0);
+        if plock_menu_action_row(ui, "Copy Plock", ACCENT).clicked() {
+            let field_mask = plock.field_masks.get_raw(instrument, step);
+            let mut values = Vec::with_capacity(crate::plock::FIELD_COUNT);
+            for field in 0..crate::plock::FIELD_COUNT {
+                values.push(plock.values.get(instrument, step, field));
+            }
+            state.plock_clipboard = Some(SinglePlockClipboard {
+                instrument,
+                field_mask,
+                values,
+            });
+        }
         if let Some(ref entry) = state.plock_clipboard {
             if entry.instrument == instrument {
-                if ui.button("Paste Plock").clicked() {
+                if plock_menu_action_row(ui, "Paste Plock", ACCENT).clicked() {
                     plock.masks.set_active(instrument, step, true);
-                    plock
-                        .field_masks
-                        .set_raw(instrument, step, entry.field_mask);
+                    plock.field_masks.set_raw(instrument, step, entry.field_mask);
                     for (field, &value) in entry.values.iter().enumerate() {
                         plock.values.set(instrument, step, field, value);
                     }
                 }
             }
         }
-        return;
-    }
+        if plock_menu_action_row(ui, "Clear Plock", Color32::from_rgb(255, 80, 80)).clicked() {
+            plock.clear(instrument, step);
+        }
+    });
+}
 
-    // ------ Mode indicator ------
-    let mask = plock.field_masks.get(instrument, step);
-    let all_bits = if FIELD_COUNT >= 64 {
-        0xFFFFFFFFFFFFFFFFu64
-    } else {
-        (1u64 << FIELD_COUNT) - 1
-    };
-    let mode_text = if mask == 0 {
-        "Linked to global"
-    } else if mask == all_bits {
-        "Full snapshot"
-    } else {
-        "Mixed"
-    };
-    ui.label(RichText::new(mode_text).small());
-    ui.separator();
-
-    // ------ Volume (most used, shown first) ------
-    {
-        let vol_field = crate::instrument_registry::StandardField::Volume.plock_field_index();
-        let mut vol_value = if plock.field_masks.is_set(instrument, step, vol_field) {
-            plock.values.get(instrument, step, vol_field)
-        } else {
-            global.2
-        };
-        let overridden = plock.field_masks.is_set(instrument, step, vol_field);
-        let label_text = if overridden {
-            RichText::new("Volume").strong()
-        } else {
-            RichText::new("Volume").weak()
-        };
-        let (changed, reset) = ui
-            .horizontal(|ui| {
-                ui.label(label_text);
-                let slider = LocalParamSlider::new(&mut vol_value, 0.0..=2.0).with_width(120.0);
-                let response = ui.add(slider);
-                let c = response.changed();
-                let r = overridden && ui.small_button("Undo").clicked();
-                (c, r)
-            })
-            .inner;
-        if changed {
-            plock.set_field(instrument, step, vol_field, vol_value);
-        }
-        if reset {
-            plock.field_masks.clear(instrument, step, vol_field);
-        }
-    }
-    ui.separator();
-
-    // ------ Helpers ------
-    let draw_slider = |ui: &mut egui::Ui,
-                       label: &str,
-                       value: &mut f32,
-                       range: std::ops::RangeInclusive<f32>,
-                       log: bool,
-                       field: usize| {
-        let overridden = plock.field_masks.is_set(instrument, step, field);
-        let label_text = if overridden {
-            RichText::new(label).strong()
-        } else {
-            RichText::new(label).weak()
-        };
-        let (changed, reset) = ui
-            .horizontal(|ui| {
-                ui.label(label_text);
-                let slider = LocalParamSlider::new(value, range.clone())
-                    .logarithmic(log)
-                    .with_width(120.0);
-                let response = ui.add(slider);
-                let c = response.changed();
-                let r = overridden && ui.small_button("Undo").clicked();
-                (c, r)
-            })
-            .inner;
-        if changed {
-            plock.set_field(instrument, step, field, *value);
-        }
-        if reset {
-            plock.field_masks.clear(instrument, step, field);
-        }
+fn draw_plock_popup(
+    ctx: &egui::Context,
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    sound_settings: &SoundSettingsState,
+    plock: &PlockState,
+    state: &mut EditorUIState,
+) {
+    let popup = match state.plock_popup {
+        Some(p) => p,
+        None => return,
     };
 
-    // ------ Standard fields ------
-    let get_global_value = |field: crate::instrument_registry::StandardField| -> f32 {
-        match field {
-            crate::instrument_registry::StandardField::Freq => global.0,
-            crate::instrument_registry::StandardField::Decay => global.1,
-            crate::instrument_registry::StandardField::Volume => global.2,
-            crate::instrument_registry::StandardField::FilterFreq => global.3,
-            crate::instrument_registry::StandardField::Attack => global.4,
-            crate::instrument_registry::StandardField::Release => global.5,
-            crate::instrument_registry::StandardField::DecayCurve => global.6,
-            crate::instrument_registry::StandardField::ReleaseCurve => global.7,
-            crate::instrument_registry::StandardField::Hold => global.8,
-            crate::instrument_registry::StandardField::FilterEnvAmount => global.9,
-            crate::instrument_registry::StandardField::FilterEnvDecay => global.10,
-            crate::instrument_registry::StandardField::Analog => global.11,
-            crate::instrument_registry::StandardField::Stereo => global.12,
-        }
-    };
+    let area_id = egui::Id::new("plock_popup");
+    let response = egui::Area::new(area_id)
+        .kind(egui::UiKind::Menu)
+        .order(egui::Order::Foreground)
+        .fixed_pos(popup.screen_pos)
+        .sense(egui::Sense::hover())
+        .show(ctx, |ui| {
+            // Outer border: draw a slightly larger rounded rect behind the panel.
+            let content_response = egui::Frame::NONE
+                .fill(P_ACTIVE)
+                .corner_radius(RADIUS_PANEL)
+                .inner_margin(egui::Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_min_width(260.0);
+                    ui.set_max_width(284.0);
 
-    let is_bass_drum_plock = instrument == 0 || instrument == 11;
-    let freq_in_notes_plock = if is_bass_drum_plock {
-        let freq_mode_param = if instrument == 0 {
-            &params.freq_mode_kick
-        } else {
-            &params.freq_mode_bassdrum808
-        };
-        freq_mode_param.value()
-    } else {
-        false
-    };
+                    let inst = popup.instrument;
+                    let step = popup.step;
+                    let fusions = pattern.load_fusions(inst);
+                    let fusion_group = fusions.iter().find(|g| {
+                        let start = g.start_cell;
+                        let end = g.end_cell;
+                        (start as usize) <= step && step <= (end as usize)
+                    });
+                    let fusion_info = fusions
+                        .iter()
+                        .enumerate()
+                        .find(|(_, g)| (g.start_cell as usize) <= step && step <= (g.end_cell as usize));
 
-    // Note display toggle for bass drums in plock
-    if is_bass_drum_plock {
-        let freq_mode_param = if instrument == 0 {
-            &params.freq_mode_kick
-        } else {
-            &params.freq_mode_bassdrum808
-        };
-        let mut freq_in_notes = freq_mode_param.value();
-        if ui.checkbox(&mut freq_in_notes, "Notes").changed() {
-            setter.set_parameter(freq_mode_param, freq_in_notes);
-        }
-    }
-
-    // Data-driven standard params
-    let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
-    for def in inst_def.standard_params {
-        // Volume is already shown at the top of the menu
-        if def.field == crate::instrument_registry::StandardField::Volume {
-            continue;
-        }
-        let field_index = def.field.plock_field_index();
-        let mut value = if plock.field_masks.is_set(instrument, step, field_index) {
-            plock.values.get(instrument, step, field_index)
-        } else {
-            get_global_value(def.field)
-        };
-
-        // Special case: frequency in note mode for bass drums
-        if def.field == crate::instrument_registry::StandardField::Freq && freq_in_notes_plock {
-            let ratio = inst_def.freq_display_ratio;
-            let overridden = plock.field_masks.is_set(instrument, step, field_index);
-            let note_val = freq_to_note(value * ratio).round();
-            let label_text = if overridden {
-                RichText::new(format!("{}: {}", def.label, note_name(note_val))).strong()
-            } else {
-                RichText::new(format!("{}: {}", def.label, note_name(note_val))).weak()
-            };
-            ui.horizontal(|ui| {
-                ui.label(label_text);
-                if ui.button("-").clicked() {
-                    let new_note = (note_val - 1.0).max(0.0);
-                    value = note_to_freq(new_note) / ratio;
-                    plock.set_field(instrument, step, field_index, value);
-                }
-                if ui.button("+").clicked() {
-                    let new_note = (note_val + 1.0).min(127.0);
-                    value = note_to_freq(new_note) / ratio;
-                    plock.set_field(instrument, step, field_index, value);
-                }
-                if overridden && ui.small_button("Undo").clicked() {
-                    plock.field_masks.clear(instrument, step, field_index);
-                }
-            });
-            continue;
-        }
-
-        match &def.widget {
-            crate::instrument_registry::ParamWidget::Slider {
-                min,
-                max,
-                logarithmic,
-                ..
-            } => {
-                draw_slider(
-                    ui,
-                    def.label,
-                    &mut value,
-                    *min..=*max,
-                    *logarithmic,
-                    field_index,
-                );
-            }
-            crate::instrument_registry::ParamWidget::Checkbox => {
-                let overridden = plock.field_masks.is_set(instrument, step, field_index);
-                let label_text = if overridden {
-                    RichText::new(def.label).strong()
-                } else {
-                    RichText::new(def.label).weak()
-                };
-                let (changed, reset) = ui
-                    .horizontal(|ui| {
-                        ui.label(label_text);
-                        let mut checked = value >= 0.5;
-                        let c = ui.add(egui::Checkbox::new(&mut checked, "")).changed();
-                        if c {
-                            value = if checked { 1.0 } else { 0.0 };
+                    if state.sequencer_mode {
+                        draw_sequencer_plock_menu(
+                            ui,
+                            params,
+                            setter,
+                            inst,
+                            step,
+                            state,
+                            fusion_group.is_some(),
+                        );
+                    } else {
+                        if let Some((idx, _)) = fusion_info {
+                            ui.horizontal(|ui| {
+                                if ui.button("Edit Fusion Steps").clicked() {
+                                    state.fusion_editing = Some((inst, idx));
+                                }
+                                if ui.button("Delete Fusion").clicked() {
+                                    let mut new_fusions = fusions.clone();
+                                    if idx < new_fusions.len() {
+                                        new_fusions.remove(idx);
+                                        pattern.store_fusions(inst, &new_fusions);
+                                    }
+                                }
+                            });
+                            ui.separator();
                         }
-                        let r = overridden && ui.small_button("Undo").clicked();
-                        (c, r)
-                    })
-                    .inner;
-                if changed {
-                    plock.set_field(instrument, step, field_index, value);
-                }
-                if reset {
-                    plock.field_masks.clear(instrument, step, field_index);
-                }
-            }
-        }
-    }
+                        draw_plock_menu(
+                            ui,
+                            plock,
+                            sound_settings,
+                            params,
+                            setter,
+                            inst,
+                            step,
+                            state,
+                        );
+                    }
+                })
+                .response;
 
-    // ------ Algo ------
-    let mut algo_val = if plock.field_masks.is_set(instrument, step, 13) {
-        plock.values.get(instrument, step, 13) as u8
-    } else {
-        params.algos()[instrument].value() as u8
-    };
-    let algo_overridden = plock.field_masks.is_set(instrument, step, 13);
-    let algo_label = if algo_overridden {
-        RichText::new("Algo").strong()
-    } else {
-        RichText::new("Algo").weak()
-    };
-    let mut algo_val_f32 = algo_val as f32;
-    let (algo_changed, algo_reset) = ui
-        .horizontal(|ui| {
-            ui.label(algo_label);
-            let slider = LocalParamSlider::new(&mut algo_val_f32, 0.0..=3.0).with_width(120.0);
-            let c = ui.add(slider).changed();
-            let r = algo_overridden && ui.small_button("Undo").clicked();
-            (c, r)
+            let border_rect = content_response.rect.expand2(egui::Vec2::new(1.0, 1.0));
+            ui.painter().rect_stroke(
+                border_rect,
+                RADIUS_PANEL + 1.0,
+                egui::Stroke::new(1.0, LINE2),
+                egui::StrokeKind::Inside,
+            );
+            content_response
         })
-        .inner;
-    if algo_changed {
-        algo_val = algo_val_f32.round() as u8;
-    }
-    if algo_changed {
-        plock.set_field(instrument, step, 13, algo_val as f32);
-    }
-    if algo_reset {
-        plock.field_masks.clear(instrument, step, 13);
-    }
+        .response;
 
-    // ------ Special params ------
-    let special_defs = crate::instrument_registry::special_params(instrument);
-    for def in special_defs {
-        if def.special_index >= 8 {
-            continue;
-        }
-        let field = SPECIAL_FIELD_START + def.special_index;
-        let mut value = if plock.field_masks.is_set(instrument, step, field) {
-            plock.values.get(instrument, step, field)
-        } else {
-            params
-                .special_param(instrument, def.special_index)
-                .map(|p| p.value())
-                .unwrap_or(def.default)
-        };
-        let overridden = plock.field_masks.is_set(instrument, step, field);
-        let label_text = if overridden {
-            RichText::new(def.label).strong()
-        } else {
-            RichText::new(def.label).weak()
-        };
-        let (changed, reset) = ui
-            .horizontal(|ui| {
-                ui.label(label_text);
-                let log = def.min > 0.0 && def.max / def.min >= 20.0;
-                let slider = LocalParamSlider::new(&mut value, def.min..=def.max)
-                    .logarithmic(log)
-                    .with_width(120.0);
-                let c = ui.add(slider).changed();
-                let r = overridden && ui.small_button("Undo").clicked();
-                (c, r)
-            })
-            .inner;
-        if changed {
-            plock.set_field(instrument, step, field, value);
-        }
-        if reset {
-            plock.field_masks.clear(instrument, step, field);
-        }
-    }
-
-    ui.separator();
-    if ui.button("Copy Plock").clicked() {
-        let field_mask = plock.field_masks.get_raw(instrument, step);
-        let mut values = Vec::with_capacity(crate::plock::FIELD_COUNT);
-        for field in 0..crate::plock::FIELD_COUNT {
-            values.push(plock.values.get(instrument, step, field));
-        }
-        state.plock_clipboard = Some(SinglePlockClipboard {
-            instrument,
-            field_mask,
-            values,
-        });
-    }
-    if let Some(ref entry) = state.plock_clipboard {
-        if entry.instrument == instrument {
-            if ui.button("Paste Plock").clicked() {
-                plock.masks.set_active(instrument, step, true);
-                plock
-                    .field_masks
-                    .set_raw(instrument, step, entry.field_mask);
-                for (field, &value) in entry.values.iter().enumerate() {
-                    plock.values.set(instrument, step, field, value);
-                }
-            }
-        }
-    }
-    if ui.button("Clear plock").clicked() {
-        plock.clear(instrument, step);
+    // Close popup on click outside.
+    if response.clicked_elsewhere() {
+        state.plock_popup = None;
     }
 }
 
@@ -4156,86 +4749,151 @@ fn draw_sequencer_plock_menu(
 ) {
     use crate::plock::{SequencerStepParams, StepCondition};
 
-    ui.label(
-        RichText::new(format!(
-            "Seq Plock {} --- Step {}",
-            crate::instrument_registry::INSTRUMENTS[instrument].label,
-            step + 1
-        ))
-        .strong(),
-    );
-    ui.separator();
+    const ACCENT: Color32 = SEQPL;
+    let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
+    let title = format!("Seq Plock {}", inst_def.label);
 
-    let seq_plock = &params.seq_plock_state.state;
-    let has_seq_plock = seq_plock.is_active(instrument, step);
-    let current = seq_plock.get(instrument, step).unwrap_or_default();
-    let mut changed_this_frame = false;
+    plock_menu_frame(ui, ACCENT, |ui| {
+        plock_menu_header(ui, &title, step, ACCENT);
 
-    // Probability slider
-    let mut prob = current.probability;
-    ui.label(format!("Probability: {:.0}%", prob * 100.0));
-    if ui
-        .add(egui::Slider::new(&mut prob, 0.0..=1.0).show_value(false))
-        .changed()
-    {
-        seq_plock.set_probability(instrument, step, prob);
-        changed_this_frame = true;
-    }
+        let seq_plock = &params.seq_plock_state.state;
+        let has_seq_plock = seq_plock.is_active(instrument, step);
+        let current = seq_plock.get(instrument, step).unwrap_or_default();
+        let mut changed_this_frame = false;
 
-    // Stutter count (1-16). Disabled on fused cells because fusion pulses are
-    // their own timing feature and should not stack with seq-plock stutter.
-    if stutter_disabled {
-        if has_seq_plock && current.stutter_count != 1 {
-            let mut fixed = current;
-            fixed.stutter_count = 1;
-            seq_plock.set(instrument, step, &fixed);
-        }
-        ui.label(
-            RichText::new("Stutter: disabled on fusion")
-                .size(11.0)
-                .color(INK2),
-        );
-    } else {
-        let mut stutter = current.stutter_count.max(1) as i32;
-        ui.label(format!("Stutter: {}x", stutter));
-        if ui.add(egui::Slider::new(&mut stutter, 1..=16)).changed() {
-            seq_plock.set_stutter(instrument, step, stutter as u8);
-            changed_this_frame = true;
-        }
-    }
-
-    // Condition selector. Avoid egui::ComboBox here: nested popups inside
-    // context_menu can close before the selected value is committed.
-    let all_conditions = StepCondition::all();
-    ui.label("Condition:");
-    egui::Grid::new(format!("condition_grid_{}_{}", instrument, step))
-        .num_columns(3)
-        .spacing([6.0, 4.0])
-        .show(ui, |ui| {
-            for (idx, cond) in all_conditions.iter().copied().enumerate() {
-                if ui
-                    .selectable_label(current.condition == cond, cond.label())
-                    .clicked()
-                {
-                    seq_plock.set_condition(instrument, step, cond);
-                    changed_this_frame = true;
-                }
-                if (idx + 1) % 3 == 0 {
-                    ui.end_row();
-                }
-            }
+        // Mode indicator
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let mode_text = if has_seq_plock { "Active" } else { "Inactive" };
+                ui.label(RichText::new(mode_text).font(f_mono_med(10.0)).color(ACCENT));
+            });
         });
+        ui.add_space(8.0);
 
-    // Clear button
-    ui.separator();
-    if has_seq_plock || changed_this_frame {
-        if ui.button("Clear Seq Plock").clicked() {
-            seq_plock.clear(instrument, step);
+        // Probability
+        {
+            let mut prob = current.probability;
+            let prob_text = format!("{:.0}%", prob * 100.0);
+            let prob_response = plock_menu_row(
+                ui,
+                "Probability",
+                ACCENT,
+                has_seq_plock,
+                Some(&prob_text),
+                |ui| {
+                    ui.add(
+                        LocalParamSlider::new(&mut prob, 0.0..=1.0)
+                            .with_width(86.0)
+                            .without_value(),
+                    )
+                },
+            );
+            if prob_response.changed() {
+                seq_plock.set_probability(instrument, step, prob);
+                changed_this_frame = true;
+            }
         }
-    } else {
-        ui.label("No sequencer plock");
-        if ui.button("Create Seq Plock").clicked() {
-            seq_plock.set(instrument, step, &SequencerStepParams::default());
+
+        // Stutter
+        if stutter_disabled {
+            if has_seq_plock && current.stutter_count != 1 {
+                let mut fixed = current;
+                fixed.stutter_count = 1;
+                seq_plock.set(instrument, step, &fixed);
+            }
+            plock_menu_row(
+                ui,
+                "Stutter",
+                ACCENT,
+                false,
+                None,
+                |ui| {
+                    ui.label(
+                        RichText::new("disabled on fusion")
+                            .font(f_sans_med(10.0))
+                            .color(INK3),
+                    );
+                    ui.allocate_response(Vec2::new(1.0, 1.0), egui::Sense::hover())
+                },
+            );
+        } else {
+            let mut stutter = current.stutter_count.max(1) as f32;
+            let stutter_text = format!("{}x", stutter as i32);
+            let stutter_response = plock_menu_row(
+                ui,
+                "Stutter",
+                ACCENT,
+                has_seq_plock && current.stutter_count != 1,
+                Some(&stutter_text),
+                |ui| {
+                    ui.add(
+                        LocalParamSlider::new(&mut stutter, 1.0..=16.0)
+                            .with_width(86.0)
+                            .without_value(),
+                    )
+                },
+            );
+            if stutter_response.changed() {
+                let new_stutter = stutter.round() as u8;
+                seq_plock.set_stutter(instrument, step, new_stutter);
+                changed_this_frame = true;
+            }
         }
-    }
+
+        // Condition
+        ui.add_space(8.0);
+        ui.label(RichText::new("Condition").font(f_sans_sb(10.0)).color(INK2));
+        ui.add_space(6.0);
+
+        let all_conditions = StepCondition::all();
+        let grid_id = format!("condition_grid_{}_{}", instrument, step);
+        let available_w = ui.available_width();
+        let button_w = (available_w - 16.0) / 3.0;
+        egui::Grid::new(grid_id)
+            .num_columns(3)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for (idx, cond) in all_conditions.iter().copied().enumerate() {
+                    let selected = current.condition == cond;
+                    let text_color = if selected { ACCENT } else { INK2 };
+                    let fill = if selected { PANEL2 } else { PANEL2 };
+                    let stroke_color = if selected { ACCENT } else { LINE2 };
+                    if ui
+                        .add_sized(
+                            Vec2::new(button_w.max(1.0), 26.0),
+                            egui::Button::new(
+                                RichText::new(cond.label())
+                                    .font(f_sans_med(9.5))
+                                    .color(text_color),
+                            )
+                            .fill(fill)
+                            .stroke(egui::Stroke::new(1.0, stroke_color))
+                            .corner_radius(6.0),
+                        )
+                        .clicked()
+                    {
+                        seq_plock.set_condition(instrument, step, cond);
+                        changed_this_frame = true;
+                    }
+                    if (idx + 1) % 3 == 0 {
+                        ui.end_row();
+                    }
+                }
+            });
+
+        // Actions
+        ui.add_space(8.0);
+        if has_seq_plock || changed_this_frame {
+            if plock_menu_action_row(ui, "Clear Seq Plock", Color32::from_rgb(255, 80, 80))
+                .clicked()
+            {
+                seq_plock.clear(instrument, step);
+            }
+        } else {
+            if plock_menu_action_row(ui, "Create Seq Plock", ACCENT).clicked() {
+                seq_plock.set(instrument, step, &SequencerStepParams::default());
+            }
+        }
+    });
 }

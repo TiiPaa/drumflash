@@ -1,0 +1,220 @@
+[27/05/2026 08:17] Oracle: Oui. Pour un tom type Simmons, l’algorithme de base n’est pas compliqué : c’est surtout une sinusoïde avec enveloppe d’amplitude + enveloppe de pitch + un petit transient.
+
+Algorithme simple :
+
+1. Oscillateur principal
+
+• une sinusoïde
+• fréquence de base entre ~70 et 180 Hz selon le tom
+
+2. Enveloppe de pitch
+
+• attaque instantanée
+• départ plus haut que la note finale
+• descente exponentielle rapide vers la fréquence cible
+• typiquement +1 à +2 octaves au départ, puis chute en 40 à 120 ms
+
+Exemple :
+f(t) = f0 * 2^(pitchDepth * exp(-t / pitchDecay))
+
+3. Enveloppe d’amplitude
+
+• attaque très courte
+• decay principal de 150 à 800 ms
+• pas forcément de sustain
+• release souvent nul ou très court
+
+Exemple :
+A(t) = exp(-t / ampDecay)
+
+4. Transient d’attaque
+
+• bruit très court ou clic filtré
+• 1 à 10 ms
+• high-pass ou band-pass pour donner l’impact
+• mixé faiblement avec le corps du tom
+
+5. Option utile : second oscillateur
+
+• autre sinusoïde, un peu désaccordée ou à l’octave
+• très bas dans le mix
+• donne plus de matière
+
+6. Saturation / filtre
+
+• légère saturation après sommation
+• éventuellement low-pass ou band-pass doux pour arrondir
+
+Forme générale :
+y(t) = A(t) * sin(phase(t)) + transient(t)
+
+avec :
+phase(t+1) = phase(t) + 2π * f(t) / sampleRate
+
+Pseudo-code :
+
+phase = 0
+for each sample:
+pitchEnv = exp(-t / pitchDecay)
+freq = f0 * pow(2, pitchDepth * pitchEnv)
+
+ampEnv = exp(-t / ampDecay)
+
+phase += 2 * PI * freq / sr
+body = sin(phase) * ampEnv
+
+clickEnv = exp(-t / clickDecay)
+click = noise() * clickEnv
+click = highpass(click)
+
+out = body + clickAmount * click
+out = saturate(out * drive)
+
+C’est vraiment la chute de pitch qui fait le caractère “tom électronique”.
+Sans elle, tu as juste une percussion tonale.
+Avec elle, tu retrouves le côté Simmons.
+
+Réglages de départ efficaces :
+
+• f0 = 110 Hz
+• pitchDepth = 1.5 octave
+• pitchDecay = 60 ms
+• ampDecay = 350 ms
+• clickDecay = 4 ms
+• clickAmount = faible
+• drive = léger
+
+Si tu veux, je peux te donner la version suivante :
+
+• pseudo-code plus propre orienté Rust/C++
+• formule encore plus réaliste
+• patch complet pour un plugin de synthèse de tom Simmons.
+[27/05/2026 08:18] Ni Mi: Oui pour du rust
+[27/05/2026 08:18] Oracle: Oui. Voilà une base Rust propre pour une voix de tom type Simmons.
+
+Code :
+
+use std::f32::consts::PI;
+
+pub struct SimmonsTom {
+    sample_rate: f32,
+    phase: f32,
+    time: f32,
+    active: bool,
+    seed: u32,
+
+    // paramètres
+    base_freq: f32,     // ex: 110.0
+    pitch_depth: f32,   // en octaves, ex: 1.5
+    pitch_decay: f32,   // secondes, ex: 0.06
+    amp_decay: f32,     // secondes, ex: 0.35
+    click_decay: f32,   // secondes, ex: 0.004
+    click_amount: f32,  // ex: 0.12
+    drive: f32,         // ex: 1.2
+}
+
+impl SimmonsTom {
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            sample_rate,
+            phase: 0.0,
+            time: 0.0,
+            active: false,
+            seed: 0x1234_5678,
+            base_freq: 110.0,
+            pitch_depth: 1.5,
+            pitch_decay: 0.06,
+            amp_decay: 0.35,
+            click_decay: 0.004,
+            click_amount: 0.12,
+            drive: 1.2,
+        }
+    }
+
+    pub fn trigger(&mut self, base_freq: f32) {
+        self.base_freq = base_freq;
+        self.phase = 0.0;
+        self.time = 0.0;
+        self.active = true;
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+
+    pub fn next_sample(&mut self) -> f32 {
+        if !self.active {
+            return 0.0;
+        }
+
+        let t = self.time;
+
+        let pitch_env = (-t / self.pitch_decay).exp();
+        let freq = self.base_freq * 2.0_f32.powf(self.pitch_depth * pitch_env);
+
+        let amp_env = (-t / self.amp_decay).exp();
+
+        self.phase += 2.0 * PI * freq / self.sample_rate;
+        if self.phase > 2.0 * PI {
+            self.phase -= 2.0 * PI;
+        }
+
+        let body = self.phase.sin() * amp_env;
+
+        let click_env = (-t / self.click_decay).exp();
+        let click = self.white_noise() * click_env * self.click_amount;
+
+        let out = soft_clip((body + click) * self.drive);
+
+        self.time += 1.0 / self.sample_rate;
+
+        if amp_env < 0.0005 {
+            self.active = false;
+        }
+
+        out
+    }
+
+    fn white_noise(&mut self) -> f32 {
+        self.seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        let x = ((self.seed >> 8) as f32) / ((u32::MAX >> 8) as f32);
+        x * 2.0 - 1.0
+    }
+}
+
+fn soft_clip(x: f32) -> f32 {
+    x.tanh()
+}
+
+Usage minimale :
+
+let mut tom = SimmonsTom::new(48_000.0);
+tom.trigger(110.0);
+
+for _ in 0..48_000 {
+    let sample = tom.next_sample();
+    // envoyer sample vers le buffer audio
+}
+
+Ce qui fait vraiment le son :
+
+• base_freq : la hauteur finale du tom
+• pitch_depth : combien il part haut avant de descendre
+• pitch_decay : vitesse de la chute
+• amp_decay : longueur du tom
+• click_amount : dureté de l’attaque
+
+Réglages de départ :
+
+• tom bas : base_freq = 80.0
+• tom medium : 110.0
+• tom haut : 160.0
+• plus Simmons 80s : augmente pitch_depth
+• plus sec / EBM : baisse amp_decay
+• plus agressif : monte drive et click_amount
+
+Si tu veux, je peux te faire l’étape suivante :
+
+1. version plus réaliste avec 2 oscillateurs
+2. version avec filtre résonant
+3. version directement intégrable dans ton projet Rust audio

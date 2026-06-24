@@ -13,6 +13,11 @@ pub struct RideSettings {
     pub analog: f32,
     pub stereo: f32,
     pub algo: u8,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
 }
 
 impl From<VoiceSettings> for RideSettings {
@@ -29,12 +34,23 @@ impl From<VoiceSettings> for RideSettings {
             analog: v.analog,
             stereo: v.stereo,
             algo: v.algo,
+            saturation_type: v.special[0] as u8,
+            saturation_amount: v.special[1],
+            saturation_mix: v.special[2],
+            saturation_output_gain: v.special[3],
+            saturation_pre_filter: v.special[4],
         }
     }
 }
 
 impl From<RideSettings> for VoiceSettings {
     fn from(r: RideSettings) -> Self {
+        let mut special = [0.0f32; 32];
+        special[0] = r.saturation_type as f32;
+        special[1] = r.saturation_amount;
+        special[2] = r.saturation_mix;
+        special[3] = r.saturation_output_gain;
+        special[4] = r.saturation_pre_filter;
         Self {
             frequency: r.frequency,
             attack: r.attack,
@@ -50,7 +66,7 @@ impl From<RideSettings> for VoiceSettings {
             analog: r.analog,
             stereo: r.stereo,
             algo: r.algo,
-            special: [0.0; 32],
+            special,
         }
     }
 }

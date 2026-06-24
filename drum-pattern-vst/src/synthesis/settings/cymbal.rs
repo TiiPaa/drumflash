@@ -19,6 +19,11 @@ pub struct CymbalSettings {
     pub shimmer_amount: f32,
     /// Noise colour: 0=white, 1=pink, 2=brown, 3=blue.
     pub noise_type: u8,
+    pub saturation_type: u8,
+    pub saturation_amount: f32,
+    pub saturation_mix: f32,
+    pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
 }
 
 impl From<VoiceSettings> for CymbalSettings {
@@ -38,6 +43,11 @@ impl From<VoiceSettings> for CymbalSettings {
             shimmer_freq: v.special[0],
             shimmer_amount: v.special[2],
             noise_type: v.special[1] as u8,
+            saturation_type: v.special[3] as u8,
+            saturation_amount: v.special[4],
+            saturation_mix: v.special[5],
+            saturation_output_gain: v.special[6],
+            saturation_pre_filter: v.special[7],
         }
     }
 }
@@ -48,6 +58,11 @@ impl From<CymbalSettings> for VoiceSettings {
         special[0] = c.shimmer_freq;
         special[1] = c.noise_type as f32;
         special[2] = c.shimmer_amount;
+        special[3] = c.saturation_type as f32;
+        special[4] = c.saturation_amount;
+        special[5] = c.saturation_mix;
+        special[6] = c.saturation_output_gain;
+        special[7] = c.saturation_pre_filter;
         Self {
             frequency: c.frequency,
             attack: c.attack,
