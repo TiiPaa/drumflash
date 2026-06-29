@@ -1,5 +1,26 @@
 ﻿# Changelog
 
+## 2026-06-29 — Feature: morphing par pulse sur les cellules fusionnées (build 20260629-144210)
+
+**Build:** `20260629-144210`
+**Validation:** `cargo check` OK, `cargo test` OK (153 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Morphing par pulse sur les fusions (Step Fusion).**
+  - Dans la boîte d'édition d'une fusion, un select **Morph** permet de choisir un paramètre continu (Volume, Frequency, Decay, Filter, Attack, Release, curves, Analog, Stereo, et les special params continus comme saturation amount/mix/output gain).
+  - Un slider **End** définit la valeur cible à atteindre au dernier pulse.
+  - L'interpolation est linéaire de la valeur actuelle (globale ou plock) vers la valeur de fin, appliquée à chaque pulse.
+  - Les paramètres discrets (type d'algo, type de saturation, pre-filter, mode stéréo…) ne sont pas proposés.
+- **Stockage des fusions étendu à `u64`.**
+  - `FusedGroup` contient maintenant `morph_field` et `morph_end_value`.
+  - `SharedPattern.fusions` passe de `AtomicU32` à `AtomicU64`.
+- **Persistance DAW des fusions implémentée.**
+  - Nouveau champ `pattern-v3` qui persiste les step masks + les fused groups.
+  - Migration automatique depuis `pattern-v2` (masks uniquement) et `pattern-v1` / legacy `st01..st16`.
+  - La pattern bank sauvegarde et restaure aussi les fusions (`fusion_bytes`).
+
+---
+
 ## 2026-06-24 — Fix: dropdown Algo dynamique dans le menu p-lock (build 20260624-171823)
 
 **Build:** `20260624-171823`
