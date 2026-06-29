@@ -1851,7 +1851,6 @@ fn draw_grid_v2(
             }
         });
 
-    let mut fusion_edit_box_rect = None;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 12.0;
         ui.label(RichText::new("P-Lock Mode").font(f_sans_sb(10.5)).color(INK3));
@@ -1865,14 +1864,20 @@ fn draw_grid_v2(
                 .size(10.5)
                 .color(INK3),
         );
-        fusion_edit_box_rect = Some(draw_fusion_edit_box(
-            ui,
-            pattern,
-            params,
-            sound_settings,
-            state,
-            fusion_mode_active,
-        ));
+    });
+
+    let mut fusion_edit_box_rect = None;
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            fusion_edit_box_rect = Some(draw_fusion_edit_box(
+                ui,
+                pattern,
+                params,
+                sound_settings,
+                state,
+                fusion_mode_active,
+            ));
+        });
     });
 
     if !fusion_editing_started_this_frame {
@@ -3663,7 +3668,7 @@ fn draw_fusion_edit_box(
     state: &mut EditorUIState,
     fusion_mode_active: bool,
 ) -> egui::Rect {
-    let box_size = Vec2::new(580.0, 28.0);
+    let box_size = Vec2::new(720.0, 28.0);
 
     ui.allocate_ui_with_layout(
         box_size,
