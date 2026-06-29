@@ -468,7 +468,7 @@
 - [ ] [100z] Animations .14s (hover/toggle) — basse priorité.
 - [ ] [100aa] Nettoyage final : adopter `StyledButton` (hover chrome), retirer `design_system.rs`/`SegmentedControl` non câblés, remplacer `allocate_ui_at_rect` (déprécié) par `allocate_new_ui`.
 - [x] [100ab] Dropdown Algo dynamique dans le menu p-lock (plage selon algo_count, nom affiché, masquage si 1 algo) - build 20260624-171823.
-- [x] [100ac] Morphing par pulse sur les cellules fusionnees (select Morph + slider End, interpolation lineaire, params continus + special params continus, persistence DAW pattern-v3 + pattern bank) - build 20260629-144210.
+- [x] [100ac] Morphing par pulse sur les cellules fusionnees (select Morph + slider End, interpolation lineaire, params continus + special params continus, persistence DAW pattern-v3 + pattern bank) - build 20260629-160624.
 
 ### Notes
 - **Volume** : range -60 dB à +6 dB (actuellement 0..2 linéaire, à convertir)
