@@ -129,6 +129,10 @@ pub struct TriggerResult {
     /// `1` means a normal, non-fused trigger.
     pub fusion_pulse_count: u8,
     pub fusion_span_cells: u8,
+    /// Morphing target field (255 = none). Only meaningful for fused triggers.
+    pub morph_field: u8,
+    /// Morphing target value at the last pulse.
+    pub morph_end_value: f32,
 }
 
 impl Default for TriggerResult {
@@ -139,6 +143,8 @@ impl Default for TriggerResult {
             step: 0,
             fusion_pulse_count: 1,
             fusion_span_cells: 1,
+            morph_field: 255,
+            morph_end_value: 0.0,
         }
     }
 }
@@ -233,11 +239,19 @@ impl Sequencer {
                 let current_step = track.step_counter % track.track_length.max(1);
 
                 let fusion = self.fusions[instrument].containing(current_step);
-                let (source_step, fusion_pulse_count, fusion_span_cells) = match fusion {
+                let (
+                    source_step,
+                    fusion_pulse_count,
+                    fusion_span_cells,
+                    morph_field,
+                    morph_end_value,
+                ) = match fusion {
                     Some(group) if group.is_start(current_step) => (
                         group.start_cell as usize,
                         group.step_count.clamp(1, 64),
                         group.cell_span().min(64) as u8,
+                        group.morph_field,
+                        group.morph_end_value,
                     ),
                     Some(_) => {
                         // Covered cells do not trigger independently. The start cell
@@ -246,7 +260,7 @@ impl Sequencer {
                         track.previous_step = current_step;
                         continue;
                     }
-                    None => (current_step, 1, 1),
+                    None => (current_step, 1, 1, 255, 0.0),
                 };
 
                 let step_mask = self.pattern.load_step_mask(source_step);
@@ -269,6 +283,8 @@ impl Sequencer {
                     step: source_step,
                     fusion_pulse_count,
                     fusion_span_cells,
+                    morph_field,
+                    morph_end_value,
                 };
                 track.previous_shifted_master = shifted_master;
                 track.previous_step = current_step;
@@ -797,16 +813,19 @@ mod tests {
                     start_cell: 0,
                     end_cell: 3,
                     step_count: 3,
+                    ..Default::default()
                 },
                 FusedGroup {
                     start_cell: 5,
                     end_cell: 5,
                     step_count: 1,
+                    ..Default::default()
                 }, // single-cell
                 FusedGroup {
                     start_cell: 14,
                     end_cell: 17,
                     step_count: 3,
+                    ..Default::default()
                 }, // crosses page
             ],
         );
@@ -835,6 +854,7 @@ mod tests {
                 start_cell: 0,
                 end_cell: 3,
                 step_count: 3,
+                ..Default::default()
             }],
         );
         seq.play();
