@@ -1865,7 +1865,14 @@ fn draw_grid_v2(
                 .size(10.5)
                 .color(INK3),
         );
-        fusion_edit_box_rect = Some(draw_fusion_edit_box(ui, pattern, state, fusion_mode_active));
+        fusion_edit_box_rect = Some(draw_fusion_edit_box(
+            ui,
+            pattern,
+            params,
+            sound_settings,
+            state,
+            fusion_mode_active,
+        ));
     });
 
     if !fusion_editing_started_this_frame {
@@ -3606,13 +3613,57 @@ fn draw_fusion_idle_box_contents(ui: &mut egui::Ui, fusion_mode_active: bool) {
     }
 }
 
+fn current_field_value_for_fusion(
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
+    instrument: usize,
+    field_index: usize,
+) -> f32 {
+    match field_index {
+        0..=11 | 18 => {
+            let inst = &sound_settings.instruments[instrument];
+            let (freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed, analog, stereo) =
+                inst.load();
+            match field_index {
+                0 => freq,
+                1 => decay,
+                2 => vol,
+                3 => filt,
+                4 => release,
+                5 => dc,
+                6 => rc,
+                7 => hold,
+                8 => fea,
+                9 => fed,
+                10 => analog,
+                11 => stereo,
+                18 => attack,
+                _ => 0.0,
+            }
+        }
+        _ => {
+            if field_index >= crate::plock::SPECIAL_FIELD_START {
+                let special_index = field_index - crate::plock::SPECIAL_FIELD_START;
+                params
+                    .special_param(instrument, special_index)
+                    .map(|p| p.value())
+                    .unwrap_or(0.0)
+            } else {
+                0.0
+            }
+        }
+    }
+}
+
 fn draw_fusion_edit_box(
     ui: &mut egui::Ui,
     pattern_for_ui: &SharedPattern,
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
     state: &mut EditorUIState,
     fusion_mode_active: bool,
 ) -> egui::Rect {
-    let box_size = Vec2::new(380.0, 28.0);
+    let box_size = Vec2::new(580.0, 28.0);
 
     ui.allocate_ui_with_layout(
         box_size,
@@ -3673,6 +3724,88 @@ fn draw_fusion_edit_box(
                                     if let Some(group) = new_fusions.get_mut(index) {
                                         group.step_count = clamped;
                                         pattern_for_ui.store_fusions(instrument, &new_fusions);
+                                    }
+                                }
+                            }
+
+                            // Morph target selection
+                            let morphable =
+                                crate::instrument_registry::morphable_fields(instrument);
+                            let mut morph_options: Vec<&str> = vec!["Off"];
+                            for field in &morphable {
+                                morph_options.push(field.label);
+                            }
+                            let current_morph_idx = if group.morph_field == 255 {
+                                0
+                            } else {
+                                morphable
+                                    .iter()
+                                    .position(|f| f.field_index == group.morph_field as usize)
+                                    .map(|i| i + 1)
+                                    .unwrap_or(0)
+                            };
+                            let mut selected_morph = current_morph_idx;
+                            ui.label(RichText::new("Morph:").size(11.0));
+                            let (_sel_response, picked) = styled_select(
+                                ui,
+                                "fusion_morph",
+                                selected_morph,
+                                &morph_options,
+                                120.0,
+                            );
+                            if let Some(picked) = picked {
+                                selected_morph = picked;
+                            }
+
+                            if selected_morph != current_morph_idx {
+                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                                if let Some(group) = new_fusions.get_mut(index) {
+                                    if selected_morph == 0 {
+                                        group.morph_field = 255;
+                                    } else if let Some(field) = morphable.get(selected_morph - 1)
+                                    {
+                                        group.morph_field = field.field_index as u8;
+                                        // Initialise end value to current parameter value
+                                        group.morph_end_value =
+                                            current_field_value_for_fusion(
+                                                params,
+                                                sound_settings,
+                                                instrument,
+                                                field.field_index,
+                                            );
+                                    }
+                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
+                                }
+                            }
+
+                            // Morph end value slider
+                            if selected_morph > 0 {
+                                if let Some(field) = morphable.get(selected_morph - 1) {
+                                    let mut end_value = group.morph_end_value.clamp(field.min, field.max);
+                                    let log = field.min > 0.0
+                                        && field.max / field.min >= 20.0;
+                                    let value_text =
+                                        format_value_for_plock_special(end_value, field.min, field.max);
+                                    ui.label(
+                                        RichText::new(format!("End: {}", value_text))
+                                            .size(10.5)
+                                            .color(INK2),
+                                    );
+                                    let slider_response = ui.add(
+                                        LocalParamSlider::new(&mut end_value,
+                                            field.min..=field.max,
+                                        )
+                                        .logarithmic(log)
+                                        .with_width(80.0)
+                                        .without_value(),
+                                    );
+                                    if slider_response.changed() {
+                                        let mut new_fusions =
+                                            pattern_for_ui.load_fusions(instrument);
+                                        if let Some(group) = new_fusions.get_mut(index) {
+                                            group.morph_end_value = end_value;
+                                            pattern_for_ui.store_fusions(instrument, &new_fusions);
+                                        }
                                     }
                                 }
                             }
@@ -3919,6 +4052,7 @@ fn replace_page_fusions_for_ui(
                 start_cell: start_cell as u8,
                 end_cell: end_cell as u8,
                 step_count: entry.step_count,
+                ..Default::default()
             };
             if !group.is_valid() {
                 continue;
@@ -3972,6 +4106,7 @@ fn duplicate_fusions_for_x2(
                 start_cell: start_cell as u8,
                 end_cell: end_cell as u8,
                 step_count: group.step_count,
+                ..Default::default()
             };
             if !shifted.is_valid() {
                 continue;
@@ -4021,6 +4156,7 @@ fn handle_fusion_shift_click(
                 start_cell: start_cell as u8,
                 end_cell: end_cell as u8,
                 step_count: span.min(64) as u8,
+                ..Default::default()
             });
             new_fusions.sort_by_key(|g| g.start_cell);
             pattern_for_ui.store_fusions(instrument, &new_fusions);

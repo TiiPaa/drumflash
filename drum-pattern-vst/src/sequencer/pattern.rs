@@ -3,31 +3,40 @@
 use nih_plug::params::persist::PersistentField;
 use std::array;
 use std::sync::{
-    atomic::{AtomicU16, AtomicU32, Ordering},
+    atomic::{AtomicU16, AtomicU64, Ordering},
     Arc,
 };
 
 /// Maximum fused groups per instrument in SharedPattern.
 pub const MAX_FUSIONS: usize = 16;
 
-/// Pack a FusedGroup into a u32 for atomic storage.
-/// Bits 0-7: start_cell, 8-15: end_cell, 16-23: pulse count, 24: active.
-fn pack_fusion(group: &FusedGroup) -> u32 {
-    (group.start_cell as u32)
-        | ((group.end_cell as u32) << 8)
-        | ((group.step_count.clamp(1, 64) as u32) << 16)
-        | (1u32 << 24)
+/// Pack a FusedGroup into a u64 for atomic storage.
+/// Bits 0-7: start_cell, 8-15: end_cell, 16-23: pulse_count, 24: active,
+/// 25: morph_active, 26-31: morph_field, 32-63: morph_end_value (f32 bitcast).
+pub(crate) fn pack_fusion(group: &FusedGroup) -> u64 {
+    let end_bits = group.morph_end_value.to_bits() as u64;
+    (group.start_cell as u64)
+        | ((group.end_cell as u64) << 8)
+        | ((group.step_count.clamp(1, 64) as u64) << 16)
+        | (1u64 << 24)
+        | ((group.morph_active() as u64) << 25)
+        | ((group.morph_field as u64) << 26)
+        | (end_bits << 32)
 }
 
-/// Unpack a u32 into an Option<FusedGroup>.
-fn unpack_fusion(packed: u32) -> Option<FusedGroup> {
+/// Unpack a u64 into an Option<FusedGroup>.
+pub(crate) fn unpack_fusion(packed: u64) -> Option<FusedGroup> {
     if (packed >> 24) & 1 == 0 {
         return None;
     }
+    let morph_field = ((packed >> 26) & 0x3F) as u8;
+    let morph_end_value = f32::from_bits((packed >> 32) as u32);
     let group = FusedGroup {
         start_cell: (packed & 0xFF) as u8,
         end_cell: ((packed >> 8) & 0xFF) as u8,
         step_count: ((packed >> 16) & 0xFF) as u8,
+        morph_field,
+        morph_end_value,
     };
     group.is_valid().then_some(group)
 }
@@ -70,7 +79,7 @@ impl Step {
 /// page. When its start cell is active, the audio engine emits `step_count`
 /// evenly-spaced pulses over the duration of the whole group. Sound plocks are
 /// read from `start_cell`; sequencer stutter is ignored for fused cells.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FusedGroup {
     /// First cell index (0-63) inclusive.
     pub start_cell: u8,
@@ -78,6 +87,10 @@ pub struct FusedGroup {
     pub end_cell: u8,
     /// Number of pulses generated across this group (1-64).
     pub step_count: u8,
+    /// Plock field index to morph across pulses (255 = no morphing).
+    pub morph_field: u8,
+    /// Target value for the morphed field at the last pulse.
+    pub morph_end_value: f32,
 }
 
 impl Default for FusedGroup {
@@ -86,6 +99,8 @@ impl Default for FusedGroup {
             start_cell: 0,
             end_cell: 0,
             step_count: 0,
+            morph_field: 255,
+            morph_end_value: 0.0,
         }
     }
 }
@@ -107,6 +122,18 @@ impl FusedGroup {
         let start = self.start_cell as usize;
         let end = self.end_cell as usize;
         start < end && end < STEP_COUNT && self.step_count >= 1 && self.is_page_local()
+    }
+
+    pub fn morph_active(&self) -> bool {
+        self.morph_field != 255
+    }
+
+    pub fn morph_field_index(&self) -> Option<usize> {
+        if self.morph_active() {
+            Some(self.morph_field as usize)
+        } else {
+            None
+        }
     }
 
     /// Returns true if the given cell index is inside this group.
@@ -290,14 +317,23 @@ impl Pattern {
 /// Lock-free pattern storage shared between the audio thread and the UI.
 pub struct SharedPattern {
     steps: [AtomicU16; STEP_COUNT],
-    /// Fused groups per instrument, packed as u32.
+    /// Fused groups per instrument, packed as u64.
     /// Index: instrument * MAX_FUSIONS + group_index.
     /// The first element for each instrument stores the count (packed as count | (1<<24)).
-    fusions: [AtomicU32; INSTRUMENT_COUNT * MAX_FUSIONS],
+    fusions: [AtomicU64; INSTRUMENT_COUNT * MAX_FUSIONS],
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct PatternMasks(#[serde(with = "serde_arrays")] pub [u16; STEP_COUNT]);
+
+/// Full pattern state persisted by the DAW: step masks + fused groups.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct PatternState {
+    #[serde(with = "serde_arrays")]
+    pub masks: [u16; STEP_COUNT],
+    #[serde(with = "serde_arrays")]
+    pub fusions: [u64; INSTRUMENT_COUNT * MAX_FUSIONS],
+}
 
 #[derive(Clone)]
 pub struct PersistentPattern {
@@ -316,6 +352,24 @@ impl PersistentPattern {
     }
 }
 
+impl<'a> PersistentField<'a, PatternState> for PersistentPattern {
+    fn set(&self, new_value: PatternState) {
+        self.shared.load_step_masks(&new_value.masks);
+        for (i, &packed) in new_value.fusions.iter().enumerate() {
+            self.shared.fusions[i].store(packed, Ordering::Relaxed);
+        }
+    }
+
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&PatternState) -> R,
+    {
+        let masks = self.shared.step_masks();
+        let fusions = std::array::from_fn(|i| self.shared.fusions[i].load(Ordering::Relaxed));
+        f(&PatternState { masks, fusions })
+    }
+}
+
 impl SharedPattern {
     pub fn new(pattern: &Pattern) -> Arc<Self> {
         let fusions = array::from_fn(|i| {
@@ -323,11 +377,11 @@ impl SharedPattern {
             let group_idx = i % MAX_FUSIONS;
             if group_idx == 0 {
                 // First slot stores count
-                AtomicU32::new((pattern.fusions[inst].len() as u32) | (1u32 << 24))
+                AtomicU64::new((pattern.fusions[inst].len() as u64) | (1u64 << 24))
             } else if group_idx <= pattern.fusions[inst].len() {
-                AtomicU32::new(pack_fusion(&pattern.fusions[inst][group_idx - 1]))
+                AtomicU64::new(pack_fusion(&pattern.fusions[inst][group_idx - 1]))
             } else {
-                AtomicU32::new(0)
+                AtomicU64::new(0)
             }
         });
         let shared = Arc::new(Self {
@@ -400,7 +454,7 @@ impl SharedPattern {
             self.fusions[base + 1 + i].store(0, Ordering::Relaxed);
         }
         // Update count
-        self.fusions[base].store((count as u32) | (1u32 << 24), Ordering::Relaxed);
+        self.fusions[base].store((count as u64) | (1u64 << 24), Ordering::Relaxed);
     }
 
     pub fn load_step_mask(&self, step: usize) -> u16 {
@@ -434,19 +488,5 @@ impl SharedPattern {
 
     pub fn step_masks(&self) -> [u16; STEP_COUNT] {
         array::from_fn(|step| self.load_step_mask(step))
-    }
-}
-
-impl<'a> PersistentField<'a, PatternMasks> for PersistentPattern {
-    fn set(&self, new_value: PatternMasks) {
-        self.shared.load_step_masks(&new_value.0);
-    }
-
-    fn map<F, R>(&self, f: F) -> R
-    where
-        F: Fn(&PatternMasks) -> R,
-    {
-        let masks = self.shared.step_masks();
-        f(&PatternMasks(masks))
     }
 }

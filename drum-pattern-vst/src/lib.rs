@@ -51,7 +51,7 @@ const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
 ];
 const STEP_COUNT: usize = 64;
 
-const PATTERN_STATE_FIELD: &str = "pattern-v2";
+const PATTERN_STATE_FIELD: &str = "pattern-v3";
 
 #[derive(Clone)]
 pub struct LaneLengthLocks {
@@ -129,10 +129,10 @@ pub struct DrumFlashVst {
     last_host_pos: Option<f64>,
     /// Simple LCG RNG state for probability checks (audio-thread safe).
     rng_state: AtomicU32,
-    /// Pending delayed triggers: (samples_until, voice_idx, velocity, step, hard).
+    /// Pending delayed triggers: (samples_until, voice_idx, velocity, step, hard, settings).
     /// Fixed-size queue for audio-thread safety (no allocation).
-    /// Max: 13 voices × 7 extra triggers = 91, rounded up to 128.
-    pending_triggers: [(u32, usize, f32, u32, bool); 128],
+    /// Max: 13 voices x 7 extra triggers = 91, rounded up to 128.
+    pending_triggers: [(u32, usize, f32, u32, bool, synthesis::VoiceSettings); 128],
     pending_trigger_count: usize,
     /// Pattern save request from UI: slot index + 1 (0 = none).
     save_pattern_request: Arc<AtomicU32>,
@@ -154,6 +154,7 @@ pub struct DrumFlashVst {
     /// Pre-allocated scratch buffers so restore() never allocates in the audio thread.
     temp_plock_bytes: [u8; pattern_bank::MAX_PLOCK_BYTES],
     temp_seq_plock_bytes: [u8; pattern_bank::MAX_SEQ_PLOCK_BYTES],
+    temp_fusion_bytes: [u8; pattern_bank::MAX_FUSION_BYTES],
     /// Which slot the audio thread last successfully loaded (0-7), or u32::MAX if none.
     /// The UI thread reads this to keep last_loaded_slot in sync with reality.
     audio_last_loaded_slot: Arc<AtomicU32>,
@@ -164,7 +165,7 @@ pub struct DrumFlashParams {
     #[persist = "editor-state-v2"]
     pub editor_state: Arc<EguiState>,
 
-    #[persist = "pattern-v2"]
+    #[persist = "pattern-v3"]
     pub pattern_state: PersistentPattern,
 
     #[persist = "sound-settings-v2"]
@@ -1718,7 +1719,7 @@ impl Default for DrumFlashVst {
             last_sound_settings_version: 0,
             last_host_pos: None,
             rng_state: AtomicU32::new(0xACE1_0000),
-            pending_triggers: [(0, 0, 0.0, 0, false); 128],
+            pending_triggers: [(0, 0, 0.0, 0, false, synthesis::VoiceSettings::default()); 128],
             pending_trigger_count: 0,
             save_pattern_request: Arc::new(AtomicU32::new(0)),
             load_pattern_request: Arc::new(AtomicU32::new(0)),
@@ -1730,6 +1731,7 @@ impl Default for DrumFlashVst {
             pending_pattern_length: Arc::new(AtomicI32::new(0)),
             temp_plock_bytes: [0; pattern_bank::MAX_PLOCK_BYTES],
             temp_seq_plock_bytes: [0; pattern_bank::MAX_SEQ_PLOCK_BYTES],
+            temp_fusion_bytes: [0; pattern_bank::MAX_FUSION_BYTES],
             audio_last_loaded_slot: Arc::new(AtomicU32::new(u32::MAX)),
         };
         plugin.sequencer.play();
@@ -1825,6 +1827,74 @@ impl DrumFlashVst {
             .unwrap_or(global)
     }
 
+    /// Read the current value of a plock field from VoiceSettings.
+    fn read_morph_value(&self,
+        settings: &synthesis::VoiceSettings,
+        field_index: usize,
+        _voice_idx: usize,
+    ) -> f32 {
+        match field_index {
+            0 => settings.frequency,
+            1 => settings.decay,
+            2 => settings.volume,
+            3 => settings.filter_freq,
+            4 => settings.release,
+            5 => settings.decay_curve,
+            6 => settings.release_curve,
+            7 => settings.hold,
+            8 => settings.filter_env_amount,
+            9 => settings.filter_env_decay,
+            10 => settings.analog,
+            11 => settings.stereo,
+            18 => settings.attack,
+            _ => {
+                if field_index >= crate::plock::SPECIAL_FIELD_START
+                    && field_index < crate::plock::FIELD_COUNT
+                {
+                    let special_index = field_index - crate::plock::SPECIAL_FIELD_START;
+                    settings.special.get(special_index).copied().unwrap_or(0.0)
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
+    /// Apply a morphed value to the given VoiceSettings field.
+    fn apply_morph_value(
+        &self,
+        settings: &mut synthesis::VoiceSettings,
+        field_index: usize,
+        _voice_idx: usize,
+        value: f32,
+    ) {
+        match field_index {
+            0 => settings.frequency = value,
+            1 => settings.decay = value,
+            2 => settings.volume = value,
+            3 => settings.filter_freq = value,
+            4 => settings.release = value,
+            5 => settings.decay_curve = value,
+            6 => settings.release_curve = value,
+            7 => settings.hold = value,
+            8 => settings.filter_env_amount = value,
+            9 => settings.filter_env_decay = value,
+            10 => settings.analog = value,
+            11 => settings.stereo = value,
+            18 => settings.attack = value,
+            _ => {
+                if field_index >= crate::plock::SPECIAL_FIELD_START
+                    && field_index < crate::plock::FIELD_COUNT
+                {
+                    let special_index = field_index - crate::plock::SPECIAL_FIELD_START;
+                    if special_index < settings.special.len() {
+                        settings.special[special_index] = value;
+                    }
+                }
+            }
+        }
+    }
+
     /// Save the current pattern into the bank slot.
     pub fn save_pattern_to_slot(&mut self, slot: usize) {
         if slot >= pattern_bank::SLOT_COUNT {
@@ -1856,6 +1926,7 @@ impl DrumFlashVst {
         let mut step_masks = [0u16; crate::sequencer::pattern::STEP_COUNT];
         let plock_len: usize;
         let seq_plock_len: usize;
+        let fusion_len: usize;
         let pattern_length: u8;
         {
             let bank = match self.params.pattern_bank.bank.lock() {
@@ -1874,6 +1945,7 @@ impl DrumFlashVst {
                 &mut step_masks,
                 &mut self.temp_plock_bytes,
                 &mut self.temp_seq_plock_bytes,
+                &mut self.temp_fusion_bytes,
             );
             pattern_length = match maybe_len {
                 Some(len) => len,
@@ -1881,16 +1953,18 @@ impl DrumFlashVst {
             };
             plock_len = slot_ref.plock_bytes.len();
             seq_plock_len = slot_ref.seq_plock_bytes.len();
+            fusion_len = slot_ref.fusion_bytes.len();
         } // lock released here
 
         // 2. Wipe old plocks so nothing leaks from the previous pattern, then restore.
         let plock = &self.params.plock_state.state;
         let seq_plock = &self.params.seq_plock_state.state;
         nih_log!(
-            "[LOAD] Slot P{}: plock_len={}, seq_plock_len={}, pattern_length={}",
+            "[LOAD] Slot P{}: plock_len={}, seq_plock_len={}, fusion_len={}, pattern_length={}",
             slot + 1,
             plock_len,
             seq_plock_len,
+            fusion_len,
             pattern_length
         );
         plock.clear_all();
@@ -1908,6 +1982,7 @@ impl DrumFlashVst {
             &step_masks,
             &self.temp_plock_bytes[..plock_len],
             &self.temp_seq_plock_bytes[..seq_plock_len],
+            &self.temp_fusion_bytes[..fusion_len],
             &self.pattern,
             plock,
             seq_plock,
@@ -1933,16 +2008,16 @@ impl DrumFlashVst {
         &mut self,
         voice_idx: usize,
         velocity: f32,
-        step: u32,
+        _step: u32,
         sample_idx: usize,
         context: &mut impl ProcessContext<Self>,
         hihat_chokes_oh: bool,
         hard: bool,
+        settings: synthesis::VoiceSettings,
     ) {
         let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
             return;
         };
-        let settings = self.voice_settings_at_step(voice_idx, step as usize);
         self.synthesizer.set_voice_settings(voice, settings);
         if hard {
             self.synthesizer.trigger_hard(voice_idx, velocity);
@@ -2269,7 +2344,7 @@ impl Plugin for DrumFlashVst {
             let mut i = 0;
             while i < self.pending_trigger_count {
                 if self.pending_triggers[i].0 == 0 {
-                    let (_, voice_idx, velocity, step, hard) = self.pending_triggers[i];
+                    let (_, voice_idx, velocity, step, hard, settings) = self.pending_triggers[i];
                     self.fire_voice_trigger(
                         voice_idx,
                         velocity,
@@ -2278,6 +2353,7 @@ impl Plugin for DrumFlashVst {
                         context,
                         hihat_chokes_oh,
                         hard,
+                        settings,
                     );
                     self.pending_triggers[i] =
                         self.pending_triggers[self.pending_trigger_count - 1];
@@ -2341,7 +2417,67 @@ impl Plugin for DrumFlashVst {
                         };
                         let step_for_trigger = step as u32;
 
-                        // Fire the first trigger immediately.
+                        let base_settings = self.voice_settings_at_step(voice_idx, step);
+
+                        // Fusion pulses are not stutter plocks: they are evenly
+                        // distributed over the whole fused-cell duration and use
+                        // the start cell's sound plock for every pulse.
+                        if trigger.is_fusion() {
+                            let pulse_count = trigger.fusion_pulse_count.max(1);
+                            let spacing = if pulse_count > 1 {
+                                (step_duration_samples
+                                    * trigger.fusion_span_cells.max(1) as f32
+                                    / pulse_count as f32)
+                                    .max(1.0) as u32
+                            } else {
+                                0
+                            };
+                            let morph_active = trigger.morph_field != 255;
+                            for k in 0..pulse_count {
+                                let mut settings = base_settings;
+                                if morph_active && pulse_count > 1 {
+                                    let start_value = self.read_morph_value(
+                                        &settings,
+                                        trigger.morph_field as usize,
+                                        voice_idx,
+                                    );
+                                    let t = k as f32 / (pulse_count - 1) as f32;
+                                    let morphed =
+                                        start_value + (trigger.morph_end_value - start_value) * t;
+                                    self.apply_morph_value(
+                                        &mut settings,
+                                        trigger.morph_field as usize,
+                                        voice_idx,
+                                        morphed,
+                                    );
+                                }
+                                if k == 0 {
+                                    self.fire_voice_trigger(
+                                        voice_idx,
+                                        trigger.velocity,
+                                        step_for_trigger,
+                                        sample_idx,
+                                        context,
+                                        hihat_chokes_oh,
+                                        false,
+                                        settings,
+                                    );
+                                } else if self.pending_trigger_count < self.pending_triggers.len() {
+                                    self.pending_triggers[self.pending_trigger_count] = (
+                                        spacing * k as u32,
+                                        voice_idx,
+                                        trigger.velocity,
+                                        step_for_trigger,
+                                        false,
+                                        settings,
+                                    );
+                                    self.pending_trigger_count += 1;
+                                }
+                            }
+                            continue;
+                        }
+
+                        // Non-fusion: fire the first trigger immediately.
                         self.fire_voice_trigger(
                             voice_idx,
                             trigger.velocity,
@@ -2350,30 +2486,8 @@ impl Plugin for DrumFlashVst {
                             context,
                             hihat_chokes_oh,
                             false,
+                            base_settings,
                         );
-
-                        // Fusion pulses are not stutter plocks: they are evenly
-                        // distributed over the whole fused-cell duration and use
-                        // the start cell's sound plock for every pulse.
-                        if trigger.is_fusion() && trigger.fusion_pulse_count > 1 {
-                            let spacing = (step_duration_samples
-                                * trigger.fusion_span_cells.max(1) as f32
-                                / trigger.fusion_pulse_count.max(1) as f32)
-                                .max(1.0) as u32;
-                            for k in 1..trigger.fusion_pulse_count {
-                                if self.pending_trigger_count < self.pending_triggers.len() {
-                                    self.pending_triggers[self.pending_trigger_count] = (
-                                        spacing * k as u32,
-                                        voice_idx,
-                                        trigger.velocity,
-                                        step_for_trigger,
-                                        false,
-                                    );
-                                    self.pending_trigger_count += 1;
-                                }
-                            }
-                            continue;
-                        }
 
                         // Schedule additional stutter triggers with temporal spacing.
                         // Spacing is derived from the current step duration (which itself
@@ -2389,6 +2503,7 @@ impl Plugin for DrumFlashVst {
                                         trigger.velocity,
                                         step_for_trigger,
                                         true,
+                                        base_settings,
                                     );
                                     self.pending_trigger_count += 1;
                                 }
@@ -2530,13 +2645,15 @@ impl Plugin for DrumFlashVst {
             return;
         }
 
-        // Migration pattern-v1 (16 steps) → pattern-v2 (64 steps)
-        if let Some(data) = state.fields.get("pattern-v1") {
-            if let Ok(old_masks) = deserialize_field::<[u16; 16]>(data) {
-                let mut new_masks = [0u16; STEP_COUNT];
-                new_masks[..16].copy_from_slice(&old_masks);
-                let wrapped = sequencer::pattern::PatternMasks(new_masks);
-                if let Ok(serialized) = serialize_field(&wrapped) {
+        // Migration pattern-v2 (masks only) → pattern-v3 (masks + fusions)
+        if let Some(data) = state.fields.get("pattern-v2") {
+            if let Ok(old_masks) = deserialize_field::<sequencer::pattern::PatternMasks>(data) {
+                let new_state = sequencer::pattern::PatternState {
+                    masks: old_masks.0,
+                    fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
+                        * sequencer::pattern::MAX_FUSIONS],
+                };
+                if let Ok(serialized) = serialize_field(&new_state) {
                     state
                         .fields
                         .insert(PATTERN_STATE_FIELD.to_string(), serialized);
@@ -2545,22 +2662,43 @@ impl Plugin for DrumFlashVst {
             }
         }
 
-        // Migration legacy st01..st16 (8-bit masks) → pattern-v2 (64 steps)
-        let masks: Vec<u8> = (0..STEP_COUNT)
-            .map(|step| {
-                if step < 16 {
-                    let key = format!("st{:02}", step + 1);
-                    match state.params.get(&key) {
-                        Some(ParamValue::I32(value)) => (*value).clamp(0, 127) as u8,
-                        _ => 0,
-                    }
-                } else {
-                    0
+        // Migration pattern-v1 (16 steps) → pattern-v3 (64 steps)
+        if let Some(data) = state.fields.get("pattern-v1") {
+            if let Ok(old_masks) = deserialize_field::<[u16; 16]>(data) {
+                let mut new_masks = [0u16; STEP_COUNT];
+                new_masks[..16].copy_from_slice(&old_masks);
+                let new_state = sequencer::pattern::PatternState {
+                    masks: new_masks,
+                    fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
+                        * sequencer::pattern::MAX_FUSIONS],
+                };
+                if let Ok(serialized) = serialize_field(&new_state) {
+                    state
+                        .fields
+                        .insert(PATTERN_STATE_FIELD.to_string(), serialized);
+                    return;
                 }
-            })
-            .collect();
+            }
+        }
 
-        if let Ok(serialized_pattern) = serialize_field(&masks) {
+        // Migration legacy st01..st16 (8-bit masks) → pattern-v3 (64 steps)
+        let masks: [u16; STEP_COUNT] = std::array::from_fn(|step| {
+            if step < 16 {
+                let key = format!("st{:02}", step + 1);
+                match state.params.get(&key) {
+                    Some(ParamValue::I32(value)) => (*value).clamp(0, 127) as u16,
+                    _ => 0,
+                }
+            } else {
+                0
+            }
+        });
+        let new_state = sequencer::pattern::PatternState {
+            masks,
+            fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
+                * sequencer::pattern::MAX_FUSIONS],
+        };
+        if let Ok(serialized_pattern) = serialize_field(&new_state) {
             state
                 .fields
                 .insert(PATTERN_STATE_FIELD.to_string(), serialized_pattern);
@@ -2590,13 +2728,17 @@ mod tests {
         shared_pattern.set_step_mask(0, 0);
         shared_pattern.set_step_mask(1, 0x3ff);
 
-        pattern_state.map(|masks| {
-            assert_eq!(masks.0[0], 0);
-            assert_eq!(masks.0[1], 0x3ff);
+        pattern_state.map(|state| {
+            assert_eq!(state.masks[0], 0);
+            assert_eq!(state.masks[1], 0x3ff);
         });
 
-        let restored_masks = sequencer::pattern::PatternMasks([3u16; STEP_COUNT]);
-        pattern_state.set(restored_masks);
+        let restored_state = sequencer::pattern::PatternState {
+            masks: [3u16; STEP_COUNT],
+            fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
+                * sequencer::pattern::MAX_FUSIONS],
+        };
+        pattern_state.set(restored_state);
 
         assert_eq!(shared_pattern.load_step_mask(0), 3);
         assert_eq!(shared_pattern.load_step_mask(15), 3);
@@ -2620,12 +2762,12 @@ mod tests {
             .fields
             .get(PATTERN_STATE_FIELD)
             .expect("legacy pattern field should be created");
-        let masks: sequencer::pattern::PatternMasks =
+        let pattern_state: sequencer::pattern::PatternState =
             deserialize_field(serialized_pattern).expect("pattern field should deserialize");
 
-        assert_eq!(masks.0[0], 0);
-        assert_eq!(masks.0[1], 0x7f);
-        assert_eq!(masks.0[2], 0);
+        assert_eq!(pattern_state.masks[0], 0);
+        assert_eq!(pattern_state.masks[1], 0x7f);
+        assert_eq!(pattern_state.masks[2], 0);
     }
 
     #[test]
