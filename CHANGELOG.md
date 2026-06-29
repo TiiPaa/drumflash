@@ -1,8 +1,8 @@
 ﻿# Changelog
 
-## 2026-06-29 — Feature: morphing par pulse sur les cellules fusionnées (build 20260629-144210)
+## 2026-06-29 — Feature: morphing par pulse sur les cellules fusionnées (build 20260629-160624)
 
-**Build:** `20260629-144210`
+**Build:** `20260629-160624`
 **Validation:** `cargo check` OK, `cargo test` OK (153 tests), `build.ps1 -Install` OK
 
 ### Changements

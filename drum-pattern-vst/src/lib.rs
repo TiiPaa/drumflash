@@ -2721,6 +2721,18 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
+    fn morphable_fields_are_non_empty_for_all_voices() {
+        for inst in 0..crate::instrument_registry::INSTRUMENTS.len() {
+            let fields = crate::instrument_registry::morphable_fields(inst);
+            assert!(
+                !fields.is_empty(),
+                "instrument {} should have morphable fields",
+                inst
+            );
+        }
+    }
+
+    #[test]
     fn persistent_pattern_serializes_shared_pattern_edits() {
         let pattern_state = PersistentPattern::new(&Pattern::rock_pattern());
         let shared_pattern = pattern_state.shared();
