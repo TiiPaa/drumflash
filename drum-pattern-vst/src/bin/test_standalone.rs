@@ -4,6 +4,8 @@
 mod groove;
 #[path = "../instrument_registry.rs"]
 mod instrument_registry;
+#[path = "../track.rs"]
+mod track;
 #[path = "../sequencer/mod.rs"]
 mod sequencer;
 #[path = "../synthesis/mod.rs"]

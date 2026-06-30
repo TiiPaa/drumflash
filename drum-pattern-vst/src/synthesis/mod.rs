@@ -665,13 +665,63 @@ impl Voice for DrumVoiceKind {
     }
 }
 
+fn create_voice_for_kind(kind: crate::track::TrackInstrumentKind, sample_rate: f32) -> DrumVoiceKind {
+    use crate::track::TrackInstrumentKind as K;
+    match kind {
+        K::Kick => DrumVoiceKind::Kick(KickVoice::new(
+            sample_rate,
+            KickSettings::from(VoiceSettings::kick()),
+        )),
+        K::Snare => DrumVoiceKind::Snare(SnareVoice::new(
+            sample_rate,
+            SnareSettings::from(VoiceSettings::snare()),
+        )),
+        K::HiHat => DrumVoiceKind::HiHat(HiHatVoice::new(
+            sample_rate,
+            HiHatSettings::from(VoiceSettings::hihat()),
+        )),
+        K::OpenHiHat => DrumVoiceKind::OpenHiHat(OpenHiHatVoice::new(
+            sample_rate,
+            OpenHiHatSettings::from(VoiceSettings::open_hihat()),
+        )),
+        K::Tom => DrumVoiceKind::Tom(TomVoice::new(
+            sample_rate,
+            TomSettings::from(VoiceSettings::tom1()),
+        )),
+        K::Clap => DrumVoiceKind::Clap(ClapVoice::new(
+            sample_rate,
+            ClapSettings::from(VoiceSettings::clap()),
+        )),
+        K::Ride => DrumVoiceKind::Ride(RideVoice::new(
+            sample_rate,
+            RideSettings::from(VoiceSettings::ride()),
+        )),
+        K::Cymbal => DrumVoiceKind::Cymbal(CymbalVoice::new(
+            sample_rate,
+            CymbalSettings::from(VoiceSettings::cymbal()),
+        )),
+        K::Snare606 => DrumVoiceKind::Snare606(Snare606Voice::new(
+            sample_rate,
+            Snare606Settings::from(VoiceSettings::snare606()),
+        )),
+        K::BassDrum808 => DrumVoiceKind::BassDrum808(Kick808Voice::new(
+            sample_rate,
+            Kick808Settings::from(VoiceSettings::kick808()),
+        )),
+        K::Perc1 => DrumVoiceKind::Perc1(Perc1Voice::new(
+            sample_rate,
+            Perc1Settings::from(VoiceSettings::perc1()),
+        )),
+    }
+}
+
 pub struct DrumSynthesizer {
-    voices: Vec<DrumVoiceKind>,
+    voices: Box<[Option<Box<DrumVoiceKind>>; crate::track::MAX_TRACKS]>,
     sample_rate: f32,
-    velocities: [f32; DrumVoice::COUNT],
+    velocities: [f32; crate::track::MAX_TRACKS],
     /// One-pole smoothers on each voice's velocity, absorbing gain jumps when
     /// retriggering a voice while its tail is still ringing.
-    velocity_smoothers: [dsp::OnePoleSmoother; DrumVoice::COUNT],
+    velocity_smoothers: [dsp::OnePoleSmoother; crate::track::MAX_TRACKS],
 }
 
 const VELOCITY_SMOOTH_MS: f32 = 1.5;
@@ -679,9 +729,9 @@ const VELOCITY_SMOOTH_MS: f32 = 1.5;
 impl DrumSynthesizer {
     pub fn new() -> Self {
         Self {
-            voices: Vec::with_capacity(DrumVoice::COUNT),
+            voices: Box::new(std::array::from_fn(|_| None)),
             sample_rate: 44100.0,
-            velocities: [1.0; DrumVoice::COUNT],
+            velocities: [1.0; crate::track::MAX_TRACKS],
             velocity_smoothers: std::array::from_fn(|_| {
                 dsp::OnePoleSmoother::new(44100.0, VELOCITY_SMOOTH_MS, 1.0)
             }),
@@ -689,131 +739,114 @@ impl DrumSynthesizer {
     }
 
     pub fn initialize(&mut self, sample_rate: f32) {
+        let legacy_layout = crate::track::TrackLayoutState::from_legacy_13();
+        self.initialize_with_layout(sample_rate, &legacy_layout);
+    }
+
+    pub fn initialize_with_layout(
+        &mut self,
+        sample_rate: f32,
+        layout: &crate::track::TrackLayoutState,
+    ) {
         self.sample_rate = sample_rate;
-        self.voices.clear();
         for smoother in self.velocity_smoothers.iter_mut() {
             *smoother = dsp::OnePoleSmoother::new(sample_rate, VELOCITY_SMOOTH_MS, 1.0);
         }
 
-        // Create all 13 voices with dedicated models.
-        self.voices.push(DrumVoiceKind::Kick(KickVoice::new(
-            sample_rate,
-            KickSettings::from(VoiceSettings::kick()),
-        )));
-        self.voices.push(DrumVoiceKind::Snare(SnareVoice::new(
-            sample_rate,
-            SnareSettings::from(VoiceSettings::snare()),
-        )));
-        self.voices.push(DrumVoiceKind::HiHat(HiHatVoice::new(
-            sample_rate,
-            HiHatSettings::from(VoiceSettings::hihat()),
-        )));
-        self.voices
-            .push(DrumVoiceKind::OpenHiHat(OpenHiHatVoice::new(
-                sample_rate,
-                OpenHiHatSettings::from(VoiceSettings::open_hihat()),
-            )));
-        self.voices.push(DrumVoiceKind::Tom(TomVoice::new(
-            sample_rate,
-            TomSettings::from(VoiceSettings::tom1()),
-        )));
-        self.voices.push(DrumVoiceKind::Tom(TomVoice::new(
-            sample_rate,
-            TomSettings::from(VoiceSettings::tom2()),
-        )));
-        self.voices.push(DrumVoiceKind::Tom(TomVoice::new(
-            sample_rate,
-            TomSettings::from(VoiceSettings::tom3()),
-        )));
-        self.voices.push(DrumVoiceKind::Clap(ClapVoice::new(
-            sample_rate,
-            ClapSettings::from(VoiceSettings::clap()),
-        )));
-        self.voices.push(DrumVoiceKind::Ride(RideVoice::new(
-            sample_rate,
-            RideSettings::from(VoiceSettings::ride()),
-        )));
-        self.voices.push(DrumVoiceKind::Cymbal(CymbalVoice::new(
-            sample_rate,
-            CymbalSettings::from(VoiceSettings::cymbal()),
-        )));
-        self.voices.push(DrumVoiceKind::Snare606(Snare606Voice::new(
-            sample_rate,
-            Snare606Settings::from(VoiceSettings::snare606()),
-        )));
-        self.voices
-            .push(DrumVoiceKind::BassDrum808(Kick808Voice::new(
-                sample_rate,
-                Kick808Settings::from(VoiceSettings::kick808()),
-            )));
-        self.voices.push(DrumVoiceKind::Perc1(Perc1Voice::new(
-            sample_rate,
-            Perc1Settings::from(VoiceSettings::perc1()),
-        )));
+        for (i, slot) in layout.slots.iter().enumerate() {
+            self.voices[i] = if slot.active {
+                Some(Box::new(create_voice_for_kind(slot.kind, sample_rate)))
+            } else {
+                None
+            };
+        }
     }
-
-    pub fn trigger(&mut self, voice_idx: usize, velocity: f32) {
-        if let Some(voice) = self.voices.get_mut(voice_idx) {
+    pub fn trigger(&mut self, slot_idx: usize, velocity: f32) {
+        if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
             voice.trigger();
-            self.velocities[voice_idx] = velocity;
+            self.velocities[slot_idx] = velocity;
         }
     }
 
-    pub fn trigger_hard(&mut self, voice_idx: usize, velocity: f32) {
-        if let Some(voice) = self.voices.get_mut(voice_idx) {
+    pub fn trigger_hard(&mut self, slot_idx: usize, velocity: f32) {
+        if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
             voice.trigger_hard();
-            self.velocities[voice_idx] = velocity;
+            self.velocities[slot_idx] = velocity;
         }
     }
 
     #[allow(dead_code)]
     pub fn process_sample(&mut self, output: &mut f32) {
         let mut mixed = 0.0f32;
-        for voice in &mut self.voices {
+        for voice in self.voices.iter_mut().flatten() {
             mixed += voice.process_sample();
         }
         *output = mixed;
     }
 
     #[allow(dead_code)]
-    pub fn process_voice_samples(&mut self, outputs: &mut [f32; DrumVoice::COUNT]) {
+    pub fn process_voice_samples(&mut self, outputs: &mut [f32; crate::track::MAX_TRACKS]) {
         for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
-            let vel = self.velocity_smoothers[i].process(self.velocities[i]);
-            *output = voice.process_sample() * vel;
+            if let Some(voice) = voice {
+                let vel = self.velocity_smoothers[i].process(self.velocities[i]);
+                *output = voice.process_sample() * vel;
+            } else {
+                *output = 0.0;
+            }
         }
     }
 
-    pub fn process_voice_samples_stereo(&mut self, outputs: &mut [[f32; 2]; DrumVoice::COUNT]) {
+    pub fn process_voice_samples_stereo(
+        &mut self,
+        outputs: &mut [[f32; 2]; crate::track::MAX_TRACKS],
+    ) {
         for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
-            let vel = self.velocity_smoothers[i].process(self.velocities[i]);
-            let (l, r) = voice.process_sample_stereo();
-            output[0] = l * vel;
-            output[1] = r * vel;
+            if let Some(voice) = voice {
+                let vel = self.velocity_smoothers[i].process(self.velocities[i]);
+                let (l, r) = voice.process_sample_stereo();
+                output[0] = l * vel;
+                output[1] = r * vel;
+            } else {
+                output[0] = 0.0;
+                output[1] = 0.0;
+            }
         }
     }
 
     pub fn reset(&mut self) {
-        for voice in &mut self.voices {
+        for voice in self.voices.iter_mut().flatten() {
             voice.reset();
         }
     }
 
     #[allow(dead_code)]
-    pub fn set_voice_settings(&mut self, voice: DrumVoice, settings: VoiceSettings) {
-        if let Some(v) = self.voices.get_mut(voice as usize) {
-            v.set_settings(settings);
+    pub fn set_voice_settings(&mut self, slot_idx: usize, settings: VoiceSettings) {
+        if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
+            voice.set_settings(settings);
         }
     }
 
-    pub fn set_algo(&mut self, voice_idx: usize, algo: u8) {
-        if let Some(v) = self.voices.get_mut(voice_idx) {
-            v.set_algo(algo);
+    pub fn set_algo(&mut self, slot_idx: usize, algo: u8) {
+        if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
+            voice.set_algo(algo);
         }
     }
 
-    pub fn reset_voice(&mut self, voice_idx: usize) {
-        if let Some(v) = self.voices.get_mut(voice_idx) {
-            v.reset();
+    pub fn reset_voice(&mut self, slot_idx: usize) {
+        if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
+            voice.reset();
+        }
+    }
+
+    pub fn reinitialize_slot(
+        &mut self,
+        slot_idx: usize,
+        kind: crate::track::TrackInstrumentKind,
+    ) {
+        if slot_idx < crate::track::MAX_TRACKS {
+            self.voices[slot_idx] = Some(Box::new(create_voice_for_kind(kind, self.sample_rate)));
+            self.velocity_smoothers[slot_idx] =
+                dsp::OnePoleSmoother::new(self.sample_rate, VELOCITY_SMOOTH_MS, 1.0);
         }
     }
 }
@@ -825,7 +858,7 @@ mod tests {
     /// Helper: sum absolute output of a single voice after triggering it.
     fn sum_voice_output(synth: &mut DrumSynthesizer, voice_idx: usize, samples: usize) -> f32 {
         let mut sum = 0.0f32;
-        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
         for _ in 0..samples {
             synth.process_voice_samples_stereo(&mut outputs);
             sum += outputs[voice_idx][0].abs() + outputs[voice_idx][1].abs();
@@ -854,7 +887,7 @@ mod tests {
         let mut cymbal_settings = VoiceSettings::cymbal();
         cymbal_settings.decay = 1.0;
         cymbal_settings.volume = 0.5;
-        synth.set_voice_settings(DrumVoice::Cymbal, cymbal_settings);
+        synth.set_voice_settings(DrumVoice::Cymbal as usize, cymbal_settings);
 
         // 3. Trigger B8 again and verify it STILL produces sound
         synth.trigger(b8_idx, 1.0);
@@ -900,7 +933,7 @@ mod tests {
         ];
 
         for (voice, settings) in all_settings.iter() {
-            synth.set_voice_settings(*voice, *settings);
+            synth.set_voice_settings(*voice as usize, *settings);
         }
 
         // 3. Trigger B8 again and verify it STILL produces sound
@@ -937,7 +970,7 @@ mod tests {
         let mut cymbal_settings = VoiceSettings::cymbal();
         cymbal_settings.decay = 0.5;
         cymbal_settings.filter_freq = 6000.0;
-        synth.set_voice_settings(DrumVoice::Cymbal, cymbal_settings);
+        synth.set_voice_settings(DrumVoice::Cymbal as usize, cymbal_settings);
 
         // Trigger B8 again
         synth.trigger(b8_idx, 1.0);
@@ -951,7 +984,7 @@ mod tests {
 
     /// Helper: checks whether any sample in the output is NaN.
     fn contains_nan(synth: &mut DrumSynthesizer, voice_idx: usize, samples: usize) -> bool {
-        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
         for _ in 0..samples {
             synth.process_voice_samples_stereo(&mut outputs);
             if outputs[voice_idx][0].is_nan() || outputs[voice_idx][1].is_nan() {
@@ -982,7 +1015,7 @@ mod tests {
         cy_settings.release = 0.001;
         cy_settings.decay_curve = 0.1;
         cy_settings.release_curve = 0.1;
-        synth.set_voice_settings(DrumVoice::Cymbal, cy_settings);
+        synth.set_voice_settings(DrumVoice::Cymbal as usize, cy_settings);
 
         // Trigger B8 again
         synth.trigger(b8_idx, 1.0);
@@ -1027,7 +1060,7 @@ mod tests {
         ]
         .iter()
         {
-            synth.set_voice_settings(*voice, edge);
+            synth.set_voice_settings(*voice as usize, edge);
         }
 
         synth.trigger(b8_idx, 1.0);
@@ -1052,7 +1085,7 @@ mod tests {
         let mut cy = VoiceSettings::cymbal();
         cy.decay = 3.0;
         cy.volume = 0.2;
-        synth.set_voice_settings(DrumVoice::Cymbal, cy);
+        synth.set_voice_settings(DrumVoice::Cymbal as usize, cy);
 
         // Continue processing B8 tail
         let tail = sum_voice_output(&mut synth, b8_idx, 500);
@@ -1085,7 +1118,7 @@ mod tests {
 
         // 1. Trigger B8 with normal attack
         synth.trigger(b8_idx, 1.0);
-        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
         // Process just a few samples (still in attack ramp)
         for _ in 0..5 {
             synth.process_voice_samples_stereo(&mut outputs);
@@ -1100,7 +1133,7 @@ mod tests {
         // with attack=0 while the envelope is attacking.
         let mut b8_zero_attack = VoiceSettings::kick808();
         b8_zero_attack.attack = 0.0;
-        synth.set_voice_settings(DrumVoice::BassDrum808, b8_zero_attack);
+        synth.set_voice_settings(DrumVoice::BassDrum808 as usize, b8_zero_attack);
 
         // Process a few more samples — the envelope should now be corrupted
         for _ in 0..10 {
@@ -1110,7 +1143,7 @@ mod tests {
         // 3. Now set attack back to normal and trigger again
         let mut b8_normal = VoiceSettings::kick808();
         b8_normal.attack = 0.0015;
-        synth.set_voice_settings(DrumVoice::BassDrum808, b8_normal);
+        synth.set_voice_settings(DrumVoice::BassDrum808 as usize, b8_normal);
         synth.trigger(b8_idx, 1.0);
 
         // 4. Check if B8 is permanently silent (NaN or 0)
@@ -1167,10 +1200,10 @@ mod tests {
         settings_b.frequency = 200.0;
 
         // 1. Trigger at 60 Hz
-        synth.set_voice_settings(DrumVoice::Kick, settings_a);
+        synth.set_voice_settings(DrumVoice::Kick as usize, settings_a);
         synth.trigger(kick_idx, 1.0);
 
-        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
         let mut samples: Vec<f32> = Vec::with_capacity(700);
 
         // 2. Process 500 samples
@@ -1180,7 +1213,7 @@ mod tests {
         }
 
         // 3. MID-ENVELOPE SETTINGS CHANGE — this is the bug scenario
-        synth.set_voice_settings(DrumVoice::Kick, settings_b);
+        synth.set_voice_settings(DrumVoice::Kick as usize, settings_b);
 
         // 4. Process 200 more samples
         for _ in 0..200 {

@@ -1,5 +1,42 @@
 ﻿# Changelog
 
+## 2026-06-30 — Fix: crash au lancement du transport dans Studio One (build 20260630-201216)
+
+**Build:** `20260630-201216`
+**Validation:** `cargo check` OK, `cargo test` OK (103 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Correction d'un crash immédiat au lancement de la lecture dans Studio One.**
+  - `mix_gains` était encore dimensionné à 13 voix (`DrumVoice::COUNT`) alors que `voice_outputs` était passé à 14 slots (`MAX_TRACKS`).
+  - L'index 13 provoquait un `index out of bounds` dans le mixage Main, qui tuait le plugin dès le premier échantillon.
+  - `mix_gains` est maintenant un tableau de `MAX_TRACKS` ; les slots 0-12 suivent les paramètres `mix_*` existants, le slot 13 est silencieux par défaut.
+
+---
+
+## 2026-06-30 — Architecture: fondations du grid modulaire 14 slots (build 20260630-181506)
+
+**Build:** `20260630-181506`
+**Validation:** `cargo check` OK, `cargo test` OK (103 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Nouveau modèle de tracks modulaires (`src/track.rs`).**
+  - 14 slots internes fixes (`MAX_TRACKS = 14`), seuls les slots actifs sont visibles dans l'UI.
+  - 11 types d'instruments : Kick, Snare, HiHat, OpenHiHat, Tom, Clap, Ride, Cymbal, Snare606, BassDrum808, Perc1.
+  - `TrackLayoutState` persiste dans un nouveau champ DAW `track-layout-v1`.
+  - Migration legacy 13 voix → 14 slots via `TrackLayoutState::from_legacy_13()`.
+- **Adaptation de `SoundSettingsState` à 14 slots.**
+  - Persistance `sound-settings-v2` compatible avec les anciens formats 12 et 13 champs.
+  - Initialisation des slots selon le layout actif.
+- **Adaptation de `DrumSynthesizer` à 14 instances indépendantes.**
+  - `voices` allouées sur le heap (`Box<[Option<Box<DrumVoiceKind>>; MAX_TRACKS]>`) pour éviter le stack overflow.
+  - `initialize_with_layout()` crée les voices selon le `TrackLayoutState`.
+  - API passée de `DrumVoice` index à `slot_idx`.
+- **Adaptation de `lib.rs` et `ui.rs` pour `MAX_TRACKS`.**
+  - Tableaux `current_steps`, `voice_test_triggers`, `voice_outputs` passés à 14 slots.
+  - Comportement actuel inchangé : le layout par défaut est le legacy 13 voix.
+
+---
+
 ## 2026-06-30 — UX: bouton fermeture simplifié avec accent au clic (build 20260630-155543)
 
 **Build:** `20260630-155543`

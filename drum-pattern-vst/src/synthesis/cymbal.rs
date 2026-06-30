@@ -376,7 +376,7 @@ mod tests {
     fn cymbal_shimmer_through_drum_synthesizer() {
         use crate::synthesis::{DrumSynthesizer, DrumVoice};
 
-        let mut synth = DrumSynthesizer::new();
+        let mut synth = Box::new(DrumSynthesizer::new());
         synth.initialize(44100.0);
 
         let cy_idx = DrumVoice::Cymbal as usize;
@@ -385,7 +385,7 @@ mod tests {
         synth.trigger(cy_idx, 1.0);
 
         let mut samples_fast = vec![0.0f32; 10000];
-        let mut outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
         for i in 0..10000 {
             synth.process_voice_samples_stereo(&mut outputs);
             samples_fast[i] = outputs[cy_idx][0];
@@ -395,7 +395,7 @@ mod tests {
         let mut settings_slow = VoiceSettings::cymbal();
         settings_slow.special[0] = 0.1;
         settings_slow.stereo = 1.0;
-        synth.set_voice_settings(DrumVoice::Cymbal, settings_slow);
+        synth.set_voice_settings(DrumVoice::Cymbal as usize, settings_slow);
         synth.trigger(cy_idx, 1.0);
 
         let mut samples_slow = vec![0.0f32; 10000];
