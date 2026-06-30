@@ -129,25 +129,42 @@ impl InstrumentSettingsState {
     }
 }
 
+const MAX_TRACKS: usize = crate::track::MAX_TRACKS;
+
 pub struct SoundSettingsState {
-    pub instruments: [InstrumentSettingsState; crate::synthesis::DrumVoice::COUNT],
+    pub instruments: [InstrumentSettingsState; MAX_TRACKS],
     pub version: AtomicU64,
 }
 
 impl SoundSettingsState {
-    pub fn new() -> Arc<Self> {
-        let defaults: [[f32; FIELDS_PER_INSTRUMENT]; crate::synthesis::DrumVoice::COUNT] =
-            std::array::from_fn(|i| {
-                crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
-            });
+    pub fn new(layout: &crate::track::TrackLayoutState) -> Arc<Self> {
+        let defaults_for_slot = |i: usize| -> &'static [f32; FIELDS_PER_INSTRUMENT] {
+            if i < MAX_TRACKS && layout.slots[i].active {
+                &layout.slots[i].kind.instrument_def().sound_settings_default
+            } else if i < crate::synthesis::DrumVoice::COUNT {
+                &crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
+            } else {
+                &crate::instrument_registry::INSTRUMENTS[0].sound_settings_default
+            }
+        };
 
         Arc::new(Self {
             instruments: std::array::from_fn(|i| {
-                let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] = defaults[i];
+                let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] = *defaults_for_slot(i);
                 InstrumentSettingsState::new(f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s)
             }),
             version: AtomicU64::new(0),
         })
+    }
+
+    pub fn reset_slot_to_defaults(&self, slot: usize, kind: crate::track::TrackInstrumentKind) {
+        if slot >= MAX_TRACKS {
+            return;
+        }
+        let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] =
+            kind.instrument_def().sound_settings_default;
+        self.instruments[slot].store(f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s);
+        self.bump_version();
     }
 
     pub fn bump_version(&self) {
@@ -177,21 +194,56 @@ impl SoundSettingsState {
     }
 
     pub fn write_all(&self, values: &[f32]) {
-        let legacy_len = self.instruments.len() * LEGACY_FIELDS_PER_INSTRUMENT;
-        let stride = if values.len() == legacy_len {
-            LEGACY_FIELDS_PER_INSTRUMENT
+        let legacy_12_len = crate::synthesis::DrumVoice::COUNT * LEGACY_FIELDS_PER_INSTRUMENT;
+        let legacy_13_len = crate::synthesis::DrumVoice::COUNT * FIELDS_PER_INSTRUMENT;
+        let current_len = MAX_TRACKS * FIELDS_PER_INSTRUMENT;
+
+        let (stride, source_count) = if values.len() == legacy_12_len {
+            (LEGACY_FIELDS_PER_INSTRUMENT, crate::synthesis::DrumVoice::COUNT)
+        } else if values.len() == legacy_13_len {
+            (FIELDS_PER_INSTRUMENT, crate::synthesis::DrumVoice::COUNT)
+        } else if values.len() == current_len {
+            (FIELDS_PER_INSTRUMENT, MAX_TRACKS)
         } else {
-            FIELDS_PER_INSTRUMENT
+            // Unknown size: load as many full slots as possible, leave the rest as defaults.
+            (
+                FIELDS_PER_INSTRUMENT,
+                (values.len() / FIELDS_PER_INSTRUMENT).min(MAX_TRACKS),
+            )
         };
 
         for (i, inst) in self.instruments.iter().enumerate() {
+            let legacy_defaults = if i < crate::synthesis::DrumVoice::COUNT {
+                crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
+            } else {
+                crate::instrument_registry::INSTRUMENTS[0].sound_settings_default
+            };
+
+            if i >= source_count {
+                inst.store(
+                    legacy_defaults[0],
+                    legacy_defaults[1],
+                    legacy_defaults[2],
+                    legacy_defaults[3],
+                    legacy_defaults[4],
+                    legacy_defaults[5],
+                    legacy_defaults[6],
+                    legacy_defaults[7],
+                    legacy_defaults[8],
+                    legacy_defaults[9],
+                    legacy_defaults[10],
+                    legacy_defaults[11],
+                    legacy_defaults[12],
+                );
+                continue;
+            }
+
             let base = i * stride;
-            let defaults = crate::instrument_registry::INSTRUMENTS[i].sound_settings_default;
             let value_or_default = |offset: usize| {
                 values
                     .get(base + offset)
                     .copied()
-                    .unwrap_or(defaults[offset])
+                    .unwrap_or(legacy_defaults[offset])
             };
             inst.store(
                 value_or_default(0),
@@ -199,7 +251,7 @@ impl SoundSettingsState {
                 value_or_default(2),
                 value_or_default(3),
                 if stride == LEGACY_FIELDS_PER_INSTRUMENT {
-                    defaults[4]
+                    legacy_defaults[4]
                 } else {
                     value_or_default(4)
                 },
@@ -255,9 +307,9 @@ pub struct PersistentSoundSettings {
 }
 
 impl PersistentSoundSettings {
-    pub fn new() -> Self {
+    pub fn new(layout: &crate::track::TrackLayoutState) -> Self {
         Self {
-            state: SoundSettingsState::new(),
+            state: SoundSettingsState::new(layout),
         }
     }
 }

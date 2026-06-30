@@ -19,6 +19,7 @@ mod preset_dumps;
 mod sequencer;
 mod sound_settings;
 mod synthesis;
+mod track;
 mod ui;
 
 use generator::{GeneratorType, Style};
@@ -119,10 +120,10 @@ pub struct DrumFlashVst {
     synthesizer: DrumSynthesizer,
     sample_rate: f32,
     current_step: Arc<AtomicU32>,
-    current_steps: Arc<[AtomicU32; DrumVoice::COUNT]>,
+    current_steps: Arc<[AtomicU32; crate::track::MAX_TRACKS]>,
     pattern: Arc<SharedPattern>,
     last_step_masks: [u16; STEP_COUNT],
-    voice_test_triggers: Arc<[AtomicBool; DrumVoice::COUNT]>,
+    voice_test_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
     sound_settings_state: Arc<SoundSettingsState>,
     last_sound_settings_version: u64,
     /// Last host beat position, used to detect seeks.
@@ -170,6 +171,9 @@ pub struct DrumFlashParams {
 
     #[persist = "sound-settings-v2"]
     pub sound_settings: PersistentSoundSettings,
+
+    #[persist = "track-layout-v1"]
+    pub track_layout: track::PersistentTrackLayout,
 
     #[persist = "plock-v1"]
     pub plock_state: PersistentPlockState,
@@ -627,6 +631,7 @@ pub struct DrumFlashParams {
 
 impl Default for DrumFlashParams {
     fn default() -> Self {
+        let default_layout = crate::track::TrackLayoutState::default_layout();
         let default_pattern = Pattern::rock_pattern();
         let _default_masks = default_pattern.step_masks();
         let pattern_state = PersistentPattern::new(&default_pattern);
@@ -634,7 +639,8 @@ impl Default for DrumFlashParams {
         Self {
             editor_state: EguiState::from_size(1480, 800),
             pattern_state,
-            sound_settings: PersistentSoundSettings::new(),
+            sound_settings: PersistentSoundSettings::new(&default_layout),
+            track_layout: track::PersistentTrackLayout::new(),
             plock_state: PersistentPlockState::new(),
             seq_plock_state: PersistentSequencerPlockState::new(),
             pattern_bank: pattern_bank::PersistentPatternBank::new(),
@@ -2018,7 +2024,7 @@ impl DrumFlashVst {
         let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
             return;
         };
-        self.synthesizer.set_voice_settings(voice, settings);
+        self.synthesizer.set_voice_settings(voice_idx, settings);
         if hard {
             self.synthesizer.trigger_hard(voice_idx, velocity);
         } else {
@@ -2225,8 +2231,8 @@ impl Plugin for DrumFlashVst {
 
         self.sequencer.set_mutes(effective_mutes);
 
-        let mix_gains: [f32; DrumVoice::COUNT] = std::array::from_fn(|i| {
-            if self.params.mixes()[i].value() {
+        let mix_gains: [f32; crate::track::MAX_TRACKS] = std::array::from_fn(|i| {
+            if i < DrumVoice::COUNT && self.params.mixes()[i].value() {
                 1.0f32
             } else {
                 0.0f32
@@ -2308,7 +2314,7 @@ impl Plugin for DrumFlashVst {
                     stereo,
                 ) = inst.load();
                 self.synthesizer.set_voice_settings(
-                    voice,
+                    i,
                     self.voice_settings_for(
                         i,
                         freq,
@@ -2528,7 +2534,7 @@ impl Plugin for DrumFlashVst {
                             let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                                 continue;
                             };
-                            self.synthesizer.set_voice_settings(voice, settings);
+        self.synthesizer.set_voice_settings(voice_idx, settings);
                             self.synthesizer.trigger(voice_idx, velocity);
                             if hihat_chokes_oh && voice_idx == 2 {
                                 self.synthesizer.reset_voice(3);
@@ -2560,13 +2566,13 @@ impl Plugin for DrumFlashVst {
                         continue;
                     };
                     let settings = self.voice_settings_at_step(voice_idx, 0);
-                    self.synthesizer.set_voice_settings(voice, settings);
+                    self.synthesizer.set_voice_settings(voice_idx, settings);
                     self.synthesizer.trigger(voice_idx, 0.8);
                 }
             }
 
             let master_vol = self.params.master_volume.smoothed.next();
-            let mut voice_outputs = [[0.0f32; 2]; DrumVoice::COUNT];
+            let mut voice_outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
             self.synthesizer
                 .process_voice_samples_stereo(&mut voice_outputs);
 
