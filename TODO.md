@@ -1,3 +1,17 @@
+## Modular Grid Redesign (active — V1.5)
+
+- [x] [MG-1] Internal track model: `TrackSlot`, `TrackInstrumentKind`, `TrackRouting`, `TrackLayoutState`
+- [x] [MG-2] Persist track layout in `track-layout-v1`
+- [ ] [MG-3] Migrate legacy 13-voice sessions to 14-slot layout
+- [ ] [MG-4] Adapt sequencer to iterate active tracks
+- [ ] **[REPRENDRE ICI]** [MG-5] Adapt audio engine to 14 independent synth instances + routing
+- [ ] [MG-6] Adapt pattern bank to store only musical data (no layout)
+- [ ] [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change)
+- [ ] [MG-8] Sound editor tabs per track (Sound / Track)
+- [ ] [MG-9] MIDI note/channel behavior per spec
+- [ ] [MG-10] Adapt generator to track types and duplicate variations
+- [ ] [MG-11] Build, test, install, update CHANGELOG
+
 ## Court terme (Stabilisation V1 — En cours)
 
 - [x] [69] Vrai fix du click parasite BD (changement de hauteur/plock) : chemin digital = reset de phase + crossfade cass� supprim�s ; phase reset�e au cold-start uniquement ; plancher d'attaque anti-click (MIN_AMP_ATTACK_MS) ; bug sweep digital +1 Hz corrig� (build 20260531-155232)
@@ -220,9 +234,9 @@
   - Créer les paramètres spécifiques et l'interface utilisateur
   - Intégrer dans le système de mixage et de sortie audio
 
-- [ ] [57] Créer un séquencer modulaire avec instruments dynamiques (Complexité: Élevée, 4-6 semaines)
+- [ ] [57] Créer un séquencer modulaire avec instruments dynamiques (Complexité: Élevée, 4-6 semaines) — **EN COURS V1.5 (voir tâches MG-*)**
   - Refonte majeure de l'architecture du séquencer
-  - Système de plugins/instruments dynamiques
+  - Système de tracks fixes à 14 slots, actives visibles dans l'UI
   - Gestion de l'ajout/suppression d'instruments à chaud
   - Interface utilisateur pour la configuration modulaire
   - Système de sauvegarde/restoration des configurations
