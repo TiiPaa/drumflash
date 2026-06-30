@@ -1,5 +1,96 @@
 ﻿# Changelog
 
+## 2026-06-30 — UX: bouton fermeture simplifié avec accent au clic (build 20260630-155543)
+
+**Build:** `20260630-155543`
+**Validation:** `cargo check` OK, `cargo test` OK (100 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Refonte du bouton `×` de fermeture.**
+  - Plus de fond ni de bordure au repos : juste une croix discrète en `INK3`.
+  - Plus d’état hover inutile.
+  - **Au clic maintenu : fond plein avec la couleur d’accent du menu** (orange pour Plock/Fusion, violet pour Seq Plock, etc.) et croix en `INK` blanc.
+  - Le feedback est donc binaire et très visible : rien au repos, couleur d’accent sous le doigt.
+
+---
+
+## 2026-06-30 — Fix: création de fusions cassée + migration pattern-v4 (build 20260630-145727)
+
+**Build:** `20260630-145727`
+**Validation:** `cargo check` OK, `cargo test` OK (100 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Correction de la régression qui empêchait de créer des cellules fusionnées.**
+  - La détection d’ancien format dans `unpack_fusion` était trop large : une fusion sans morphing (champ `field` par défaut = 255) positionnait le bit 24, ce qui faisait croire à l’ancien format.
+  - Résultat : `is_valid` échouait sur les données décodées comme anciennes, et la fusion disparaissait.
+  - `unpack_fusion` ne décode maintenant que le nouveau layout ; l’ancien format est migré au niveau de l’état DAW.
+- **Passage du champ de persistance de `pattern-v3` à `pattern-v4`.**
+  - `filter_state` migre automatiquement `pattern-v3` vers `pattern-v4` en préservant la géométrie des fusions existantes (les données de morphing corrompues sont ignorées).
+  - Les migrations `pattern-v2`, `pattern-v1` et legacy `st01..st16` pointent maintenant vers `pattern-v4`.
+- **Tests ajoutés :**
+  - round-trip `SharedPattern` avec et sans morphing ;
+  - migration `pattern-v3` → `pattern-v4` avec conservation de la géométrie.
+
+---
+
+## 2026-06-30 — Fix: corruption des valeurs de morphing dans les fusions (build 20260630-144304)
+
+**Build:** `20260630-144304`
+**Validation:** `cargo check` OK, `cargo test` OK (97 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Correction d’un bug critique d’encodage binaire des fusions.**
+  - Dans l’ancien layout 3×`u64`, `end_value` du premier target était shifté de 40 bits, ce qui ne laissait que 24 bits dans le `u64` — les 8 bits de poids fort du `f32` étaient perdus.
+  - Conséquence : une valeur comme `Frequency = 300.0` devenait un nombre dénormal proche de zéro après sauvegarde/recharge, d’où le "reset à zéro" constaté.
+  - Le 3ème target subissait une troncature similaire, ce qui expliquait les comportements erratiques avec plusieurs cibles.
+- **Nouveau layout binaire compact sur 3×`u64`.**
+  - Stocke correctement la géométrie de la fusion + 4 cibles de morphing (`field` 8 bits + `end_value` 32 bits chacune).
+  - Bit de validité déplacé pour éviter toute ambiguïté avec l’ancien format.
+- **Migration automatique des anciennes fusions.**
+  - Les fusions encodées avec l’ancien format sont reconnues : la géométrie des cellules fusionnées est conservée, mais les données de morphing corrompues sont ignorées (morphing désactivé sur ces groupes).
+- **Tests unitaires ajoutés** pour valider le round-trip 1 à 4 cibles et la migration depuis l’ancien format.
+
+---
+
+## 2026-06-30 — Feature: morphing multi-cibles parallèles sur les fusions (build 20260630-123315)
+
+**Build:** `20260630-123315`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Les fusions supportent maintenant jusqu'à 4 cibles de morphing en parallèle.**
+  - Le menu contextuel de clic droit sur une cellule fusionnée permet d'ajouter, modifier et supprimer plusieurs cibles de morphing.
+  - Chaque cible possède un paramètre (`morph_field`) et une valeur de fin (`morph_end_value`).
+  - Les cibles actives sont appliquées simultanément lors de chaque pulse de la fusion.
+  - L'interpolation reste linéaire de la valeur courante (globale ou plock) vers la valeur de fin sur la durée de la fusion.
+- **Modèle de données refactoré.**
+  - `FusedGroup` et `TriggerResult` utilisent un tableau fixe `[MorphTarget; 4]` piloté par `morph_count`.
+  - `SharedPattern` stocke les fusions dans 3 slots `AtomicU64` par groupe (`FUSION_SLOT_COUNT = 3`) pour encoder 4 cibles.
+- **Persistance DAW et pattern bank mises à jour.**
+  - Format `pattern-v3` inchangé au niveau du champ, mais la taille des données fusion augmente (`INSTRUMENT_COUNT * MAX_FUSIONS * FUSION_SLOT_COUNT * 8`).
+  - Migration automatique des anciennes fusions mono-cible (`unpack_fusion_legacy`) vers le format multi-cibles.
+  - La pattern bank sauvegarde et restaure correctement les fusions multi-cibles.
+- **L'UI du menu contextuel reflète les cibles multiples** avec un bouton **Add Morph Target** jusqu'à 4 cibles maximum.
+
+---
+
+## 2026-06-30 — Feature: morphing accessible depuis le menu contextuel des fusions (build 20260630-120230)
+
+**Build:** `20260630-120230`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **Le morphing des cellules fusionnées est maintenant accessible par clic droit, avec une présentation identique au menu p-lock.**
+  - Clic droit sur une cellule fusionnée : menu contextuel avec **Morphing**, **Edit Fusion Steps**, **Delete Fusion**.
+  - Sélection de **Morphing** : affichage des paramètres continus sous forme de lignes avec slider + valeur (Volume, Frequency, Decay, Filter, Attack, Release, curves, Analog, Stereo, special params continus).
+  - Le paramètre actuellement morphé est surligné (label en couleur d'accent).
+  - Déplacement d'un slider : définit immédiatement `morph_field` et `morph_end_value`.
+  - Bouton **Disable Morphing** pour désactiver (`morph_field = 255`).
+  - Toggle **Display Notes/Hz** conservé pour les bass drums (Kick / BassDrum808).
+- **Le menu p-lock de la cellule source reste disponible** en dessous des actions fusion.
+
+---
+
 ## 2026-06-29 — Feature: morphing par pulse sur les cellules fusionnées (build 20260629-160624)
 
 **Build:** `20260629-160624`
