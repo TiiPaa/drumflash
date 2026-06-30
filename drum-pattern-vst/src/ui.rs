@@ -20,7 +20,7 @@ use crate::{
     pattern_bank::SLOT_COUNT,
     plock::PlockState,
     preset_dumps,
-    sequencer::{FusedGroup, Pattern, SharedPattern},
+    sequencer::{FusedGroup, MorphTarget, Pattern, SharedPattern},
     sound_settings::SoundSettingsState,
     synthesis::{self, DrumVoice, VoiceSettings},
     DrumFlashParams, BUILD_ID,
@@ -150,18 +150,39 @@ fn page_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mut
     });
 }
 
-fn plock_menu_header(ui: &mut egui::Ui, title: &str, step: usize, accent: Color32) {
+fn plock_menu_header(ui: &mut egui::Ui, title: &str, _step: usize, accent: Color32) -> bool {
+    let mut close_clicked = false;
     ui.horizontal(|ui| {
         ui.label(RichText::new(title).font(f_sans_sb(11.0)).color(accent));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(
-                RichText::new(format!("Step {}", step + 1))
-                    .font(f_mono_med(10.0))
-                    .color(FAINT),
+            let button_size = egui::Vec2::new(22.0, 22.0);
+            let response = ui.allocate_response(button_size, egui::Sense::click());
+            let pressed = response.is_pointer_button_down_on();
+
+            let (fill, text_color) = if pressed {
+                (accent, INK)
+            } else {
+                (Color32::TRANSPARENT, INK3)
+            };
+
+            if pressed {
+                ui.painter().rect_filled(response.rect, RADIUS_CTL, fill);
+            }
+            ui.painter().text(
+                response.rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "×",
+                f_sans_med(14.0),
+                text_color,
             );
+
+            if response.clicked() {
+                close_clicked = true;
+            }
         });
     });
     ui.add_space(4.0);
+    close_clicked
 }
 
 fn page_menu_header(ui: &mut egui::Ui, title: &str, accent: Color32) {
@@ -426,6 +447,9 @@ struct PlockPopup {
     step: usize,
     #[serde(with = "serde_pos2")]
     screen_pos: egui::Pos2,
+    /// When right-clicking a fused cell, true shows the morph-target submenu.
+    #[serde(default)]
+    morph_menu: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1811,6 +1835,7 @@ fn draw_grid_v2(
                                         instrument: inst,
                                         step: source_step,
                                         screen_pos: pos,
+                                        morph_menu: false,
                                     });
                                 }
                             }
@@ -3733,86 +3758,38 @@ fn draw_fusion_edit_box(
                                 }
                             }
 
-                            // Morph target selection
-                            let morphable =
-                                crate::instrument_registry::morphable_fields(instrument);
-                            let mut morph_options: Vec<&str> = vec!["Off"];
-                            for field in &morphable {
-                                morph_options.push(field.label);
-                            }
-                            let current_morph_idx = if group.morph_field == 255 {
-                                0
-                            } else {
-                                morphable
-                                    .iter()
-                                    .position(|f| f.field_index == group.morph_field as usize)
-                                    .map(|i| i + 1)
-                                    .unwrap_or(0)
-                            };
-                            let mut selected_morph = current_morph_idx;
-                            ui.label(RichText::new("Morph:").size(11.0));
-                            let (_sel_response, picked) = styled_select(
-                                ui,
-                                "fusion_morph",
-                                selected_morph,
-                                &morph_options,
-                                120.0,
-                            );
-                            if let Some(picked) = picked {
-                                selected_morph = picked;
-                            }
-
-                            if selected_morph != current_morph_idx {
-                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                                if let Some(group) = new_fusions.get_mut(index) {
-                                    if selected_morph == 0 {
-                                        group.morph_field = 255;
-                                    } else if let Some(field) = morphable.get(selected_morph - 1)
-                                    {
-                                        group.morph_field = field.field_index as u8;
-                                        // Initialise end value to current parameter value
-                                        group.morph_end_value =
-                                            current_field_value_for_fusion(
-                                                params,
-                                                sound_settings,
-                                                instrument,
-                                                field.field_index,
-                                            );
-                                    }
-                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
-                                }
-                            }
-
-                            // Morph end value slider
-                            if selected_morph > 0 {
-                                if let Some(field) = morphable.get(selected_morph - 1) {
-                                    let mut end_value = group.morph_end_value.clamp(field.min, field.max);
-                                    let log = field.min > 0.0
-                                        && field.max / field.min >= 20.0;
-                                    let value_text =
-                                        format_value_for_plock_special(end_value, field.min, field.max);
+                            // Morph targets display
+                            if group.morph_count > 0 {
+                                ui.label(RichText::new("Morph:").size(11.0));
+                                let morphable =
+                                    crate::instrument_registry::morphable_fields(instrument);
+                                for t in &group.morph_targets[..group.morph_count as usize] {
+                                    let name = morphable
+                                        .iter()
+                                        .find(|f| f.field_index == t.field as usize)
+                                        .map(|f| f.label)
+                                        .unwrap_or("?");
+                                    let value_text = format_value_for_plock_special(
+                                        t.end_value,
+                                        morphable
+                                            .iter()
+                                            .find(|f| f.field_index == t.field as usize)
+                                            .map(|f| f.min)
+                                            .unwrap_or(0.0),
+                                        morphable
+                                            .iter()
+                                            .find(|f| f.field_index == t.field as usize)
+                                            .map(|f| f.max)
+                                            .unwrap_or(1.0),
+                                    );
                                     ui.label(
-                                        RichText::new(format!("End: {}", value_text))
+                                        RichText::new(format!("{} → {}", name, value_text))
                                             .size(10.5)
                                             .color(INK2),
                                     );
-                                    let slider_response = ui.add(
-                                        LocalParamSlider::new(&mut end_value,
-                                            field.min..=field.max,
-                                        )
-                                        .logarithmic(log)
-                                        .with_width(80.0)
-                                        .without_value(),
-                                    );
-                                    if slider_response.changed() {
-                                        let mut new_fusions =
-                                            pattern_for_ui.load_fusions(instrument);
-                                        if let Some(group) = new_fusions.get_mut(index) {
-                                            group.morph_end_value = end_value;
-                                            pattern_for_ui.store_fusions(instrument, &new_fusions);
-                                        }
-                                    }
                                 }
+                            } else {
+                                ui.label(RichText::new("Morph: Off").size(11.0).color(INK2));
                             }
 
                             if ui.button("Delete").clicked() {
@@ -4399,7 +4376,9 @@ fn draw_plock_menu(
     let title = format!("Plock {}", inst_def.label);
 
     plock_menu_frame(ui, ACCENT, |ui| {
-        plock_menu_header(ui, &title, step, ACCENT);
+        if plock_menu_header(ui, &title, step, ACCENT) {
+            state.plock_popup = None;
+        }
 
         let inst = &sound_settings.instruments[instrument];
         let global = inst.load();
@@ -4779,6 +4758,300 @@ fn draw_plock_menu(
     });
 }
 
+fn draw_fusion_morph_menu(
+    ui: &mut egui::Ui,
+    pattern: &SharedPattern,
+    sound_settings: &SoundSettingsState,
+    params: &DrumFlashParams,
+    setter: &ParamSetter,
+    instrument: usize,
+    fusion_index: usize,
+    step: usize,
+    state: &mut EditorUIState,
+) {
+    use crate::plock::SPECIAL_FIELD_START;
+
+    const ACCENT: Color32 = PL_LINK;
+    let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
+    let title = format!("Morph {}", inst_def.label);
+
+    let mut new_fusions = pattern.load_fusions(instrument);
+    let Some(group) = new_fusions.get(fusion_index).copied() else { return };
+
+    // Helper: current end value if this field is a morph target, otherwise global/plock value.
+    let morph_state = |field_index: usize| -> (f32, bool) {
+        if group.has_morph_target(field_index) {
+            let end = group.morph_targets[..group.morph_count as usize]
+                .iter()
+                .find(|t| t.field == field_index as u8)
+                .map(|t| t.end_value)
+                .unwrap_or(0.0);
+            (end, true)
+        } else {
+            (
+                current_field_value_for_fusion(params, sound_settings, instrument, field_index),
+                false,
+            )
+        }
+    };
+
+    plock_menu_frame(ui, ACCENT, |ui| {
+        if plock_menu_header(ui, &title, step, ACCENT) {
+            state.plock_popup = None;
+        }
+
+        // Mode indicator
+        let mode_text = if group.morph_count == 0 { "Off" } else { "On" };
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new(mode_text).font(f_mono_med(10.0)).color(ACCENT));
+            });
+        });
+        ui.add_space(8.0);
+
+        // Disable morphing
+        if plock_menu_action_row(ui, "Disable Morphing", Color32::from_rgb(255, 80, 80)).clicked() {
+            if let Some(g) = new_fusions.get_mut(fusion_index) {
+                g.morph_count = 0;
+                g.morph_targets = [MorphTarget::default(); 4];
+                pattern.store_fusions(instrument, &new_fusions);
+                state.plock_popup = None;
+            }
+        }
+        ui.add_space(8.0);
+
+        // Volume
+        {
+            let vol_field = crate::instrument_registry::StandardField::Volume.plock_field_index();
+            let (mut vol_value, is_target) = morph_state(vol_field);
+            let vol_response = plock_menu_row(
+                ui,
+                "Volume",
+                ACCENT,
+                is_target,
+                Some(&format!("{:.2}", vol_value)),
+                |ui| {
+                    let slider = ui.add(
+                        LocalParamSlider::new(&mut vol_value, 0.0..=2.0)
+                            .with_width(104.0)
+                            .without_value(),
+                    );
+                    if is_target {
+                        if ui.small_button("×").clicked() {
+                            if let Some(g) = new_fusions.get_mut(fusion_index) {
+                                g.remove_morph_target(vol_field);
+                                pattern.store_fusions(instrument, &new_fusions);
+                            }
+                        }
+                    }
+                    slider
+                },
+            );
+            if vol_response.changed() {
+                if let Some(g) = new_fusions.get_mut(fusion_index) {
+                    g.set_morph_target(vol_field, vol_value);
+                    pattern.store_fusions(instrument, &new_fusions);
+                }
+            }
+        }
+
+        // Standard fields
+        let is_bass_drum = instrument == 0 || instrument == 11;
+        let freq_in_notes = if is_bass_drum {
+            let freq_mode_param = if instrument == 0 {
+                &params.freq_mode_kick
+            } else {
+                &params.freq_mode_bassdrum808
+            };
+            freq_mode_param.value()
+        } else {
+            false
+        };
+
+        // Note display toggle for bass drums
+        if is_bass_drum {
+            let freq_mode_param = if instrument == 0 {
+                &params.freq_mode_kick
+            } else {
+                &params.freq_mode_bassdrum808
+            };
+            let freq_in_notes = freq_mode_param.value();
+            let label = if freq_in_notes { "Notes" } else { "Hz" };
+            plock_menu_row(
+                ui,
+                "Display",
+                ACCENT,
+                false,
+                None,
+                |ui| {
+                    let response = plock_menu_action_row(ui, label, ACCENT);
+                    if response.clicked() {
+                        setter.set_parameter(freq_mode_param, !freq_in_notes);
+                    }
+                    response
+                },
+            );
+        }
+
+        for def in inst_def.standard_params {
+            if def.field == crate::instrument_registry::StandardField::Volume {
+                continue;
+            }
+            let field_index = def.field.plock_field_index();
+            let (mut value, is_target) = morph_state(field_index);
+
+            // Special case: frequency in note mode for bass drums
+            if def.field == crate::instrument_registry::StandardField::Freq && freq_in_notes {
+                let ratio = inst_def.freq_display_ratio;
+                let note_val = freq_to_note(value * ratio).round();
+                let label = format!("{} {}", def.label, note_name(note_val));
+                plock_menu_row(
+                    ui,
+                    &label,
+                    ACCENT,
+                    is_target,
+                    None,
+                    |ui| {
+                        let mut changed = false;
+                        if ui.small_button("-").clicked() {
+                            let new_note = (note_val - 1.0).max(0.0);
+                            value = note_to_freq(new_note) / ratio;
+                            changed = true;
+                        }
+                        if ui.small_button("+").clicked() {
+                            let new_note = (note_val + 1.0).min(127.0);
+                            value = note_to_freq(new_note) / ratio;
+                            changed = true;
+                        }
+                        if is_target && ui.small_button("×").clicked() {
+                            if let Some(g) = new_fusions.get_mut(fusion_index) {
+                                g.remove_morph_target(field_index);
+                                pattern.store_fusions(instrument, &new_fusions);
+                            }
+                        }
+                        if changed {
+                            if let Some(g) = new_fusions.get_mut(fusion_index) {
+                                g.set_morph_target(field_index, value);
+                                pattern.store_fusions(instrument, &new_fusions);
+                            }
+                        }
+                        ui.allocate_response(Vec2::new(1.0, 1.0), egui::Sense::hover())
+                    },
+                );
+                continue;
+            }
+
+            match &def.widget {
+                crate::instrument_registry::ParamWidget::Slider {
+                    min,
+                    max,
+                    logarithmic,
+                    ..
+                } => {
+                    let value_text = format_value_for_plock(def.field, value, *min, *max);
+                    let row_response = plock_menu_row(
+                        ui,
+                        def.label,
+                        ACCENT,
+                        is_target,
+                        Some(&value_text),
+                        |ui| {
+                            let slider = ui.add(
+                                LocalParamSlider::new(&mut value, *min..=*max)
+                                    .logarithmic(*logarithmic)
+                                    .with_width(104.0)
+                                    .without_value(),
+                            );
+                            if is_target {
+                                if ui.small_button("×").clicked() {
+                                    if let Some(g) = new_fusions.get_mut(fusion_index) {
+                                        g.remove_morph_target(field_index);
+                                        pattern.store_fusions(instrument, &new_fusions);
+                                    }
+                                }
+                            }
+                            slider
+                        },
+                    );
+                    if row_response.changed() {
+                        if let Some(g) = new_fusions.get_mut(fusion_index) {
+                            g.set_morph_target(field_index, value);
+                            pattern.store_fusions(instrument, &new_fusions);
+                        }
+                    }
+                }
+                crate::instrument_registry::ParamWidget::Checkbox => {
+                    plock_menu_row(
+                        ui,
+                        def.label,
+                        ACCENT,
+                        is_target,
+                        None,
+                        |ui| {
+                            let mut checked = value >= 0.5;
+                            let response = ui.add(egui::Checkbox::new(
+                                &mut checked,
+                                RichText::new("").font(f_sans_med(10.0)),
+                            ));
+                            if response.changed() {
+                                value = if checked { 1.0 } else { 0.0 };
+                                if let Some(g) = new_fusions.get_mut(fusion_index) {
+                                    g.set_morph_target(field_index, value);
+                                    pattern.store_fusions(instrument, &new_fusions);
+                                }
+                            }
+                            response
+                        },
+                    );
+                }
+            }
+        }
+
+        // Special params
+        let special_defs = crate::instrument_registry::special_params(instrument);
+        for def in special_defs {
+            if def.special_index >= 8 {
+                continue;
+            }
+            let field = SPECIAL_FIELD_START + def.special_index;
+            let (mut value, is_target) = morph_state(field);
+            let log = def.min > 0.0 && def.max / def.min >= 20.0;
+            let value_text = format_value_for_plock_special(value, def.min, def.max);
+            let special_response = plock_menu_row(
+                ui,
+                def.label,
+                ACCENT,
+                is_target,
+                Some(&value_text),
+                |ui| {
+                    let slider = ui.add(
+                        LocalParamSlider::new(&mut value, def.min..=def.max)
+                            .logarithmic(log)
+                            .with_width(104.0)
+                            .without_value(),
+                    );
+                    if is_target {
+                        if ui.small_button("×").clicked() {
+                            if let Some(g) = new_fusions.get_mut(fusion_index) {
+                                g.remove_morph_target(field);
+                                pattern.store_fusions(instrument, &new_fusions);
+                            }
+                        }
+                    }
+                    slider
+                },
+            );
+            if special_response.changed() {
+                if let Some(g) = new_fusions.get_mut(fusion_index) {
+                    g.set_morph_target(field, value);
+                    pattern.store_fusions(instrument, &new_fusions);
+                }
+            }
+        }
+    });
+}
+
 fn draw_plock_popup(
     ctx: &egui::Context,
     setter: &ParamSetter,
@@ -4788,7 +5061,7 @@ fn draw_plock_popup(
     plock: &PlockState,
     state: &mut EditorUIState,
 ) {
-    let popup = match state.plock_popup {
+    let mut popup = match state.plock_popup {
         Some(p) => p,
         None => return,
     };
@@ -4833,31 +5106,92 @@ fn draw_plock_popup(
                             fusion_group.is_some(),
                         );
                     } else {
-                        if let Some((idx, _)) = fusion_info {
-                            ui.horizontal(|ui| {
-                                if ui.button("Edit Fusion Steps").clicked() {
-                                    state.fusion_editing = Some((inst, idx));
-                                }
-                                if ui.button("Delete Fusion").clicked() {
-                                    let mut new_fusions = fusions.clone();
-                                    if idx < new_fusions.len() {
-                                        new_fusions.remove(idx);
-                                        pattern.store_fusions(inst, &new_fusions);
+                        if let Some((idx, group)) = fusion_info {
+                            if popup.morph_menu {
+                                draw_fusion_morph_menu(
+                                    ui,
+                                    pattern,
+                                    sound_settings,
+                                    params,
+                                    setter,
+                                    inst,
+                                    idx,
+                                    step,
+                                    state,
+                                );
+                            } else {
+                                plock_menu_frame(ui, PL_LINK, |ui| {
+                                    if plock_menu_header(
+                                        ui,
+                                        &format!("Fusion {}-{}", group.start_cell + 1, group.end_cell + 1),
+                                        step,
+                                        PL_LINK,
+                                    ) {
+                                        state.plock_popup = None;
                                     }
-                                }
-                            });
-                            ui.separator();
+
+                                    let morph_active = group.morph_count > 0;
+                                    let morph_label = if morph_active {
+                                        let morphable =
+                                            crate::instrument_registry::morphable_fields(inst);
+                                        let names: Vec<&str> = group.morph_targets
+                                            [..group.morph_count as usize]
+                                            .iter()
+                                            .map(|t| {
+                                                morphable
+                                                    .iter()
+                                                    .find(|f| f.field_index == t.field as usize)
+                                                    .map(|f| f.label)
+                                                    .unwrap_or("?")
+                                            })
+                                            .collect();
+                                        format!("Morphing ({})", names.join(", "))
+                                    } else {
+                                        "Morphing".to_string()
+                                    };
+                                    if plock_menu_action_row(ui, &morph_label, PL_LINK).clicked() {
+                                        popup.morph_menu = true;
+                                        state.plock_popup = Some(popup);
+                                    }
+                                    if plock_menu_action_row(ui, "Edit Fusion Steps", PL_LINK).clicked() {
+                                        state.fusion_editing = Some((inst, idx));
+                                        state.plock_popup = None;
+                                    }
+                                    if plock_menu_action_row(ui, "Delete Fusion", Color32::from_rgb(255, 80, 80)).clicked() {
+                                        let mut new_fusions = fusions.clone();
+                                        if idx < new_fusions.len() {
+                                            new_fusions.remove(idx);
+                                            pattern.store_fusions(inst, &new_fusions);
+                                        }
+                                        state.plock_popup = None;
+                                    }
+                                });
+                                ui.separator();
+
+                                // Also show the source-step plock menu below.
+                                draw_plock_menu(
+                                    ui,
+                                    plock,
+                                    sound_settings,
+                                    params,
+                                    setter,
+                                    inst,
+                                    step,
+                                    state,
+                                );
+                            }
+                        } else {
+                            draw_plock_menu(
+                                ui,
+                                plock,
+                                sound_settings,
+                                params,
+                                setter,
+                                inst,
+                                step,
+                                state,
+                            );
                         }
-                        draw_plock_menu(
-                            ui,
-                            plock,
-                            sound_settings,
-                            params,
-                            setter,
-                            inst,
-                            step,
-                            state,
-                        );
                     }
                 })
                 .response;
@@ -4885,7 +5219,7 @@ fn draw_sequencer_plock_menu(
     _setter: &ParamSetter,
     instrument: usize,
     step: usize,
-    _state: &mut EditorUIState,
+    state: &mut EditorUIState,
     stutter_disabled: bool,
 ) {
     use crate::plock::{SequencerStepParams, StepCondition};
@@ -4895,7 +5229,9 @@ fn draw_sequencer_plock_menu(
     let title = format!("Seq Plock {}", inst_def.label);
 
     plock_menu_frame(ui, ACCENT, |ui| {
-        plock_menu_header(ui, &title, step, ACCENT);
+        if plock_menu_header(ui, &title, step, ACCENT) {
+            state.plock_popup = None;
+        }
 
         let seq_plock = &params.seq_plock_state.state;
         let has_seq_plock = seq_plock.is_active(instrument, step);

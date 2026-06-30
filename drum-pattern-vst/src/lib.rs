@@ -51,7 +51,7 @@ const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
 ];
 const STEP_COUNT: usize = 64;
 
-const PATTERN_STATE_FIELD: &str = "pattern-v3";
+const PATTERN_STATE_FIELD: &str = "pattern-v4";
 
 #[derive(Clone)]
 pub struct LaneLengthLocks {
@@ -165,7 +165,7 @@ pub struct DrumFlashParams {
     #[persist = "editor-state-v2"]
     pub editor_state: Arc<EguiState>,
 
-    #[persist = "pattern-v3"]
+    #[persist = "pattern-v4"]
     pub pattern_state: PersistentPattern,
 
     #[persist = "sound-settings-v2"]
@@ -2432,24 +2432,27 @@ impl Plugin for DrumFlashVst {
                             } else {
                                 0
                             };
-                            let morph_active = trigger.morph_field != 255;
+                            let morph_active = trigger.morph_count > 0;
                             for k in 0..pulse_count {
                                 let mut settings = base_settings;
                                 if morph_active && pulse_count > 1 {
-                                    let start_value = self.read_morph_value(
-                                        &settings,
-                                        trigger.morph_field as usize,
-                                        voice_idx,
-                                    );
                                     let t = k as f32 / (pulse_count - 1) as f32;
-                                    let morphed =
-                                        start_value + (trigger.morph_end_value - start_value) * t;
-                                    self.apply_morph_value(
-                                        &mut settings,
-                                        trigger.morph_field as usize,
-                                        voice_idx,
-                                        morphed,
-                                    );
+                                    for m in 0..trigger.morph_count as usize {
+                                        let target = trigger.morph_targets[m];
+                                        let start_value = self.read_morph_value(
+                                            &settings,
+                                            target.field as usize,
+                                            voice_idx,
+                                        );
+                                        let morphed =
+                                            start_value + (target.end_value - start_value) * t;
+                                        self.apply_morph_value(
+                                            &mut settings,
+                                            target.field as usize,
+                                            voice_idx,
+                                            morphed,
+                                        );
+                                    }
                                 }
                                 if k == 0 {
                                     self.fire_voice_trigger(
@@ -2645,13 +2648,50 @@ impl Plugin for DrumFlashVst {
             return;
         }
 
-        // Migration pattern-v2 (masks only) → pattern-v3 (masks + fusions)
-        if let Some(data) = state.fields.get("pattern-v2") {
-            if let Ok(old_masks) = deserialize_field::<sequencer::pattern::PatternMasks>(data) {
+        // Migration pattern-v3 (old broken fusion layout) → pattern-v4 (fixed layout)
+        if let Some(data) = state.fields.get("pattern-v3") {
+            if let Ok(old_state) = deserialize_field::<sequencer::pattern::PatternState>(data) {
+                let mut new_fusions = [0u64; sequencer::pattern::INSTRUMENT_COUNT
+                    * sequencer::pattern::MAX_FUSIONS
+                    * sequencer::pattern::FUSION_SLOT_COUNT];
+                for inst in 0..sequencer::pattern::INSTRUMENT_COUNT {
+                    let base = inst
+                        * sequencer::pattern::MAX_FUSIONS
+                        * sequencer::pattern::FUSION_SLOT_COUNT;
+                    let count_packed = old_state.fusions[base];
+                    let count = (count_packed & 0xFF) as usize;
+                    let mut new_count = 0usize;
+                    for i in 0..count.min(sequencer::pattern::MAX_FUSIONS - 1) {
+                        let slot_base = base + (1 + i) * sequencer::pattern::FUSION_SLOT_COUNT;
+                        let old_slots = [
+                            old_state.fusions[slot_base],
+                            old_state.fusions[slot_base + 1],
+                            old_state.fusions[slot_base + 2],
+                        ];
+                        if let Some(group) =
+                            sequencer::pattern::unpack_fusion_v3_old(old_slots)
+                        {
+                            let packed = sequencer::pattern::pack_fusion(&group);
+                            let new_slot_base =
+                                base + (1 + new_count) * sequencer::pattern::FUSION_SLOT_COUNT;
+                            new_fusions[new_slot_base] = packed[0];
+                            new_fusions[new_slot_base + 1] = packed[1];
+                            new_fusions[new_slot_base + 2] = packed[2];
+                            new_count += 1;
+                        }
+                    }
+                    for i in new_count..(sequencer::pattern::MAX_FUSIONS - 1) {
+                        let new_slot_base =
+                            base + (1 + i) * sequencer::pattern::FUSION_SLOT_COUNT;
+                        new_fusions[new_slot_base] = 0;
+                        new_fusions[new_slot_base + 1] = 0;
+                        new_fusions[new_slot_base + 2] = 0;
+                    }
+                    new_fusions[base] = (new_count as u64) | (1u64 << 24);
+                }
                 let new_state = sequencer::pattern::PatternState {
-                    masks: old_masks.0,
-                    fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                        * sequencer::pattern::MAX_FUSIONS],
+                    masks: old_state.masks,
+                    fusions: new_fusions,
                 };
                 if let Ok(serialized) = serialize_field(&new_state) {
                     state
@@ -2662,7 +2702,25 @@ impl Plugin for DrumFlashVst {
             }
         }
 
-        // Migration pattern-v1 (16 steps) → pattern-v3 (64 steps)
+        // Migration pattern-v2 (masks only) → pattern-v4 (masks + fusions)
+        if let Some(data) = state.fields.get("pattern-v2") {
+            if let Ok(old_masks) = deserialize_field::<sequencer::pattern::PatternMasks>(data) {
+                let new_state = sequencer::pattern::PatternState {
+                    masks: old_masks.0,
+                    fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
+                        * sequencer::pattern::MAX_FUSIONS
+                        * sequencer::pattern::FUSION_SLOT_COUNT],
+                };
+                if let Ok(serialized) = serialize_field(&new_state) {
+                    state
+                        .fields
+                        .insert(PATTERN_STATE_FIELD.to_string(), serialized);
+                    return;
+                }
+            }
+        }
+
+        // Migration pattern-v1 (16 steps) → pattern-v4 (64 steps)
         if let Some(data) = state.fields.get("pattern-v1") {
             if let Ok(old_masks) = deserialize_field::<[u16; 16]>(data) {
                 let mut new_masks = [0u16; STEP_COUNT];
@@ -2670,7 +2728,8 @@ impl Plugin for DrumFlashVst {
                 let new_state = sequencer::pattern::PatternState {
                     masks: new_masks,
                     fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                        * sequencer::pattern::MAX_FUSIONS],
+                        * sequencer::pattern::MAX_FUSIONS
+                        * sequencer::pattern::FUSION_SLOT_COUNT],
                 };
                 if let Ok(serialized) = serialize_field(&new_state) {
                     state
@@ -2681,7 +2740,7 @@ impl Plugin for DrumFlashVst {
             }
         }
 
-        // Migration legacy st01..st16 (8-bit masks) → pattern-v3 (64 steps)
+        // Migration legacy st01..st16 (8-bit masks) → pattern-v4 (64 steps)
         let masks: [u16; STEP_COUNT] = std::array::from_fn(|step| {
             if step < 16 {
                 let key = format!("st{:02}", step + 1);
@@ -2696,7 +2755,8 @@ impl Plugin for DrumFlashVst {
         let new_state = sequencer::pattern::PatternState {
             masks,
             fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                * sequencer::pattern::MAX_FUSIONS],
+                * sequencer::pattern::MAX_FUSIONS
+                * sequencer::pattern::FUSION_SLOT_COUNT],
         };
         if let Ok(serialized_pattern) = serialize_field(&new_state) {
             state
@@ -2748,12 +2808,65 @@ mod tests {
         let restored_state = sequencer::pattern::PatternState {
             masks: [3u16; STEP_COUNT],
             fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                * sequencer::pattern::MAX_FUSIONS],
+                * sequencer::pattern::MAX_FUSIONS
+                * sequencer::pattern::FUSION_SLOT_COUNT],
         };
         pattern_state.set(restored_state);
 
         assert_eq!(shared_pattern.load_step_mask(0), 3);
         assert_eq!(shared_pattern.load_step_mask(15), 3);
+    }
+
+    #[test]
+    fn pattern_v3_migrates_to_v4_preserving_fusion_geometry() {
+        // Build an old-pattern-v3 PatternState with one fusion in old layout.
+        let mut old_fusions = [0u64; sequencer::pattern::INSTRUMENT_COUNT
+            * sequencer::pattern::MAX_FUSIONS
+            * sequencer::pattern::FUSION_SLOT_COUNT];
+        let inst = 4usize;
+        let base = inst * sequencer::pattern::MAX_FUSIONS * sequencer::pattern::FUSION_SLOT_COUNT;
+        let old_meta: u64 = (2u64 << 0) | (6u64 << 8) | (4u64 << 16) | (1u64 << 24);
+        let slot_base = base + sequencer::pattern::FUSION_SLOT_COUNT;
+        old_fusions[slot_base] = old_meta;
+        old_fusions[slot_base + 1] = 0;
+        old_fusions[slot_base + 2] = 0;
+        old_fusions[base] = (1u64) | (1u64 << 24);
+
+        let mut masks = [0u16; STEP_COUNT];
+        masks[0] = 0x10;
+
+        let old_state = sequencer::pattern::PatternState { masks, fusions: old_fusions };
+        let mut fields = BTreeMap::new();
+        fields.insert(
+            "pattern-v3".to_string(),
+            serialize_field(&old_state).unwrap(),
+        );
+        let mut state = PluginState {
+            version: "0.1.0".to_string(),
+            params: BTreeMap::new(),
+            fields,
+        };
+
+        <DrumFlashVst as Plugin>::filter_state(&mut state);
+
+        let serialized_pattern = state
+            .fields
+            .get(PATTERN_STATE_FIELD)
+            .expect("pattern-v4 field should be created");
+        let pattern_state: sequencer::pattern::PatternState =
+            deserialize_field(serialized_pattern).expect("pattern field should deserialize");
+
+        assert_eq!(pattern_state.masks[0], 0x10);
+
+        // Verify the fusion geometry was preserved via PersistentPattern::set.
+        let persistent = PersistentPattern::new(&Pattern::empty());
+        persistent.set(pattern_state);
+        let loaded = persistent.shared().load_fusions(inst);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].start_cell, 2);
+        assert_eq!(loaded[0].end_cell, 6);
+        assert_eq!(loaded[0].step_count, 4);
+        assert_eq!(loaded[0].morph_count, 0);
     }
 
     #[test]
