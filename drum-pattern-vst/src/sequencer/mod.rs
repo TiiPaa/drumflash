@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use crate::groove::{self, GrooveType};
 use crate::synthesis::DrumVoice;
-pub use pattern::{FusedGroup, Pattern, SharedPattern, MAX_FUSIONS};
+pub use pattern::{FusedGroup, MorphTarget, Pattern, SharedPattern, MAX_FUSIONS};
 
 /// Per-instrument state.
 #[derive(Clone, Copy, Debug)]
@@ -129,10 +129,10 @@ pub struct TriggerResult {
     /// `1` means a normal, non-fused trigger.
     pub fusion_pulse_count: u8,
     pub fusion_span_cells: u8,
-    /// Morphing target field (255 = none). Only meaningful for fused triggers.
-    pub morph_field: u8,
-    /// Morphing target value at the last pulse.
-    pub morph_end_value: f32,
+    /// Number of active morphing targets (0-4). Only meaningful for fused triggers.
+    pub morph_count: u8,
+    /// Morphing targets. Only the first `morph_count` entries are valid.
+    pub morph_targets: [MorphTarget; 4],
 }
 
 impl Default for TriggerResult {
@@ -143,8 +143,8 @@ impl Default for TriggerResult {
             step: 0,
             fusion_pulse_count: 1,
             fusion_span_cells: 1,
-            morph_field: 255,
-            morph_end_value: 0.0,
+            morph_count: 0,
+            morph_targets: [MorphTarget::default(); 4],
         }
     }
 }
@@ -243,16 +243,22 @@ impl Sequencer {
                     source_step,
                     fusion_pulse_count,
                     fusion_span_cells,
-                    morph_field,
-                    morph_end_value,
+                    morph_count,
+                    morph_targets,
                 ) = match fusion {
-                    Some(group) if group.is_start(current_step) => (
-                        group.start_cell as usize,
-                        group.step_count.clamp(1, 64),
-                        group.cell_span().min(64) as u8,
-                        group.morph_field,
-                        group.morph_end_value,
-                    ),
+                    Some(group) if group.is_start(current_step) => {
+                        let mut targets = [MorphTarget::default(); 4];
+                        for i in 0..group.morph_count as usize {
+                            targets[i] = group.morph_targets[i];
+                        }
+                        (
+                            group.start_cell as usize,
+                            group.step_count.clamp(1, 64),
+                            group.cell_span().min(64) as u8,
+                            group.morph_count,
+                            targets,
+                        )
+                    }
                     Some(_) => {
                         // Covered cells do not trigger independently. The start cell
                         // schedules all pulses for the fused region.
@@ -260,7 +266,7 @@ impl Sequencer {
                         track.previous_step = current_step;
                         continue;
                     }
-                    None => (current_step, 1, 1, 255, 0.0),
+                    None => (current_step, 1, 1, 0, [MorphTarget::default(); 4]),
                 };
 
                 let step_mask = self.pattern.load_step_mask(source_step);
@@ -283,8 +289,8 @@ impl Sequencer {
                     step: source_step,
                     fusion_pulse_count,
                     fusion_span_cells,
-                    morph_field,
-                    morph_end_value,
+                    morph_count,
+                    morph_targets,
                 };
                 track.previous_shifted_master = shifted_master;
                 track.previous_step = current_step;

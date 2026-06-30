@@ -3,7 +3,9 @@
 //! Kept simple: each slot stores raw serialized bytes that can be
 //! directly fed back into the plock / seq-plock / grid systems.
 
-use crate::sequencer::pattern::{MAX_FUSIONS, STEP_COUNT};
+use crate::sequencer::pattern::{
+    FUSION_SLOT_COUNT, INSTRUMENT_COUNT, MAX_FUSIONS, STEP_COUNT,
+};
 
 pub const SLOT_COUNT: usize = 8;
 
@@ -29,6 +31,7 @@ pub const MAX_SEQ_PLOCK_BYTES: usize = crate::sequencer::pattern::INSTRUMENT_COU
 pub const MAX_FUSION_BYTES: usize =
     crate::sequencer::pattern::INSTRUMENT_COUNT
         * crate::sequencer::pattern::MAX_FUSIONS
+        * FUSION_SLOT_COUNT
         * 8;
 
 /// A single saved pattern slot.
@@ -203,12 +206,16 @@ impl PatternSlot {
                 .extend_from_slice(&((groups.len() as u64) | (1u64 << 24)).to_le_bytes());
             written += 1;
             for group in groups.iter().copied().take(MAX_FUSIONS - 1) {
-                self.fusion_bytes
-                    .extend_from_slice(&crate::sequencer::pattern::pack_fusion(&group).to_le_bytes());
+                let packed = crate::sequencer::pattern::pack_fusion(&group);
+                for slot in &packed {
+                    self.fusion_bytes.extend_from_slice(&slot.to_le_bytes());
+                }
                 written += 1;
             }
             for _ in written..MAX_FUSIONS {
-                self.fusion_bytes.extend_from_slice(&0u64.to_le_bytes());
+                for _ in 0..FUSION_SLOT_COUNT {
+                    self.fusion_bytes.extend_from_slice(&0u64.to_le_bytes());
+                }
             }
         }
 
@@ -387,44 +394,7 @@ impl PatternSlot {
         }
 
         // Deserialize fused groups.
-        let expected_fusion_size = INSTRUMENT_COUNT * MAX_FUSIONS * 8;
-        if self.fusion_bytes.len() >= expected_fusion_size {
-            let mut offset = 0usize;
-            for inst in 0..INSTRUMENT_COUNT {
-                let count_packed = u64::from_le_bytes([
-                    self.fusion_bytes[offset],
-                    self.fusion_bytes[offset + 1],
-                    self.fusion_bytes[offset + 2],
-                    self.fusion_bytes[offset + 3],
-                    self.fusion_bytes[offset + 4],
-                    self.fusion_bytes[offset + 5],
-                    self.fusion_bytes[offset + 6],
-                    self.fusion_bytes[offset + 7],
-                ]);
-                offset += 8;
-                let count = (count_packed & 0xFF) as usize;
-                let mut groups = Vec::with_capacity(count.min(MAX_FUSIONS - 1));
-                for _ in 0..count.min(MAX_FUSIONS - 1) {
-                    let packed = u64::from_le_bytes([
-                        self.fusion_bytes[offset],
-                        self.fusion_bytes[offset + 1],
-                        self.fusion_bytes[offset + 2],
-                        self.fusion_bytes[offset + 3],
-                        self.fusion_bytes[offset + 4],
-                        self.fusion_bytes[offset + 5],
-                        self.fusion_bytes[offset + 6],
-                        self.fusion_bytes[offset + 7],
-                    ]);
-                    offset += 8;
-                    if let Some(group) = crate::sequencer::pattern::unpack_fusion(packed) {
-                        groups.push(group);
-                    }
-                }
-                // Skip remaining slots
-                offset += (MAX_FUSIONS - 1 - count.min(MAX_FUSIONS - 1)) * 8;
-                pattern.store_fusions(inst, &groups);
-            }
-        }
+        deserialize_fusions(&self.fusion_bytes, pattern);
 
         Some(self.pattern_length)
     }
@@ -572,8 +542,75 @@ pub fn restore_from_buffers(
     }
 
     // Deserialize fused groups.
-    let expected_fusion_size = INSTRUMENT_COUNT * MAX_FUSIONS * 8;
-    if fusion_bytes.len() >= expected_fusion_size {
+    deserialize_fusions(fusion_bytes, pattern);
+}
+
+fn deserialize_fusions(
+    fusion_bytes: &[u8],
+    pattern: &crate::sequencer::pattern::SharedPattern,
+) {
+    let expected_new = INSTRUMENT_COUNT * MAX_FUSIONS * FUSION_SLOT_COUNT * 8;
+    let expected_old = INSTRUMENT_COUNT * MAX_FUSIONS * 8;
+
+    if fusion_bytes.len() >= expected_new {
+        let mut offset = 0usize;
+        for inst in 0..INSTRUMENT_COUNT {
+            let count_packed = u64::from_le_bytes([
+                fusion_bytes[offset],
+                fusion_bytes[offset + 1],
+                fusion_bytes[offset + 2],
+                fusion_bytes[offset + 3],
+                fusion_bytes[offset + 4],
+                fusion_bytes[offset + 5],
+                fusion_bytes[offset + 6],
+                fusion_bytes[offset + 7],
+            ]);
+            offset += 8;
+            let count = (count_packed & 0xFF) as usize;
+            let mut groups = Vec::with_capacity(count.min(MAX_FUSIONS - 1));
+            for _ in 0..count.min(MAX_FUSIONS - 1) {
+                let slots = [
+                    u64::from_le_bytes([
+                        fusion_bytes[offset],
+                        fusion_bytes[offset + 1],
+                        fusion_bytes[offset + 2],
+                        fusion_bytes[offset + 3],
+                        fusion_bytes[offset + 4],
+                        fusion_bytes[offset + 5],
+                        fusion_bytes[offset + 6],
+                        fusion_bytes[offset + 7],
+                    ]),
+                    u64::from_le_bytes([
+                        fusion_bytes[offset + 8],
+                        fusion_bytes[offset + 9],
+                        fusion_bytes[offset + 10],
+                        fusion_bytes[offset + 11],
+                        fusion_bytes[offset + 12],
+                        fusion_bytes[offset + 13],
+                        fusion_bytes[offset + 14],
+                        fusion_bytes[offset + 15],
+                    ]),
+                    u64::from_le_bytes([
+                        fusion_bytes[offset + 16],
+                        fusion_bytes[offset + 17],
+                        fusion_bytes[offset + 18],
+                        fusion_bytes[offset + 19],
+                        fusion_bytes[offset + 20],
+                        fusion_bytes[offset + 21],
+                        fusion_bytes[offset + 22],
+                        fusion_bytes[offset + 23],
+                    ]),
+                ];
+                offset += FUSION_SLOT_COUNT * 8;
+                if let Some(group) = crate::sequencer::pattern::unpack_fusion(slots) {
+                    groups.push(group);
+                }
+            }
+            offset += (MAX_FUSIONS - 1 - count.min(MAX_FUSIONS - 1)) * FUSION_SLOT_COUNT * 8;
+            pattern.store_fusions(inst, &groups);
+        }
+    } else if fusion_bytes.len() >= expected_old {
+        // Legacy single-u64 format: migrate to multi-target on load.
         let mut offset = 0usize;
         for inst in 0..INSTRUMENT_COUNT {
             let count_packed = u64::from_le_bytes([
@@ -601,7 +638,7 @@ pub fn restore_from_buffers(
                     fusion_bytes[offset + 7],
                 ]);
                 offset += 8;
-                if let Some(group) = crate::sequencer::pattern::unpack_fusion(packed) {
+                if let Some(group) = crate::sequencer::pattern::unpack_fusion_legacy(packed) {
                     groups.push(group);
                 }
             }
