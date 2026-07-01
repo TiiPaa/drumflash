@@ -376,7 +376,7 @@ impl Sequencer {
     ) {
         self.master_length = master_length.clamp(1, 64);
         for i in 0..DrumVoice::COUNT {
-            self.tracks[i].track_length = lengths[i].clamp(1, self.master_length);
+            self.tracks[i].track_length = lengths[i].clamp(1, 64);
             self.tracks[i].push_pull_ms = push_pulls[i];
             self.tracks[i].humanize_amount = humanizes[i].clamp(0.0, 1.0);
         }
