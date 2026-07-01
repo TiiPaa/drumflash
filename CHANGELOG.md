@@ -1,5 +1,323 @@
 ﻿# Changelog
 
+## 2026-07-01 — Fix plugin fixed height after empty modular lane (build 20260701-230011)
+
+**Build:** `20260701-230011`
+**Validation:** `cargo check` OK, `cargo test` OK (103 + 73 tests), `build.ps1 -Install` OK
+
+### Changements
+- Augmente la taille fixe de l'éditeur VST de `1480x800` à `1480x900`.
+- Corrige le bas de l'interface masqué après l'ajout visuel du slot 14 vide et de la rangée `+ Add Module`.
+- Aucun changement audio, VST3, routing ou persistance DAW.
+
+---
+
+## 2026-07-01 — Modular UI checkpoint 5: visual empty slot and Add Module placeholder (build 20260701-205643)
+
+**Build:** `20260701-205643`
+**Validation:** `cargo check` OK, `cargo test` OK (103 + 73 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Ajoute un checkpoint visuel sûr pour MG-7a.**
+  - Affiche le slot 14 comme lane vide stylée sous les 13 lanes legacy actives.
+  - Ajoute une rangée `+ Add Module` sous les lanes.
+  - Le bouton reste volontairement visuel/inactif dans ce checkpoint : aucune activation de piste, aucune mutation de `track-layout-v1`, aucun changement audio, VST3 ou DAW state.
+- Prépare le prochain checkpoint qui pourra activer l'ajout de module de façon contrôlée.
+
+---
+
+## 2026-07-01 — Fix individual lane length beyond global length (build 20260701-201011)
+
+**Build:** `20260701-201011`
+**Validation:** `cargo check` OK, `cargo test` OK (103 + 73 tests), `build.ps1 -Install` OK, validation Studio One OK
+
+### Changements
+- **Corrige le comportement de `Len` individuel sur les lanes.**
+  - Une lane lockée utilise maintenant sa propre longueur brute `1..64`, même si elle dépasse la longueur globale du pattern.
+  - Le séquenceur accepte les longueurs par piste jusqu'à 64 au lieu de les re-clamper sur la longueur globale.
+  - La grille UI et le playhead par lane utilisent la longueur effective de la lane, ce qui rend les pas au-delà de la longueur globale visibles/editables pour une lane lockée.
+- Aucun changement de topologie VST3, de bus audio ou d'identité plugin.
+
+---
+
+## 2026-07-01 — Modular UI checkpoint 4: extracted slot-aware lane renderer (build 20260701-183243)
+
+**Build:** `20260701-183243`
+**Validation:** `cargo check` OK, `cargo test` OK (73 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Refactor structurel sans changement visible.**
+  - Extrait le rendu d'une lane dans `draw_legacy_slot_lane_v2(...)`.
+  - La fonction reçoit explicitement `slot_idx` et `voice_idx`, ce qui prépare l'affichage de slots actifs/inactifs sans mélanger index de slot et index de voix.
+  - Corrige au passage la condition d'édition fusion pour comparer contre `slot_idx`.
+- Aucun changement de topologie VST3, de bus audio, de pattern, de plocks ou de persistance DAW.
+
+---
+
+## 2026-07-01 — Modular UI checkpoint 3: slot-to-voice bridge in grid loop (build 20260701-175321)
+
+**Build:** `20260701-175321`
+**Validation:** `cargo check` OK, `cargo test` OK (73 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Prépare la grille aux vraies lanes modulaires sans changement visible.**
+  - Ajoute les helpers `visible_legacy_lane_count()` et `legacy_voice_idx_for_slot()`.
+  - La boucle de grille itère maintenant sur `slot_idx`, puis dérive le `voice_idx` legacy (`slot_idx == voice_idx` tant que l'UI reste en 13 lanes fixes).
+  - Pattern, plocks, fusions et sélection utilisent progressivement `slot_idx`; labels et paramètres automatisables restent indexés par `voice_idx` legacy.
+- Aucun changement de topologie VST3, de bus audio, de pattern, de plocks ou de persistance DAW.
+
+---
+
+## 2026-07-01 — Fix silent lanes after modular layout checkpoint (build 20260701-174700)
+
+**Build:** `20260701-174700`
+**Validation:** `cargo check` OK, `cargo test` OK (73 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige les lanes silencieuses à partir de la 5e lane.**
+  - Cause : le layout modulaire par défaut n'activait que 4 slots (`BD/SD/HH/Tom`) alors que l'UI affiche encore les 13 lanes fixes.
+  - `TrackLayoutState::default_layout()` revient temporairement au layout legacy 13 voix tant que l'UI modulaire complète n'est pas prête.
+  - Les états `track-layout-v1` déjà sauvegardés avec le template 4 slots buggué sont automatiquement migrés vers `from_legacy_13()` au chargement.
+- Ajoute un test de compat pour détecter le template 4 slots buggué.
+- Aucun changement de topologie VST3 ou de bus audio.
+
+---
+
+## 2026-07-01 — Modular UI checkpoint 2: grid interactions select track slot (build 20260701-173832)
+
+**Build:** `20260701-173832`
+**Validation:** `cargo check` OK, `cargo test` OK (72 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Étend la sélection `selected_track_slot` aux interactions de grille/lane restantes, toujours sur les 13 lanes fixes.**
+  - Lane volume, Humanize, Push/Pull et Length sélectionnent désormais le slot concerné quand l'utilisateur interagit.
+  - Double-clic fusion, shift-clic fusion et clic droit p-lock sélectionnent aussi le slot concerné.
+  - Les actions déjà gouvernées par Auto-Edit conservent leur comportement existant, mais passent par `select_legacy_track()`.
+- Aucun changement de topologie VST3, de bus audio, de pattern, de plocks ou de persistance DAW.
+
+---
+
+## 2026-07-01 — Modular UI checkpoint 1: non-breaking selected track alias (build 20260701-172602)
+
+**Build:** `20260701-172602`
+**Validation:** `cargo check` OK, `cargo test` OK (72 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Reprise prudente de la grille modulaire après rollback Studio One.**
+  - Ajoute `EditorUIState::selected_track_slot` avec `#[serde(default)]` pour ne pas casser l'état d'éditeur existant.
+  - Synchronise `selected_track_slot` avec `selected_instrument` sur les 13 lanes fixes actuelles.
+  - Remplace les chemins de sélection UI par un helper central `select_legacy_track()`.
+- Aucun changement de topologie VST3, de bus audio, de pattern, de plocks ou de persistance DAW.
+- Sécurise le loader debug de preset dumps contre un index instrument hors bornes.
+
+---
+
+## 2026-07-01 — Rollback to last stable pre-crash code path (build 20260701-171707)
+
+**Build:** `20260701-171707`
+**Validation:** `cargo check` OK, `cargo test` OK (72 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Rollback des changements non commités de la grille modulaire qui faisaient encore crasher Studio One au lancement.**
+  - Retour au code du commit stable `edb1ef8` pour les sources Rust du plugin.
+  - Conserve les fondations déjà commités : modèle track 14 slots, `track-layout-v1`, audio interne 14 slots avec topologie VST3 compatible 13 sorties auxiliaires.
+  - Retire les changements UI/interaction non stabilisés : `+ Add module`, empty lanes stylées, sélection canonique `selected_track_slot`, onglets Sound/Track, menus plock slot/voice-aware, solos par slot.
+- `TODO.md` rouvre les tâches modular-grid UI/interaction et le fix “new tracks silent / solo / interactions track-based”.
+- Les entrées de build `20260701-162641`, `20260701-163806`, `20260701-164653`, `20260701-170135` et `20260701-170950` sont à considérer comme **supplantées par ce rollback** pour la validation Studio One.
+
+---
+
+## 2026-07-01 — Restore Studio One bus compatibility after modular-grid crash (build 20260701-170950)
+
+**Build:** `20260701-170950`
+**Validation:** `cargo check` OK, `cargo test` OK (72 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Restaure la compatibilité de topologie VST3 avec les anciennes instances Studio One.**
+  - Le plugin garde 14 slots internes pour la grille modulaire.
+  - Les sorties auxiliaires VST3 exposées repassent à 13 bus stéréo, comme l'identité VST3 existante.
+  - Changer 13 → 14 bus avec le même `VST3_CLASS_ID` était probablement la cause du crash au restore Studio One.
+- Ajoute des garde-fous sur les derniers accès `slot_idx`/`voice_idx` dangereux dans `voice_settings_for` et `voice_settings_at_step`.
+- Le menu Track / Aux Out n'expose plus `Out 14` tant que l'identité VST3 reste celle de la ligne compatible.
+
+---
+
+## 2026-07-01 — Fix Studio One startup crash: slot/voice index confusion in `voice_settings_at_step` (build 20260701-170135)
+
+**Build:** `20260701-170135`
+**Validation:** `cargo check` OK, `cargo test` OK (72 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige une confusion d'index slot/voice qui provoquait un panic dans l'audio thread.**
+  - `voice_settings_at_step` prend maintenant explicitement `slot_idx` *et* `voice_idx`.
+  - `sound_settings.instruments[slot_idx]` est lu par slot (14 slots), tandis que `voice_settings_for(voice_idx, ...)` et `INSTRUMENTS[voice_idx]` restent indexés par `DrumVoice` (13 voix).
+  - Avant ce fix, un slot d'index 13 actif passait `slot_idx = 13` à `voice_settings_for`, causant un accès hors limites sur `INSTRUMENTS[13]` (taille 13) et un crash `EXCEPTION_STACK_BUFFER_OVERRUN` à travers l'ABI VST3.
+- Mise à jour des trois appelants dans `process()` pour transmettre les deux indices correctement.
+
+---
+
+## 2026-07-01 — Fix Studio One startup crash: TrackLayoutState + plock popup compat (build 20260701-164653)
+
+**Build:** `20260701-164653`
+**Validation:** `cargo check` OK, `cargo test` OK (72 tests), `build.ps1 -Install` OK, Studio One 7 launches without crash
+
+### Changements
+- **Corrige le crash au lancement de Studio One.**
+  - `TrackLayoutState` implémente maintenant `Deserialize` manuellement et accepte un `Vec<TrackSlot>` de n'importe quelle taille, remplissant/tronquant à `MAX_TRACKS = 14` slots.
+  - Cela répare la désérialisation de l'état DAW qui contenait encore 13 slots (ancien format).
+  - `PlockPopup.slot_idx` et `SinglePlockClipboard.slot_idx` acceptent l'alias serde `instrument` pour la compatibilité avec l'état de l'éditeur sauvegardé avant le renommage.
+
+---
+
+## 2026-07-01 — Fix Studio One startup crash (build 20260701-163806)
+
+**Build:** `20260701-163806`
+**Validation:** `cargo check` OK, `cargo test` OK (72 tests), `build.ps1 -Install` OK, Studio One 7 launches without crash
+
+### Changements
+- **Corrige le crash au lancement de Studio One.**
+  - `EditorUIState::fusion_selection_start` passe d'un tableau de taille fixe (`[Option<usize>; MAX_TRACKS]`) à un `Vec<Option<usize>>` initialisé à 14 entrées.
+  - Cela évite l'erreur de désérialisation serde lorsque l'état précédent de l'éditeur contenait un tableau de 13 éléments (ancien format).
+
+---
+
+## 2026-07-01 — All UI interactions are track-based (build 20260701-162641)
+
+**Build:** `20260701-162641`
+**Validation:** `cargo check` OK, `cargo test` OK (72 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Toutes les interactions de la grille sont maintenant associées au track slot, pas au type d'instrument.**
+  - Clic sur le nom d'une lane, Mute, Solo, Test, clic sur une step : ciblent le `slot_idx` sélectionné.
+  - `selected_track_slot` est la sélection canonique ; `selected_instrument` n'est que le type de l'instrument du slot.
+- **Sound Editor édite le son du slot actif.**
+  - `sound_settings.instruments[slot_idx]` est lu/écrit au lieu de `[selected_instrument]`.
+- **Plock / fusion / seq-plock menus sont slot/voice-aware.**
+  - `PlockPopup` stocke `slot_idx` ; `voice_idx` est dérivé du `track_layout` pour les métadonnées instrument.
+  - `draw_plock_menu`, `draw_fusion_morph_menu`, `draw_sequencer_plock_menu` prennent séparément `slot_idx` et `voice_idx`.
+  - `SinglePlockClipboard` stocke `slot_idx`.
+- **Onglet Track restauré.**
+  - Sélecteur d'instrument (`TrackInstrumentKind`) pour le slot actif.
+  - Routing `Main` + `Aux Out` (`Out 1`..`Out 14`) par slot.
+  - Réglage de la note MIDI par slot.
+- **`LaneLengthLocks` passe à 14 bits (`AtomicU32`).**
+  - Persistance `u32` à la place de `u16`.
+- **Grille UI restaurée après revert accidentel.**
+  - Itération sur `MAX_TRACKS = 14` slots, lanes vides stylisées, bouton `+ Add module` sous les lanes.
+
+---
+
+## 2026-07-01 — Solo per slot (build 20260701-155824)
+
+**Build:** `20260701-155824`
+**Validation:** `cargo check` OK, `cargo test` OK (103 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Solo devient un paramètre par slot.**
+  - Ajout de 14 params `solo_s00`..`solo_s13` dans `DrumFlashParams`.
+  - `slot_solos()` expose les 14 params.
+  - `seq_mutes` utilise `slot_solo_states[slot]` au lieu de `solo_states[voice_idx]`.
+  - Le tag `S` de chaque lane contrôle le solo de ce slot uniquement.
+
+---
+
+## 2026-07-01 — Fix audio thread: triggers now per-slot (build 20260701-154857)
+
+**Build:** `20260701-154857`
+**Validation:** `cargo check` OK, `cargo test` OK (103 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Corrigé le thread audio qui traitait les triggers par `DrumVoice` au lieu de par slot.**
+  - La boucle interne itère maintenant `(slot_idx, trigger)` et déclenche uniquement ce slot.
+  - Cela répare le silence sur les nouveaux tracks et la double activation des lanes de même instrument.
+- **Hihat choke** et **stutter/fusion scheduling** mis à jour pour utiliser `slot_idx`.
+
+---
+
+## 2026-07-01 — Modular grid: pattern per slot + instrument selector (build 20260701-153855)
+
+**Build:** `20260701-153855`
+**Validation:** `cargo check` OK, `cargo test` OK (103 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[MG-6] Pattern bank indexée par slot (14 pistes indépendantes).**
+  - `Pattern`, `SharedPattern`, `PlockState`, `SequencerPlockState` passent de 13 voix legacy à 14 slots.
+  - Le séquenceur émet des triggers par slot (`MAX_TRACKS = 14`) au lieu de `DrumVoice::COUNT`.
+  - La grille UI utilise `slot_idx` pour lire/écrire les cellules, fusions, plocks et seq-plocks.
+  - Les paramètres de piste (mute/solo/length/push/humanize) sont mappés slot → voix legacy.
+- **Sélecteur d'instrument dans l'onglet Track.**
+  - `draw_track_tab` propose un ComboBox pour changer `TrackInstrumentKind` (Kick, Snare, ...).
+  - Le changement met à jour le layout, reset les `sound_settings` du slot au defaults de l'instrument, et bump la version du synthétiseur.
+- **Migration de persistance `pattern-v4` (13 rows) → `pattern-v5` (14 slots).**
+  - Ajout de `PatternStateV4` avec `LEGACY_INSTRUMENT_COUNT = 13` et `expand()`.
+  - `filter_state` migre `pattern-v4`, `pattern-v3`, `pattern-v2`, `pattern-v1` et `st01..st16` vers `pattern-v5`.
+- **Générateurs adaptés à 14 slots.**
+  - `euclidean_params`, rotations et templates de style ont une entrée FX supplémentaire.
+- **Export MIDI itère sur les 14 slots.**
+
+---
+
+## 2026-07-01 — UI: lanes vides stylisées + bouton +Add module sous les lanes (build 20260701-151829)
+
+**Build:** `20260701-151829`
+**Validation:** `cargo check` OK, `cargo test` OK (103 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Bouton `+ Add module` déplacé sous les lanes.**
+  - Suppression du bouton `+ Add Track` du header.
+  - Ajout d'une rangée `+ Add module` en bas de la grille, pleine largeur.
+- **Lanes vides stylisées (hauteur de grille fixe).**
+  - `draw_empty_lane` dessine les 14 emplacements avec un style "placeholder" : bordures dashed, tags M/S/T grisés, cellules grisées, sliders muets.
+  - La grille conserve toujours 14 rangées, quels que soient les pistes actives.
+
+---
+
+## 2026-07-01 — UI: grid modulaire + onglets Sound/Track (build 20260701-144428)
+
+**Build:** `20260701-144428`
+**Validation:** `cargo check` OK, `cargo test` OK (103 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Grid modulaire (MG-7).**
+  - `draw_grid_v2` itère sur les slots actifs du layout au lieu des 13 voix fixes.
+  - Seules les pistes actives sont affichées (par défaut BD/SD/HH/Tom).
+  - Sélection de piste via `selected_track_slot` ; `selected_instrument` reste synchronisé avec le `drum_voice_index` legacy.
+- **Onglets Sound / Track dans le Sound Editor (MG-8).**
+  - `SoundEditorTab` : `Sound` (panneau de synthèse actuel) / `Track` (contrôles de piste).
+  - Onglet `Track` : nom de piste, type d'instrument, routing Main/Out 1..14, note MIDI.
+- **Bouton `+ Add Track`.**
+  - Active le premier slot inactif avec un Kick par défaut.
+  - Met à jour `SoundSettingsState` avec les valeurs par défaut de l'instrument.
+  - Bumper la version du layout pour forcer la réinitialisation du synthétiseur dans le thread audio.
+- **Réinitialisation du synthétiseur sur changement de layout.**
+  - `process()` surveille `track_layout.state.version` et réinitialise `DrumSynthesizer` si elle change.
+
+---
+
+
+## 2026-07-01 — Audio: moteur 14 slots + routing modulaire (build 20260701-093806)
+
+**Build:** `20260701-093806`
+**Validation:** `cargo check` OK, `cargo test` OK (103 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Le moteur audio itère désormais sur les 14 slots actifs du layout.**
+  - `process()` snapshot le `AtomicTrackLayout` au début de chaque buffer.
+  - Les triggers du séquenceur (13 familles legacy) sont routés vers chaque slot actif de la famille correspondante.
+  - Le mixage Main, les sorties auxiliaires et les événements MIDI sont émis par slot.
+- **Routing par piste fonctionnel.**
+  - `main_on` contrôle l'envoi dans le Main Mix.
+  - `out_select` (`Main` / `Out 1..14`) route le signal vers la sortie auxiliaire choisie.
+  - `AUX_OUT_COUNT` passe de 13 à 14 ; les noms de sorties deviennent génériques (`Out 1` .. `Out 14`).
+- **Hi-hat choke adapté au modèle modulaire.**
+  - Un trigger HiHat reset toutes les pistes OpenHiHat actives, quel que soit leur slot.
+- **`initialize()` utilise le layout actif.**
+  - Le synthétiseur est initialisé avec `TrackLayoutState::default_layout()` (BD/SD/HH/Tom) au lieu du legacy 13 voix.
+  - Ajout de `AtomicTrackLayout::snapshot()` pour capturer le layout sans verrou.
+
+---
+
+
 ## 2026-06-30 — Fix: crash au lancement du transport dans Studio One (build 20260630-201216)
 
 **Build:** `20260630-201216`

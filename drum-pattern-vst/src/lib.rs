@@ -107,8 +107,8 @@ impl<'a> PersistentField<'a, u16> for LaneLengthLocks {
 
 fn resolve_track_length(raw_length: usize, master_length: usize, locked: bool) -> usize {
     let master_length = master_length.clamp(1, 64);
-    if locked && master_length > raw_length {
-        raw_length.clamp(1, master_length)
+    if locked {
+        raw_length.clamp(1, 64)
     } else {
         master_length
     }
@@ -637,7 +637,7 @@ impl Default for DrumFlashParams {
         let pattern_state = PersistentPattern::new(&default_pattern);
 
         Self {
-            editor_state: EguiState::from_size(1480, 800),
+            editor_state: EguiState::from_size(1480, 900),
             pattern_state,
             sound_settings: PersistentSoundSettings::new(&default_layout),
             track_layout: track::PersistentTrackLayout::new(),
@@ -2922,18 +2922,13 @@ mod tests {
     }
 
     #[test]
-    fn track_length_locked_uses_raw_when_master_is_longer() {
-        // Locked et master > raw : polyrythmie
+    fn track_length_locked_uses_raw_length() {
+        // Locked : vraie longueur individuelle 1..64, indépendamment du master.
         assert_eq!(resolve_track_length(12, 64, true), 12);
         assert_eq!(resolve_track_length(16, 32, true), 16);
-    }
-
-    #[test]
-    fn track_length_locked_follows_master_when_master_is_shorter_or_equal() {
-        // Locked et master <= raw : suit le pattern (trop court)
-        assert_eq!(resolve_track_length(32, 16, true), 16);
+        assert_eq!(resolve_track_length(32, 16, true), 32);
         assert_eq!(resolve_track_length(16, 16, true), 16);
-        assert_eq!(resolve_track_length(64, 8, true), 8);
+        assert_eq!(resolve_track_length(64, 8, true), 64);
     }
 
     #[test]
