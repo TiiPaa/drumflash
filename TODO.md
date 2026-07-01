@@ -2,17 +2,33 @@
 
 - [x] [MG-1] Internal track model: `TrackSlot`, `TrackInstrumentKind`, `TrackRouting`, `TrackLayoutState`
 - [x] [MG-2] Persist track layout in `track-layout-v1`
-- [ ] [MG-3] Migrate legacy 13-voice sessions to 14-slot layout
-- [ ] [MG-4] Adapt sequencer to iterate active tracks
-- [ ] **[REPRENDRE ICI]** [MG-5] Adapt audio engine to 14 independent synth instances + routing
-- [ ] [MG-6] Adapt pattern bank to store only musical data (no layout)
-- [ ] [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change)
-- [ ] [MG-8] Sound editor tabs per track (Sound / Track)
-- [ ] [MG-9] MIDI note/channel behavior per spec
-- [ ] [MG-10] Adapt generator to track types and duplicate variations
-- [ ] [MG-11] Build, test, install, update CHANGELOG
+- [x] [MG-3] Migrate legacy 13-voice sessions to 14-slot layout
+- [x] [MG-4] Adapt sequencer to iterate active tracks
+- [x] [MG-5] Adapt audio engine to 14 independent synth instances + routing
+- [x] [MG-6] Adapt pattern bank to store only musical data (no layout)
+- [ ] [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change) — rollback 20260701: reverted after Studio One startup crash
+  - [x] [MG-7.1] Checkpoint sûr : ajouter `selected_track_slot` dans l'état UI, synchronisé avec les 13 lanes fixes, sans changement VST3/state audio (build 20260701-172602)
+  - [x] [MG-7.2] Checkpoint sûr : sélectionner le slot via les interactions de grille/lane restantes (volume, Hum, Push, Len, fusion double-clic/shift-clic, plock clic-droit) sans changement VST3/state audio (build 20260701-173832)
+  - [x] [MG-7.2a] Fix compat audio : tant que l'UI affiche 13 lanes fixes, le layout par défaut et le template 4 slots buggué sont migrés vers les 13 voix legacy pour éviter les lanes 5+ silencieuses (build 20260701-174700)
+  - [x] [MG-7.3] Checkpoint sûr : introduire le bridge `slot_idx -> voice_idx` dans la boucle de grille, sans changement visuel ni VST3/state audio (build 20260701-175321)
+  - [x] [MG-7.4] Checkpoint sûr : extraire le rendu d'une lane dans `draw_legacy_slot_lane_v2(slot_idx, voice_idx, ...)`, sans changement visuel ni VST3/state audio (build 20260701-183243)
+  - [x] [MG-7.4a] Fix Len individuel : une lane lockée utilise sa propre longueur 1..64 même au-delà de la longueur globale, UI et playhead inclus (build 20260701-201011)
+- [ ] [MG-7a] Move `+ Add module` under lanes + styled empty lanes — rollback 20260701
+  - [x] [MG-7a.1] Checkpoint visuel sûr : afficher le slot 14 vide et `+ Add Module` sous les lanes, sans activer l'ajout de piste ni changer audio/VST3/state (build 20260701-205643)
+  - [x] [MG-7a.1a] Fix layout : passer la fenêtre fixe de 1480x800 à 1480x900 pour rendre visibles les options/panneaux bas après ajout du slot vide (build 20260701-230011)
+  - [ ] **REPRENDRE ICI** [MG-7a.2] Activer `+ Add Module` avec sélection d'instrument et mutation contrôlée du `track-layout-v1`
+- [ ] [MG-8] Sound editor tabs per track (Sound / Track) + instrument selector + per-slot routing — rollback 20260701
+- [ ] [MG-9] MIDI note/channel behavior per spec — needs revalidation after rollback
+- [ ] [MG-10] Adapt generator to track types and duplicate variations — needs revalidation after rollback
+- [ ] [MG-11] Build, test, install, update CHANGELOG — pending for the next safe modular-grid attempt
 
 ## Court terme (Stabilisation V1 — En cours)
+
+- [x] **[DEBUG]** Routing `Out 1` silent in Studio One while Main Mix works
+  - Check host output enable / aux routing
+  - Review audio-thread routing code for off-by-one or output-activation issue
+
+- [ ] **[FIX]** New tracks silent + solo shared by instrument family + all UI interactions now track-based — rollback 20260701: redo with Studio One compatibility preserved
 
 - [x] [69] Vrai fix du click parasite BD (changement de hauteur/plock) : chemin digital = reset de phase + crossfade cass� supprim�s ; phase reset�e au cold-start uniquement ; plancher d'attaque anti-click (MIN_AMP_ATTACK_MS) ; bug sweep digital +1 Hz corrig� (build 20260531-155232)
 - [x] [70] Mode analog/digital BD re-rendu audible : digital = identique au bit pr�s, analog = drift par coup (hauteur �3.5 %, niveau �10 %, temps d'enveloppe �20 %)

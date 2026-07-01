@@ -307,10 +307,10 @@ fn draw_track_length_control(
     length_param: &IntParam,
     instrument: usize,
     master_length: usize,
-) {
+) -> bool {
     let locked = params.lane_length_locks.is_locked(instrument);
     let raw = length_param.value() as usize;
-    let mut length_value = if locked && master_length > raw {
+    let mut length_value = if locked {
         raw as i32
     } else {
         master_length as i32
@@ -328,6 +328,7 @@ fn draw_track_length_control(
     } else {
         "Follows pattern length. Drag to lock this lane."
     });
+    let interacted = changed || response.clicked() || response.dragged() || response.secondary_clicked();
 
     response.context_menu(|ui| {
         if locked {
@@ -345,6 +346,8 @@ fn draw_track_length_control(
         params.lane_length_locks.set_locked(instrument, true);
         setter.set_parameter(length_param, length_value.clamp(1, 64));
     }
+
+    interacted
 }
 
 fn fusion_modifier_pressed(ui: &egui::Ui) -> bool {
@@ -410,6 +413,8 @@ struct SinglePlockClipboard {
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct EditorUIState {
     selected_instrument: usize,
+    #[serde(default)]
+    selected_track_slot: usize,
     selected_pattern_slot: usize,
     last_midi_export_path: Option<String>,
     last_midi_export_error: Option<String>,
@@ -439,6 +444,29 @@ struct EditorUIState {
     plock_popup: Option<PlockPopup>,
     // Right-click page popup state (Copy/Paste/Clear page).
     page_popup: Option<PagePopup>,
+}
+
+fn select_legacy_track(state: &mut EditorUIState, slot_idx: usize) {
+    let slot_idx = slot_idx.min(DrumVoice::COUNT - 1);
+    state.selected_track_slot = slot_idx;
+    state.selected_instrument = slot_idx;
+}
+
+fn visible_legacy_lane_count() -> usize {
+    DrumVoice::COUNT.min(crate::track::MAX_TRACKS)
+}
+
+fn legacy_voice_idx_for_slot(slot_idx: usize) -> usize {
+    slot_idx.min(DrumVoice::COUNT - 1)
+}
+
+fn effective_lane_length_for_ui(params: &DrumFlashParams, voice_idx: usize, master_length: usize) -> usize {
+    let master_length = master_length.clamp(1, 64);
+    if params.lane_length_locks.is_locked(voice_idx) {
+        params.lengths()[voice_idx].value().clamp(1, 64) as usize
+    } else {
+        master_length
+    }
 }
 
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -570,8 +598,8 @@ pub fn create_editor(
             }
 
             ResizableWindow::new("drum-pattern-generator")
-                .min_size(Vec2::new(1480.0, 800.0))
-                .fixed_size(Vec2::new(1480.0, 800.0))
+                .min_size(Vec2::new(1480.0, 900.0))
+                .fixed_size(Vec2::new(1480.0, 900.0))
                 .resizable(false)
                 .show(egui_ctx, editor_state.as_ref(), |ui| {
                     draw_header_bar(
@@ -1554,7 +1582,7 @@ fn draw_grid_v2(
     pattern: &SharedPattern,
     voice_test_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
     current_step: &AtomicU32,
-    _current_steps: &[AtomicU32; crate::track::MAX_TRACKS],
+    current_steps: &[AtomicU32; crate::track::MAX_TRACKS],
     sound_settings: &SoundSettingsState,
     plock: &PlockState,
     state: &mut EditorUIState,
@@ -1628,251 +1656,62 @@ fn draw_grid_v2(
                 std::array::from_fn(|i| params.pushes()[i]);
             let lengths: [&IntParam; DrumVoice::COUNT] =
                 std::array::from_fn(|i| params.lengths()[i]);
+            let visible_lane_count = visible_legacy_lane_count();
+            state.selected_track_slot = state
+                .selected_track_slot
+                .min(visible_lane_count.saturating_sub(1));
 
-            for inst in 0..DrumVoice::COUNT {
+            for slot_idx in 0..visible_lane_count {
+                let inst = legacy_voice_idx_for_slot(slot_idx);
                 let row = &mixer_rows[inst];
-                let fusions = pattern.load_fusions(inst);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    ui.set_height(LANE_H);
+                let fusions = pattern.load_fusions(slot_idx);
+                let lane_length = effective_lane_length_for_ui(params, inst, master_length);
+                let lane_play_step = current_steps[slot_idx].load(Ordering::Relaxed) as usize;
+                draw_legacy_slot_lane_v2(
+                    ui,
+                    setter,
+                    params,
+                    pattern,
+                    voice_test_triggers,
+                    sound_settings,
+                    plock,
+                    state,
+                    slot_idx,
+                    inst,
+                    row,
+                    &fusions,
+                    hums[inst],
+                    pushes[inst],
+                    lengths[inst],
+                    page_offset,
+                    lane_play_step,
+                    master_length,
+                    lane_length,
+                    fusion_mode_active,
+                    grip_w,
+                    name_w,
+                    vol_w,
+                    extra_w,
+                    gap,
+                    cell_w,
+                    &mut fusion_editing_started_this_frame,
+                );
+            }
 
-                    draw_seq_grip_v2(ui, grip_w, LANE_H);
-
-                    let selected = state.selected_instrument == inst;
-                    let name_response = draw_lane_name_v2(
-                        ui,
-                        name_w,
-                        selected,
-                        crate::instrument_registry::INSTRUMENTS[inst].label,
-                    )
-                    .on_hover_text(crate::instrument_registry::INSTRUMENTS[inst].full_name);
-                    if name_response.clicked() {
-                        state.selected_instrument = inst;
-                    }
-
-                    let inst_state = &sound_settings.instruments[inst];
-                    let mut lane_vol = f32::from_bits(inst_state.volume.load(Ordering::Relaxed));
-                    if draw_mini_value_slider(
-                        ui,
-                        &mut lane_vol,
-                        0.0,
-                        2.0,
-                        vol_w,
-                        BLUE,
-                        "Lane Volume",
-                    )
-                    .changed()
-                    {
-                        inst_state
-                            .volume
-                            .store(lane_vol.to_bits(), Ordering::Relaxed);
-                        sound_settings.bump_version();
-                    }
-
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-                        if draw_tag_param_v2(
-                            ui,
-                            setter,
-                            row.mute,
-                            "M",
-                            AMBER,
-                            Color32::from_rgb(26, 18, 6),
-                            "Mute",
-                        )
-                        .clicked()
-                            && params.auto_edit.value()
-                        {
-                            state.selected_instrument = inst;
-                        }
-                        if draw_tag_param_v2(
-                            ui,
-                            setter,
-                            row.solo,
-                            "S",
-                            GREEN,
-                            Color32::from_rgb(6, 32, 15),
-                            "Solo",
-                        )
-                        .clicked()
-                            && params.auto_edit.value()
-                        {
-                            state.selected_instrument = inst;
-                        }
-                        if draw_tag_button_v2(ui, "T", BLUE, Color32::WHITE, false, "Test").clicked()
-                        {
-                            voice_test_triggers[inst].store(true, Ordering::Release);
-                            if params.auto_edit.value() {
-                                state.selected_instrument = inst;
-                            }
-                        }
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-                        for local_step in 0..16 {
-                            let global_step = page_offset + local_step;
-                            let beyond_len = global_step >= master_length;
-                            let fusion_info = fusion_containing(&fusions, global_step);
-                            let fusion_group = fusion_info.map(|(_, group)| group);
-                            let source_step = fusion_group
-                                .map(|group| group.start_cell as usize)
-                                .unwrap_or(global_step);
-                            let is_fusion_start = fusion_group
-                                .map(|group| group.is_start(global_step))
-                                .unwrap_or(false);
-                            let is_fusion_mid = fusion_group.is_some() && !is_fusion_start;
-
-                            let active = !beyond_len && pattern.is_active(source_step, inst);
-                            let is_current = if let Some(group) = fusion_group {
-                                group.contains(play_step) && play_step == global_step
-                            } else {
-                                play_step == global_step
-                            };
-                            let has_sound_plock =
-                                !beyond_len && plock.masks.is_active(inst, source_step);
-                            let field_mask = if has_sound_plock {
-                                plock.field_masks.get(inst, source_step)
-                            } else {
-                                0
-                            };
-                            let all_bits = (1u64 << crate::plock::FIELD_COUNT) - 1;
-                            let is_snapshot = has_sound_plock && field_mask == all_bits;
-                            let has_seq_plock = !beyond_len
-                                && params.seq_plock_state.state.is_active(inst, source_step);
-                            let selection_start = fusion_mode_active
-                                && state.fusion_selection_start[inst] == Some(global_step);
-
-                            let is_editing = state
-                                .fusion_editing
-                                .map(|(ei, eidx)| {
-                                    ei == inst
-                                        && fusion_info.map(|(idx, _)| idx == eidx).unwrap_or(false)
-                                })
-                                .unwrap_or(false);
-
-                            let (fill, stroke) = step_colors_v2(
-                                ui.ctx(),
-                                state.sequencer_mode,
-                                local_step,
-                                active,
-                                has_sound_plock,
-                                is_snapshot,
-                                has_seq_plock,
-                                is_current,
-                                beyond_len,
-                                selection_start,
-                                is_fusion_start,
-                                is_fusion_mid,
-                                is_editing,
-                            );
-                            let text = if is_fusion_start {
-                                fusion_group
-                                    .map(|g| g.step_count.to_string())
-                                    .unwrap_or_default()
-                            } else {
-                                String::new()
-                            };
-                            let fusion_span = if is_fusion_start {
-                                fusion_group.map(|g| g.cell_span())
-                            } else {
-                                None
-                            };
-                            let response = draw_step_cell_v2(
-                                ui,
-                                Vec2::new(cell_w, STEP_H),
-                                fill,
-                                stroke,
-                                &text,
-                                !beyond_len,
-                                is_current && !beyond_len,
-                                is_fusion_mid,
-                                fusion_span,
-                            );
-
-                            if !beyond_len && response.double_clicked() {
-                                if let Some((idx, _)) = fusion_info {
-                                    state.fusion_editing = Some((inst, idx));
-                                    state.fusion_edit_focus_request = true;
-                                    fusion_editing_started_this_frame = true;
-                                }
-                            } else if !beyond_len && response.clicked() && fusion_mode_active {
-                                handle_fusion_shift_click(
-                                    pattern,
-                                    params,
-                                    plock,
-                                    inst,
-                                    global_step,
-                                    master_length,
-                                    &fusions,
-                                    &mut state.fusion_selection_start[inst],
-                                );
-                            } else if !beyond_len && response.clicked() {
-                                // Clicking outside the currently edited fusion exits edit mode.
-                                if let Some((edit_inst, edit_idx)) = state.fusion_editing {
-                                    let editing_this_group = fusion_info
-                                        .map(|(idx, _)| edit_inst == inst && edit_idx == idx)
-                                        .unwrap_or(false);
-                                    if !editing_this_group {
-                                        finish_fusion_editing_for_ui(pattern, state);
-                                    }
-                                }
-
-                                if let Some(group) = fusion_group {
-                                    toggle_fusion_for_ui(pattern, group, inst);
-                                } else {
-                                    toggle_step_for_ui(pattern, global_step, inst);
-                                }
-                                if params.auto_edit.value() {
-                                    state.selected_instrument = inst;
-                                }
-                                state.fusion_selection_start[inst] = None;
-                            }
-
-                            if !beyond_len && response.secondary_clicked() {
-                                if let Some(pos) = response.interact_pointer_pos() {
-                                    state.plock_popup = Some(PlockPopup {
-                                        instrument: inst,
-                                        step: source_step,
-                                        screen_pos: pos,
-                                        morph_menu: false,
-                                    });
-                                }
-                            }
-                        }
-                    });
-
-                    draw_param_mini_slider_with_value(
-                        ui,
-                        setter,
-                        hums[inst],
-                        0.0,
-                        1.0,
-                        extra_w,
-                        BLUE,
-                        "Humanize",
-                        |value| format!("{:>3}%", (value * 100.0).round() as i32),
-                    );
-                    draw_param_mini_slider_with_value(
-                        ui,
-                        setter,
-                        pushes[inst],
-                        -50.0,
-                        50.0,
-                        extra_w,
-                        BLUE,
-                        "Push/Pull",
-                        |value| format!("{:+.0} ms", value),
-                    );
-                    draw_track_length_control(
-                        ui,
-                        setter,
-                        params,
-                        lengths[inst],
-                        inst,
-                        master_length,
-                    );
-                });
+            if visible_lane_count < crate::track::MAX_TRACKS {
+                draw_empty_slot_lane_v2(
+                    ui,
+                    visible_lane_count,
+                    page_offset,
+                    grip_w,
+                    name_w,
+                    vol_w,
+                    STEP_H * 3.0 + GAP_TIGHT * 2.0,
+                    extra_w,
+                    gap,
+                    cell_w,
+                );
+                draw_add_module_row_v2(ui, row_w, visible_lane_count);
             }
         });
 
@@ -1910,6 +1749,440 @@ fn draw_grid_v2(
     }
 
     draw_page_popup_if_any(ui, setter, pattern, params, plock, state);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_legacy_slot_lane_v2(
+    ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    voice_test_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
+    sound_settings: &SoundSettingsState,
+    plock: &PlockState,
+    state: &mut EditorUIState,
+    slot_idx: usize,
+    voice_idx: usize,
+    row: &MixerRow<'_>,
+    fusions: &[FusedGroup],
+    hum_param: &FloatParam,
+    push_param: &FloatParam,
+    length_param: &IntParam,
+    page_offset: usize,
+    play_step: usize,
+    master_length: usize,
+    lane_length: usize,
+    fusion_mode_active: bool,
+    grip_w: f32,
+    name_w: f32,
+    vol_w: f32,
+    extra_w: f32,
+    gap: f32,
+    cell_w: f32,
+    fusion_editing_started_this_frame: &mut bool,
+) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.set_height(LANE_H);
+
+        draw_seq_grip_v2(ui, grip_w, LANE_H);
+
+        let selected = state.selected_track_slot == slot_idx;
+        let name_response = draw_lane_name_v2(
+            ui,
+            name_w,
+            selected,
+            crate::instrument_registry::INSTRUMENTS[voice_idx].label,
+        )
+        .on_hover_text(crate::instrument_registry::INSTRUMENTS[voice_idx].full_name);
+        if name_response.clicked() {
+            select_legacy_track(state, slot_idx);
+        }
+
+        let inst_state = &sound_settings.instruments[slot_idx];
+        let mut lane_vol = f32::from_bits(inst_state.volume.load(Ordering::Relaxed));
+        let lane_vol_response = draw_mini_value_slider(
+            ui,
+            &mut lane_vol,
+            0.0,
+            2.0,
+            vol_w,
+            BLUE,
+            "Lane Volume",
+        );
+        if lane_vol_response.clicked() || lane_vol_response.dragged() {
+            select_legacy_track(state, slot_idx);
+        }
+        if lane_vol_response.changed() {
+            inst_state
+                .volume
+                .store(lane_vol.to_bits(), Ordering::Relaxed);
+            sound_settings.bump_version();
+        }
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP_TIGHT;
+            if draw_tag_param_v2(
+                ui,
+                setter,
+                row.mute,
+                "M",
+                AMBER,
+                Color32::from_rgb(26, 18, 6),
+                "Mute",
+            )
+            .clicked()
+                && params.auto_edit.value()
+            {
+                select_legacy_track(state, slot_idx);
+            }
+            if draw_tag_param_v2(
+                ui,
+                setter,
+                row.solo,
+                "S",
+                GREEN,
+                Color32::from_rgb(6, 32, 15),
+                "Solo",
+            )
+            .clicked()
+                && params.auto_edit.value()
+            {
+                select_legacy_track(state, slot_idx);
+            }
+            if draw_tag_button_v2(ui, "T", BLUE, Color32::WHITE, false, "Test").clicked() {
+                voice_test_triggers[slot_idx].store(true, Ordering::Release);
+                if params.auto_edit.value() {
+                    select_legacy_track(state, slot_idx);
+                }
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP_TIGHT;
+            for local_step in 0..16 {
+                let global_step = page_offset + local_step;
+                let beyond_len = global_step >= lane_length;
+                let fusion_info = fusion_containing(fusions, global_step);
+                let fusion_group = fusion_info.map(|(_, group)| group);
+                let source_step = fusion_group
+                    .map(|group| group.start_cell as usize)
+                    .unwrap_or(global_step);
+                let is_fusion_start = fusion_group
+                    .map(|group| group.is_start(global_step))
+                    .unwrap_or(false);
+                let is_fusion_mid = fusion_group.is_some() && !is_fusion_start;
+
+                let active = !beyond_len && pattern.is_active(source_step, slot_idx);
+                let is_current = if let Some(group) = fusion_group {
+                    group.contains(play_step) && play_step == global_step
+                } else {
+                    play_step == global_step
+                };
+                let has_sound_plock = !beyond_len && plock.masks.is_active(slot_idx, source_step);
+                let field_mask = if has_sound_plock {
+                    plock.field_masks.get(slot_idx, source_step)
+                } else {
+                    0
+                };
+                let all_bits = (1u64 << crate::plock::FIELD_COUNT) - 1;
+                let is_snapshot = has_sound_plock && field_mask == all_bits;
+                let has_seq_plock = !beyond_len
+                    && params.seq_plock_state.state.is_active(slot_idx, source_step);
+                let selection_start = fusion_mode_active
+                    && state.fusion_selection_start[slot_idx] == Some(global_step);
+
+                let is_editing = state
+                    .fusion_editing
+                    .map(|(ei, eidx)| {
+                        ei == slot_idx && fusion_info.map(|(idx, _)| idx == eidx).unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+
+                let (fill, stroke) = step_colors_v2(
+                    ui.ctx(),
+                    state.sequencer_mode,
+                    local_step,
+                    active,
+                    has_sound_plock,
+                    is_snapshot,
+                    has_seq_plock,
+                    is_current,
+                    beyond_len,
+                    selection_start,
+                    is_fusion_start,
+                    is_fusion_mid,
+                    is_editing,
+                );
+                let text = if is_fusion_start {
+                    fusion_group
+                        .map(|g| g.step_count.to_string())
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                let fusion_span = if is_fusion_start {
+                    fusion_group.map(|g| g.cell_span())
+                } else {
+                    None
+                };
+                let response = draw_step_cell_v2(
+                    ui,
+                    Vec2::new(cell_w, STEP_H),
+                    fill,
+                    stroke,
+                    &text,
+                    !beyond_len,
+                    is_current && !beyond_len,
+                    is_fusion_mid,
+                    fusion_span,
+                );
+
+                if !beyond_len && response.double_clicked() {
+                    if let Some((idx, _)) = fusion_info {
+                        select_legacy_track(state, slot_idx);
+                        state.fusion_editing = Some((slot_idx, idx));
+                        state.fusion_edit_focus_request = true;
+                        *fusion_editing_started_this_frame = true;
+                    }
+                } else if !beyond_len && response.clicked() && fusion_mode_active {
+                    select_legacy_track(state, slot_idx);
+                    handle_fusion_shift_click(
+                        pattern,
+                        params,
+                        plock,
+                        slot_idx,
+                        global_step,
+                        master_length,
+                        fusions,
+                        &mut state.fusion_selection_start[slot_idx],
+                    );
+                } else if !beyond_len && response.clicked() {
+                    // Clicking outside the currently edited fusion exits edit mode.
+                    if let Some((edit_inst, edit_idx)) = state.fusion_editing {
+                        let editing_this_group = fusion_info
+                            .map(|(idx, _)| edit_inst == slot_idx && edit_idx == idx)
+                            .unwrap_or(false);
+                        if !editing_this_group {
+                            finish_fusion_editing_for_ui(pattern, state);
+                        }
+                    }
+
+                    if let Some(group) = fusion_group {
+                        toggle_fusion_for_ui(pattern, group, slot_idx);
+                    } else {
+                        toggle_step_for_ui(pattern, global_step, slot_idx);
+                    }
+                    if params.auto_edit.value() {
+                        select_legacy_track(state, slot_idx);
+                    }
+                    state.fusion_selection_start[slot_idx] = None;
+                }
+
+                if !beyond_len && response.secondary_clicked() {
+                    select_legacy_track(state, slot_idx);
+                    if let Some(pos) = response.interact_pointer_pos() {
+                        state.plock_popup = Some(PlockPopup {
+                            instrument: slot_idx,
+                            step: source_step,
+                            screen_pos: pos,
+                            morph_menu: false,
+                        });
+                    }
+                }
+            }
+        });
+
+        let hum_response = draw_param_mini_slider_with_value(
+            ui,
+            setter,
+            hum_param,
+            0.0,
+            1.0,
+            extra_w,
+            BLUE,
+            "Humanize",
+            |value| format!("{:>3}%", (value * 100.0).round() as i32),
+        );
+        if hum_response.clicked() || hum_response.dragged() || hum_response.double_clicked() {
+            select_legacy_track(state, slot_idx);
+        }
+        let push_response = draw_param_mini_slider_with_value(
+            ui,
+            setter,
+            push_param,
+            -50.0,
+            50.0,
+            extra_w,
+            BLUE,
+            "Push/Pull",
+            |value| format!("{:+.0} ms", value),
+        );
+        if push_response.clicked() || push_response.dragged() || push_response.double_clicked() {
+            select_legacy_track(state, slot_idx);
+        }
+        if draw_track_length_control(
+            ui,
+            setter,
+            params,
+            length_param,
+            voice_idx,
+            master_length,
+        ) {
+            select_legacy_track(state, slot_idx);
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_empty_slot_lane_v2(
+    ui: &mut egui::Ui,
+    slot_idx: usize,
+    page_offset: usize,
+    grip_w: f32,
+    name_w: f32,
+    vol_w: f32,
+    mst_w: f32,
+    extra_w: f32,
+    gap: f32,
+    cell_w: f32,
+) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.set_height(LANE_H);
+
+        draw_seq_grip_v2(ui, grip_w, LANE_H);
+        draw_empty_lane_name_v2(ui, name_w, slot_idx + 1)
+            .on_hover_text("Empty modular slot");
+        draw_empty_lane_chip_v2(ui, vol_w, "Empty");
+        draw_empty_lane_chip_v2(ui, mst_w, "");
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP_TIGHT;
+            for local_step in 0..16 {
+                let (fill, stroke) = step_colors_v2(
+                    ui.ctx(),
+                    false,
+                    local_step,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                );
+                let step = page_offset + local_step + 1;
+                draw_step_cell_v2(
+                    ui,
+                    Vec2::new(cell_w, STEP_H),
+                    fill,
+                    stroke,
+                    "",
+                    false,
+                    false,
+                    false,
+                    None,
+                )
+                .on_hover_text(format!("Empty slot - step {}", step));
+            }
+        });
+
+        draw_empty_lane_chip_v2(ui, extra_w, "--");
+        draw_empty_lane_chip_v2(ui, extra_w, "--");
+        draw_empty_lane_chip_v2(ui, extra_w, "--");
+    });
+}
+
+fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::hover());
+    let fill = if response.hovered() { P_HOVER } else { PANEL2 };
+    ui.painter().rect_filled(rect, RADIUS_CTL, fill);
+    ui.painter().rect_stroke(
+        rect,
+        RADIUS_CTL,
+        egui::Stroke::new(1.0, LINE2),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        format!("+{}", slot_number),
+        f_mono_sb(11.0),
+        FAINT,
+    );
+    response
+}
+
+fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::hover());
+    ui.painter().rect_filled(rect, RADIUS_CTL, BG);
+    ui.painter().rect_stroke(
+        rect,
+        RADIUS_CTL,
+        egui::Stroke::new(1.0, LINE),
+        egui::StrokeKind::Inside,
+    );
+    if !label.is_empty() {
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            f_sans_med(9.5),
+            FAINT,
+        );
+    }
+    response
+}
+
+fn draw_add_module_row_v2(ui: &mut egui::Ui, row_w: f32, first_empty_slot: usize) {
+    ui.add_space(5.0);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(row_w, 30.0), egui::Sense::hover());
+    let fill = if response.hovered() { P_HOVER } else { BG };
+    ui.painter().rect_filled(rect, RADIUS_CTL, fill);
+    ui.painter().rect_stroke(
+        rect,
+        RADIUS_CTL,
+        egui::Stroke::new(1.0, LINE2),
+        egui::StrokeKind::Inside,
+    );
+
+    let plus_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + 18.0, rect.center().y),
+        Vec2::splat(18.0),
+    );
+    ui.painter().rect_filled(plus_rect, 5.0, PANEL2);
+    ui.painter().rect_stroke(
+        plus_rect,
+        5.0,
+        egui::Stroke::new(1.0, BLUE),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        plus_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "+",
+        f_mono_sb(12.0),
+        BLUE,
+    );
+    ui.painter().text(
+        egui::pos2(plus_rect.right() + 9.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        "Add Module",
+        f_sans_sb(11.0),
+        INK2,
+    );
+    ui.painter().text(
+        egui::pos2(rect.right() - 10.0, rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        format!("Slot {} Reserved", first_empty_slot + 1),
+        f_mono_med(9.5),
+        FAINT,
+    );
+    response.on_hover_text("Visual placeholder only in this checkpoint. Activation stays disabled to preserve Studio One compatibility.");
 }
 
 fn draw_page_popup_if_any(
@@ -2915,6 +3188,7 @@ fn draw_sound_panel(
     state: &mut EditorUIState,
 ) {
     state.selected_instrument = state.selected_instrument.min(DrumVoice::COUNT - 1);
+    state.selected_track_slot = state.selected_instrument;
 
     ui.set_width(ui.available_width());
 
@@ -2976,7 +3250,7 @@ fn draw_sound_panel(
                 .stroke(egui::Stroke::new(1.0, if selected { BLUE } else { LINE2 }))
                 .corner_radius(6.0);
                 if ui.add(btn).on_hover_text(inst_def.full_name).clicked() {
-                    state.selected_instrument = i;
+                    select_legacy_track(state, i);
                 }
             }
         });
@@ -3093,8 +3367,9 @@ fn draw_sound_panel(
                         ui.label(format!("{} - {}", info.instrument_label, info.name));
                         if ui.button("Load").clicked() {
                             if let Ok(dump) = preset_dumps::load_dump(&info.path) {
-                                state.selected_instrument = dump.instrument_idx;
-                                let target_inst = &sound_settings.instruments[dump.instrument_idx];
+                                let dump_inst = dump.instrument_idx.min(DrumVoice::COUNT - 1);
+                                select_legacy_track(state, dump_inst);
+                                let target_inst = &sound_settings.instruments[state.selected_instrument];
                                 store_field(
                                     target_inst,
                                     crate::instrument_registry::StandardField::Freq,
@@ -3152,7 +3427,7 @@ fn draw_sound_panel(
                                 );
                                 // Skip Analog for instruments that don't use it
                                 let is_analog_fixed = matches!(
-                                    dump.instrument_idx,
+                                    dump_inst,
                                     2 | 3 | 7 | 8 | 10 | 12 // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap
                                 );
                                 if !is_analog_fixed {
@@ -3167,13 +3442,13 @@ fn draw_sound_panel(
                                     crate::instrument_registry::StandardField::Stereo,
                                     dump.standards[12],
                                 );
-                                let algo_param = params.algos()[dump.instrument_idx];
+                                let algo_param = params.algos()[dump_inst];
                                 setter.set_parameter(algo_param, dump.algo as i32);
                                 let inst_def =
-                                    &crate::instrument_registry::INSTRUMENTS[dump.instrument_idx];
+                                    &crate::instrument_registry::INSTRUMENTS[dump_inst];
                                 for (i, def) in inst_def.special_params.iter().enumerate() {
                                     if let Some(param) =
-                                        params.special_param(dump.instrument_idx, def.special_index)
+                                        params.special_param(dump_inst, def.special_index)
                                     {
                                         if i < dump.specials.len() {
                                             setter.set_parameter(param, dump.specials[i]);
