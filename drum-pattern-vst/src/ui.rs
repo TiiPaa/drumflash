@@ -1,4 +1,7 @@
-use nih_plug::prelude::*;
+use nih_plug::{
+    params::persist::PersistentField,
+    prelude::*,
+};
 use nih_plug_egui::{
     create_egui_editor,
     egui::{self, Color32, RichText, Vec2},
@@ -23,6 +26,7 @@ use crate::{
     sequencer::{FusedGroup, MorphTarget, Pattern, SharedPattern},
     sound_settings::SoundSettingsState,
     synthesis::{self, DrumVoice, VoiceSettings},
+    track::{TrackInstrumentKind, TrackLayoutState, TrackSlot},
     DrumFlashParams, BUILD_ID,
 };
 
@@ -410,11 +414,20 @@ struct SinglePlockClipboard {
     values: Vec<f32>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+enum SoundEditorTab {
+    #[default]
+    Sound,
+    Track,
+}
+
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct EditorUIState {
     selected_instrument: usize,
     #[serde(default)]
     selected_track_slot: usize,
+    #[serde(default)]
+    sound_editor_tab: SoundEditorTab,
     selected_pattern_slot: usize,
     last_midi_export_path: Option<String>,
     last_midi_export_error: Option<String>,
@@ -447,17 +460,21 @@ struct EditorUIState {
 }
 
 fn select_legacy_track(state: &mut EditorUIState, slot_idx: usize) {
-    let slot_idx = slot_idx.min(DrumVoice::COUNT - 1);
+    let slot_idx = slot_idx.min(crate::track::MAX_TRACKS - 1);
     state.selected_track_slot = slot_idx;
-    state.selected_instrument = slot_idx;
+    state.selected_instrument = slot_idx.min(DrumVoice::COUNT - 1);
 }
 
-fn visible_legacy_lane_count() -> usize {
-    DrumVoice::COUNT.min(crate::track::MAX_TRACKS)
+fn visible_lane_count(params: &DrumFlashParams) -> usize {
+    PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.active_count())
 }
 
-fn legacy_voice_idx_for_slot(slot_idx: usize) -> usize {
-    slot_idx.min(DrumVoice::COUNT - 1)
+fn voice_idx_for_slot(params: &DrumFlashParams, slot_idx: usize) -> Option<usize> {
+    params
+        .track_layout
+        .state
+        .kind_for_slot(slot_idx)
+        .map(|k| k.drum_voice_index())
 }
 
 fn effective_lane_length_for_ui(params: &DrumFlashParams, voice_idx: usize, master_length: usize) -> usize {
@@ -1650,20 +1667,22 @@ fn draw_grid_v2(
             );
 
             let mixer_rows = mixer_rows(params);
-            let hums: [&FloatParam; DrumVoice::COUNT] =
+            let hums: [&FloatParam; crate::track::MAX_TRACKS] =
                 std::array::from_fn(|i| params.humanizes()[i]);
-            let pushes: [&FloatParam; DrumVoice::COUNT] =
+            let pushes: [&FloatParam; crate::track::MAX_TRACKS] =
                 std::array::from_fn(|i| params.pushes()[i]);
-            let lengths: [&IntParam; DrumVoice::COUNT] =
+            let lengths: [&IntParam; crate::track::MAX_TRACKS] =
                 std::array::from_fn(|i| params.lengths()[i]);
-            let visible_lane_count = visible_legacy_lane_count();
+            let visible_lane_count = visible_lane_count(params);
             state.selected_track_slot = state
                 .selected_track_slot
                 .min(visible_lane_count.saturating_sub(1));
 
             for slot_idx in 0..visible_lane_count {
-                let inst = legacy_voice_idx_for_slot(slot_idx);
-                let row = &mixer_rows[inst];
+                let Some(inst) = voice_idx_for_slot(params, slot_idx) else {
+                    continue;
+                };
+                let row = &mixer_rows[slot_idx];
                 let fusions = pattern.load_fusions(slot_idx);
                 let lane_length = effective_lane_length_for_ui(params, inst, master_length);
                 let lane_play_step = current_steps[slot_idx].load(Ordering::Relaxed) as usize;
@@ -1680,9 +1699,9 @@ fn draw_grid_v2(
                     inst,
                     row,
                     &fusions,
-                    hums[inst],
-                    pushes[inst],
-                    lengths[inst],
+                    hums[slot_idx],
+                    pushes[slot_idx],
+                    lengths[slot_idx],
                     page_offset,
                     lane_play_step,
                     master_length,
@@ -1711,7 +1730,7 @@ fn draw_grid_v2(
                     gap,
                     cell_w,
                 );
-                draw_add_module_row_v2(ui, row_w, visible_lane_count);
+                draw_add_module_row_v2(ui, row_w, visible_lane_count, params, state);
             }
         });
 
@@ -2138,9 +2157,26 @@ fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::
     response
 }
 
-fn draw_add_module_row_v2(ui: &mut egui::Ui, row_w: f32, first_empty_slot: usize) {
+fn draw_add_module_row_v2(
+    ui: &mut egui::Ui,
+    row_w: f32,
+    first_empty_slot: usize,
+    params: &DrumFlashParams,
+    state: &mut EditorUIState,
+) {
     ui.add_space(5.0);
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(row_w, 30.0), egui::Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(row_w, 30.0), egui::Sense::click());
+    if response.clicked() {
+        let mut new_state = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| {
+            s.clone()
+        });
+        if let Some(slot) = new_state.first_inactive_slot() {
+            // Default new module: Kick (user can reassign later in the Track tab).
+            new_state.slots[slot] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+            PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+            select_legacy_track(state, slot);
+        }
+    }
     let fill = if response.hovered() { P_HOVER } else { BG };
     ui.painter().rect_filled(rect, RADIUS_CTL, fill);
     ui.painter().rect_stroke(
@@ -3178,6 +3214,134 @@ fn draw_editor_switch_row(ui: &mut egui::Ui, label: &str, value: &mut f32) -> eg
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+fn draw_track_tab(
+    ui: &mut egui::Ui,
+    params: &DrumFlashParams,
+    state: &mut EditorUIState,
+) {
+    let slot_idx = state.selected_track_slot;
+    let layout_state = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| {
+        s.clone()
+    });
+    let slot = &layout_state.slots[slot_idx];
+
+    ui.add_space(8.0);
+    ui.label(
+        RichText::new(format!("Slot {} — {}", slot_idx + 1, slot.name))
+            .font(f_sans_sb(12.0))
+            .color(Color32::WHITE),
+    );
+
+    ui.add_space(12.0);
+    ui.label(RichText::new("Instrument").font(f_sans_med(10.5)).color(INK3));
+    let kinds = [
+        TrackInstrumentKind::Kick,
+        TrackInstrumentKind::Snare,
+        TrackInstrumentKind::HiHat,
+        TrackInstrumentKind::OpenHiHat,
+        TrackInstrumentKind::Tom,
+        TrackInstrumentKind::Clap,
+        TrackInstrumentKind::Ride,
+        TrackInstrumentKind::Cymbal,
+        TrackInstrumentKind::Snare606,
+        TrackInstrumentKind::BassDrum808,
+        TrackInstrumentKind::Perc1,
+    ];
+    let current_kind = slot.kind;
+    let current_label = current_kind.default_name();
+    egui::ComboBox::from_id_salt("track_kind")
+        .selected_text(RichText::new(current_label).font(f_sans_med(11.0)).color(Color32::WHITE))
+        .width(180.0)
+        .show_ui(ui, |ui| {
+            for kind in kinds {
+                let label = kind.default_name();
+                if ui
+                    .selectable_label(kind == current_kind, RichText::new(label).font(f_sans_med(11.0)))
+                    .clicked()
+                    && kind != current_kind
+                {
+                    let mut new_state = layout_state.clone();
+                    new_state.slots[slot_idx].kind = kind;
+                    new_state.slots[slot_idx].name = label.to_string();
+                    new_state.slots[slot_idx].midi_note = kind.default_midi_note();
+                    PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+                    state.selected_instrument = kind.drum_voice_index().min(DrumVoice::COUNT - 1);
+                }
+            }
+        });
+
+    ui.add_space(16.0);
+    ui.label(RichText::new("Routing").font(f_sans_med(10.5)).color(INK3));
+    let mut new_state = layout_state.clone();
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        let mut main_on = slot.routing.main_on;
+        if ui
+            .checkbox(&mut main_on, RichText::new("Main").font(f_sans_med(11.0)))
+            .changed()
+        {
+            new_state.slots[slot_idx].routing.main_on = main_on;
+            changed = true;
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Out").font(f_sans_med(11.0)).color(INK3));
+        let out_options: Vec<(u8, &str)> = std::iter::once((0u8, "Main"))
+            .chain((1..=crate::track::MAX_TRACKS as u8).map(|i| (i, "Out")))
+            .collect();
+        let current_out = slot.routing.out_select.index();
+        egui::ComboBox::from_id_salt("track_out")
+            .selected_text(
+                RichText::new(if current_out == 0 {
+                    "Main".to_string()
+                } else {
+                    format!("Out {}", current_out)
+                })
+                .font(f_sans_med(11.0))
+                .color(Color32::WHITE),
+            )
+            .width(120.0)
+            .show_ui(ui, |ui| {
+                for (idx, _) in &out_options {
+                    let label = if *idx == 0 {
+                        "Main".to_string()
+                    } else {
+                        format!("Out {}", idx)
+                    };
+                    if ui
+                        .selectable_label(
+                            current_out == *idx,
+                            RichText::new(&label).font(f_sans_med(11.0)),
+                        )
+                        .clicked()
+                        && current_out != *idx
+                    {
+                        new_state.slots[slot_idx].routing.out_select =
+                            crate::track::TrackAudioOut::from_index(*idx);
+                        changed = true;
+                    }
+                }
+            });
+    });
+
+    ui.add_space(16.0);
+    ui.label(RichText::new("MIDI Note").font(f_sans_med(10.5)).color(INK3));
+    ui.horizontal(|ui| {
+        let mut note = slot.midi_note as i32;
+        if ui
+            .add(egui::DragValue::new(&mut note).range(0..=127).speed(1.0))
+            .changed()
+        {
+            new_state.slots[slot_idx].midi_note = note.clamp(0, 127) as u8;
+            changed = true;
+        }
+    });
+
+    if changed {
+        PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+    }
+}
+
 // Sound Panel (always visible, tabbed by instrument)
 // ---------------------------------------------------------------------------------------------------------------
 fn draw_sound_panel(
@@ -3210,12 +3374,16 @@ fn draw_sound_panel(
                     .color(Color32::WHITE),
             );
             ui.add_space(2.0);
+            let header_name = match state.sound_editor_tab {
+                SoundEditorTab::Sound => {
+                    crate::instrument_registry::INSTRUMENTS[state.selected_instrument].name
+                }
+                SoundEditorTab::Track => "Track Settings",
+            };
             ui.label(
-                RichText::new(
-                    crate::instrument_registry::INSTRUMENTS[state.selected_instrument].name,
-                )
-                .font(f_mono(11.0))
-                .color(INK3),
+                RichText::new(header_name)
+                    .font(f_mono(11.0))
+                    .color(INK3),
             );
             // (Engine selector belongs to the future modular phase — omitted for now.)
         });
@@ -3233,12 +3401,14 @@ fn draw_sound_panel(
     ui.allocate_ui_at_rect(tabs_rect.shrink2(Vec2::new(12.0, 9.0)), |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-            let tab_count = crate::instrument_registry::INSTRUMENTS.len().max(1);
+            let instrument_count = crate::instrument_registry::INSTRUMENTS.len();
+            let tab_count = instrument_count + 1; // + Track
             let tab_w = ((tabs_rect.width() - 24.0 - GAP_TIGHT * (tab_count - 1) as f32)
                 / tab_count as f32)
                 .floor();
             for (i, inst_def) in crate::instrument_registry::INSTRUMENTS.iter().enumerate() {
-                let selected = state.selected_instrument == i;
+                let selected = state.sound_editor_tab == SoundEditorTab::Sound
+                    && state.selected_instrument == i;
                 let btn = egui::Button::new(
                     RichText::new(inst_def.label)
                         .monospace()
@@ -3250,8 +3420,24 @@ fn draw_sound_panel(
                 .stroke(egui::Stroke::new(1.0, if selected { BLUE } else { LINE2 }))
                 .corner_radius(6.0);
                 if ui.add(btn).on_hover_text(inst_def.full_name).clicked() {
+                    state.sound_editor_tab = SoundEditorTab::Sound;
                     select_legacy_track(state, i);
                 }
+            }
+            // Track tab
+            let track_selected = state.sound_editor_tab == SoundEditorTab::Track;
+            let track_btn = egui::Button::new(
+                RichText::new("TRK")
+                    .monospace()
+                    .size(10.5)
+                    .color(if track_selected { Color32::WHITE } else { INK2 }),
+            )
+            .min_size(Vec2::new(tab_w, CTL_HEIGHT))
+            .fill(if track_selected { BLUE } else { PANEL2 })
+            .stroke(egui::Stroke::new(1.0, if track_selected { BLUE } else { LINE2 }))
+            .corner_radius(6.0);
+            if ui.add(track_btn).on_hover_text("Track settings").clicked() {
+                state.sound_editor_tab = SoundEditorTab::Track;
             }
         });
     });
@@ -3288,6 +3474,8 @@ fn draw_sound_panel(
                     bottom: 14,
                 })
                 .show(ui, |ui| {
+                    match state.sound_editor_tab {
+                        SoundEditorTab::Sound => {
 
             // ------ Dev Tools: Preset Dumps ------
             if cfg!(debug_assertions) {
@@ -3736,6 +3924,11 @@ fn draw_sound_panel(
                 }
             });
             }
+                    }
+                        SoundEditorTab::Track => {
+                            draw_track_tab(ui, params, state);
+                        }
+                    }
                 });
         });
 
@@ -4436,7 +4629,7 @@ struct MixerRow<'a> {
     solo: &'a BoolParam,
 }
 
-fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; DrumVoice::COUNT] {
+fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; crate::track::MAX_TRACKS] {
     std::array::from_fn(|i| MixerRow {
         mute: params.mutes()[i],
         solo: params.solos()[i],

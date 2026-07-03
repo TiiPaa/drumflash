@@ -14,7 +14,7 @@ pub mod styles;
 
 pub use styles::Style;
 
-use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT, STEP_COUNT};
+use crate::sequencer::pattern::{Pattern, INSTRUMENT_COUNT};
 
 #[derive(Enum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GeneratorType {
@@ -67,7 +67,7 @@ pub fn generate(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Patt
     match params.generator_type {
         GeneratorType::Euclidean => {
             // Default rotations: slightly offset per instrument for groove
-            let rotations = [0, 0, 0, 2, 4, 6, 8, 0, 0, 0, 0, 0, 0];
+            let rotations = [0, 0, 0, 2, 4, 6, 8, 0, 0, 0, 0, 0, 0, 0];
             euclidean::generate(params.style_primary, params.density, &rotations, rng)
         }
         _ => {
