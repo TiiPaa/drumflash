@@ -13,14 +13,27 @@
   - [x] [MG-7.3] Checkpoint sûr : introduire le bridge `slot_idx -> voice_idx` dans la boucle de grille, sans changement visuel ni VST3/state audio (build 20260701-175321)
   - [x] [MG-7.4] Checkpoint sûr : extraire le rendu d'une lane dans `draw_legacy_slot_lane_v2(slot_idx, voice_idx, ...)`, sans changement visuel ni VST3/state audio (build 20260701-183243)
   - [x] [MG-7.4a] Fix Len individuel : une lane lockée utilise sa propre longueur 1..64 même au-delà de la longueur globale, UI et playhead inclus (build 20260701-201011)
-- [ ] [MG-7a] Move `+ Add module` under lanes + styled empty lanes — rollback 20260701
+- [x] [MG-7a] Move `+ Add module` under lanes + styled empty lanes — rollback 20260701
   - [x] [MG-7a.1] Checkpoint visuel sûr : afficher le slot 14 vide et `+ Add Module` sous les lanes, sans activer l'ajout de piste ni changer audio/VST3/state (build 20260701-205643)
   - [x] [MG-7a.1a] Fix layout : passer la fenêtre fixe de 1480x800 à 1480x900 pour rendre visibles les options/panneaux bas après ajout du slot vide (build 20260701-230011)
-  - [ ] **REPRENDRE ICI** [MG-7a.2] Activer `+ Add Module` avec sélection d'instrument et mutation contrôlée du `track-layout-v1`
-- [ ] [MG-8] Sound editor tabs per track (Sound / Track) + instrument selector + per-slot routing — rollback 20260701
+  - [x] [MG-7a.2] Activer `+ Add Module` avec sélection d'instrument et mutation contrôlée du `track-layout-v1` (build 20260702-215053)
+- [x] [MG-8] Sound editor tabs per track (Sound / Track) + instrument selector + per-slot routing — rollback 20260701 (build 20260702-215053)
 - [ ] [MG-9] MIDI note/channel behavior per spec — needs revalidation after rollback
 - [ ] [MG-10] Adapt generator to track types and duplicate variations — needs revalidation after rollback
-- [ ] [MG-11] Build, test, install, update CHANGELOG — pending for the next safe modular-grid attempt
+- [x] [MG-11] Build, test, install, update CHANGELOG — done (build 20260702-215053)
+
+## [P0] Stabilisation modular grid 14 slots (session 2026-07-03)
+
+> Constats du test Studio One post-MG-7a.2 (build 20260702-215053) : crash à la 14e piste,
+> son défectueux sur piste ajoutée, type non modifiable via TRK, layout 4 lanes au démarrage.
+> Diagnostic code fait le 2026-07-03 — références de lignes valables sur le working tree non commité.
+
+- [ ] [ST-1] **Crash S1 en ajoutant la 14e piste** : `EditorUIState.fusion_selection_start` est taillé `[Option<usize>; DrumVoice::COUNT]` (13) mais indexé par `slot_idx` (0..14) dans la boucle de grille (`ui.rs:1912/1977/1998`) → index out of bounds dès que la lane 14 est dessinée. Fix : tailler à `MAX_TRACKS` + auditer tous les tableaux UI encore dimensionnés à `DrumVoice::COUNT`.
+- [ ] [ST-2] **Crash clic droit (menu plock) sur la lane 14** : `PlockPopup.instrument = slot_idx` (`ui.rs:2005`) puis `INSTRUMENTS[instrument]` (`ui.rs:4843/5243/5696`) → panic pour slot 13, et mauvais schéma de paramètres dès que slot ≠ voix. Fix : garder l'index de slot pour le stockage plock (déjà 14) mais résoudre le schéma via `kind_for_slot(slot).instrument_def()`.
+- [ ] [ST-3] **Son défectueux sur un slot ajouté** : `SoundSettingsState::reset_slot_to_defaults()` n'est jamais appelé — un slot activé (`+ Add Module`) ou rekindé (onglet TRK) garde les settings d'init du slot (défauts de la voix legacy de même index, ex. Tom pour le slot 5) → un Kick joue avec des réglages de Tom. Fix : appeler `reset_slot_to_defaults(slot, kind)` à l'activation et au changement de kind.
+- [ ] [ST-4] **Sound Panel confond index de slot et index de voix** : `select_legacy_track` clampe `selected_instrument = slot_idx.min(12)` (`ui.rs:465`) et `draw_sound_panel` force `selected_track_slot = selected_instrument` à chaque frame (`ui.rs:3354-3355`). Conséquences : l'éditeur affiche/édite le mauvais instrument dès que slot ≠ voix, et changer le type dans TRK (`ui.rs:3268`) fait sauter la sélection sur un autre slot (= "impossible de choisir le type"). Fix : `selected_track_slot` (0..14) comme source de vérité, schéma de voix dérivé du kind du slot.
+- [ ] [ST-5] **Layout 4 lanes au démarrage à éclaircir** : le défaut du code est bien 13 lanes legacy (`default_layout()` + test `default_layout_keeps_legacy_13_voices`), la migration anti-template-4-slots existe (`track.rs:308`). À reproduire : song existante vs instance neuve — vérifier si un `track-layout-v1` sauvegardé contourne la détection (elle ne couvre que le template exact BD/SD/HH/Tom, slots 5+ inactifs).
+- [ ] [ST-6] **Revalidation complète après fixes** : `cargo test`, `build.ps1 -Install`, test S1 : ajout de pistes jusqu'à 14, clic droit sur la lane 14, changement de type via TRK, son correct sur slot ajouté, sortie Out 14 audible.
 
 ## Court terme (Stabilisation V1 — En cours)
 

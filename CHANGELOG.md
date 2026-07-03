@@ -1,4 +1,28 @@
-﻿# Changelog
+# Changelog
+
+## 2026-07-02 — MG-7a.2: activate 14th track slot + Track tab (build 20260702-215053)
+
+**Build:** `20260702-215053`
+**Validation:** `cargo check` OK, `cargo test` OK (104 + 73 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Active le bouton `+ Add Module` : le slot 14 devient une piste fonctionnelle.**
+  - Le bouton active le premier slot inactif avec l'instrument par défaut Kick (réassignable via l'onglet Track).
+  - Le séquenceur, le moteur audio et les sorties auxiliaires itèrent maintenant sur `MAX_TRACKS = 14` slots.
+  - `AUX_OUT_COUNT` passe à 14 ; le bus 14 est nommé `Out 14`.
+  - Le `DrumSynthesizer` réinitialise automatiquement un slot dont le `kind` change dans `track-layout-v1`.
+- **Ajoute un onglet `TRK` (Track) dans le Sound Editor.**
+  - Affiche le slot sélectionné et permet de changer son instrument (Kick, Snare, HiHat, ...).
+  - Permet de réguler le routing Main / Out et la note MIDI du slot.
+- **Persistance et migration.**
+  - Le champ de pattern DAW passe de `pattern-v4` à `pattern-v5` (14 rangées d'instruments).
+  - Migration automatique depuis `pattern-v4` (13 instruments) et `pattern-v3` (13 instruments + fusion legacy).
+  - `track-layout-v1` reste le champ de persistance de la disposition ; l'état par défaut reste la migration legacy 13 voix.
+- **Rupture de compatibilité volontaire pour les projets Studio One existants.**
+  - Le nombre de sorties stéréo auxiliaires change (13 → 14) : les projets sauvegardés devront réaffecter leurs bus aux.
+  - L'identité VST3 (`DrumFlashPlugin1`) est volontairement conservée pour ne pas casser l'insert du plugin lui-même.
+
+---
 
 ## 2026-07-01 — Fix plugin fixed height after empty modular lane (build 20260701-230011)
 
