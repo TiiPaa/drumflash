@@ -12,8 +12,9 @@ pub(crate) mod pattern;
 use std::sync::Arc;
 
 use crate::groove::{self, GrooveType};
-use crate::synthesis::DrumVoice;
 pub use pattern::{FusedGroup, MorphTarget, Pattern, SharedPattern, MAX_FUSIONS};
+
+const MAX_TRACKS: usize = crate::track::MAX_TRACKS;
 
 /// Per-instrument state.
 #[derive(Clone, Copy, Debug)]
@@ -104,18 +105,20 @@ pub struct Sequencer {
     is_playing: bool,
     /// Master beat position (0.0 .. master_length * 0.25). 1 step = 0.25 beat.
     beat_position: f64,
-    tracks: [TrackState; DrumVoice::COUNT],
+    tracks: [TrackState; MAX_TRACKS],
     /// Cached values for sync_to_host.
     swing: f32,
     groove_type: GrooveType,
     pattern: Arc<SharedPattern>,
-    mutes: [bool; DrumVoice::COUNT],
+    mutes: [bool; MAX_TRACKS],
     /// Global pattern length (1-64 steps). Controls master loop point.
     master_length: usize,
     /// How many times the master pattern has looped (for step conditions).
-    loop_count: usize,
+    loop_count: usize,    /// Per-slot mapping to the legacy `DrumVoice` index used for synthesis.
+    /// `None` means the slot is inactive.
+    slot_voices: [Option<usize>; MAX_TRACKS],
     /// Per-instrument fused cell groups (Step Fusion), copied from SharedPattern once per buffer.
-    fusions: [FusionTrack; DrumVoice::COUNT],
+    fusions: [FusionTrack; MAX_TRACKS],
 }
 
 /// Per-instrument trigger result.
@@ -160,28 +163,29 @@ impl Sequencer {
         Self {
             is_playing: false,
             beat_position: 0.0,
-            tracks: [TrackState::default(); DrumVoice::COUNT],
+            tracks: [TrackState::default(); MAX_TRACKS],
             swing: 0.0,
             groove_type: GrooveType::Swing16,
             pattern,
-            mutes: [false; DrumVoice::COUNT],
+            mutes: [false; MAX_TRACKS],
             master_length: 16,
             loop_count: 0,
-            fusions: [FusionTrack::default(); DrumVoice::COUNT],
+            slot_voices: [None; MAX_TRACKS],
+            fusions: [FusionTrack::default(); MAX_TRACKS],
         }
     }
 
     /// Copy fusion groups from SharedPattern into fixed local arrays.
     /// Call once per audio buffer, never per sample.
     pub fn sync_fusions_from_pattern(&mut self) {
-        for instrument in 0..DrumVoice::COUNT {
-            self.fusions[instrument].set_from_pattern(&self.pattern, instrument);
+        for slot in 0..MAX_TRACKS {
+            self.fusions[slot].set_from_pattern(&self.pattern, slot);
         }
     }
 
     #[cfg(test)]
     fn set_fusions_for_test(&mut self, instrument: usize, fusions: &[FusedGroup]) {
-        if instrument < DrumVoice::COUNT {
+        if instrument < MAX_TRACKS {
             self.fusions[instrument].set_from_slice(fusions);
         }
     }
@@ -192,8 +196,8 @@ impl Sequencer {
         sample_rate: f32,
         swing: f32,
         groove_type: GrooveType,
-    ) -> [TriggerResult; DrumVoice::COUNT] {
-        let mut triggers = [TriggerResult::default(); DrumVoice::COUNT];
+    ) -> [TriggerResult; MAX_TRACKS] {
+        let mut triggers = [TriggerResult::default(); MAX_TRACKS];
 
         if !self.is_playing {
             return triggers;
@@ -219,8 +223,8 @@ impl Sequencer {
 
         let master_beat_length = self.master_length as f64 * 0.25;
 
-        for instrument in 0..DrumVoice::COUNT {
-            let track = &mut self.tracks[instrument];
+        for slot in 0..MAX_TRACKS {
+            let track = &mut self.tracks[slot];
 
             // Push/pull: convert ms to beats and subtract so positive = late.
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
@@ -238,7 +242,7 @@ impl Sequencer {
                 track.step_counter = track.step_counter.wrapping_add(1);
                 let current_step = track.step_counter % track.track_length.max(1);
 
-                let fusion = self.fusions[instrument].containing(current_step);
+                let fusion = self.fusions[slot].containing(current_step);
                 let (
                     source_step,
                     fusion_pulse_count,
@@ -270,7 +274,7 @@ impl Sequencer {
                 };
 
                 let step_mask = self.pattern.load_step_mask(source_step);
-                let active = (step_mask & (1 << instrument)) != 0 && !self.mutes[instrument];
+                let active = (step_mask & (1 << slot)) != 0 && !self.mutes[slot];
 
                 let velocity = if active {
                     if track.humanize_amount > 0.0 {
@@ -283,7 +287,7 @@ impl Sequencer {
                     0.0
                 };
 
-                triggers[instrument] = TriggerResult {
+                triggers[slot] = TriggerResult {
                     should_trigger: active,
                     velocity,
                     step: source_step,
@@ -369,13 +373,13 @@ impl Sequencer {
     /// Set per-track parameters. Called once per buffer (or when params change).
     pub fn set_track_params(
         &mut self,
-        lengths: [usize; DrumVoice::COUNT],
-        push_pulls: [f32; DrumVoice::COUNT],
-        humanizes: [f32; DrumVoice::COUNT],
+        lengths: [usize; MAX_TRACKS],
+        push_pulls: [f32; MAX_TRACKS],
+        humanizes: [f32; MAX_TRACKS],
         master_length: usize,
     ) {
         self.master_length = master_length.clamp(1, 64);
-        for i in 0..DrumVoice::COUNT {
+        for i in 0..MAX_TRACKS {
             self.tracks[i].track_length = lengths[i].clamp(1, 64);
             self.tracks[i].push_pull_ms = push_pulls[i];
             self.tracks[i].humanize_amount = humanizes[i].clamp(0.0, 1.0);
@@ -405,8 +409,8 @@ impl Sequencer {
     }
 
     /// Returns per-track current step for UI highlighting.
-    pub fn current_steps(&self) -> [usize; DrumVoice::COUNT] {
-        let mut steps = [0usize; DrumVoice::COUNT];
+    pub fn current_steps(&self) -> [usize; MAX_TRACKS] {
+        let mut steps = [0usize; MAX_TRACKS];
         for (i, track) in self.tracks.iter().enumerate() {
             steps[i] = track.step_counter % track.track_length.max(1);
         }
@@ -417,8 +421,16 @@ impl Sequencer {
         self.loop_count
     }
 
-    pub fn set_mutes(&mut self, mutes: [bool; DrumVoice::COUNT]) {
+    pub fn set_mutes(&mut self, mutes: [bool; MAX_TRACKS]) {
         self.mutes = mutes;
+    }
+
+    pub fn set_slot_voices(&mut self, slot_voices: [Option<usize>; MAX_TRACKS]) {
+        self.slot_voices = slot_voices;
+    }
+
+    pub fn slot_voices(&self) -> &[Option<usize>; MAX_TRACKS] {
+        &self.slot_voices
     }
 
     #[allow(dead_code)]

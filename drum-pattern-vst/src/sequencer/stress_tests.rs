@@ -162,7 +162,7 @@ pub mod stress_tests {
 
         // Vérifier que le séquenceur gère bien la charge
         assert!(
-            max_triggers_per_sample <= DrumVoice::COUNT,
+            max_triggers_per_sample <= MAX_TRACKS,
             "Too many triggers per sample"
         );
         assert!(total_triggers > 0, "Should have triggers in dense pattern");

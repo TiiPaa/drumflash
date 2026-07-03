@@ -165,8 +165,62 @@ pub(crate) fn unpack_fusion_legacy(packed: u64) -> Option<FusedGroup> {
     group.is_valid().then_some(group)
 }
 
-pub const INSTRUMENT_COUNT: usize = 13;
+pub const INSTRUMENT_COUNT: usize = 14;
 pub const STEP_COUNT: usize = 64;
+
+/// Legacy 13-instrument pattern state used for migrating `pattern-v3` to `pattern-v5`.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct PatternStateV3 {
+    #[serde(with = "serde_arrays")]
+    pub masks: [u16; STEP_COUNT],
+    #[serde(with = "serde_arrays")]
+    pub fusions: [u64; 13 * MAX_FUSIONS * FUSION_SLOT_COUNT],
+}
+
+impl PatternStateV3 {
+    /// Expand a 13-instrument pattern state into the current 14-instrument format.
+    /// The 14th instrument row is initialized to empty.
+    pub fn expand(self) -> PatternState {
+        let mut masks = [0u16; STEP_COUNT];
+        masks.copy_from_slice(&self.masks);
+        let mut fusions = [0u64; INSTRUMENT_COUNT * MAX_FUSIONS * FUSION_SLOT_COUNT];
+        for inst in 0..13 {
+            let old_base = inst * MAX_FUSIONS * FUSION_SLOT_COUNT;
+            let new_base = inst * MAX_FUSIONS * FUSION_SLOT_COUNT;
+            for i in 0..(MAX_FUSIONS * FUSION_SLOT_COUNT) {
+                fusions[new_base + i] = self.fusions[old_base + i];
+            }
+        }
+        PatternState { masks, fusions }
+    }
+}
+
+/// Legacy 13-instrument pattern state used for migrating `pattern-v4` to `pattern-v5`.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct PatternStateV4 {
+    #[serde(with = "serde_arrays")]
+    pub masks: [u16; STEP_COUNT],
+    #[serde(with = "serde_arrays")]
+    pub fusions: [u64; 13 * MAX_FUSIONS * FUSION_SLOT_COUNT],
+}
+
+impl PatternStateV4 {
+    /// Expand a 13-instrument pattern state into the current 14-instrument format.
+    /// The 14th instrument row is initialized to empty.
+    pub fn expand(self) -> PatternState {
+        let mut masks = [0u16; STEP_COUNT];
+        masks.copy_from_slice(&self.masks);
+        let mut fusions = [0u64; INSTRUMENT_COUNT * MAX_FUSIONS * FUSION_SLOT_COUNT];
+        for inst in 0..13 {
+            let old_base = inst * MAX_FUSIONS * FUSION_SLOT_COUNT;
+            let new_base = inst * MAX_FUSIONS * FUSION_SLOT_COUNT;
+            for i in 0..(MAX_FUSIONS * FUSION_SLOT_COUNT) {
+                fusions[new_base + i] = self.fusions[old_base + i];
+            }
+        }
+        PatternState { masks, fusions }
+    }
+}
 
 /// A single step in a pattern containing trigger states for all instruments.
 #[derive(Clone, Debug)]

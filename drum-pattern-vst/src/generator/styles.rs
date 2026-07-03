@@ -186,6 +186,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.2,
                     exclusions: &[],
                 },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (90.0, 140.0),
         }
@@ -276,6 +283,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[14, 15],
                     candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
                     exclusions: &[],
                 },
             ],
@@ -370,6 +384,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[],
                 },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (120.0, 140.0),
         }
@@ -460,6 +481,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[14, 15],
                     candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
                     exclusions: &[],
                 },
             ],
@@ -554,6 +582,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[],
                 },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 160.0),
         }
@@ -644,6 +679,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[14, 15],
                     candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
                     exclusions: &[],
                 },
             ],
@@ -738,6 +780,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[],
                 },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 140.0),
         }
@@ -828,6 +877,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[14, 15],
                     candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
                     exclusions: &[],
                 },
             ],
@@ -922,6 +978,13 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[],
                 },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (130.0, 160.0),
         }
@@ -1012,6 +1075,13 @@ impl MusicalTemplate {
                     anchors: &[],
                     candidates: &[14, 15],
                     candidate_prob: 0.15,
+                    exclusions: &[],
+                },
+                // Extra slot: sparse, style-agnostic filler
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
                     exclusions: &[],
                 },
             ],

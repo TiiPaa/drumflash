@@ -33,8 +33,8 @@ pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
     Some(build_id) => build_id,
     None => "dev",
 };
-/// Number of dedicated stereo aux outputs. Keep stable for saved DAW sessions.
-const AUX_OUT_COUNT: usize = 13;
+/// Number of dedicated stereo aux outputs. Changed to 14 for the modular grid.
+const AUX_OUT_COUNT: usize = 14;
 const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
     "Kick",
     "Snare",
@@ -49,10 +49,11 @@ const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
     "Snare 606",
     "808 Kick",
     "Perc1",
+    "Out 14",
 ];
 const STEP_COUNT: usize = 64;
 
-const PATTERN_STATE_FIELD: &str = "pattern-v4";
+const PATTERN_STATE_FIELD: &str = "pattern-v5";
 
 #[derive(Clone)]
 pub struct LaneLengthLocks {
@@ -67,12 +68,12 @@ impl LaneLengthLocks {
     }
 
     pub fn is_locked(&self, instrument: usize) -> bool {
-        instrument < DrumVoice::COUNT
+        instrument < crate::track::MAX_TRACKS
             && (self.mask.load(Ordering::Relaxed) & (1u16 << instrument)) != 0
     }
 
     pub fn set_locked(&self, instrument: usize, locked: bool) {
-        if instrument >= DrumVoice::COUNT {
+        if instrument >= crate::track::MAX_TRACKS {
             return;
         }
         let bit = 1u16 << instrument;
@@ -92,7 +93,7 @@ impl Default for LaneLengthLocks {
 
 impl<'a> PersistentField<'a, u16> for LaneLengthLocks {
     fn set(&self, new_value: u16) {
-        let valid_bits = (1u16 << DrumVoice::COUNT).wrapping_sub(1);
+        let valid_bits = (1u16 << crate::track::MAX_TRACKS).wrapping_sub(1);
         self.mask.store(new_value & valid_bits, Ordering::Relaxed);
     }
 
@@ -130,9 +131,9 @@ pub struct DrumFlashVst {
     last_host_pos: Option<f64>,
     /// Simple LCG RNG state for probability checks (audio-thread safe).
     rng_state: AtomicU32,
-    /// Pending delayed triggers: (samples_until, voice_idx, velocity, step, hard, settings).
+    /// Pending delayed triggers: (samples_until, slot_idx, velocity, step, hard, settings).
     /// Fixed-size queue for audio-thread safety (no allocation).
-    /// Max: 13 voices x 7 extra triggers = 91, rounded up to 128.
+    /// Max: 14 slots x 7 extra triggers = 98, rounded up to 128.
     pending_triggers: [(u32, usize, f32, u32, bool, synthesis::VoiceSettings); 128],
     pending_trigger_count: usize,
     /// Pattern save request from UI: slot index + 1 (0 = none).
@@ -149,6 +150,9 @@ pub struct DrumFlashVst {
     last_loop_count: usize,
     /// Last observed master length so we can resync the sequencer when it changes.
     last_master_length: usize,
+    /// Last active track layout kinds, so the audio thread can reinitialize
+    /// synthesizer voices when a slot is added, removed or reassigned.
+    last_slot_kinds: [Option<crate::track::TrackInstrumentKind>; crate::track::MAX_TRACKS],
     /// Pending pattern length update after a slot load (1-64, 0 = none).
     /// The UI thread applies this to the IntParam on the next frame.
     pending_pattern_length: Arc<AtomicI32>,
@@ -166,7 +170,7 @@ pub struct DrumFlashParams {
     #[persist = "editor-state-v2"]
     pub editor_state: Arc<EguiState>,
 
-    #[persist = "pattern-v4"]
+    #[persist = "pattern-v5"]
     pub pattern_state: PersistentPattern,
 
     #[persist = "sound-settings-v2"]
@@ -236,6 +240,8 @@ pub struct DrumFlashParams {
     pub humanize_bassdrum808: FloatParam,
     #[id = "hu_perc1"]
     pub humanize_perc1: FloatParam,
+    #[id = "hum_s13"]
+    pub hum_s13: FloatParam,
 
     #[id = "pp_kick"]
     pub push_kick: FloatParam,
@@ -263,6 +269,8 @@ pub struct DrumFlashParams {
     pub push_bassdrum808: FloatParam,
     #[id = "pp_perc1"]
     pub push_perc1: FloatParam,
+    #[id = "push_s13"]
+    pub push_s13: FloatParam,
 
     #[id = "pl_kick"]
     pub length_kick: IntParam,
@@ -290,6 +298,8 @@ pub struct DrumFlashParams {
     pub length_bassdrum808: IntParam,
     #[id = "pl_perc1"]
     pub length_perc1: IntParam,
+    #[id = "len_s13"]
+    pub len_s13: IntParam,
 
     // Global pattern length (master length)
     #[id = "pat_len"]
@@ -379,6 +389,8 @@ pub struct DrumFlashParams {
     pub mute_bassdrum808: BoolParam,
     #[id = "mute_perc1"]
     pub mute_perc1: BoolParam,
+    #[id = "mute_s13"]
+    pub mute_s13: BoolParam,
 
     // Per-instrument Main Mix inclusion (true = routed to Main Mix)
     #[id = "mix_kick"]
@@ -407,6 +419,8 @@ pub struct DrumFlashParams {
     pub mix_bassdrum808: BoolParam,
     #[id = "mix_perc1"]
     pub mix_perc1: BoolParam,
+    #[id = "mix_s13"]
+    pub mix_s13: BoolParam,
 
     #[id = "solo_kick"]
     pub solo_kick: BoolParam,
@@ -440,6 +454,8 @@ pub struct DrumFlashParams {
     pub solo_bassdrum808: BoolParam,
     #[id = "solo_perc1"]
     pub solo_perc1: BoolParam,
+    #[id = "solo_s13"]
+    pub solo_s13: BoolParam,
 
     #[id = "gen_type"]
     pub generator_type: EnumParam<GeneratorType>,
@@ -486,6 +502,8 @@ pub struct DrumFlashParams {
     pub algo_bassdrum808: IntParam,
     #[id = "algo_perc1"]
     pub algo_perc1: IntParam,
+    #[id = "algo_s13"]
+    pub algo_s13: IntParam,
 
     // Frequency display mode per bass drum (false = Hz, true = Notes)
     #[id = "freq_mode_kick"]
@@ -762,6 +780,12 @@ impl Default for DrumFlashParams {
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
+            hum_s13: FloatParam::new(
+                "Humanize Slot 13",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0)),
 
             // Push/pull per track (-50 ms = early, +50 ms = late)
             push_kick: FloatParam::new(
@@ -894,6 +918,16 @@ impl Default for DrumFlashParams {
             )
             .with_smoother(SmoothingStyle::Linear(10.0))
             .with_unit(" ms"),
+            push_s13: FloatParam::new(
+                "Push/Pull Slot 13",
+                0.0,
+                FloatRange::Linear {
+                    min: -50.0,
+                    max: 50.0,
+                },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_unit(" ms"),
 
             // Pattern length per track (1-64 steps)
             length_kick: IntParam::new("Length Kick", 16, IntRange::Linear { min: 1, max: 64 }),
@@ -921,6 +955,7 @@ impl Default for DrumFlashParams {
                 IntRange::Linear { min: 1, max: 64 },
             ),
             length_perc1: IntParam::new("Length Perc1", 16, IntRange::Linear { min: 1, max: 64 }),
+            len_s13: IntParam::new("Length Slot 13", 16, IntRange::Linear { min: 1, max: 64 }),
             pattern_length: IntParam::new(
                 "Pattern Length",
                 16,
@@ -1079,6 +1114,7 @@ impl Default for DrumFlashParams {
             mute_snare606: BoolParam::new("Mute Snare 606", false),
             mute_bassdrum808: BoolParam::new("Mute 808 Kick", false),
             mute_perc1: BoolParam::new("Mute Perc1", false),
+            mute_s13: BoolParam::new("Mute Slot 13", false),
             mix_kick: BoolParam::new("Mix Kick", true),
             mix_snare: BoolParam::new("Mix Snare", true),
             mix_hihat: BoolParam::new("Mix Hi-Hat", true),
@@ -1092,6 +1128,7 @@ impl Default for DrumFlashParams {
             mix_snare606: BoolParam::new("Mix Snare 606", true),
             mix_bassdrum808: BoolParam::new("Mix 808 Kick", true),
             mix_perc1: BoolParam::new("Mix Perc1", true),
+            mix_s13: BoolParam::new("Mix Slot 13", true),
             solo_kick: BoolParam::new("Solo Kick", false),
             solo_snare: BoolParam::new("Solo Snare", false),
             solo_hihat: BoolParam::new("Solo Hi-Hat", false),
@@ -1105,6 +1142,7 @@ impl Default for DrumFlashParams {
             solo_snare606: BoolParam::new("Solo Snare 606", false),
             solo_bassdrum808: BoolParam::new("Solo 808 Kick", false),
             solo_perc1: BoolParam::new("Solo Perc1", false),
+            solo_s13: BoolParam::new("Solo Slot 13", false),
 
             generator_type: EnumParam::new("Generator", GeneratorType::Probabilistic),
             style_primary: EnumParam::new("Style A", Style::Rock),
@@ -1137,6 +1175,7 @@ impl Default for DrumFlashParams {
                 IntRange::Linear { min: 0, max: 1 },
             ),
             algo_perc1: IntParam::new("Perc1 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
+            algo_s13: IntParam::new("Slot 13 Algo", 0, IntRange::Linear { min: 0, max: 0 }),
 
             freq_mode_kick: BoolParam::new("Kick Freq in Notes", false),
             freq_mode_bassdrum808: BoolParam::new("808 Kick Freq in Notes", false),
@@ -1494,7 +1533,7 @@ impl Default for DrumFlashParams {
 
 impl DrumFlashParams {
     /// Indexed access to mute parameters.
-    pub fn mutes(&self) -> [&BoolParam; DrumVoice::COUNT] {
+    pub fn mutes(&self) -> [&BoolParam; crate::track::MAX_TRACKS] {
         [
             &self.mute_kick,
             &self.mute_snare,
@@ -1509,11 +1548,12 @@ impl DrumFlashParams {
             &self.mute_snare606,
             &self.mute_bassdrum808,
             &self.mute_perc1,
+            &self.mute_s13,
         ]
     }
 
     /// Indexed access to solo parameters.
-    pub fn solos(&self) -> [&BoolParam; DrumVoice::COUNT] {
+    pub fn solos(&self) -> [&BoolParam; crate::track::MAX_TRACKS] {
         [
             &self.solo_kick,
             &self.solo_snare,
@@ -1528,11 +1568,12 @@ impl DrumFlashParams {
             &self.solo_snare606,
             &self.solo_bassdrum808,
             &self.solo_perc1,
+            &self.solo_s13,
         ]
     }
 
     /// Indexed access to mix parameters.
-    pub fn mixes(&self) -> [&BoolParam; DrumVoice::COUNT] {
+    pub fn mixes(&self) -> [&BoolParam; crate::track::MAX_TRACKS] {
         [
             &self.mix_kick,
             &self.mix_snare,
@@ -1547,11 +1588,12 @@ impl DrumFlashParams {
             &self.mix_snare606,
             &self.mix_bassdrum808,
             &self.mix_perc1,
+            &self.mix_s13,
         ]
     }
 
     /// Indexed access to algo parameters.
-    pub fn algos(&self) -> [&IntParam; DrumVoice::COUNT] {
+    pub fn algos(&self) -> [&IntParam; crate::track::MAX_TRACKS] {
         [
             &self.algo_kick,
             &self.algo_snare,
@@ -1566,10 +1608,11 @@ impl DrumFlashParams {
             &self.algo_snare606,
             &self.algo_bassdrum808,
             &self.algo_perc1,
+            &self.algo_s13,
         ]
     }
 
-    pub fn humanizes(&self) -> [&FloatParam; DrumVoice::COUNT] {
+    pub fn humanizes(&self) -> [&FloatParam; crate::track::MAX_TRACKS] {
         [
             &self.humanize_kick,
             &self.humanize_snare,
@@ -1584,10 +1627,11 @@ impl DrumFlashParams {
             &self.humanize_snare606,
             &self.humanize_bassdrum808,
             &self.humanize_perc1,
+            &self.hum_s13,
         ]
     }
 
-    pub fn pushes(&self) -> [&FloatParam; DrumVoice::COUNT] {
+    pub fn pushes(&self) -> [&FloatParam; crate::track::MAX_TRACKS] {
         [
             &self.push_kick,
             &self.push_snare,
@@ -1602,10 +1646,11 @@ impl DrumFlashParams {
             &self.push_snare606,
             &self.push_bassdrum808,
             &self.push_perc1,
+            &self.push_s13,
         ]
     }
 
-    pub fn lengths(&self) -> [&IntParam; DrumVoice::COUNT] {
+    pub fn lengths(&self) -> [&IntParam; crate::track::MAX_TRACKS] {
         [
             &self.length_kick,
             &self.length_snare,
@@ -1620,6 +1665,7 @@ impl DrumFlashParams {
             &self.length_snare606,
             &self.length_bassdrum808,
             &self.length_perc1,
+            &self.len_s13,
         ]
     }
 
@@ -1734,6 +1780,7 @@ impl Default for DrumFlashVst {
             song_position: Arc::new(AtomicU32::new(0)),
             last_loop_count: 0,
             last_master_length: 16,
+            last_slot_kinds: [None; crate::track::MAX_TRACKS],
             pending_pattern_length: Arc::new(AtomicI32::new(0)),
             temp_plock_bytes: [0; pattern_bank::MAX_PLOCK_BYTES],
             temp_seq_plock_bytes: [0; pattern_bank::MAX_SEQ_PLOCK_BYTES],
@@ -2008,10 +2055,13 @@ impl DrumFlashVst {
     }
 
     /// Fire a single voice trigger (audio + MIDI) at the given sample offset.
+    /// `slot_idx` is the active track slot; `voice_idx` is the legacy DrumVoice
+    /// algorithm used for MIDI note / instrument metadata.
     /// `hard` uses `trigger_hard()` for machine-gun stutter repeats instead of
     /// the smooth anti-click `trigger()`.
     fn fire_voice_trigger(
         &mut self,
+        slot_idx: usize,
         voice_idx: usize,
         velocity: f32,
         _step: u32,
@@ -2021,17 +2071,23 @@ impl DrumFlashVst {
         hard: bool,
         settings: synthesis::VoiceSettings,
     ) {
-        let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+        let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
             return;
         };
-        self.synthesizer.set_voice_settings(voice_idx, settings);
+        self.synthesizer.set_voice_settings(slot_idx, settings);
         if hard {
-            self.synthesizer.trigger_hard(voice_idx, velocity);
+            self.synthesizer.trigger_hard(slot_idx, velocity);
         } else {
-            self.synthesizer.trigger(voice_idx, velocity);
+            self.synthesizer.trigger(slot_idx, velocity);
         }
         if hihat_chokes_oh && voice_idx == 2 {
-            self.synthesizer.reset_voice(3);
+            // Open hi-hat lives at the slot currently mapped to DrumVoice::OpenHiHat.
+            // Reset that synthesizer slot rather than a hard-coded index.
+            if let Some(oh_slot) = (0..crate::track::MAX_TRACKS)
+                .find(|&s| self.sequencer.slot_voices()[s] == Some(DrumVoice::OpenHiHat as usize))
+            {
+                self.synthesizer.reset_voice(oh_slot);
+            }
         }
         let note = crate::instrument_registry::INSTRUMENTS[voice_idx].midi_note;
         context.send_event(NoteEvent::NoteOn {
@@ -2065,7 +2121,7 @@ impl Plugin for DrumFlashVst {
         aux_input_ports: &[],
         aux_output_ports: &[new_nonzero_u32(2); AUX_OUT_COUNT],
         names: PortNames {
-            layout: Some("Stereo mix + 13 stereo drum outs"),
+            layout: Some("Stereo mix + 14 stereo drum outs"),
             main_input: None,
             main_output: Some("Main Mix"),
             aux_inputs: &[],
@@ -2216,12 +2272,15 @@ impl Plugin for DrumFlashVst {
             self.sequencer.play();
         }
 
-        let mute_states: [bool; DrumVoice::COUNT] =
+        let mute_states: [bool; crate::track::MAX_TRACKS] =
             std::array::from_fn(|i| self.params.mutes()[i].value());
-        let solo_states: [bool; DrumVoice::COUNT] =
+        let solo_states: [bool; crate::track::MAX_TRACKS] =
             std::array::from_fn(|i| self.params.solos()[i].value());
         let any_solo_active = solo_states.iter().copied().any(|solo| solo);
         let effective_mutes = std::array::from_fn(|index| {
+            if index >= crate::track::MAX_TRACKS {
+                return false;
+            }
             if any_solo_active {
                 !solo_states[index]
             } else {
@@ -2232,7 +2291,7 @@ impl Plugin for DrumFlashVst {
         self.sequencer.set_mutes(effective_mutes);
 
         let mix_gains: [f32; crate::track::MAX_TRACKS] = std::array::from_fn(|i| {
-            if i < DrumVoice::COUNT && self.params.mixes()[i].value() {
+            if i < crate::track::MAX_TRACKS && self.params.mixes()[i].value() {
                 1.0f32
             } else {
                 0.0f32
@@ -2248,7 +2307,7 @@ impl Plugin for DrumFlashVst {
         // Update per-track groove parameters once per buffer.
         // Lane lengths are clamped to the global pattern length.
         let master_length = self.params.pattern_length.value() as usize;
-        let raw_lengths: [usize; DrumVoice::COUNT] =
+        let raw_lengths: [usize; crate::track::MAX_TRACKS] =
             std::array::from_fn(|i| self.params.lengths()[i].value() as usize);
         let effective_lengths = std::array::from_fn(|i| {
             resolve_track_length(
@@ -2281,10 +2340,32 @@ impl Plugin for DrumFlashVst {
         // Hi-hat chokes open hi-hat
         let hihat_chokes_oh = self.params.hihat_chokes_oh.value();
 
-        // Propagate synthesis algorithms
-        for i in 0..DrumVoice::COUNT {
-            self.synthesizer
-                .set_algo(i, self.params.algos()[i].value() as u8);
+        // Snapshot the active track layout and propagate it to the sequencer.
+        let mut slot_voices = [None; crate::track::MAX_TRACKS];
+        for slot in 0..crate::track::MAX_TRACKS {
+            if let Some(kind) = self.params.track_layout.state.kind_for_slot(slot) {
+                slot_voices[slot] = Some(kind.drum_voice_index());
+            }
+        }
+        self.sequencer.set_slot_voices(slot_voices);
+
+        // Reinitialize synthesizer slots whose kind changed (added/removed/reassigned).
+        for slot in 0..crate::track::MAX_TRACKS {
+            let current_kind = self.params.track_layout.state.kind_for_slot(slot);
+            if current_kind != self.last_slot_kinds[slot] {
+                if let Some(kind) = current_kind {
+                    self.synthesizer.reinitialize_slot(slot, kind);
+                }
+                self.last_slot_kinds[slot] = current_kind;
+            }
+        }
+
+        // Propagate synthesis algorithms (synthesizer is indexed by slot).
+        for slot_idx in 0..crate::track::MAX_TRACKS {
+            if slot_voices[slot_idx].is_some() {
+                self.synthesizer
+                    .set_algo(slot_idx, self.params.algos()[slot_idx].value() as u8);
+            }
         }
 
         // Update global sound settings once per buffer, BEFORE triggers.
@@ -2294,8 +2375,11 @@ impl Plugin for DrumFlashVst {
         let current_version = self.sound_settings_state.version.load(Ordering::Acquire);
         if current_version != self.last_sound_settings_version {
             self.last_sound_settings_version = current_version;
-            for (i, inst) in self.sound_settings_state.instruments.iter().enumerate() {
-                let Some(voice) = synthesis::DrumVoice::from_index(i) else {
+            for (slot_idx, inst) in self.sound_settings_state.instruments.iter().enumerate() {
+                let Some(voice_idx) = slot_voices[slot_idx] else {
+                    continue;
+                };
+                let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                     continue;
                 };
                 let (
@@ -2314,9 +2398,9 @@ impl Plugin for DrumFlashVst {
                     stereo,
                 ) = inst.load();
                 self.synthesizer.set_voice_settings(
-                    i,
+                    slot_idx,
                     self.voice_settings_for(
-                        i,
+                        voice_idx,
                         freq,
                         decay,
                         vol,
@@ -2350,8 +2434,15 @@ impl Plugin for DrumFlashVst {
             let mut i = 0;
             while i < self.pending_trigger_count {
                 if self.pending_triggers[i].0 == 0 {
-                    let (_, voice_idx, velocity, step, hard, settings) = self.pending_triggers[i];
+                    let (_, slot_idx, velocity, step, hard, settings) = self.pending_triggers[i];
+                    let Some(voice_idx) = slot_voices[slot_idx] else {
+                        self.pending_triggers[i] =
+                            self.pending_triggers[self.pending_trigger_count - 1];
+                        self.pending_trigger_count -= 1;
+                        continue;
+                    };
                     self.fire_voice_trigger(
+                        slot_idx,
                         voice_idx,
                         velocity,
                         step,
@@ -2377,10 +2468,13 @@ impl Plugin for DrumFlashVst {
                     .sequencer
                     .process_sample(bpm, sample_rate, swing, groove_type);
 
-                for (voice_idx, trigger) in triggers.iter().enumerate() {
+                for (slot_idx, trigger) in triggers.iter().enumerate() {
+                    let Some(voice_idx) = slot_voices[slot_idx] else {
+                        continue;
+                    };
                     if trigger.should_trigger {
                         let step = trigger.step;
-                        let seq_params = self.params.seq_plock_state.state.get(voice_idx, step);
+                        let seq_params = self.params.seq_plock_state.state.get(slot_idx, step);
 
                         // Apply sequencer probability
                         let prob = seq_params.map(|sp| sp.probability).unwrap_or(1.0);
@@ -2462,6 +2556,7 @@ impl Plugin for DrumFlashVst {
                                 }
                                 if k == 0 {
                                     self.fire_voice_trigger(
+                                        slot_idx,
                                         voice_idx,
                                         trigger.velocity,
                                         step_for_trigger,
@@ -2474,7 +2569,7 @@ impl Plugin for DrumFlashVst {
                                 } else if self.pending_trigger_count < self.pending_triggers.len() {
                                     self.pending_triggers[self.pending_trigger_count] = (
                                         spacing * k as u32,
-                                        voice_idx,
+                                        slot_idx,
                                         trigger.velocity,
                                         step_for_trigger,
                                         false,
@@ -2488,6 +2583,7 @@ impl Plugin for DrumFlashVst {
 
                         // Non-fusion: fire the first trigger immediately.
                         self.fire_voice_trigger(
+                            slot_idx,
                             voice_idx,
                             trigger.velocity,
                             step_for_trigger,
@@ -2508,7 +2604,7 @@ impl Plugin for DrumFlashVst {
                                 if self.pending_trigger_count < self.pending_triggers.len() {
                                     self.pending_triggers[self.pending_trigger_count] = (
                                         spacing * k as u32,
-                                        voice_idx,
+                                        slot_idx,
                                         trigger.velocity,
                                         step_for_trigger,
                                         true,
@@ -2530,14 +2626,23 @@ impl Plugin for DrumFlashVst {
                         if let Some(voice_idx) =
                             crate::instrument_registry::voice_idx_from_midi_note(note)
                         {
-                            let settings = self.voice_settings_at_step(voice_idx, 0);
-                            let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+                            let Some(slot_idx) = (0..crate::track::MAX_TRACKS)
+                                .find(|&s| slot_voices[s] == Some(voice_idx))
+                            else {
                                 continue;
                             };
-        self.synthesizer.set_voice_settings(voice_idx, settings);
-                            self.synthesizer.trigger(voice_idx, velocity);
+                            let settings = self.voice_settings_at_step(voice_idx, 0);
+                            let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+                                continue;
+                            };
+                            self.synthesizer.set_voice_settings(slot_idx, settings);
+                            self.synthesizer.trigger(slot_idx, velocity);
                             if hihat_chokes_oh && voice_idx == 2 {
-                                self.synthesizer.reset_voice(3);
+                                if let Some(oh_slot) = (0..crate::track::MAX_TRACKS)
+                                    .find(|&s| slot_voices[s] == Some(DrumVoice::OpenHiHat as usize))
+                                {
+                                    self.synthesizer.reset_voice(oh_slot);
+                                }
                             }
                             // Forward the MIDI event to the output
                             context.send_event(NoteEvent::NoteOn {
@@ -2560,14 +2665,17 @@ impl Plugin for DrumFlashVst {
                 }
             }
 
-            for (voice_idx, trigger) in self.voice_test_triggers.iter().enumerate() {
+            for (slot_idx, trigger) in self.voice_test_triggers.iter().enumerate() {
                 if trigger.swap(false, Ordering::Acquire) {
-                    let Some(voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+                    let Some(voice_idx) = slot_voices[slot_idx] else {
+                        continue;
+                    };
+                    let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                         continue;
                     };
                     let settings = self.voice_settings_at_step(voice_idx, 0);
-                    self.synthesizer.set_voice_settings(voice_idx, settings);
-                    self.synthesizer.trigger(voice_idx, 0.8);
+                    self.synthesizer.set_voice_settings(slot_idx, settings);
+                    self.synthesizer.trigger(slot_idx, 0.8);
                 }
             }
 
@@ -2593,13 +2701,13 @@ impl Plugin for DrumFlashVst {
                 *sample = if ch == 0 { mixed_left } else { mixed_right };
             }
 
-            for (voice_idx, aux_buffer) in aux.outputs.iter_mut().enumerate() {
-                if voice_idx >= DrumVoice::COUNT {
+            for (slot_idx, aux_buffer) in aux.outputs.iter_mut().enumerate() {
+                if slot_idx >= crate::track::MAX_TRACKS {
                     break;
                 }
                 let channels = aux_buffer.as_slice();
-                channels[0][sample_idx] = voice_outputs[voice_idx][0] * master_vol;
-                channels[1][sample_idx] = voice_outputs[voice_idx][1] * master_vol;
+                channels[0][sample_idx] = voice_outputs[slot_idx][0] * master_vol;
+                channels[1][sample_idx] = voice_outputs[slot_idx][1] * master_vol;
             }
         }
 
@@ -2654,13 +2762,26 @@ impl Plugin for DrumFlashVst {
             return;
         }
 
-        // Migration pattern-v3 (old broken fusion layout) → pattern-v4 (fixed layout)
+        // Migration pattern-v4 (13 instruments) → pattern-v5 (14 instruments)
+        if let Some(data) = state.fields.get("pattern-v4") {
+            if let Ok(old_state) = deserialize_field::<sequencer::pattern::PatternStateV4>(data) {
+                let new_state = old_state.expand();
+                if let Ok(serialized) = serialize_field(&new_state) {
+                    state
+                        .fields
+                        .insert(PATTERN_STATE_FIELD.to_string(), serialized);
+                    return;
+                }
+            }
+        }
+
+        // Migration pattern-v3 (old broken fusion layout, 13 instruments) → pattern-v5 (fixed layout)
         if let Some(data) = state.fields.get("pattern-v3") {
-            if let Ok(old_state) = deserialize_field::<sequencer::pattern::PatternState>(data) {
+            if let Ok(old_state) = deserialize_field::<sequencer::pattern::PatternStateV3>(data) {
                 let mut new_fusions = [0u64; sequencer::pattern::INSTRUMENT_COUNT
                     * sequencer::pattern::MAX_FUSIONS
                     * sequencer::pattern::FUSION_SLOT_COUNT];
-                for inst in 0..sequencer::pattern::INSTRUMENT_COUNT {
+                for inst in 0..13 {
                     let base = inst
                         * sequencer::pattern::MAX_FUSIONS
                         * sequencer::pattern::FUSION_SLOT_COUNT;
@@ -2695,6 +2816,11 @@ impl Plugin for DrumFlashVst {
                     }
                     new_fusions[base] = (new_count as u64) | (1u64 << 24);
                 }
+                // The 14th instrument row starts empty.
+                let empty_base = 13
+                    * sequencer::pattern::MAX_FUSIONS
+                    * sequencer::pattern::FUSION_SLOT_COUNT;
+                new_fusions[empty_base] = 0 | (1u64 << 24);
                 let new_state = sequencer::pattern::PatternState {
                     masks: old_state.masks,
                     fusions: new_fusions,
@@ -2824,10 +2950,9 @@ mod tests {
     }
 
     #[test]
-    fn pattern_v3_migrates_to_v4_preserving_fusion_geometry() {
-        // Build an old-pattern-v3 PatternState with one fusion in old layout.
-        let mut old_fusions = [0u64; sequencer::pattern::INSTRUMENT_COUNT
-            * sequencer::pattern::MAX_FUSIONS
+    fn pattern_v3_migrates_to_v5_preserving_fusion_geometry() {
+        // Build an old-pattern-v3 PatternState with one fusion in old layout (13 instruments).
+        let mut old_fusions = [0u64; 13 * sequencer::pattern::MAX_FUSIONS
             * sequencer::pattern::FUSION_SLOT_COUNT];
         let inst = 4usize;
         let base = inst * sequencer::pattern::MAX_FUSIONS * sequencer::pattern::FUSION_SLOT_COUNT;
@@ -2841,7 +2966,7 @@ mod tests {
         let mut masks = [0u16; STEP_COUNT];
         masks[0] = 0x10;
 
-        let old_state = sequencer::pattern::PatternState { masks, fusions: old_fusions };
+        let old_state = sequencer::pattern::PatternStateV3 { masks, fusions: old_fusions };
         let mut fields = BTreeMap::new();
         fields.insert(
             "pattern-v3".to_string(),
@@ -2858,7 +2983,7 @@ mod tests {
         let serialized_pattern = state
             .fields
             .get(PATTERN_STATE_FIELD)
-            .expect("pattern-v4 field should be created");
+            .expect("pattern-v5 field should be created");
         let pattern_state: sequencer::pattern::PatternState =
             deserialize_field(serialized_pattern).expect("pattern field should deserialize");
 
@@ -2873,6 +2998,42 @@ mod tests {
         assert_eq!(loaded[0].end_cell, 6);
         assert_eq!(loaded[0].step_count, 4);
         assert_eq!(loaded[0].morph_count, 0);
+    }
+
+    #[test]
+    fn pattern_v4_migrates_to_v5_adding_empty_14th_row() {
+        // Build a pattern-v4 state (13 instruments) with a Kick on step 0.
+        let mut masks = [0u16; STEP_COUNT];
+        masks[0] = 0x0001; // Kick bit
+        let fusions = [0u64; 13
+            * sequencer::pattern::MAX_FUSIONS
+            * sequencer::pattern::FUSION_SLOT_COUNT];
+        let old_state = sequencer::pattern::PatternStateV4 { masks, fusions };
+
+        let mut fields = BTreeMap::new();
+        fields.insert(
+            "pattern-v4".to_string(),
+            serialize_field(&old_state).unwrap(),
+        );
+        let mut state = PluginState {
+            version: "0.1.0".to_string(),
+            params: BTreeMap::new(),
+            fields,
+        };
+
+        <DrumFlashVst as Plugin>::filter_state(&mut state);
+
+        let serialized_pattern = state
+            .fields
+            .get(PATTERN_STATE_FIELD)
+            .expect("pattern-v5 field should be created");
+        let pattern_state: sequencer::pattern::PatternState =
+            deserialize_field(serialized_pattern).expect("pattern field should deserialize");
+
+        // Kick bit preserved.
+        assert_eq!(pattern_state.masks[0], 0x0001);
+        // 14th instrument row is empty.
+        assert_eq!(pattern_state.masks[13], 0);
     }
 
     #[test]
