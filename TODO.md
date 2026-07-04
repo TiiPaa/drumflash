@@ -34,9 +34,17 @@
 - [x] [ST-4] **Sound Panel confond index de slot et index de voix** : `selected_instrument` est désormais un index de slot (0..14), le schéma (registre, special params, filter label, checks Kick/B8, algos) est dérivé du kind du slot ; changer le type dans TRK ne fait plus sauter la sélection ; onglets du Sound Editor = slots actifs ; `effective_lane_length_for_ui` aligné sur l'indexation slot du moteur audio (build 20260704-165252).
 - [x] [ST-4b] **Settings/plocks appliqués par voix au trigger** (trouvé par test S1 : "la freq de la lane 1 change celle de la lane 14") : `voice_settings_at_step()` indexait `sound_settings_state.instruments[]` et `plock_state.get_settings()` par voix au lieu du slot → chaque trigger d'un slot dupliqué réappliquait les settings et plocks du premier slot du même kind. Corrigé : signature `(slot_idx, voice_idx, step)`, settings + plocks par slot (build 20260704-173043).
 - [x] [ST-4c] **Pastille `+14` de la lane vide non cliquable** (rapporté test S1 : "quand je clique sur +14 rien ne se passe") : la lane vide affichait `+N` avec highlight au survol mais `Sense::hover` seulement — seule la rangée `+ Add Module` était active. Corrigé : pastille cliquable (curseur main + tooltip), activation factorisée dans `activate_next_free_slot()` (build 20260704-174006).
-- [ ] [ST-7] **Special params par slot (instances vraiment indépendantes)** : Click/Click Type, Saturation (Type/Amount/Mix/Gain/Pre-Filter), mode Hz/Notes sont des params nih-plug déclarés une fois par voix legacy — partagés entre slots du même kind (UI `special_param(voice_idx)` + audio `voice_settings_for`). Fix : stockage par slot (étendre `SoundSettingsState` ou état dédié avec `special[32]` + `freq_mode`), nouveau champ DAW versionné + migration depuis les params par voix ; répercuter moteur (`voice_settings_for`), UI, plock Snapshot, morphing. Auditer au passage le double chemin algo (`VoiceSettings.algo` par voix vs `set_algo` par slot). Complexité : Moyenne-Élevée.
-- [ ] [ST-5] **Layout 4 lanes au démarrage à éclaircir** : le défaut du code est bien 13 lanes legacy (`default_layout()` + test `default_layout_keeps_legacy_13_voices`), la migration anti-template-4-slots existe (`track.rs:308`). À reproduire : song existante vs instance neuve — vérifier si un `track-layout-v1` sauvegardé contourne la détection (elle ne couvre que le template exact BD/SD/HH/Tom, slots 5+ inactifs).
-- [ ] [ST-6] **Revalidation complète après fixes** : `cargo test`, `build.ps1 -Install`, test S1 : ajout de pistes jusqu'à 14, clic droit sur la lane 14, changement de type via TRK, son correct sur slot ajouté, sortie Out 14 audible.
+- [ ] **[REPRENDRE ICI]** [ST-7] **Special params par slot (instances vraiment indépendantes)** — **EN COURS, code écrit le 2026-07-04, compile, NON testé/buildé/validé.**
+  Voir `docs/notes/handoff-2026-07-04-st7-per-slot-specials.md` pour l'état exact.
+  - [x] ST-7a : `special[32]` + `freq_mode` par slot dans `InstrumentSettingsState` ; persistance `sound-settings-v2` format v3 (644 floats) + flag `needs_param_seed` pour migration
+  - [x] ST-7b : moteur — `voice_settings_for(slot, voice, …)` lit specials + algo par slot ; seed one-shot des params legacy dans `process()`
+  - [x] ST-7c : Sound Panel — widgets specials + Hz/Notes sur les atomics par slot (plus de ParamSetter)
+  - [x] ST-7d : menus plock/morph — défauts specials, Snapshot, morph, toggle Display par slot
+  - [x] ST-7e : ranges algo unifiés (`max_algo_index()`), renommés "Slot N Algo", fix ranges 0..0 crashogènes
+  - [ ] ST-7f : nettoyer 3 warnings `unused variable` (`params` ×1, `setter` ×2 dans ui.rs), tests unitaires persistance v3 + migration, `cargo test`, `build.ps1 -Install`, CHANGELOG, mise à jour `AGENTS.md` (invariant special_param() = migration only), validation S1 (Click Type indépendant lane 1 vs 5, saturation, Hz/Notes, algo sur slot ≠ 1, migration session ancienne)
+- [x] [ST-5] **Layout 4 lanes au démarrage** : résolu par décision produit 2026-07-04 — le défaut EST maintenant 4 lanes (BD/SD/HH/Tom, `modular_default_layout()`), migration anti-template supprimée. ⚠️ Songs pré-`track-layout-v1` s'ouvrent en 4 lanes (build 20260704-195335).
+- [x] [ST-8] **Règle UI zones stables** : la grille rend toujours 14 rangées (lanes actives + vides cliquables), rangée `+ Add Module` supprimée — plus aucune ligne conditionnelle qui décale les panneaux du bas (build 20260704-195335). Règle générale à respecter dans toute l'UI.
+- [x] [ST-6] **Revalidation S1 après fixes** : instances BD indépendantes confirmées par l'utilisateur (2026-07-04) ; reste à re-vérifier après le passage au défaut 4 lanes : activation de chaque lane vide, 14 pistes, Out 14 audible.
 
 ## Court terme (Stabilisation V1 — En cours)
 
@@ -451,7 +459,7 @@
   - Complexite : Faible
   - Correctif (build `20260623-120806`) : lors d'un clic normal, si le clic ne porte pas sur le groupe fusionné en cours d'édition, `finish_fusion_editing_for_ui` est appelé avant de traiter le toggle.
 
-- [ ] **[REPRENDRE ICI]** [92] **Valeurs du menu plock sound par defaut = valeurs globales de l'instrument** (P1, Donnees)
+- [ ] [92] **Valeurs du menu plock sound par defaut = valeurs globales de l'instrument** (P1, Donnees)
   - Constate : la frequence de BD8 (BassDrum808) est a 0 dans le plock au lieu de la valeur globale
   - Verifier que tous les instruments initialisent correctement les valeurs par defaut des plocks
   - Complexite : Faible
