@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026-07-04 — La pastille `+N` de la lane vide active le slot (build 20260704-174006)
+
+**Build:** `20260704-174006`
+**Validation:** `cargo test` OK (104 + 73 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige "quand je clique sur +14 rien ne se passe" (rapporté par test S1).**
+  - La lane vide affichait une pastille `+14` qui s'illuminait au survol mais n'était pas cliquable (`Sense::hover` seulement) — le seul bouton actif était la rangée `+ Add Module` en dessous.
+  - La pastille `+N` est maintenant cliquable (curseur main, tooltip "Activate this slot") et déclenche la même activation que `+ Add Module`.
+  - Logique d'activation factorisée dans `activate_next_free_slot()` (layout + reset des settings du slot + sélection).
+
+---
+
+## 2026-07-04 — Fix trigger : settings et plocks appliqués par slot (build 20260704-173043)
+
+**Build:** `20260704-173043`
+**Validation:** `cargo test` OK (104 + 73 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige "la freq de la lane 1 change celle de la lane 14" (rapporté par test S1).**
+  - `voice_settings_at_step()` lisait les settings standards (`sound_settings_state.instruments[...]`) et les plocks (`plock_state.get_settings(...)`) avec l'index de **voix** alors que ces stockages sont par **slot**.
+  - À chaque trigger, un slot dupliqué (ex : 2e Kick) se voyait réappliquer les settings ET les plocks du premier slot du même kind, écrasant le push par slot correct fait en début de bloc.
+  - Fix : `voice_settings_at_step(slot_idx, voice_idx, step)` — settings et plocks par slot, schéma/special params par voix. Trois appelants corrigés (séquenceur, MIDI thru, test triggers).
+- **Limitation restante (ST-7, connue) :** les special params (Click, Saturation, mode Hz/Notes) restent des paramètres nih-plug par voix legacy — physiquement partagés entre deux slots du même kind, dans l'UI comme dans le moteur.
+
+---
+
+## 2026-07-04 — Stabilisation modular grid 14 slots (build 20260704-165252)
+
+**Build:** `20260704-165252`
+**Validation:** `cargo check` OK, `cargo test` OK (104 + 73 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige le crash Studio One à l'ajout de la 14e piste (ST-1).**
+  - `EditorUIState.fusion_selection_start` était encore taillé à 13 (`DrumVoice::COUNT`) mais indexé par slot (0..14) dans la boucle de grille → index out of bounds dès le rendu de la lane 14. Passé à `MAX_TRACKS`.
+- **Corrige deux crashs latents des menus plock sur la lane 14 (ST-2).**
+  - `INSTRUMENTS[slot_idx]` (13 entrées) dans les menus Plock / Morph / Seq Plock, et `DrumVoice::from_index(slot).expect(...)` dans le dropdown Algo.
+  - Les menus résolvent maintenant le schéma via l'index de voix dérivé du kind du slot (`schema_voice_idx`), le stockage plock reste indexé par slot.
+- **Corrige le son défectueux d'un slot ajouté (ST-3).**
+  - `SoundSettingsState::reset_slot_to_defaults()` n'était jamais appelé : un slot activé via `+ Add Module` gardait les réglages d'init de la voix legacy de même index (ex : un Kick au slot 5 jouait avec des réglages de Tom).
+  - Reset aux défauts du kind à l'activation et au changement d'instrument dans l'onglet TRK.
+- **Sépare index de slot et index de voix dans le Sound Editor (ST-4).**
+  - `selected_instrument` est désormais un index de slot (0..14) ; le schéma de paramètres (registre, special params, filter label, checks Kick/B8, liste d'algos) est dérivé du kind du slot.
+  - Changer le type dans l'onglet TRK ne fait plus sauter la sélection sur un autre slot (= le "impossible de choisir le type" du test S1).
+  - Les onglets du Sound Editor listent les slots actifs (labels par kind, tooltip avec numéro de slot) au lieu des 13 voix fixes.
+- **Aligne la longueur de lane UI sur le moteur audio.**
+  - `effective_lane_length_for_ui` utilise l'index de slot (comme `raw_lengths` / `lane_length_locks` côté audio) au lieu de l'index de voix.
+- Reste à valider dans Studio One (ST-6) : ajout jusqu'à 14 pistes, clic droit lane 14, changement de type via TRK, son correct, Out 14 audible. Le layout "4 lanes par défaut" observé reste à éclaircir (ST-5).
+
+---
+
 ## 2026-07-02 — MG-7a.2: activate 14th track slot + Track tab (build 20260702-215053)
 
 **Build:** `20260702-215053`
