@@ -1,10 +1,15 @@
 use nih_plug::params::persist::PersistentField;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-/// Per-voice persistent sound settings. The amplitude envelope is bi-stage
+/// Number of per-slot special parameter values (matches `VoiceSettings::special`).
+pub const SPECIAL_SLOT_COUNT: usize = 32;
+
+/// Per-SLOT persistent sound settings. The amplitude envelope is bi-stage
 /// (decay + release), each stage having an independent time and curve, plus
 /// a hold phase between attack and decay (snare/HH use it for sustain).
+/// Special params (click, saturation, ...) and the bass-drum Hz/Notes display
+/// mode also live here so two slots of the same kind are fully independent.
 pub struct InstrumentSettingsState {
     pub frequency: AtomicU32,
     pub decay: AtomicU32,
@@ -19,11 +24,18 @@ pub struct InstrumentSettingsState {
     pub filter_env_decay: AtomicU32,
     pub analog: AtomicU32,
     pub stereo: AtomicU32,
+    /// Special parameter values indexed by the registry's `special_index`.
+    pub special: [AtomicU32; SPECIAL_SLOT_COUNT],
+    /// Bass-drum frequency display mode (0.0 = Hz, 1.0 = Notes).
+    pub freq_mode: AtomicU32,
 }
 
-/// Number of f32 values serialized per instrument in the persisted state.
+/// Number of f32 values serialized per instrument in the persisted state
+/// (standard fields only — the v3 format appends specials + freq_mode).
 pub const FIELDS_PER_INSTRUMENT: usize = crate::instrument_registry::SOUND_SETTINGS_FIELD_COUNT;
 const LEGACY_FIELDS_PER_INSTRUMENT: usize = 12;
+/// v3 stride: standards + specials + freq_mode.
+pub const FIELDS_PER_INSTRUMENT_V3: usize = FIELDS_PER_INSTRUMENT + SPECIAL_SLOT_COUNT + 1;
 
 impl InstrumentSettingsState {
     pub fn new(
@@ -55,7 +67,46 @@ impl InstrumentSettingsState {
             filter_env_decay: AtomicU32::new(filter_env_decay.to_bits()),
             analog: AtomicU32::new(analog.to_bits()),
             stereo: AtomicU32::new(stereo.to_bits()),
+            special: std::array::from_fn(|_| AtomicU32::new(0.0f32.to_bits())),
+            freq_mode: AtomicU32::new(0.0f32.to_bits()),
         }
+    }
+
+    pub fn special_value(&self, index: usize) -> f32 {
+        if index >= SPECIAL_SLOT_COUNT {
+            return 0.0;
+        }
+        f32::from_bits(self.special[index].load(Ordering::Relaxed))
+    }
+
+    pub fn set_special(&self, index: usize, value: f32) {
+        if index < SPECIAL_SLOT_COUNT {
+            self.special[index].store(value.to_bits(), Ordering::Relaxed);
+        }
+    }
+
+    pub fn load_specials(&self) -> [f32; SPECIAL_SLOT_COUNT] {
+        std::array::from_fn(|i| f32::from_bits(self.special[i].load(Ordering::Relaxed)))
+    }
+
+    pub fn freq_mode(&self) -> bool {
+        f32::from_bits(self.freq_mode.load(Ordering::Relaxed)) >= 0.5
+    }
+
+    pub fn set_freq_mode(&self, in_notes: bool) {
+        self.freq_mode
+            .store(if in_notes { 1.0f32 } else { 0.0f32 }.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Reset the special values to the registry defaults of the given voice.
+    fn reset_specials_for_voice(&self, voice_idx: usize) {
+        for slot in self.special.iter() {
+            slot.store(0.0f32.to_bits(), Ordering::Relaxed);
+        }
+        for def in crate::instrument_registry::special_params(voice_idx) {
+            self.set_special(def.special_index, def.default);
+        }
+        self.set_freq_mode(false);
     }
 
     pub fn load(
@@ -134,26 +185,36 @@ const MAX_TRACKS: usize = crate::track::MAX_TRACKS;
 pub struct SoundSettingsState {
     pub instruments: [InstrumentSettingsState; MAX_TRACKS],
     pub version: AtomicU64,
+    /// True when the persisted state predates per-slot specials: the plugin
+    /// must seed `special`/`freq_mode` once from the legacy per-voice params.
+    pub needs_param_seed: AtomicBool,
 }
 
 impl SoundSettingsState {
     pub fn new(layout: &crate::track::TrackLayoutState) -> Arc<Self> {
-        let defaults_for_slot = |i: usize| -> &'static [f32; FIELDS_PER_INSTRUMENT] {
+        let voice_for_slot = |i: usize| -> usize {
             if i < MAX_TRACKS && layout.slots[i].active {
-                &layout.slots[i].kind.instrument_def().sound_settings_default
+                layout.slots[i].kind.drum_voice_index()
             } else if i < crate::synthesis::DrumVoice::COUNT {
-                &crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
+                i
             } else {
-                &crate::instrument_registry::INSTRUMENTS[0].sound_settings_default
+                0
             }
         };
 
+        let instruments: [InstrumentSettingsState; MAX_TRACKS] = std::array::from_fn(|i| {
+            let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] =
+                crate::instrument_registry::INSTRUMENTS[voice_for_slot(i)].sound_settings_default;
+            InstrumentSettingsState::new(f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s)
+        });
+        for (i, inst) in instruments.iter().enumerate() {
+            inst.reset_specials_for_voice(voice_for_slot(i));
+        }
+
         Arc::new(Self {
-            instruments: std::array::from_fn(|i| {
-                let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] = *defaults_for_slot(i);
-                InstrumentSettingsState::new(f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s)
-            }),
+            instruments,
             version: AtomicU64::new(0),
+            needs_param_seed: AtomicBool::new(false),
         })
     }
 
@@ -164,6 +225,7 @@ impl SoundSettingsState {
         let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] =
             kind.instrument_def().sound_settings_default;
         self.instruments[slot].store(f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s);
+        self.instruments[slot].reset_specials_for_voice(kind.drum_voice_index());
         self.bump_version();
     }
 
@@ -172,28 +234,43 @@ impl SoundSettingsState {
     }
 
     pub fn read_all(&self) -> Vec<f32> {
-        let mut result = vec![0.0f32; self.instruments.len() * FIELDS_PER_INSTRUMENT];
-        for (i, inst) in self.instruments.iter().enumerate() {
+        let mut result = Vec::with_capacity(self.instruments.len() * FIELDS_PER_INSTRUMENT_V3);
+        for inst in self.instruments.iter() {
             let (f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s) = inst.load();
-            let base = i * FIELDS_PER_INSTRUMENT;
-            result[base] = f;
-            result[base + 1] = d;
-            result[base + 2] = v;
-            result[base + 3] = fl;
-            result[base + 4] = at;
-            result[base + 5] = r;
-            result[base + 6] = dc;
-            result[base + 7] = rc;
-            result[base + 8] = h;
-            result[base + 9] = fea;
-            result[base + 10] = fed;
-            result[base + 11] = a;
-            result[base + 12] = s;
+            result.extend_from_slice(&[f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s]);
+            result.extend_from_slice(&inst.load_specials());
+            result.push(if inst.freq_mode() { 1.0 } else { 0.0 });
         }
         result
     }
 
     pub fn write_all(&self, values: &[f32]) {
+        // Current v3 format: standards + specials + freq_mode, per slot.
+        let v3_len = MAX_TRACKS * FIELDS_PER_INSTRUMENT_V3;
+        if values.len() == v3_len {
+            for (i, inst) in self.instruments.iter().enumerate() {
+                let base = i * FIELDS_PER_INSTRUMENT_V3;
+                let v = &values[base..base + FIELDS_PER_INSTRUMENT];
+                inst.store(
+                    v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11],
+                    v[12],
+                );
+                for k in 0..SPECIAL_SLOT_COUNT {
+                    inst.set_special(k, values[base + FIELDS_PER_INSTRUMENT + k]);
+                }
+                inst.set_freq_mode(
+                    values[base + FIELDS_PER_INSTRUMENT + SPECIAL_SLOT_COUNT] >= 0.5,
+                );
+            }
+            self.needs_param_seed.store(false, Ordering::Release);
+            self.bump_version();
+            return;
+        }
+
+        // Legacy formats carry standards only: the specials must be seeded once
+        // from the legacy per-voice nih-plug params after the state restore.
+        self.needs_param_seed.store(true, Ordering::Release);
+
         let legacy_12_len = crate::synthesis::DrumVoice::COUNT * LEGACY_FIELDS_PER_INSTRUMENT;
         let legacy_13_len = crate::synthesis::DrumVoice::COUNT * FIELDS_PER_INSTRUMENT;
         let current_len = MAX_TRACKS * FIELDS_PER_INSTRUMENT;

@@ -653,6 +653,10 @@ impl Default for DrumFlashParams {
         let default_pattern = Pattern::rock_pattern();
         let _default_masks = default_pattern.step_masks();
         let pattern_state = PersistentPattern::new(&default_pattern);
+        let algo_range = IntRange::Linear {
+            min: 0,
+            max: crate::instrument_registry::max_algo_index(),
+        };
 
         Self {
             editor_state: EguiState::from_size(1480, 900),
@@ -1155,27 +1159,25 @@ impl Default for DrumFlashParams {
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             ),
 
-            algo_kick: IntParam::new("Kick Algo", 0, IntRange::Linear { min: 0, max: 2 }),
-            algo_snare: IntParam::new("Snare Algo", 0, IntRange::Linear { min: 0, max: 2 }),
-            algo_hihat: IntParam::new("HiHat Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_open_hh: IntParam::new("Open HH Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_tom1: IntParam::new("Tom1 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_tom2: IntParam::new("Tom2 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_tom3: IntParam::new("Tom3 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_clap: IntParam::new("Clap Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_ride: IntParam::new("Ride Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_cymbal: IntParam::new("Cymbal Algo", 0, IntRange::Linear { min: 0, max: 0 }),
-            // max=1 (not 0) even though there is only one algo today — nih-plug normalizes
-            // params as (value - min) / (max - min), which divides by zero when min==max
-            // and crashes the host at instantiation.
-            algo_snare606: IntParam::new("Snare 606 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_bassdrum808: IntParam::new(
-                "808 Kick Algo",
-                0,
-                IntRange::Linear { min: 0, max: 1 },
-            ),
-            algo_perc1: IntParam::new("Perc1 Algo", 0, IntRange::Linear { min: 0, max: 1 }),
-            algo_s13: IntParam::new("Slot 13 Algo", 0, IntRange::Linear { min: 0, max: 0 }),
+            // Algo params are positional PER SLOT (any kind can live on any slot),
+            // so every param shares the widest range of the registry; the engine
+            // and UI clamp to the current kind's algo count. A shared max also
+            // avoids the IntRange { min: 0, max: 0 } division-by-zero crash in
+            // nih-plug normalization (see bug [42]).
+            algo_kick: IntParam::new("Slot 1 Algo", 0, algo_range),
+            algo_snare: IntParam::new("Slot 2 Algo", 0, algo_range),
+            algo_hihat: IntParam::new("Slot 3 Algo", 0, algo_range),
+            algo_open_hh: IntParam::new("Slot 4 Algo", 0, algo_range),
+            algo_tom1: IntParam::new("Slot 5 Algo", 0, algo_range),
+            algo_tom2: IntParam::new("Slot 6 Algo", 0, algo_range),
+            algo_tom3: IntParam::new("Slot 7 Algo", 0, algo_range),
+            algo_clap: IntParam::new("Slot 8 Algo", 0, algo_range),
+            algo_ride: IntParam::new("Slot 9 Algo", 0, algo_range),
+            algo_cymbal: IntParam::new("Slot 10 Algo", 0, algo_range),
+            algo_snare606: IntParam::new("Slot 11 Algo", 0, algo_range),
+            algo_bassdrum808: IntParam::new("Slot 12 Algo", 0, algo_range),
+            algo_perc1: IntParam::new("Slot 13 Algo", 0, algo_range),
+            algo_s13: IntParam::new("Slot 14 Algo", 0, algo_range),
 
             freq_mode_kick: BoolParam::new("Kick Freq in Notes", false),
             freq_mode_bassdrum808: BoolParam::new("808 Kick Freq in Notes", false),
@@ -1808,6 +1810,7 @@ impl DrumFlashVst {
     /// Build VoiceSettings including the correct special params for each instrument.
     fn voice_settings_for(
         &self,
+        slot_idx: usize,
         voice_idx: usize,
         freq: f32,
         decay: f32,
@@ -1823,12 +1826,14 @@ impl DrumFlashVst {
         analog: f32,
         stereo: f32,
     ) -> synthesis::VoiceSettings {
-        let mut special = [0.0f32; 32];
-        for sp_def in crate::instrument_registry::INSTRUMENTS[voice_idx].special_params {
-            if let Some(param) = self.params.special_param(voice_idx, sp_def.special_index) {
-                special[sp_def.special_index] = param.value();
-            }
-        }
+        // Specials live per SLOT (two slots of the same kind are independent).
+        let special = self.sound_settings_state.instruments[slot_idx].load_specials();
+        // Algo params are positional per slot; clamp to the kind's algo count
+        // because every param now shares the widest range.
+        let algo_count = crate::instrument_registry::INSTRUMENTS[voice_idx]
+            .algo_count
+            .max(1) as u8;
+        let algo = (self.params.algos()[slot_idx].value().max(0) as u8).min(algo_count - 1);
         synthesis::VoiceSettings {
             frequency: freq,
             decay,
@@ -1843,32 +1848,14 @@ impl DrumFlashVst {
             filter_env_decay,
             analog,
             stereo,
-            algo: match voice_idx {
-                0 => self.params.algo_kick.value() as u8,
-                1 => self.params.algo_snare.value() as u8,
-                2 => self.params.algo_hihat.value() as u8,
-                3 => self.params.algo_open_hh.value() as u8,
-                4 => self.params.algo_tom1.value() as u8,
-                5 => self.params.algo_tom2.value() as u8,
-                6 => self.params.algo_tom3.value() as u8,
-                7 => self.params.algo_clap.value() as u8,
-                8 => self.params.algo_ride.value() as u8,
-                9 => self.params.algo_cymbal.value() as u8,
-                10 => self.params.algo_snare606.value() as u8,
-                11 => self.params.algo_bassdrum808.value() as u8,
-                12 => self.params.algo_perc1.value() as u8,
-                _ => 0,
-            },
+            algo,
             special,
         }
     }
 
     /// Build the final VoiceSettings for a slot at the current sequencer step,
     /// merging global settings with any per-step plock override.
-    ///
-    /// Standard settings and plocks are stored PER SLOT; only the special
-    /// params inside `voice_settings_for` are still per legacy voice (shared
-    /// between slots of the same kind — see TODO ST-7).
+    /// Standard settings, specials and plocks are all stored PER SLOT.
     fn voice_settings_at_step(
         &self,
         slot_idx: usize,
@@ -1879,8 +1866,8 @@ impl DrumFlashVst {
         let (freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed, analog, stereo) =
             inst.load();
         let global = self.voice_settings_for(
-            voice_idx, freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed, analog,
-            stereo,
+            slot_idx, voice_idx, freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed,
+            analog, stereo,
         );
         self.params
             .plock_state
@@ -2371,10 +2358,43 @@ impl Plugin for DrumFlashVst {
 
         // Propagate synthesis algorithms (synthesizer is indexed by slot).
         for slot_idx in 0..crate::track::MAX_TRACKS {
-            if slot_voices[slot_idx].is_some() {
-                self.synthesizer
-                    .set_algo(slot_idx, self.params.algos()[slot_idx].value() as u8);
+            if let Some(voice_idx) = slot_voices[slot_idx] {
+                let algo_count = crate::instrument_registry::INSTRUMENTS[voice_idx]
+                    .algo_count
+                    .max(1) as u8;
+                let algo =
+                    (self.params.algos()[slot_idx].value().max(0) as u8).min(algo_count - 1);
+                self.synthesizer.set_algo(slot_idx, algo);
             }
+        }
+
+        // One-shot migration: sessions saved before per-slot specials carried
+        // them as per-voice nih-plug params — seed the per-slot storage from
+        // those params (atomic stores only, RT-safe).
+        if self
+            .sound_settings_state
+            .needs_param_seed
+            .swap(false, Ordering::AcqRel)
+        {
+            for slot_idx in 0..crate::track::MAX_TRACKS {
+                let Some(voice_idx) = slot_voices[slot_idx] else {
+                    continue;
+                };
+                let inst = &self.sound_settings_state.instruments[slot_idx];
+                for sp_def in crate::instrument_registry::INSTRUMENTS[voice_idx].special_params {
+                    if let Some(param) = self.params.special_param(voice_idx, sp_def.special_index)
+                    {
+                        inst.set_special(sp_def.special_index, param.value());
+                    }
+                }
+                let in_notes = match voice_idx {
+                    0 => self.params.freq_mode_kick.value(),
+                    11 => self.params.freq_mode_bassdrum808.value(),
+                    _ => false,
+                };
+                inst.set_freq_mode(in_notes);
+            }
+            self.sound_settings_state.bump_version();
         }
 
         // Update global sound settings once per buffer, BEFORE triggers.
@@ -2409,6 +2429,7 @@ impl Plugin for DrumFlashVst {
                 self.synthesizer.set_voice_settings(
                     slot_idx,
                     self.voice_settings_for(
+                        slot_idx,
                         voice_idx,
                         freq,
                         decay,
