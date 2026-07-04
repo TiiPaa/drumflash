@@ -447,8 +447,8 @@ struct EditorUIState {
     /// True when the user clicked "Clr" once and needs to confirm.
     clear_confirm_mode: bool,
     // Step Fusion state
-    /// Start cell of a fusion selection (Shift+click), per instrument.
-    fusion_selection_start: [Option<usize>; DrumVoice::COUNT],
+    /// Start cell of a fusion selection (Shift+click), per track slot.
+    fusion_selection_start: [Option<usize>; crate::track::MAX_TRACKS],
     /// Currently editing fusion group: (instrument, group_index).
     fusion_editing: Option<(usize, usize)>,
     /// True when a fusion group just entered edit mode this frame; requests focus on the step-count field.
@@ -462,7 +462,9 @@ struct EditorUIState {
 fn select_legacy_track(state: &mut EditorUIState, slot_idx: usize) {
     let slot_idx = slot_idx.min(crate::track::MAX_TRACKS - 1);
     state.selected_track_slot = slot_idx;
-    state.selected_instrument = slot_idx.min(DrumVoice::COUNT - 1);
+    // `selected_instrument` holds the SLOT index (0..MAX_TRACKS); the voice
+    // schema for registry lookups is derived from the slot's kind.
+    state.selected_instrument = slot_idx;
 }
 
 fn visible_lane_count(params: &DrumFlashParams) -> usize {
@@ -477,10 +479,19 @@ fn voice_idx_for_slot(params: &DrumFlashParams, slot_idx: usize) -> Option<usize
         .map(|k| k.drum_voice_index())
 }
 
-fn effective_lane_length_for_ui(params: &DrumFlashParams, voice_idx: usize, master_length: usize) -> usize {
+/// Voice index used for registry/schema lookups (INSTRUMENTS, special_param, ...)
+/// for a slot. Falls back to Kick's schema for inactive/unknown slots so the UI
+/// never indexes past `DrumVoice::COUNT`.
+fn schema_voice_idx(params: &DrumFlashParams, slot_idx: usize) -> usize {
+    voice_idx_for_slot(params, slot_idx).unwrap_or(0)
+}
+
+fn effective_lane_length_for_ui(params: &DrumFlashParams, slot_idx: usize, master_length: usize) -> usize {
+    // Lane locks and length params are slot-indexed, matching the audio engine
+    // (`raw_lengths` / `lane_length_locks.is_locked(slot)` in lib.rs).
     let master_length = master_length.clamp(1, 64);
-    if params.lane_length_locks.is_locked(voice_idx) {
-        params.lengths()[voice_idx].value().clamp(1, 64) as usize
+    if params.lane_length_locks.is_locked(slot_idx) {
+        params.lengths()[slot_idx].value().clamp(1, 64) as usize
     } else {
         master_length
     }
@@ -1684,7 +1695,7 @@ fn draw_grid_v2(
                 };
                 let row = &mixer_rows[slot_idx];
                 let fusions = pattern.load_fusions(slot_idx);
-                let lane_length = effective_lane_length_for_ui(params, inst, master_length);
+                let lane_length = effective_lane_length_for_ui(params, slot_idx, master_length);
                 let lane_play_step = current_steps[slot_idx].load(Ordering::Relaxed) as usize;
                 draw_legacy_slot_lane_v2(
                     ui,
@@ -1718,7 +1729,7 @@ fn draw_grid_v2(
             }
 
             if visible_lane_count < crate::track::MAX_TRACKS {
-                draw_empty_slot_lane_v2(
+                if draw_empty_slot_lane_v2(
                     ui,
                     visible_lane_count,
                     page_offset,
@@ -1729,8 +1740,10 @@ fn draw_grid_v2(
                     extra_w,
                     gap,
                     cell_w,
-                );
-                draw_add_module_row_v2(ui, row_w, visible_lane_count, params, state);
+                ) {
+                    activate_next_free_slot(params, sound_settings, state);
+                }
+                draw_add_module_row_v2(ui, row_w, visible_lane_count, params, sound_settings, state);
             }
         });
 
@@ -2054,6 +2067,7 @@ fn draw_legacy_slot_lane_v2(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Returns true when the `+N` chip was clicked (activate the slot).
 fn draw_empty_slot_lane_v2(
     ui: &mut egui::Ui,
     slot_idx: usize,
@@ -2065,14 +2079,15 @@ fn draw_empty_slot_lane_v2(
     extra_w: f32,
     gap: f32,
     cell_w: f32,
-) {
+) -> bool {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.set_height(LANE_H);
 
         draw_seq_grip_v2(ui, grip_w, LANE_H);
-        draw_empty_lane_name_v2(ui, name_w, slot_idx + 1)
-            .on_hover_text("Empty modular slot");
+        let add_clicked = draw_empty_lane_name_v2(ui, name_w, slot_idx + 1)
+            .on_hover_text("Activate this slot (default: Kick)")
+            .clicked();
         draw_empty_lane_chip_v2(ui, vol_w, "Empty");
         draw_empty_lane_chip_v2(ui, mst_w, "");
 
@@ -2113,11 +2128,13 @@ fn draw_empty_slot_lane_v2(
         draw_empty_lane_chip_v2(ui, extra_w, "--");
         draw_empty_lane_chip_v2(ui, extra_w, "--");
         draw_empty_lane_chip_v2(ui, extra_w, "--");
-    });
+        add_clicked
+    })
+    .inner
 }
 
 fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
     let fill = if response.hovered() { P_HOVER } else { PANEL2 };
     ui.painter().rect_filled(rect, RADIUS_CTL, fill);
     ui.painter().rect_stroke(
@@ -2133,7 +2150,7 @@ fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) ->
         f_mono_sb(11.0),
         FAINT,
     );
-    response
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::Response {
@@ -2157,25 +2174,38 @@ fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::
     response
 }
 
+/// Activate the first inactive slot with the default Kick module.
+/// Shared by the `+ Add Module` row and the empty-lane `+N` chip.
+fn activate_next_free_slot(
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
+    state: &mut EditorUIState,
+) {
+    let mut new_state =
+        PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+    if let Some(slot) = new_state.first_inactive_slot() {
+        // Default new module: Kick (user can reassign later in the Track tab).
+        new_state.slots[slot] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+        PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+        // The slot's settings still hold whatever they were initialized with
+        // (legacy defaults of the same index) — align them with the new kind.
+        sound_settings.reset_slot_to_defaults(slot, TrackInstrumentKind::Kick);
+        select_legacy_track(state, slot);
+    }
+}
+
 fn draw_add_module_row_v2(
     ui: &mut egui::Ui,
     row_w: f32,
     first_empty_slot: usize,
     params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
     state: &mut EditorUIState,
 ) {
     ui.add_space(5.0);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(row_w, 30.0), egui::Sense::click());
     if response.clicked() {
-        let mut new_state = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| {
-            s.clone()
-        });
-        if let Some(slot) = new_state.first_inactive_slot() {
-            // Default new module: Kick (user can reassign later in the Track tab).
-            new_state.slots[slot] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
-            PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
-            select_legacy_track(state, slot);
-        }
+        activate_next_free_slot(params, sound_settings, state);
     }
     let fill = if response.hovered() { P_HOVER } else { BG };
     ui.painter().rect_filled(rect, RADIUS_CTL, fill);
@@ -2218,7 +2248,7 @@ fn draw_add_module_row_v2(
         f_mono_med(9.5),
         FAINT,
     );
-    response.on_hover_text("Visual placeholder only in this checkpoint. Activation stays disabled to preserve Studio One compatibility.");
+    response.on_hover_text("Activate the next free slot (default: Kick). Change its instrument in the TRK tab.");
 }
 
 fn draw_page_popup_if_any(
@@ -3217,6 +3247,7 @@ fn draw_editor_switch_row(ui: &mut egui::Ui, label: &str, value: &mut f32) -> eg
 fn draw_track_tab(
     ui: &mut egui::Ui,
     params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
     state: &mut EditorUIState,
 ) {
     let slot_idx = state.selected_track_slot;
@@ -3265,7 +3296,13 @@ fn draw_track_tab(
                     new_state.slots[slot_idx].name = label.to_string();
                     new_state.slots[slot_idx].midi_note = kind.default_midi_note();
                     PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
-                    state.selected_instrument = kind.drum_voice_index().min(DrumVoice::COUNT - 1);
+                    // New kind → new voice: align the slot's settings with the
+                    // new instrument's defaults (the audio thread reinitializes
+                    // the voice via last_slot_kinds detection).
+                    sound_settings.reset_slot_to_defaults(slot_idx, kind);
+                    // Keep the selection on this slot; the Sound tab schema
+                    // follows the slot's kind automatically.
+                    state.selected_instrument = slot_idx;
                 }
             }
         });
@@ -3351,8 +3388,13 @@ fn draw_sound_panel(
     setter: &ParamSetter,
     state: &mut EditorUIState,
 ) {
-    state.selected_instrument = state.selected_instrument.min(DrumVoice::COUNT - 1);
+    state.selected_instrument = state.selected_instrument.min(crate::track::MAX_TRACKS - 1);
     state.selected_track_slot = state.selected_instrument;
+    // Slot index drives per-slot state (sound_settings, algos, mutes, ...);
+    // the voice index drives registry/schema lookups (INSTRUMENTS, special_param).
+    let voice_idx = schema_voice_idx(params, state.selected_instrument);
+    let layout_snapshot =
+        PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
 
     ui.set_width(ui.available_width());
 
@@ -3376,9 +3418,14 @@ fn draw_sound_panel(
             ui.add_space(2.0);
             let header_name = match state.sound_editor_tab {
                 SoundEditorTab::Sound => {
-                    crate::instrument_registry::INSTRUMENTS[state.selected_instrument].name
+                    let slot_name = &layout_snapshot.slots[state.selected_instrument].name;
+                    if slot_name.is_empty() {
+                        crate::instrument_registry::INSTRUMENTS[voice_idx].name.to_string()
+                    } else {
+                        slot_name.clone()
+                    }
                 }
-                SoundEditorTab::Track => "Track Settings",
+                SoundEditorTab::Track => "Track Settings".to_string(),
             };
             ui.label(
                 RichText::new(header_name)
@@ -3401,14 +3448,17 @@ fn draw_sound_panel(
     ui.allocate_ui_at_rect(tabs_rect.shrink2(Vec2::new(12.0, 9.0)), |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-            let instrument_count = crate::instrument_registry::INSTRUMENTS.len();
-            let tab_count = instrument_count + 1; // + Track
+            // One tab per ACTIVE slot (not per legacy voice): labels follow each
+            // slot's kind, so duplicate kinds show duplicate labels.
+            let active_slots: Vec<usize> = layout_snapshot.active_slot_indices().collect();
+            let tab_count = active_slots.len() + 1; // + Track
             let tab_w = ((tabs_rect.width() - 24.0 - GAP_TIGHT * (tab_count - 1) as f32)
                 / tab_count as f32)
                 .floor();
-            for (i, inst_def) in crate::instrument_registry::INSTRUMENTS.iter().enumerate() {
+            for &slot_idx in &active_slots {
+                let inst_def = layout_snapshot.slots[slot_idx].kind.instrument_def();
                 let selected = state.sound_editor_tab == SoundEditorTab::Sound
-                    && state.selected_instrument == i;
+                    && state.selected_instrument == slot_idx;
                 let btn = egui::Button::new(
                     RichText::new(inst_def.label)
                         .monospace()
@@ -3419,9 +3469,13 @@ fn draw_sound_panel(
                 .fill(if selected { BLUE } else { PANEL2 })
                 .stroke(egui::Stroke::new(1.0, if selected { BLUE } else { LINE2 }))
                 .corner_radius(6.0);
-                if ui.add(btn).on_hover_text(inst_def.full_name).clicked() {
+                if ui
+                    .add(btn)
+                    .on_hover_text(format!("Slot {} - {}", slot_idx + 1, inst_def.full_name))
+                    .clicked()
+                {
                     state.sound_editor_tab = SoundEditorTab::Sound;
-                    select_legacy_track(state, i);
+                    select_legacy_track(state, slot_idx);
                 }
             }
             // Track tab
@@ -3484,12 +3538,11 @@ fn draw_sound_panel(
                 ui.label("Name:");
                 ui.text_edit_singleline(&mut state.dump_name_input);
                 if ui.button("Dump").clicked() {
-                    let instrument =
-                        &crate::instrument_registry::INSTRUMENTS[state.selected_instrument];
+                    let instrument = &crate::instrument_registry::INSTRUMENTS[voice_idx];
                     let mut specials = Vec::new();
                     for def in instrument.special_params {
                         if let Some(param) =
-                            params.special_param(state.selected_instrument, def.special_index)
+                            params.special_param(voice_idx, def.special_index)
                         {
                             specials.push(param.value());
                         } else {
@@ -3498,7 +3551,7 @@ fn draw_sound_panel(
                     }
                     let algo = params.algos()[state.selected_instrument].value() as u8;
                     // Skip Analog for instruments that don't use it
-                    let standards = if matches!(state.selected_instrument, 2 | 3 | 7 | 8 | 10 | 12)
+                    let standards = if matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12)
                     {
                         // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap - use 0.0 as placeholder
                         [
@@ -3555,9 +3608,11 @@ fn draw_sound_panel(
                         ui.label(format!("{} - {}", info.instrument_label, info.name));
                         if ui.button("Load").clicked() {
                             if let Ok(dump) = preset_dumps::load_dump(&info.path) {
-                                let dump_inst = dump.instrument_idx.min(DrumVoice::COUNT - 1);
-                                select_legacy_track(state, dump_inst);
-                                let target_inst = &sound_settings.instruments[state.selected_instrument];
+                                let dump_slot =
+                                    dump.instrument_idx.min(crate::track::MAX_TRACKS - 1);
+                                select_legacy_track(state, dump_slot);
+                                let dump_voice = schema_voice_idx(params, dump_slot);
+                                let target_inst = &sound_settings.instruments[dump_slot];
                                 store_field(
                                     target_inst,
                                     crate::instrument_registry::StandardField::Freq,
@@ -3615,7 +3670,7 @@ fn draw_sound_panel(
                                 );
                                 // Skip Analog for instruments that don't use it
                                 let is_analog_fixed = matches!(
-                                    dump_inst,
+                                    dump_voice,
                                     2 | 3 | 7 | 8 | 10 | 12 // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap
                                 );
                                 if !is_analog_fixed {
@@ -3630,13 +3685,13 @@ fn draw_sound_panel(
                                     crate::instrument_registry::StandardField::Stereo,
                                     dump.standards[12],
                                 );
-                                let algo_param = params.algos()[dump_inst];
+                                let algo_param = params.algos()[dump_slot];
                                 setter.set_parameter(algo_param, dump.algo as i32);
                                 let inst_def =
-                                    &crate::instrument_registry::INSTRUMENTS[dump_inst];
+                                    &crate::instrument_registry::INSTRUMENTS[dump_voice];
                                 for (i, def) in inst_def.special_params.iter().enumerate() {
                                     if let Some(param) =
-                                        params.special_param(dump_inst, def.special_index)
+                                        params.special_param(dump_voice, def.special_index)
                                     {
                                         if i < dump.specials.len() {
                                             setter.set_parameter(param, dump.specials[i]);
@@ -3669,8 +3724,8 @@ fn draw_sound_panel(
             }
             ui.add(egui::Separator::default().spacing(6.0));
 
-            // Data-driven grouped Sound Panel
-            let instrument = &crate::instrument_registry::INSTRUMENTS[state.selected_instrument];
+            // Data-driven grouped Sound Panel (schema follows the slot's kind)
+            let instrument = &crate::instrument_registry::INSTRUMENTS[voice_idx];
             let standard_defs = instrument.standard_params;
             let special_defs = instrument.special_params;
 
@@ -3726,15 +3781,15 @@ fn draw_sound_panel(
                     }) {
                             ui.horizontal(|ui| {
                                 let label_text = if def.field == crate::instrument_registry::StandardField::FilterFreq {
-                                    let ft = crate::instrument_registry::filter_type_label(state.selected_instrument);
+                                    let ft = crate::instrument_registry::filter_type_label(voice_idx);
                                     format!("{} ({})", def.label, ft)
                                 } else {
                                     def.label.to_string()
                                 };
 
-                                let is_bass_drum = state.selected_instrument == 0 || state.selected_instrument == 11;
+                                let is_bass_drum = voice_idx == 0 || voice_idx == 11;
                                 let freq_in_notes = if is_bass_drum && def.field == crate::instrument_registry::StandardField::Freq {
-                                    let freq_mode_param = if state.selected_instrument == 0 {
+                                    let freq_mode_param = if voice_idx == 0 {
                                         &params.freq_mode_kick
                                     } else {
                                         &params.freq_mode_bassdrum808
@@ -3765,7 +3820,7 @@ fn draw_sound_panel(
                                             changed = true;
                                         }
                                         if let Some(new_mode) = row.mode_change {
-                                            let freq_mode_param = if state.selected_instrument == 0 {
+                                            let freq_mode_param = if voice_idx == 0 {
                                                 &params.freq_mode_kick
                                             } else {
                                                 &params.freq_mode_bassdrum808
@@ -3826,7 +3881,7 @@ fn draw_sound_panel(
 
                     // Special params for this family
                     for def in special_defs.iter().filter(|d| d.family == family) {
-                        if let Some(param) = params.special_param(state.selected_instrument, def.special_index) {
+                        if let Some(param) = params.special_param(voice_idx, def.special_index) {
                             ui.horizontal(|ui| {
                                 // Boolean toggle for on/off switches (min=0, max=1)
                                 if def.min == 0.0 && def.max == 1.0 && def.label.to_lowercase().contains("pre-filter") {
@@ -3881,9 +3936,9 @@ fn draw_sound_panel(
 
                     // Algorithm selector inside OSC family
                     if family == crate::instrument_registry::ParamFamily::Osc {
-                        if let Some(voice) = DrumVoice::from_index(state.selected_instrument) {
+                        if let Some(voice) = DrumVoice::from_index(voice_idx) {
                             let algos = synthesis::algos_for(voice);
-                            if algos.len() > 1 && state.selected_instrument != 3 {
+                            if algos.len() > 1 && voice_idx != 3 {
                                 let algo_param = params.algos()[state.selected_instrument];
                                 ui.horizontal(|ui| {
                                     editor_label(ui, "Algorithm");
@@ -3926,7 +3981,7 @@ fn draw_sound_panel(
             }
                     }
                         SoundEditorTab::Track => {
-                            draw_track_tab(ui, params, state);
+                            draw_track_tab(ui, params, sound_settings, state);
                         }
                     }
                 });
@@ -4143,7 +4198,7 @@ fn current_field_value_for_fusion(
             if field_index >= crate::plock::SPECIAL_FIELD_START {
                 let special_index = field_index - crate::plock::SPECIAL_FIELD_START;
                 params
-                    .special_param(instrument, special_index)
+                    .special_param(schema_voice_idx(params, instrument), special_index)
                     .map(|p| p.value())
                     .unwrap_or(0.0)
             } else {
@@ -4229,8 +4284,9 @@ fn draw_fusion_edit_box(
                             // Morph targets display
                             if group.morph_count > 0 {
                                 ui.label(RichText::new("Morph:").size(11.0));
-                                let morphable =
-                                    crate::instrument_registry::morphable_fields(instrument);
+                                let morphable = crate::instrument_registry::morphable_fields(
+                                    schema_voice_idx(params, instrument),
+                                );
                                 for t in &group.morph_targets[..group.morph_count as usize] {
                                     let name = morphable
                                         .iter()
@@ -4840,7 +4896,10 @@ fn draw_plock_menu(
     use crate::plock::{FIELD_COUNT, SPECIAL_FIELD_START};
 
     const ACCENT: Color32 = PL_LINK;
-    let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
+    // `instrument` is a SLOT index (plock storage is per slot); registry and
+    // special-param lookups go through the voice index of the slot's kind.
+    let voice_idx = schema_voice_idx(params, instrument);
+    let inst_def = &crate::instrument_registry::INSTRUMENTS[voice_idx];
     let title = format!("Plock {}", inst_def.label);
 
     plock_menu_frame(ui, ACCENT, |ui| {
@@ -4861,10 +4920,10 @@ fn draw_plock_menu(
             }
             if plock_menu_action_row(ui, "Snapshot Current Settings", ACCENT).clicked() {
                 let mut special = [0.0f32; 32];
-                for def in crate::instrument_registry::special_params(instrument) {
+                for def in crate::instrument_registry::special_params(voice_idx) {
                     if def.special_index < special.len() {
                         special[def.special_index] = params
-                            .special_param(instrument, def.special_index)
+                            .special_param(voice_idx, def.special_index)
                             .map(|param| param.value())
                             .unwrap_or(def.default);
                     }
@@ -5112,9 +5171,9 @@ fn draw_plock_menu(
 
         // ------ Algo ------
         {
-            let algo_count = crate::instrument_registry::algo_count(instrument);
+            let algo_count = crate::instrument_registry::algo_count(voice_idx);
             if algo_count > 1 {
-                let voice = DrumVoice::from_index(instrument).expect("valid instrument");
+                let voice = DrumVoice::from_index(voice_idx).expect("valid voice index");
                 let algos = synthesis::algos_for(voice);
                 let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
 
@@ -5156,7 +5215,7 @@ fn draw_plock_menu(
         }
 
         // ------ Special params ------
-        let special_defs = crate::instrument_registry::special_params(instrument);
+        let special_defs = crate::instrument_registry::special_params(voice_idx);
         for def in special_defs {
             if def.special_index >= 8 {
                 continue;
@@ -5166,7 +5225,7 @@ fn draw_plock_menu(
                 plock.values.get(instrument, step, field)
             } else {
                 params
-                    .special_param(instrument, def.special_index)
+                    .special_param(voice_idx, def.special_index)
                     .map(|p| p.value())
                     .unwrap_or(def.default)
             };
@@ -5240,7 +5299,9 @@ fn draw_fusion_morph_menu(
     use crate::plock::SPECIAL_FIELD_START;
 
     const ACCENT: Color32 = PL_LINK;
-    let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
+    // `instrument` is a SLOT index; schema lookups use the slot's voice index.
+    let voice_idx = schema_voice_idx(params, instrument);
+    let inst_def = &crate::instrument_registry::INSTRUMENTS[voice_idx];
     let title = format!("Morph {}", inst_def.label);
 
     let mut new_fusions = pattern.load_fusions(instrument);
@@ -5477,7 +5538,7 @@ fn draw_fusion_morph_menu(
         }
 
         // Special params
-        let special_defs = crate::instrument_registry::special_params(instrument);
+        let special_defs = crate::instrument_registry::special_params(voice_idx);
         for def in special_defs {
             if def.special_index >= 8 {
                 continue;
@@ -5601,7 +5662,9 @@ fn draw_plock_popup(
                                     let morph_active = group.morph_count > 0;
                                     let morph_label = if morph_active {
                                         let morphable =
-                                            crate::instrument_registry::morphable_fields(inst);
+                                            crate::instrument_registry::morphable_fields(
+                                                schema_voice_idx(params, inst),
+                                            );
                                         let names: Vec<&str> = group.morph_targets
                                             [..group.morph_count as usize]
                                             .iter()
@@ -5693,7 +5756,9 @@ fn draw_sequencer_plock_menu(
     use crate::plock::{SequencerStepParams, StepCondition};
 
     const ACCENT: Color32 = SEQPL;
-    let inst_def = &crate::instrument_registry::INSTRUMENTS[instrument];
+    // `instrument` is a SLOT index; the label comes from the slot's voice schema.
+    let inst_def =
+        &crate::instrument_registry::INSTRUMENTS[schema_voice_idx(params, instrument)];
     let title = format!("Seq Plock {}", inst_def.label);
 
     plock_menu_frame(ui, ACCENT, |ui| {
