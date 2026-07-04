@@ -1843,6 +1843,19 @@ pub fn algo_count(voice_idx: usize) -> usize {
     INSTRUMENTS[voice_idx].algo_count
 }
 
+/// Highest algo index across all instruments. Used as the shared range of the
+/// per-slot algo params (any kind can live on any slot); kept >= 1 because an
+/// IntRange with min == max crashes nih-plug normalization (bug [42]).
+pub fn max_algo_index() -> i32 {
+    INSTRUMENTS
+        .iter()
+        .map(|i| i.algo_count)
+        .max()
+        .unwrap_or(2)
+        .saturating_sub(1)
+        .max(1) as i32
+}
+
 pub fn special_params(voice_idx: usize) -> &'static [SpecialParamDef] {
     INSTRUMENTS[voice_idx].special_params
 }

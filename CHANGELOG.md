@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-04 — Défaut 4 lanes + grille à hauteur fixe 14 rangées (build 20260704-195335)
+
+**Build:** `20260704-195335`
+**Validation:** `cargo test` OK (103 + 72 tests — un test de migration supprimé volontairement), `build.ps1 -Install` OK
+
+### Changements
+- **Nouveau défaut : 4 lanes (BD/SD/HH/Tom)** — décision produit 2026-07-04.
+  - `TrackLayoutState::default_layout()` retourne le template modulaire 4 slots au lieu des 13 voix legacy.
+  - Suppression de la migration `is_buggy_four_track_template` (elle re-transformait tout layout 4 lanes exact en 13 lanes au rechargement — incompatible avec le nouveau défaut).
+  - ⚠️ Compat : les songs sauvegardées AVANT l'existence de `track-layout-v1` s'ouvriront avec 4 lanes (leurs patterns des autres instruments restent stockés mais inactifs). Les songs avec un layout sauvegardé conservent leur layout.
+- **Grille à hauteur constante : 14 rangées toujours rendues** (règle UI : aucune ligne conditionnelle qui décale les zones).
+  - Les slots inactifs sont rendus comme lanes vides stylées ; la pastille `+N` de chaque lane vide active CE slot (curseur main + tooltip).
+  - Suppression de la rangée `+ Add Module` (elle apparaissait/disparaissait et décalait les panneaux du bas).
+  - Les panneaux sous la grille (P-Lock mode, patterns, generator/song) ne bougent plus jamais.
+- Nettoyage : `visible_lane_count()` et `draw_add_module_row_v2()` supprimés ; activation factorisée dans `activate_slot(slot_idx)`.
+- **Limitation connue rendue plus visible par le défaut 4 lanes :** les générateurs de patterns supposent encore les rôles legacy par rangée (rangée 4 = OpenHH, etc.) alors que la lane 4 du template est un Tom — voir [MG-10].
+
+---
+
 ## 2026-07-04 — La pastille `+N` de la lane vide active le slot (build 20260704-174006)
 
 **Build:** `20260704-174006`

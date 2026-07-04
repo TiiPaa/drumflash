@@ -236,7 +236,11 @@ pub struct TrackLayoutState {
 
 impl TrackLayoutState {
     pub fn default_layout() -> Self {
-        Self::from_legacy_13()
+        // Product decision 2026-07-04: new instances start with the modular
+        // 4-lane template (BD/SD/HH/Tom). Legacy 13-voice sessions keep their
+        // saved `track-layout-v1`; sessions saved BEFORE that field existed
+        // will open with 4 lanes.
+        Self::modular_default_layout()
     }
 
     pub fn modular_default_layout() -> Self {
@@ -303,19 +307,6 @@ impl TrackLayoutState {
 
     pub fn first_inactive_slot(&self) -> Option<usize> {
         self.slots.iter().position(|s| !s.active)
-    }
-
-    pub fn is_buggy_four_track_template(&self) -> bool {
-        self.active_count() == 4
-            && self.slots[0].active
-            && self.slots[0].kind == TrackInstrumentKind::Kick
-            && self.slots[1].active
-            && self.slots[1].kind == TrackInstrumentKind::Snare
-            && self.slots[2].active
-            && self.slots[2].kind == TrackInstrumentKind::HiHat
-            && self.slots[3].active
-            && self.slots[3].kind == TrackInstrumentKind::Tom
-            && self.slots[4..].iter().all(|slot| !slot.active)
     }
 }
 
@@ -470,12 +461,7 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
     for PersistentTrackLayout
 {
     fn set(&self, new_value: TrackLayoutState) {
-        let value = if new_value.is_buggy_four_track_template() {
-            TrackLayoutState::from_legacy_13()
-        } else {
-            new_value
-        };
-        self.state.update_from_state(&value);
+        self.state.update_from_state(&new_value);
     }
 
     fn map<F, R>(&self, f: F) -> R
@@ -516,20 +502,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_layout_keeps_legacy_13_voices_until_modular_ui_is_ready() {
+    fn default_layout_is_modular_four_lanes() {
         let layout = TrackLayoutState::default_layout();
-        assert_eq!(layout.active_count(), 13);
+        assert_eq!(layout.active_count(), 4);
         assert_eq!(layout.slots[0].kind, TrackInstrumentKind::Kick);
         assert_eq!(layout.slots[1].kind, TrackInstrumentKind::Snare);
         assert_eq!(layout.slots[2].kind, TrackInstrumentKind::HiHat);
-        assert_eq!(layout.slots[4].kind, TrackInstrumentKind::Tom);
-        assert!(!layout.slots[13].active);
-    }
-
-    #[test]
-    fn four_track_template_is_detected_as_buggy_compat_state() {
-        let layout = TrackLayoutState::modular_default_layout();
-        assert!(layout.is_buggy_four_track_template());
+        assert_eq!(layout.slots[3].kind, TrackInstrumentKind::Tom);
+        assert!(layout.slots[4..].iter().all(|slot| !slot.active));
     }
 
     #[test]
@@ -547,11 +527,16 @@ mod tests {
 
     #[test]
     fn atomic_roundtrip() {
-        let layout = TrackLayoutState::default_layout();
+        let layout = TrackLayoutState::from_legacy_13();
         let atomic = AtomicTrackLayout::from_state(&layout);
         assert_eq!(atomic.kind_for_slot(0), Some(TrackInstrumentKind::Kick));
         assert_eq!(atomic.kind_for_slot(1), Some(TrackInstrumentKind::Snare));
         assert_eq!(atomic.kind_for_slot(12), Some(TrackInstrumentKind::Perc1));
         assert_eq!(atomic.kind_for_slot(13), None);
+
+        let modular = TrackLayoutState::default_layout();
+        let atomic = AtomicTrackLayout::from_state(&modular);
+        assert_eq!(atomic.kind_for_slot(3), Some(TrackInstrumentKind::Tom));
+        assert_eq!(atomic.kind_for_slot(4), None);
     }
 }

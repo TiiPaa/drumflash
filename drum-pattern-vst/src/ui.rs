@@ -467,10 +467,6 @@ fn select_legacy_track(state: &mut EditorUIState, slot_idx: usize) {
     state.selected_instrument = slot_idx;
 }
 
-fn visible_lane_count(params: &DrumFlashParams) -> usize {
-    PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.active_count())
-}
-
 fn voice_idx_for_slot(params: &DrumFlashParams, slot_idx: usize) -> Option<usize> {
     params
         .track_layout
@@ -1684,13 +1680,29 @@ fn draw_grid_v2(
                 std::array::from_fn(|i| params.pushes()[i]);
             let lengths: [&IntParam; crate::track::MAX_TRACKS] =
                 std::array::from_fn(|i| params.lengths()[i]);
-            let visible_lane_count = visible_lane_count(params);
             state.selected_track_slot = state
                 .selected_track_slot
-                .min(visible_lane_count.saturating_sub(1));
+                .min(crate::track::MAX_TRACKS - 1);
 
-            for slot_idx in 0..visible_lane_count {
+            // Always render the full 14 rows (active lanes + styled empty lanes)
+            // so the grid height is constant and the panels below never shift.
+            for slot_idx in 0..crate::track::MAX_TRACKS {
                 let Some(inst) = voice_idx_for_slot(params, slot_idx) else {
+                    // Inactive slot: the +N chip activates this specific slot.
+                    if draw_empty_slot_lane_v2(
+                        ui,
+                        slot_idx,
+                        page_offset,
+                        grip_w,
+                        name_w,
+                        vol_w,
+                        mst_w,
+                        extra_w,
+                        gap,
+                        cell_w,
+                    ) {
+                        activate_slot(params, sound_settings, state, slot_idx);
+                    }
                     continue;
                 };
                 let row = &mixer_rows[slot_idx];
@@ -1728,23 +1740,6 @@ fn draw_grid_v2(
                 );
             }
 
-            if visible_lane_count < crate::track::MAX_TRACKS {
-                if draw_empty_slot_lane_v2(
-                    ui,
-                    visible_lane_count,
-                    page_offset,
-                    grip_w,
-                    name_w,
-                    vol_w,
-                    STEP_H * 3.0 + GAP_TIGHT * 2.0,
-                    extra_w,
-                    gap,
-                    cell_w,
-                ) {
-                    activate_next_free_slot(params, sound_settings, state);
-                }
-                draw_add_module_row_v2(ui, row_w, visible_lane_count, params, sound_settings, state);
-            }
         });
 
     ui.horizontal(|ui| {
@@ -2174,81 +2169,29 @@ fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::
     response
 }
 
-/// Activate the first inactive slot with the default Kick module.
-/// Shared by the `+ Add Module` row and the empty-lane `+N` chip.
-fn activate_next_free_slot(
+/// Activate a specific inactive slot with the default Kick module.
+/// Triggered by the empty-lane `+N` chip.
+fn activate_slot(
     params: &DrumFlashParams,
     sound_settings: &SoundSettingsState,
     state: &mut EditorUIState,
+    slot_idx: usize,
 ) {
+    if slot_idx >= crate::track::MAX_TRACKS {
+        return;
+    }
     let mut new_state =
         PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
-    if let Some(slot) = new_state.first_inactive_slot() {
-        // Default new module: Kick (user can reassign later in the Track tab).
-        new_state.slots[slot] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
-        PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
-        // The slot's settings still hold whatever they were initialized with
-        // (legacy defaults of the same index) — align them with the new kind.
-        sound_settings.reset_slot_to_defaults(slot, TrackInstrumentKind::Kick);
-        select_legacy_track(state, slot);
+    if new_state.slots[slot_idx].active {
+        return;
     }
-}
-
-fn draw_add_module_row_v2(
-    ui: &mut egui::Ui,
-    row_w: f32,
-    first_empty_slot: usize,
-    params: &DrumFlashParams,
-    sound_settings: &SoundSettingsState,
-    state: &mut EditorUIState,
-) {
-    ui.add_space(5.0);
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(row_w, 30.0), egui::Sense::click());
-    if response.clicked() {
-        activate_next_free_slot(params, sound_settings, state);
-    }
-    let fill = if response.hovered() { P_HOVER } else { BG };
-    ui.painter().rect_filled(rect, RADIUS_CTL, fill);
-    ui.painter().rect_stroke(
-        rect,
-        RADIUS_CTL,
-        egui::Stroke::new(1.0, LINE2),
-        egui::StrokeKind::Inside,
-    );
-
-    let plus_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.left() + 18.0, rect.center().y),
-        Vec2::splat(18.0),
-    );
-    ui.painter().rect_filled(plus_rect, 5.0, PANEL2);
-    ui.painter().rect_stroke(
-        plus_rect,
-        5.0,
-        egui::Stroke::new(1.0, BLUE),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(
-        plus_rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "+",
-        f_mono_sb(12.0),
-        BLUE,
-    );
-    ui.painter().text(
-        egui::pos2(plus_rect.right() + 9.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        "Add Module",
-        f_sans_sb(11.0),
-        INK2,
-    );
-    ui.painter().text(
-        egui::pos2(rect.right() - 10.0, rect.center().y),
-        egui::Align2::RIGHT_CENTER,
-        format!("Slot {} Reserved", first_empty_slot + 1),
-        f_mono_med(9.5),
-        FAINT,
-    );
-    response.on_hover_text("Activate the next free slot (default: Kick). Change its instrument in the TRK tab.");
+    // Default new module: Kick (user can reassign later in the Track tab).
+    new_state.slots[slot_idx] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+    PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+    // The slot's settings still hold whatever they were initialized with
+    // (legacy defaults of the same index) — align them with the new kind.
+    sound_settings.reset_slot_to_defaults(slot_idx, TrackInstrumentKind::Kick);
+    select_legacy_track(state, slot_idx);
 }
 
 fn draw_page_popup_if_any(
@@ -3541,13 +3484,7 @@ fn draw_sound_panel(
                     let instrument = &crate::instrument_registry::INSTRUMENTS[voice_idx];
                     let mut specials = Vec::new();
                     for def in instrument.special_params {
-                        if let Some(param) =
-                            params.special_param(voice_idx, def.special_index)
-                        {
-                            specials.push(param.value());
-                        } else {
-                            specials.push(0.0);
-                        }
+                        specials.push(inst.special_value(def.special_index));
                     }
                     let algo = params.algos()[state.selected_instrument].value() as u8;
                     // Skip Analog for instruments that don't use it
@@ -3690,14 +3627,12 @@ fn draw_sound_panel(
                                 let inst_def =
                                     &crate::instrument_registry::INSTRUMENTS[dump_voice];
                                 for (i, def) in inst_def.special_params.iter().enumerate() {
-                                    if let Some(param) =
-                                        params.special_param(dump_voice, def.special_index)
-                                    {
-                                        if i < dump.specials.len() {
-                                            setter.set_parameter(param, dump.specials[i]);
-                                        }
+                                    if i < dump.specials.len() {
+                                        target_inst
+                                            .set_special(def.special_index, dump.specials[i]);
                                     }
                                 }
+                                sound_settings.bump_version();
                             }
                         }
                         if ui.button("Delete").clicked() {
@@ -3788,16 +3723,9 @@ fn draw_sound_panel(
                                 };
 
                                 let is_bass_drum = voice_idx == 0 || voice_idx == 11;
-                                let freq_in_notes = if is_bass_drum && def.field == crate::instrument_registry::StandardField::Freq {
-                                    let freq_mode_param = if voice_idx == 0 {
-                                        &params.freq_mode_kick
-                                    } else {
-                                        &params.freq_mode_bassdrum808
-                                    };
-                                    freq_mode_param.value()
-                                } else {
-                                    false
-                                };
+                                let freq_in_notes = is_bass_drum
+                                    && def.field == crate::instrument_registry::StandardField::Freq
+                                    && inst.freq_mode();
 
                                      match (&def.widget, def.field) {
                                  (crate::instrument_registry::ParamWidget::Slider { min, max, logarithmic, suffix }, field) => {
@@ -3820,12 +3748,8 @@ fn draw_sound_panel(
                                             changed = true;
                                         }
                                         if let Some(new_mode) = row.mode_change {
-                                            let freq_mode_param = if voice_idx == 0 {
-                                                &params.freq_mode_kick
-                                            } else {
-                                                &params.freq_mode_bassdrum808
-                                            };
-                                            setter.set_parameter(freq_mode_param, new_mode);
+                                            inst.set_freq_mode(new_mode);
+                                            sound_settings.bump_version();
                                             if new_mode {
                                                 let snapped_note = freq_to_note(freq * ratio).round();
                                                 freq = note_to_freq(snapped_note) / ratio;
@@ -3879,59 +3803,64 @@ fn draw_sound_panel(
                         });
                     }
 
-                    // Special params for this family
+                    // Special params for this family — stored PER SLOT so two
+                    // slots of the same kind stay independent.
                     for def in special_defs.iter().filter(|d| d.family == family) {
-                        if let Some(param) = params.special_param(voice_idx, def.special_index) {
-                            ui.horizontal(|ui| {
-                                // Boolean toggle for on/off switches (min=0, max=1)
-                                if def.min == 0.0 && def.max == 1.0 && def.label.to_lowercase().contains("pre-filter") {
-                                    let mut value = param.value();
-                                    if draw_editor_switch_row(ui, def.label, &mut value).changed() {
-                                        setter.set_parameter(param, value);
-                                    }
-                                // Saturation Type: show select with names instead of number slider
-                                } else if def.label.to_lowercase().contains("saturation type") {
-                                    let type_names = ["None", "SoftClip", "Valve", "Transistor", "HardClip", "Tape"];
-                                    let current_idx = (param.value() as usize).min(type_names.len().saturating_sub(1));
-                                    editor_label(ui, def.label);
-                                    if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
-                                        setter.set_parameter(param, idx as f32);
-                                    }
-                                // Cymbal Noise Type: show select with names
-                                } else if def.label.to_lowercase().contains("noise type") {
-                                    let type_names = ["White", "Pink", "Brown", "Blue"];
-                                    let current_idx = (param.value() as usize).min(type_names.len().saturating_sub(1));
-                                    editor_label(ui, def.label);
-                                    if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
-                                        setter.set_parameter(param, idx as f32);
-                                    }
-                                // Kick Click Type: show select with names
-                                } else if def.label.to_lowercase().contains("click type") {
-                                    let type_names = ["Soft", "Medium", "Hard"];
-                                    let current_idx = (param.value() as usize).min(type_names.len().saturating_sub(1));
-                                    editor_label(ui, def.label);
-                                    if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
-                                        setter.set_parameter(param, idx as f32);
-                                    }
-                                } else {
-                                    let mut value = param.value();
-                                    let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
-                                    if draw_editor_slider_row(
-                                        ui,
-                                        def.label,
-                                        &mut value,
-                                        def.min,
-                                        def.max,
-                                        logarithmic,
-                                        None,
-                                    )
-                                    .changed()
-                                    {
-                                        setter.set_parameter(param, value);
-                                    }
+                        ui.horizontal(|ui| {
+                            let current = inst.special_value(def.special_index);
+                            let mut new_value = None;
+                            // Boolean toggle for on/off switches (min=0, max=1)
+                            if def.min == 0.0 && def.max == 1.0 && def.label.to_lowercase().contains("pre-filter") {
+                                let mut value = current;
+                                if draw_editor_switch_row(ui, def.label, &mut value).changed() {
+                                    new_value = Some(value);
                                 }
-                            });
-                        }
+                            // Saturation Type: show select with names instead of number slider
+                            } else if def.label.to_lowercase().contains("saturation type") {
+                                let type_names = ["None", "SoftClip", "Valve", "Transistor", "HardClip", "Tape"];
+                                let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
+                                editor_label(ui, def.label);
+                                if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
+                                    new_value = Some(idx as f32);
+                                }
+                            // Cymbal Noise Type: show select with names
+                            } else if def.label.to_lowercase().contains("noise type") {
+                                let type_names = ["White", "Pink", "Brown", "Blue"];
+                                let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
+                                editor_label(ui, def.label);
+                                if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
+                                    new_value = Some(idx as f32);
+                                }
+                            // Kick Click Type: show select with names
+                            } else if def.label.to_lowercase().contains("click type") {
+                                let type_names = ["Soft", "Medium", "Hard"];
+                                let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
+                                editor_label(ui, def.label);
+                                if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
+                                    new_value = Some(idx as f32);
+                                }
+                            } else {
+                                let mut value = current;
+                                let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
+                                if draw_editor_slider_row(
+                                    ui,
+                                    def.label,
+                                    &mut value,
+                                    def.min,
+                                    def.max,
+                                    logarithmic,
+                                    None,
+                                )
+                                .changed()
+                                {
+                                    new_value = Some(value);
+                                }
+                            }
+                            if let Some(value) = new_value {
+                                inst.set_special(def.special_index, value);
+                                sound_settings.bump_version();
+                            }
+                        });
                     }
 
                     // Algorithm selector inside OSC family
@@ -4197,10 +4126,7 @@ fn current_field_value_for_fusion(
         _ => {
             if field_index >= crate::plock::SPECIAL_FIELD_START {
                 let special_index = field_index - crate::plock::SPECIAL_FIELD_START;
-                params
-                    .special_param(schema_voice_idx(params, instrument), special_index)
-                    .map(|p| p.value())
-                    .unwrap_or(0.0)
+                sound_settings.instruments[instrument].special_value(special_index)
             } else {
                 0.0
             }
@@ -4919,15 +4845,8 @@ fn draw_plock_menu(
                 plock.masks.set_active(instrument, step, true);
             }
             if plock_menu_action_row(ui, "Snapshot Current Settings", ACCENT).clicked() {
-                let mut special = [0.0f32; 32];
-                for def in crate::instrument_registry::special_params(voice_idx) {
-                    if def.special_index < special.len() {
-                        special[def.special_index] = params
-                            .special_param(voice_idx, def.special_index)
-                            .map(|param| param.value())
-                            .unwrap_or(def.default);
-                    }
-                }
+                // Specials are stored per slot alongside the standard settings.
+                let special = inst.load_specials();
                 let algo = params.algos()[instrument].value() as u8;
                 let settings = VoiceSettings {
                     frequency: global.0,
@@ -5034,26 +4953,13 @@ fn draw_plock_menu(
                 }
             };
 
-        let is_bass_drum_plock = instrument == 0 || instrument == 11;
-        let freq_in_notes_plock = if is_bass_drum_plock {
-            let freq_mode_param = if instrument == 0 {
-                &params.freq_mode_kick
-            } else {
-                &params.freq_mode_bassdrum808
-            };
-            freq_mode_param.value()
-        } else {
-            false
-        };
+        let is_bass_drum_plock = matches!(voice_idx, 0 | 11);
+        let freq_in_notes_plock =
+            is_bass_drum_plock && sound_settings.instruments[instrument].freq_mode();
 
-        // Note display toggle for bass drums in plock
+        // Note display toggle for bass drums in plock (per-slot freq mode)
         if is_bass_drum_plock {
-            let freq_mode_param = if instrument == 0 {
-                &params.freq_mode_kick
-            } else {
-                &params.freq_mode_bassdrum808
-            };
-            let freq_in_notes = freq_mode_param.value();
+            let freq_in_notes = freq_in_notes_plock;
             let label = if freq_in_notes { "Notes" } else { "Hz" };
             plock_menu_row(
                 ui,
@@ -5063,7 +4969,8 @@ fn draw_plock_menu(
                 None,
                 |ui| {
                     if plock_menu_action_row(ui, label, ACCENT).clicked() {
-                        setter.set_parameter(freq_mode_param, !freq_in_notes);
+                        sound_settings.instruments[instrument].set_freq_mode(!freq_in_notes);
+                        sound_settings.bump_version();
                     }
                     ui.allocate_response(Vec2::new(1.0, 1.0), egui::Sense::hover())
                 },
@@ -5224,10 +5131,7 @@ fn draw_plock_menu(
             let mut value = if plock.field_masks.is_set(instrument, step, field) {
                 plock.values.get(instrument, step, field)
             } else {
-                params
-                    .special_param(voice_idx, def.special_index)
-                    .map(|p| p.value())
-                    .unwrap_or(def.default)
+                inst.special_value(def.special_index)
             };
             let overridden = plock.field_masks.is_set(instrument, step, field);
             let log = def.min > 0.0 && def.max / def.min >= 20.0;
@@ -5385,27 +5289,13 @@ fn draw_fusion_morph_menu(
             }
         }
 
-        // Standard fields
-        let is_bass_drum = instrument == 0 || instrument == 11;
-        let freq_in_notes = if is_bass_drum {
-            let freq_mode_param = if instrument == 0 {
-                &params.freq_mode_kick
-            } else {
-                &params.freq_mode_bassdrum808
-            };
-            freq_mode_param.value()
-        } else {
-            false
-        };
+        // Standard fields (per-slot freq display mode)
+        let is_bass_drum = matches!(voice_idx, 0 | 11);
+        let freq_in_notes =
+            is_bass_drum && sound_settings.instruments[instrument].freq_mode();
 
         // Note display toggle for bass drums
         if is_bass_drum {
-            let freq_mode_param = if instrument == 0 {
-                &params.freq_mode_kick
-            } else {
-                &params.freq_mode_bassdrum808
-            };
-            let freq_in_notes = freq_mode_param.value();
             let label = if freq_in_notes { "Notes" } else { "Hz" };
             plock_menu_row(
                 ui,
@@ -5416,7 +5306,8 @@ fn draw_fusion_morph_menu(
                 |ui| {
                     let response = plock_menu_action_row(ui, label, ACCENT);
                     if response.clicked() {
-                        setter.set_parameter(freq_mode_param, !freq_in_notes);
+                        sound_settings.instruments[instrument].set_freq_mode(!freq_in_notes);
+                        sound_settings.bump_version();
                     }
                     response
                 },
