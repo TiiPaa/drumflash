@@ -1863,10 +1863,19 @@ impl DrumFlashVst {
         }
     }
 
-    /// Build the final VoiceSettings for a voice at the current sequencer step,
+    /// Build the final VoiceSettings for a slot at the current sequencer step,
     /// merging global settings with any per-step plock override.
-    fn voice_settings_at_step(&self, voice_idx: usize, step: usize) -> synthesis::VoiceSettings {
-        let inst = &self.sound_settings_state.instruments[voice_idx];
+    ///
+    /// Standard settings and plocks are stored PER SLOT; only the special
+    /// params inside `voice_settings_for` are still per legacy voice (shared
+    /// between slots of the same kind — see TODO ST-7).
+    fn voice_settings_at_step(
+        &self,
+        slot_idx: usize,
+        voice_idx: usize,
+        step: usize,
+    ) -> synthesis::VoiceSettings {
+        let inst = &self.sound_settings_state.instruments[slot_idx];
         let (freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed, analog, stereo) =
             inst.load();
         let global = self.voice_settings_for(
@@ -1876,7 +1885,7 @@ impl DrumFlashVst {
         self.params
             .plock_state
             .state
-            .get_settings(voice_idx, step, &global)
+            .get_settings(slot_idx, step, &global)
             .unwrap_or(global)
     }
 
@@ -2517,7 +2526,7 @@ impl Plugin for DrumFlashVst {
                         };
                         let step_for_trigger = step as u32;
 
-                        let base_settings = self.voice_settings_at_step(voice_idx, step);
+                        let base_settings = self.voice_settings_at_step(slot_idx, voice_idx, step);
 
                         // Fusion pulses are not stutter plocks: they are evenly
                         // distributed over the whole fused-cell duration and use
@@ -2631,7 +2640,7 @@ impl Plugin for DrumFlashVst {
                             else {
                                 continue;
                             };
-                            let settings = self.voice_settings_at_step(voice_idx, 0);
+                            let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
                             let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                                 continue;
                             };
@@ -2673,7 +2682,7 @@ impl Plugin for DrumFlashVst {
                     let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                         continue;
                     };
-                    let settings = self.voice_settings_at_step(voice_idx, 0);
+                    let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
                     self.synthesizer.set_voice_settings(slot_idx, settings);
                     self.synthesizer.trigger(slot_idx, 0.8);
                 }
