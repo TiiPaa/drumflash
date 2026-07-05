@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-07-05 — Fix song-mode : reset step 0 après pattern de longueur différente (build 20260705-150850)
+
+**Build:** `20260705-150850`
+**Validation:** `cargo test` OK (109 + 73 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige le song-mode quand les patterns n'ont pas tous la même longueur.**
+  - `load_pattern_from_slot()` applique maintenant la longueur chargée côté audio immédiatement, sans attendre que l'UI applique `pending_pattern_length`.
+  - Après une transition song réussie, le séquenceur est redémarré à step 0 au bloc suivant avec les longueurs de lanes recalculées.
+  - La resynchro continue à la timeline absolue du DAW est désactivée pendant le song-mode, pour éviter qu'elle recale la tête au milieu du nouveau pattern.
+- Tests ajoutés : longueur audio immédiate après load et redémarrage step 0 après changement de longueur.
+
+---
+
+## 2026-07-05 — AUDIT-1 : PatternBank non bloquant sur thread audio (build 20260705-132937)
+
+**Build:** `20260705-132937`
+**Validation:** `cargo test` OK (107 + 72 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **Thread audio : les accès `PatternBank` ne bloquent plus.**
+  - Les chemins save/load pattern et song-mode utilisent `try_lock()` au lieu de `lock()` dans `process()`.
+  - Si l'UI détient temporairement le lock, la demande save/load est conservée et retentée au bloc audio suivant.
+  - En song-mode, un wrap de pattern n'est consommé que lorsque la lecture du bank et le chargement du slot ont réellement réussi ; en cas de contention, le changement est retenté sans bloquer le callback audio.
+- Test ajouté : `pattern_bank_actions_return_busy_instead_of_blocking_when_locked` vérifie que save/load retournent `Busy` quand la banque est déjà verrouillée.
+- TODO audit mis à jour : [AUDIT-1] `try_lock()` + report save/load/song cochés ; la phase optionnelle double-buffer/SPSC reste ouverte.
+
+---
+
 ## 2026-07-05 — ST-7 : instances par slot complètes + onglets Sound/Track + picker instrument (build 20260705-122315)
 
 **Build:** `20260705-122315`
