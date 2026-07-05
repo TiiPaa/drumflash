@@ -32,6 +32,27 @@ After every task completion, **systematically build and install** the VST3 plugi
 - If Studio One is open and locks the DLL, close it before installing
 - Update CHANGELOG.md with the build ID and changes
 
+### Manual test instructions — MANDATORY after every installed build
+
+Every time a build is installed, **end the report to the user with a section
+"À tester dans Studio One"**: a short numbered checklist of the precise manual
+tests that cover what changed in THIS build. Never announce an installed build
+without it — the user validates every build by hand and must know exactly what
+to exercise.
+
+Each checklist item must state:
+1. the exact manipulation (which control, which lane/slot, which menu),
+2. the expected result (what should be heard/seen),
+3. when relevant, the regression to watch for (what used to go wrong).
+
+Example format:
+
+> **À tester dans Studio One (build 20260704-XXXXXX)**
+> 1. Ajoute une 2e BD via la pastille `+5`, change son Click Type dans SAT →
+>    celui de la lane 1 ne doit PAS bouger (bug précédent : partagé).
+> 2. Recharge une song sauvegardée avant cette build → les réglages
+>    click/saturation existants doivent être conservés (migration).
+
 Use the web files mainly to:
 - confirm instrument mapping
 - confirm preset content
