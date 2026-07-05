@@ -19,7 +19,7 @@
   - [x] [MG-7a.2] Activer `+ Add Module` avec sélection d'instrument et mutation contrôlée du `track-layout-v1` (build 20260702-215053)
 - [x] [MG-8] Sound editor tabs per track (Sound / Track) + instrument selector + per-slot routing — rollback 20260701 (build 20260702-215053)
 - [ ] [MG-9] MIDI note/channel behavior per spec — needs revalidation after rollback
-- [ ] [MG-10] Adapt generator to track types and duplicate variations — needs revalidation after rollback
+- [ ] **[REPRENDRE ICI]** [MG-10] Adapt generator to track types and duplicate variations — urgent depuis le défaut 4 lanes : les générateurs supposent les rôles legacy par rangée (rangée 3 = OpenHH alors que la lane 4 du template est un Tom) → GENERATE écrit des patterns incohérents. Alternative quick-win : [92] (défauts plock — en partie résolu par ST-7, re-vérifier avant de coder). Voir `docs/notes/handoff-2026-07-05-st7-complete-ui-tabs.md`.
 - [x] [MG-11] Build, test, install, update CHANGELOG — done (build 20260702-215053)
 
 ## [P0] Stabilisation modular grid 14 slots (session 2026-07-03)
