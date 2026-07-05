@@ -114,7 +114,8 @@ pub struct Sequencer {
     /// Global pattern length (1-64 steps). Controls master loop point.
     master_length: usize,
     /// How many times the master pattern has looped (for step conditions).
-    loop_count: usize,    /// Per-slot mapping to the legacy `DrumVoice` index used for synthesis.
+    loop_count: usize,
+    /// Per-slot mapping to the legacy `DrumVoice` index used for synthesis.
     /// `None` means the slot is inactive.
     slot_voices: [Option<usize>; MAX_TRACKS],
     /// Per-instrument fused cell groups (Step Fusion), copied from SharedPattern once per buffer.
@@ -359,6 +360,13 @@ impl Sequencer {
             track.previous_shifted_master = max_step;
             track.step_counter = track.track_length.wrapping_sub(1);
         }
+    }
+
+    /// Start the current pattern from step 0 on the next processed sample.
+    pub fn restart_pattern_from_step0(&mut self) {
+        self.beat_position = 0.0;
+        self.loop_count = 0;
+        self.force_step0_trigger();
     }
 
     pub fn stop(&mut self) {
@@ -682,6 +690,24 @@ mod tests {
             step1_delayed,
             step1_straight
         );
+    }
+
+    #[test]
+    fn restart_pattern_from_step0_forces_step0_after_length_change() {
+        let shared_pattern = SharedPattern::new(&Pattern::empty());
+        shared_pattern.set_step_mask(0, 0b0000_0000_0001);
+
+        let mut seq = Sequencer::new(shared_pattern);
+        seq.play();
+        seq.set_track_params([8; MAX_TRACKS], [0.0; MAX_TRACKS], [0.0; MAX_TRACKS], 8);
+        seq.set_track_params([16; MAX_TRACKS], [0.0; MAX_TRACKS], [0.0; MAX_TRACKS], 16);
+        seq.restart_pattern_from_step0();
+
+        let triggers = seq.process_sample(120.0, 44_100.0, 0.0, GrooveType::Swing16);
+
+        assert!(triggers[0].should_trigger);
+        assert_eq!(triggers[0].step, 0);
+        assert_eq!(seq.current_step(), 0);
     }
 
     #[test]

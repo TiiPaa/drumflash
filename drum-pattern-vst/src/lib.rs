@@ -6,7 +6,7 @@ use nih_plug::{
 use nih_plug_egui::EguiState;
 use std::sync::{
     atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU32, Ordering},
-    Arc,
+    Arc, TryLockError,
 };
 
 mod generator;
@@ -54,6 +54,14 @@ const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
 const STEP_COUNT: usize = 64;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v5";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PatternBankActionResult {
+    Applied,
+    Loaded(u8),
+    Busy,
+    Skipped,
+}
 
 #[derive(Clone)]
 pub struct LaneLengthLocks {
@@ -163,6 +171,17 @@ pub struct DrumFlashVst {
     /// Which slot the audio thread last successfully loaded (0-7), or u32::MAX if none.
     /// The UI thread reads this to keep last_loaded_slot in sync with reality.
     audio_last_loaded_slot: Arc<AtomicU32>,
+    /// Pattern length used by the audio thread. Slot loads update this immediately;
+    /// the UI parameter is synchronized asynchronously via pending_pattern_length.
+    audio_master_length: usize,
+    /// Last pattern length observed from the nih-plug param, used to distinguish
+    /// real param edits from a stale UI value after an audio-side pattern load.
+    last_param_master_length: usize,
+    /// Restart the sequencer at step 0 after a song-mode slot transition.
+    pending_song_pattern_restart: bool,
+    /// Save/load requests retried when the pattern bank is temporarily locked by the UI.
+    deferred_save_slot: Option<usize>,
+    deferred_load_slot: Option<usize>,
 }
 
 #[derive(Params)]
@@ -1788,6 +1807,11 @@ impl Default for DrumFlashVst {
             temp_seq_plock_bytes: [0; pattern_bank::MAX_SEQ_PLOCK_BYTES],
             temp_fusion_bytes: [0; pattern_bank::MAX_FUSION_BYTES],
             audio_last_loaded_slot: Arc::new(AtomicU32::new(u32::MAX)),
+            audio_master_length: 16,
+            last_param_master_length: 16,
+            pending_song_pattern_restart: false,
+            deferred_save_slot: None,
+            deferred_load_slot: None,
         };
         plugin.sequencer.play();
         plugin
@@ -1877,7 +1901,8 @@ impl DrumFlashVst {
     }
 
     /// Read the current value of a plock field from VoiceSettings.
-    fn read_morph_value(&self,
+    fn read_morph_value(
+        &self,
         settings: &synthesis::VoiceSettings,
         field_index: usize,
         _voice_idx: usize,
@@ -1945,30 +1970,35 @@ impl DrumFlashVst {
     }
 
     /// Save the current pattern into the bank slot.
-    pub fn save_pattern_to_slot(&mut self, slot: usize) {
+    fn save_pattern_to_slot(&mut self, slot: usize) -> PatternBankActionResult {
         if slot >= pattern_bank::SLOT_COUNT {
-            return;
+            return PatternBankActionResult::Skipped;
         }
         let plock = &self.params.plock_state.state;
         let seq_plock = &self.params.seq_plock_state.state;
-        if let Ok(mut bank) = self.params.pattern_bank.bank.lock() {
-            bank.slots[slot].capture(
-                &self.pattern,
-                plock,
-                seq_plock,
-                self.params.pattern_length.value() as u8,
-            );
-            nih_log!("Pattern saved to slot P{}", slot + 1);
-        }
+        let mut bank = match self.params.pattern_bank.bank.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::WouldBlock) => return PatternBankActionResult::Busy,
+            Err(TryLockError::Poisoned(_)) => return PatternBankActionResult::Skipped,
+        };
+
+        bank.slots[slot].capture(
+            &self.pattern,
+            plock,
+            seq_plock,
+            self.params.pattern_length.value() as u8,
+        );
+        nih_log!("Pattern saved to slot P{}", slot + 1);
         // Mark this slot as the current one so the UI highlights it in green.
         self.audio_last_loaded_slot
             .store(slot as u32, Ordering::Relaxed);
+        PatternBankActionResult::Applied
     }
 
     /// Load a pattern from the bank slot.
-    pub fn load_pattern_from_slot(&mut self, slot: usize) {
+    fn load_pattern_from_slot(&mut self, slot: usize) -> PatternBankActionResult {
         if slot >= pattern_bank::SLOT_COUNT {
-            return;
+            return PatternBankActionResult::Skipped;
         }
 
         // 1. Copy slot data under the lock (fast), then release before restore.
@@ -1978,17 +2008,15 @@ impl DrumFlashVst {
         let fusion_len: usize;
         let pattern_length: u8;
         {
-            let bank = match self.params.pattern_bank.bank.lock() {
+            let bank = match self.params.pattern_bank.bank.try_lock() {
                 Ok(guard) => guard,
-                Err(_) => {
-                    nih_log!("Pattern bank mutex poisoned, skipping load");
-                    return;
-                }
+                Err(TryLockError::WouldBlock) => return PatternBankActionResult::Busy,
+                Err(TryLockError::Poisoned(_)) => return PatternBankActionResult::Skipped,
             };
             let slot_ref = &bank.slots[slot];
             if !slot_ref.occupied {
                 nih_log!("Slot P{} is empty", slot + 1);
-                return;
+                return PatternBankActionResult::Skipped;
             }
             let maybe_len = slot_ref.copy_data_for_restore(
                 &mut step_masks,
@@ -1998,7 +2026,7 @@ impl DrumFlashVst {
             );
             pattern_length = match maybe_len {
                 Some(len) => len,
-                None => return,
+                None => return PatternBankActionResult::Skipped,
             };
             plock_len = slot_ref.plock_bytes.len();
             seq_plock_len = slot_ref.seq_plock_bytes.len();
@@ -2043,11 +2071,13 @@ impl DrumFlashVst {
         );
 
         // 3. Notify UI and record which slot the audio thread actually loaded.
+        self.audio_master_length = pattern_length.clamp(1, 64) as usize;
         self.pending_pattern_length
             .store(pattern_length as i32, Ordering::Relaxed);
         self.audio_last_loaded_slot
             .store(slot as u32, Ordering::Relaxed);
         nih_log!("Pattern loaded from slot P{}", slot + 1);
+        PatternBankActionResult::Loaded(pattern_length)
     }
 
     /// Fire a single voice trigger (audio + MIDI) at the given sample offset.
@@ -2191,23 +2221,32 @@ impl Plugin for DrumFlashVst {
         aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // Process pattern save/load requests from UI
-        if let Some(slot) = self
-            .save_pattern_request
-            .swap(0, Ordering::Relaxed)
-            .checked_sub(1)
-        {
-            if (slot as usize) < pattern_bank::SLOT_COUNT {
-                self.save_pattern_to_slot(slot as usize);
+        // Process pattern save/load requests from UI without blocking the audio thread.
+        if self.deferred_save_slot.is_none() {
+            self.deferred_save_slot = self
+                .save_pattern_request
+                .swap(0, Ordering::Relaxed)
+                .checked_sub(1)
+                .map(|slot| slot as usize)
+                .filter(|&slot| slot < pattern_bank::SLOT_COUNT);
+        }
+        if let Some(slot) = self.deferred_save_slot.take() {
+            if self.save_pattern_to_slot(slot) == PatternBankActionResult::Busy {
+                self.deferred_save_slot = Some(slot);
             }
         }
-        if let Some(slot) = self
-            .load_pattern_request
-            .swap(0, Ordering::Relaxed)
-            .checked_sub(1)
-        {
-            if (slot as usize) < pattern_bank::SLOT_COUNT {
-                self.load_pattern_from_slot(slot as usize);
+
+        if self.deferred_load_slot.is_none() {
+            self.deferred_load_slot = self
+                .load_pattern_request
+                .swap(0, Ordering::Relaxed)
+                .checked_sub(1)
+                .map(|slot| slot as usize)
+                .filter(|&slot| slot < pattern_bank::SLOT_COUNT);
+        }
+        if let Some(slot) = self.deferred_load_slot.take() {
+            if self.load_pattern_from_slot(slot) == PatternBankActionResult::Busy {
+                self.deferred_load_slot = Some(slot);
             }
         }
         if self.clear_plocks_request.swap(false, Ordering::Relaxed) {
@@ -2244,7 +2283,7 @@ impl Plugin for DrumFlashVst {
                     self.sequencer.stop();
                     self.last_host_pos = None;
                 }
-            } else if transport.playing {
+            } else if transport.playing && !self.params.song_mode.value() {
                 // Detect significant host seeks and resync. Threshold raised
                 // from 0.2 to 1.0 beats: at 0.2, Reaper and Bitwig's
                 // sub-buffer position drift accumulated until a spurious
@@ -2301,8 +2340,14 @@ impl Plugin for DrumFlashVst {
         }
 
         // Update per-track groove parameters once per buffer.
-        // Lane lengths are clamped to the global pattern length.
-        let master_length = self.params.pattern_length.value() as usize;
+        // Lane lengths are clamped to the audio-side pattern length. Pattern loads
+        // update this immediately, then the UI param catches up asynchronously.
+        let param_master_length = self.params.pattern_length.value() as usize;
+        if param_master_length != self.last_param_master_length {
+            self.audio_master_length = param_master_length.clamp(1, 64);
+            self.last_param_master_length = self.audio_master_length;
+        }
+        let master_length = self.audio_master_length;
         let raw_lengths: [usize; crate::track::MAX_TRACKS] =
             std::array::from_fn(|i| self.params.lengths()[i].value() as usize);
         let effective_lengths = std::array::from_fn(|i| {
@@ -2319,13 +2364,21 @@ impl Plugin for DrumFlashVst {
             master_length,
         );
 
+        if self.pending_song_pattern_restart {
+            self.sequencer.restart_pattern_from_step0();
+            self.last_loop_count = self.sequencer.loop_count();
+            self.last_master_length = master_length;
+            self.pending_song_pattern_restart = false;
+        }
+
         // If the pattern length changed, resync the sequencer to the host timeline
         // so loop_count and beat_position stay consistent with the new master length.
         if master_length != self.last_master_length {
             self.last_master_length = master_length;
-            if transport.playing {
+            if transport.playing && !self.params.song_mode.value() {
                 if let Some(position_beats) = position_beats_opt {
-                    self.sequencer.sync_to_host(position_beats, bpm, sample_rate);
+                    self.sequencer
+                        .sync_to_host(position_beats, bpm, sample_rate);
                 }
             }
         }
@@ -2362,8 +2415,7 @@ impl Plugin for DrumFlashVst {
                 let algo_count = crate::instrument_registry::INSTRUMENTS[voice_idx]
                     .algo_count
                     .max(1) as u8;
-                let algo =
-                    (self.params.algos()[slot_idx].value().max(0) as u8).min(algo_count - 1);
+                let algo = (self.params.algos()[slot_idx].value().max(0) as u8).min(algo_count - 1);
                 self.synthesizer.set_algo(slot_idx, algo);
             }
         }
@@ -2555,8 +2607,7 @@ impl Plugin for DrumFlashVst {
                         if trigger.is_fusion() {
                             let pulse_count = trigger.fusion_pulse_count.max(1);
                             let spacing = if pulse_count > 1 {
-                                (step_duration_samples
-                                    * trigger.fusion_span_cells.max(1) as f32
+                                (step_duration_samples * trigger.fusion_span_cells.max(1) as f32
                                     / pulse_count as f32)
                                     .max(1.0) as u32
                             } else {
@@ -2668,9 +2719,9 @@ impl Plugin for DrumFlashVst {
                             self.synthesizer.set_voice_settings(slot_idx, settings);
                             self.synthesizer.trigger(slot_idx, velocity);
                             if hihat_chokes_oh && voice_idx == 2 {
-                                if let Some(oh_slot) = (0..crate::track::MAX_TRACKS)
-                                    .find(|&s| slot_voices[s] == Some(DrumVoice::OpenHiHat as usize))
-                                {
+                                if let Some(oh_slot) = (0..crate::track::MAX_TRACKS).find(|&s| {
+                                    slot_voices[s] == Some(DrumVoice::OpenHiHat as usize)
+                                }) {
                                     self.synthesizer.reset_voice(oh_slot);
                                 }
                             }
@@ -2745,32 +2796,47 @@ impl Plugin for DrumFlashVst {
         if self.params.song_mode.value() && self.sequencer.is_playing() {
             let current_loop_count = self.sequencer.loop_count();
             if current_loop_count != self.last_loop_count {
-                self.last_loop_count = current_loop_count;
-                let (next_slot, next_pos, _should_loop) = {
-                    if let Ok(bank) = self.params.pattern_bank.bank.lock() {
-                        let song = &bank.song;
-                        let current_pos = self.song_position.load(Ordering::Relaxed) as usize;
-                        let next_pos = current_pos + 1;
+                let song_step = {
+                    match self.params.pattern_bank.bank.try_lock() {
+                        Ok(bank) => {
+                            let song = &bank.song;
+                            let current_pos = self.song_position.load(Ordering::Relaxed) as usize;
+                            let next_pos = current_pos + 1;
 
-                        if next_pos < song.length as usize {
-                            let slot = song.slot_at(next_pos);
-                            (slot, Some(next_pos), false)
-                        } else if song.loop_enabled && song.length > 0 {
-                            let slot = song.slot_at(0);
-                            (slot, Some(0), true)
-                        } else {
-                            (None, None, false)
+                            if next_pos < song.length as usize {
+                                let slot = song.slot_at(next_pos);
+                                Some((slot, Some(next_pos)))
+                            } else if song.loop_enabled && song.length > 0 {
+                                let slot = song.slot_at(0);
+                                Some((slot, Some(0)))
+                            } else {
+                                Some((None, None))
+                            }
                         }
-                    } else {
-                        (None, None, false)
+                        Err(TryLockError::WouldBlock) => None,
+                        Err(TryLockError::Poisoned(_)) => Some((None, None)),
                     }
                 };
 
-                if let Some(pos) = next_pos {
+                if let Some((next_slot, next_pos)) = song_step {
+                    let mut advance_song = true;
                     if let Some(slot) = next_slot {
-                        self.load_pattern_from_slot(slot);
+                        match self.load_pattern_from_slot(slot) {
+                            PatternBankActionResult::Loaded(_)
+                            | PatternBankActionResult::Applied => {
+                                self.pending_song_pattern_restart = true;
+                            }
+                            PatternBankActionResult::Busy => advance_song = false,
+                            PatternBankActionResult::Skipped => {}
+                        }
                     }
-                    self.song_position.store(pos as u32, Ordering::Relaxed);
+
+                    if advance_song {
+                        self.last_loop_count = current_loop_count;
+                        if let Some(pos) = next_pos {
+                            self.song_position.store(pos as u32, Ordering::Relaxed);
+                        }
+                    }
                 }
             }
         } else {
@@ -2808,9 +2874,10 @@ impl Plugin for DrumFlashVst {
         // Migration pattern-v3 (old broken fusion layout, 13 instruments) → pattern-v5 (fixed layout)
         if let Some(data) = state.fields.get("pattern-v3") {
             if let Ok(old_state) = deserialize_field::<sequencer::pattern::PatternStateV3>(data) {
-                let mut new_fusions = [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                    * sequencer::pattern::MAX_FUSIONS
-                    * sequencer::pattern::FUSION_SLOT_COUNT];
+                let mut new_fusions = [0u64;
+                    sequencer::pattern::INSTRUMENT_COUNT
+                        * sequencer::pattern::MAX_FUSIONS
+                        * sequencer::pattern::FUSION_SLOT_COUNT];
                 for inst in 0..13 {
                     let base = inst
                         * sequencer::pattern::MAX_FUSIONS
@@ -2825,9 +2892,7 @@ impl Plugin for DrumFlashVst {
                             old_state.fusions[slot_base + 1],
                             old_state.fusions[slot_base + 2],
                         ];
-                        if let Some(group) =
-                            sequencer::pattern::unpack_fusion_v3_old(old_slots)
-                        {
+                        if let Some(group) = sequencer::pattern::unpack_fusion_v3_old(old_slots) {
                             let packed = sequencer::pattern::pack_fusion(&group);
                             let new_slot_base =
                                 base + (1 + new_count) * sequencer::pattern::FUSION_SLOT_COUNT;
@@ -2838,8 +2903,7 @@ impl Plugin for DrumFlashVst {
                         }
                     }
                     for i in new_count..(sequencer::pattern::MAX_FUSIONS - 1) {
-                        let new_slot_base =
-                            base + (1 + i) * sequencer::pattern::FUSION_SLOT_COUNT;
+                        let new_slot_base = base + (1 + i) * sequencer::pattern::FUSION_SLOT_COUNT;
                         new_fusions[new_slot_base] = 0;
                         new_fusions[new_slot_base + 1] = 0;
                         new_fusions[new_slot_base + 2] = 0;
@@ -2847,9 +2911,8 @@ impl Plugin for DrumFlashVst {
                     new_fusions[base] = (new_count as u64) | (1u64 << 24);
                 }
                 // The 14th instrument row starts empty.
-                let empty_base = 13
-                    * sequencer::pattern::MAX_FUSIONS
-                    * sequencer::pattern::FUSION_SLOT_COUNT;
+                let empty_base =
+                    13 * sequencer::pattern::MAX_FUSIONS * sequencer::pattern::FUSION_SLOT_COUNT;
                 new_fusions[empty_base] = 0 | (1u64 << 24);
                 let new_state = sequencer::pattern::PatternState {
                     masks: old_state.masks,
@@ -2869,9 +2932,10 @@ impl Plugin for DrumFlashVst {
             if let Ok(old_masks) = deserialize_field::<sequencer::pattern::PatternMasks>(data) {
                 let new_state = sequencer::pattern::PatternState {
                     masks: old_masks.0,
-                    fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                        * sequencer::pattern::MAX_FUSIONS
-                        * sequencer::pattern::FUSION_SLOT_COUNT],
+                    fusions: [0u64;
+                        sequencer::pattern::INSTRUMENT_COUNT
+                            * sequencer::pattern::MAX_FUSIONS
+                            * sequencer::pattern::FUSION_SLOT_COUNT],
                 };
                 if let Ok(serialized) = serialize_field(&new_state) {
                     state
@@ -2889,9 +2953,10 @@ impl Plugin for DrumFlashVst {
                 new_masks[..16].copy_from_slice(&old_masks);
                 let new_state = sequencer::pattern::PatternState {
                     masks: new_masks,
-                    fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                        * sequencer::pattern::MAX_FUSIONS
-                        * sequencer::pattern::FUSION_SLOT_COUNT],
+                    fusions: [0u64;
+                        sequencer::pattern::INSTRUMENT_COUNT
+                            * sequencer::pattern::MAX_FUSIONS
+                            * sequencer::pattern::FUSION_SLOT_COUNT],
                 };
                 if let Ok(serialized) = serialize_field(&new_state) {
                     state
@@ -2916,9 +2981,10 @@ impl Plugin for DrumFlashVst {
         });
         let new_state = sequencer::pattern::PatternState {
             masks,
-            fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                * sequencer::pattern::MAX_FUSIONS
-                * sequencer::pattern::FUSION_SLOT_COUNT],
+            fusions: [0u64;
+                sequencer::pattern::INSTRUMENT_COUNT
+                    * sequencer::pattern::MAX_FUSIONS
+                    * sequencer::pattern::FUSION_SLOT_COUNT],
         };
         if let Ok(serialized_pattern) = serialize_field(&new_state) {
             state
@@ -2969,9 +3035,10 @@ mod tests {
 
         let restored_state = sequencer::pattern::PatternState {
             masks: [3u16; STEP_COUNT],
-            fusions: [0u64; sequencer::pattern::INSTRUMENT_COUNT
-                * sequencer::pattern::MAX_FUSIONS
-                * sequencer::pattern::FUSION_SLOT_COUNT],
+            fusions: [0u64;
+                sequencer::pattern::INSTRUMENT_COUNT
+                    * sequencer::pattern::MAX_FUSIONS
+                    * sequencer::pattern::FUSION_SLOT_COUNT],
         };
         pattern_state.set(restored_state);
 
@@ -2982,8 +3049,8 @@ mod tests {
     #[test]
     fn pattern_v3_migrates_to_v5_preserving_fusion_geometry() {
         // Build an old-pattern-v3 PatternState with one fusion in old layout (13 instruments).
-        let mut old_fusions = [0u64; 13 * sequencer::pattern::MAX_FUSIONS
-            * sequencer::pattern::FUSION_SLOT_COUNT];
+        let mut old_fusions =
+            [0u64; 13 * sequencer::pattern::MAX_FUSIONS * sequencer::pattern::FUSION_SLOT_COUNT];
         let inst = 4usize;
         let base = inst * sequencer::pattern::MAX_FUSIONS * sequencer::pattern::FUSION_SLOT_COUNT;
         let old_meta: u64 = (2u64 << 0) | (6u64 << 8) | (4u64 << 16) | (1u64 << 24);
@@ -2996,7 +3063,10 @@ mod tests {
         let mut masks = [0u16; STEP_COUNT];
         masks[0] = 0x10;
 
-        let old_state = sequencer::pattern::PatternStateV3 { masks, fusions: old_fusions };
+        let old_state = sequencer::pattern::PatternStateV3 {
+            masks,
+            fusions: old_fusions,
+        };
         let mut fields = BTreeMap::new();
         fields.insert(
             "pattern-v3".to_string(),
@@ -3035,9 +3105,8 @@ mod tests {
         // Build a pattern-v4 state (13 instruments) with a Kick on step 0.
         let mut masks = [0u16; STEP_COUNT];
         masks[0] = 0x0001; // Kick bit
-        let fusions = [0u64; 13
-            * sequencer::pattern::MAX_FUSIONS
-            * sequencer::pattern::FUSION_SLOT_COUNT];
+        let fusions =
+            [0u64; 13 * sequencer::pattern::MAX_FUSIONS * sequencer::pattern::FUSION_SLOT_COUNT];
         let old_state = sequencer::pattern::PatternStateV4 { masks, fusions };
 
         let mut fields = BTreeMap::new();
@@ -3102,6 +3171,38 @@ mod tests {
         for _ in 0..2_205 {
             assert!(params.master_volume.smoothed.next().is_finite());
         }
+    }
+
+    #[test]
+    fn pattern_bank_actions_return_busy_instead_of_blocking_when_locked() {
+        let mut vst = DrumFlashVst::default();
+        let bank = vst.params.pattern_bank.bank.clone();
+        let _guard = bank.lock().unwrap();
+
+        assert_eq!(vst.save_pattern_to_slot(0), PatternBankActionResult::Busy);
+        assert_eq!(vst.load_pattern_from_slot(0), PatternBankActionResult::Busy);
+    }
+
+    #[test]
+    fn pattern_load_updates_audio_length_before_ui_param_catches_up() {
+        let mut vst = DrumFlashVst::default();
+        {
+            let mut bank = vst.params.pattern_bank.bank.lock().unwrap();
+            bank.slots[0].capture(
+                &vst.pattern,
+                &vst.params.plock_state.state,
+                &vst.params.seq_plock_state.state,
+                24,
+            );
+        }
+
+        assert_eq!(vst.params.pattern_length.value(), 16);
+        assert_eq!(
+            vst.load_pattern_from_slot(0),
+            PatternBankActionResult::Loaded(24)
+        );
+        assert_eq!(vst.audio_master_length, 24);
+        assert_eq!(vst.pending_pattern_length.load(Ordering::Relaxed), 24);
     }
 
     #[test]
