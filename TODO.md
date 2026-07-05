@@ -19,7 +19,7 @@
   - [x] [MG-7a.2] Activer `+ Add Module` avec sélection d'instrument et mutation contrôlée du `track-layout-v1` (build 20260702-215053)
 - [x] [MG-8] Sound editor tabs per track (Sound / Track) + instrument selector + per-slot routing — rollback 20260701 (build 20260702-215053)
 - [ ] [MG-9] MIDI note/channel behavior per spec — needs revalidation after rollback
-- [ ] **[REPRENDRE ICI]** [MG-10] Adapt generator to track types and duplicate variations — urgent depuis le défaut 4 lanes : les générateurs supposent les rôles legacy par rangée (rangée 3 = OpenHH alors que la lane 4 du template est un Tom) → GENERATE écrit des patterns incohérents. Alternative quick-win : [92] (défauts plock — en partie résolu par ST-7, re-vérifier avant de coder). Voir `docs/notes/handoff-2026-07-05-st7-complete-ui-tabs.md`.
+- [ ] [MG-10] Adapt generator to track types and duplicate variations — urgent depuis le défaut 4 lanes : les générateurs supposent encore les rôles legacy par rangée (rangée 3 = OpenHH alors que la lane 4 du template est un Tom) → GENERATE écrit des patterns incohérents. Alternative quick-win : [92] (défauts plock — en partie résolu par ST-7, re-vérifier avant de coder). Voir `docs/notes/handoff-2026-07-05-st7-complete-ui-tabs.md`.
 - [x] [MG-11] Build, test, install, update CHANGELOG — done (build 20260702-215053)
 
 ## [P0] Stabilisation modular grid 14 slots (session 2026-07-03)
@@ -49,6 +49,103 @@
 - [x] [ST-5] **Layout 4 lanes au démarrage** : résolu par décision produit 2026-07-04 — le défaut EST maintenant 4 lanes (BD/SD/HH/Tom, `modular_default_layout()`), migration anti-template supprimée. ⚠️ Songs pré-`track-layout-v1` s'ouvrent en 4 lanes (build 20260704-195335).
 - [x] [ST-8] **Règle UI zones stables** : la grille rend toujours 14 rangées (lanes actives + vides cliquables), rangée `+ Add Module` supprimée — plus aucune ligne conditionnelle qui décale les panneaux du bas (build 20260704-195335). Règle générale à respecter dans toute l'UI.
 - [x] [ST-6] **Revalidation S1 après fixes** : instances BD indépendantes confirmées par l'utilisateur (2026-07-04) ; reste à re-vérifier après le passage au défaut 4 lanes : activation de chaque lane vide, 14 pistes, Out 14 audible.
+
+## Plan d'action — Audit code review 2026-07-05
+
+### [AUDIT-1] P0 — Eliminer les verrous Mutex bloquants sur le thread audio
+- [x] Remplacer `PatternBank::lock()` par `try_lock()` dans `process()` (lib.rs:2750, 1954, 1981)
+- [x] Si contention, reporter save/load/song au bloc suivant
+- [ ] Option : double-buffer atomique + file SPSC UI→audio pour le song mode
+
+### [AUDIT-2] P0 — Supprimer les allocations sur le thread audio
+- [ ] `Box::new` dans `reinitialize_slot()` (synthesis/mod.rs:847) → pool préalloué ou swap UI→audio
+- [ ] `Vec::with_capacity`/`push` dans `save_pattern_to_slot` (pattern_bank.rs:202/604) → buffer préalloué
+- [ ] Conditionner `nih_log!` dans `process()` à `#[cfg(debug_assertions)]` ou reporter vers UI
+
+### [AUDIT-3] Important — Corriger l'export MIDI 14 slots + note par slot
+- [ ] Itérer `0..MAX_TRACKS` au lieu de `INSTRUMENTS` (midi_export.rs:81)
+- [ ] Lire `track_layout[slot].midi_note` plutôt que `def.midi_note`
+- [ ] Ajouter un test couvrant le 14e slot et une note personnalisée
+
+### [AUDIT-4] Important — Adapter le générateur aux kinds réels des slots (MG-10)
+- [ ] Mapper rôles musicaux par `kind.drum_voice_index()` / `track_layout`, pas par index de rangée
+- [ ] Ajouter des tests déterministes seedés dès cette refonte
+
+### [AUDIT-5] Important — Tests mute/solo/mix routing
+- [ ] Extraire la logique de gating (effective_mutes/mix_gains) en fonction pure (lib.rs:2271)
+- [ ] Ajouter des cas : 1 mute, 1 solo, mute+solo, plusieurs solos, aucun
+
+### [AUDIT-6] Suggestion — Tests round-trip synth settings
+- [ ] Généraliser le test de round-trip à toutes les voix (synthesis/settings/)
+
+### [AUDIT-7] Infrastructure
+- [ ] Committer `Cargo.lock` et le retirer de `.gitignore`
+- [ ] Supprimer `fix_roles.pdb` et les `.zip` redondants du suivi git
+- [ ] Retirer `.claude/settings.local.json` du suivi
+- [ ] Corriger docs : `13 voix/aux` → `14 slots`, `pattern-v1` → `pattern-v5`
+
+### [AUDIT-8] Dette UI / qualité
+- [ ] Nettoyer échafaudage UI mort (`design_system.rs`, `StyledButton`, `allocate_ui_at_rect`) → tâche [100aa]
+- [ ] Renommage ports auxiliaires génériques `Out 1..14` (optionnel)
+- [ ] Documenter invariants `// SAFETY:` dans `native_drag.rs` + test `build_hdrop_medium`
+
+## Feedback utilisateur — 2026-07-05 post build 20260705-150850
+
+### Bugs / régressions P1
+- [ ] **[REPRENDRE ICI]** [117] **P0 — Gros bug de son distordu lors de l'activation/désactivation d'une output dans le DAW**
+  - Reproduire dans Studio One : activer/désactiver une sortie auxiliaire du plugin pendant que le séquenceur joue.
+  - Vérifier routing main/aux, buffers non activés, état de bus VST3 côté vendor nih-plug et écriture dans `aux.outputs`.
+  - Attendu : aucune distorsion, aucun burst, aucun signal corrompu lors du changement d'activation de sortie.
+- [ ] [103] **Régression : le drag & drop MIDI a disparu**
+  - Vérifier le bouton `Drag`, le helper externe `drum-pattern-midi-drag-helper.exe`, l'export temporaire MIDI et l'ouverture de la fenêtre de drag.
+  - Attendu : pouvoir glisser un clip MIDI vers Studio One comme avant.
+- [ ] [104] **Ligne avec le bloc Fusion décalée / perte de place**
+  - Revoir le placement du panneau Fusion sous la grille : il ne doit pas décaler inutilement les zones ni consommer de hauteur excessive.
+- [ ] [105] **Plock sound : Frequency à 0 par défaut sur certains instruments**
+  - Probablement lié à [92] ; vérifier tous les instruments, notamment B8/HH/Tom et les slots dupliqués.
+  - Attendu : le menu plock doit initialiser `Frequency` avec la valeur globale courante du slot/instrument, jamais `0` sauf si c'est réellement la valeur globale.
+
+### UX grille / lanes P1
+- [ ] [106] **Retirer Hum et Push de la grille**
+  - Laisser `Humanize` et `Push/Pull` uniquement dans l'onglet `Track`.
+  - Objectif : simplifier les lanes et récupérer de la place horizontale/verticale.
+- [ ] [107] **Cellules hors longueur en pointillé**
+  - Quand `Len` global ou individuel est inférieur au maximum affiché, rendre les cellules non jouées en pointillé.
+  - Attendu : distinguer clairement les steps visibles mais inactifs à cause de la longueur.
+- [ ] [108] **Réarranger les lanes avec la poignée**
+  - Activer le drag de lanes via la poignée prévue dans le design.
+  - Préserver instrument, paramètres, séquence, plocks, longueur, mute/solo/routing lors du déplacement.
+
+### Presets / gestion lanes P1
+- [ ] [109] **Boutons de presets de lanes**
+  - Ajouter `Clear All Lanes`.
+  - Ajouter `Preset 12 Lanes`.
+  - Ajouter `Preset 4 Lanes`.
+  - Vérifier que les zones UI restent stables : aucune ligne conditionnelle qui décale les panneaux.
+- [ ] [110] **Garder le preset de la BD pour les nouvelles lanes**
+  - Quand on ajoute une nouvelle BD/Kick, elle doit reprendre le preset BD attendu plutôt qu'un état résiduel ou trop neutre.
+- [ ] [111] **Revoir le preset du Tom**
+  - Ajuster les valeurs par défaut Tom pour un rendu plus musical/utilisable dès création de lane.
+
+### Song / Generator P1
+- [ ] [112] **Revoir le Song Editor, actuellement peu pratique**
+  - Repenser l'édition de chaîne patterns/répétitions/activation song pour un workflow plus rapide en Studio One.
+- [ ] [113] **Revoir le Generator : HiHats trop similaires entre styles**
+  - Les HH font quasiment toujours la même chose quel que soit le style sélectionné.
+  - Attendu : varier densité, accents, ouvertures, syncopes et probabilités selon style.
+
+### Sound Editor / synthèse P2
+- [ ] [114] **Clarifier Frequency / algorithme du HiHat**
+  - Vérifier ce que fait `Frequency` sur HH et comment l'algorithme l'utilise réellement.
+  - Si le paramètre est peu audible ou ambigu, renommer, documenter, ou ajuster le mapping.
+- [ ] [115] **Mettre Analog au milieu pour tous les instruments**
+  - Harmoniser la position du paramètre `Analog` dans les sections de tous les instruments.
+
+### Copier / coller lanes P2
+- [ ] [116] **Copier/coller une lane vers une autre**
+  - Mode 1 : copier `instrument + paramètres + séquence`.
+  - Mode 2 : copier `instrument + paramètres` seulement.
+  - Définir le comportement pour plocks, seq-plocks, fusions, length lock, routing, mute/solo.
 
 ## Court terme (Stabilisation V1 — En cours)
 
@@ -448,6 +545,11 @@
 - [x] [74] Proposer 3 types de clicks pour la BD (Kick) : soft/medium/hard ou impulse/noise/transient (Complexite: Moyenne, 3-5 jours, P2)
 
 ## Bugs a corriger (Actifs)
+
+- [x] [102] **Song mode : changement de pattern de longueur différente ne remet pas la tête à zéro** (P1, Sequencer/Song)
+  - Constat utilisateur 2026-07-05 : en song-mode, après un pattern dont la longueur diffère des autres, la tête de lecture continue au lieu de repartir à step 0.
+  - Cause : le load de slot envoyait la longueur à l'UI via `pending_pattern_length`, mais l'audio utilisait encore temporairement l'ancien paramètre ; la resynchro hôte pouvait ensuite recaler la position sur la timeline DAW absolue.
+  - Correctif : longueur audio-local mise à jour immédiatement au load, redémarrage song programmé à step 0 après transition, resync hôte continue désactivée pendant le song-mode.
 
 - [x] [101] **Regression Push/Pull apres correction playhead** (P1, Sequencer/UI)
   - Constat utilisateur fin de session 2026-06-12 : avec du Push, le decalage devient enorme et impossible a annuler correctement.
