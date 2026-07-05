@@ -54,7 +54,8 @@ After completing a task that changes plugin behavior, build and install the VST3
 - **Anti-click**: `trigger()` must not reset oscillator phase, filter state, or reseed noise — continuity prevents retrigger clicks. Use `DecayReleaseEnvelope::trigger_at_peak()` (not `value = 1.0`). Route freq/cutoff changes through `OnePoleSmoother`. Never recreate envelopes in `set_settings()` — use their setters (recreating resets internal state and cuts the sound mid-slider-drag).
 - **Persistence contract**: the grid is stored in VST3 state field `pattern-v1`. Legacy `st01…st16` params are migrated on load. Don't rename `pattern-v1` or reintroduce `stNN` params — it keeps old Studio One sessions loading.
 - **`VST3_CLASS_ID = *b"DrumFlashPlugin1"`** is frozen for V1 to preserve saved-project compatibility. Do not change it.
-- When adding a voice, **`DrumVoice::COUNT`, `AUX_OUT_COUNT`, and the registry must stay in sync**, and every new special param needs a match arm in `special_param()` in `lib.rs` — otherwise the slider shows in the UI but reads 0 in the engine.
+- When adding a voice, **`DrumVoice::COUNT`, `AUX_OUT_COUNT`, and the registry must stay in sync**.
+- **Per-slot instances (ST-7, 2026-07-05)**: special params and the Hz/Notes mode live **per slot** in `SoundSettingsState` (`special[32]` + `freq_mode`), seeded from the registry defaults — new special params only need their `SpecialParamDef` in the registry plus `set_special_param()` in the voice. The legacy per-voice nih-plug params and `special_param()` are a **migration source only** (`needs_param_seed`) — never read them elsewhere. Everything keyed by lane (settings, plocks, algo, lane-length locks) is indexed by **slot**; only registry/schema lookups use the voice index derived from the slot's kind.
 
 ## Workflow rule: "next" / "on continue"
 

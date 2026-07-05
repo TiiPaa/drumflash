@@ -137,6 +137,25 @@ Audio-thread merge (`get_settings(instrument, step, &global)`):
 
 Persistence format is `[values][step_masks][field_masks]`. Old presets without `field_masks` are loaded as full snapshots (retro-compatibility).
 
+### Per-slot instances (ST-7, 2026-07-05)
+
+Two slots of the same kind (e.g. two Kicks) are fully independent:
+
+- Standard settings, **special params** (`special[32]`) and the Hz/Notes
+  display mode all live per SLOT in `SoundSettingsState`, persisted in
+  `sound-settings-v2` (v3 layout, 46 floats/slot — the blob length IS the
+  format version, never reuse a length).
+- The legacy per-voice nih-plug params (`kick_click`, `freq_mode_kick`, …)
+  and `special_param()` exist **only** to seed old sessions once
+  (`needs_param_seed` flag, seeded in `process()`); never read them elsewhere.
+- Algo params are positional per slot ("Slot N Algo") and share the widest
+  range (`instrument_registry::max_algo_index()`); UI and engine clamp to the
+  current kind's `algo_count`.
+- Rule of thumb: anything keyed by lane (settings, plocks, seq-plocks, algo,
+  lane-length locks, mute/solo/mix) is indexed by **slot**; only
+  registry/schema lookups use the voice index derived from the slot's kind
+  (`schema_voice_idx` in ui.rs, `kind.drum_voice_index()` elsewhere).
+
 ### Pattern persistence + legacy migration
 
 The grid is persisted in the VST3 state field **`pattern-v1`** (see `PATTERN_STATE_FIELD` in `lib.rs`), serialized directly from `SharedPattern`. Older builds stored 16 hidden `IntParam`s named `st01`…`st16`; `DrumFlashVst::filter_state` migrates those to `pattern-v1` on load and is covered by `legacy_step_params_migrate_to_persistent_pattern_field`. Don’t reintroduce `stNN` params or rename `pattern-v1` — it’s the contract that keeps existing Studio One sessions loading.

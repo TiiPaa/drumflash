@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-05 — ST-7 : instances par slot complètes + onglets Sound/Track + picker instrument (build 20260705-122315)
+
+**Build:** `20260705-122315`
+**Validation:** `cargo test` OK (106 + 72 tests, dont 3 nouveaux tests persistance/migration), `build.ps1 -Install` OK
+
+### Changements
+- **ST-7 — Special params par slot (fix "le Click Type de la lane 5 change celui de la lane 1").**
+  - `special[32]` + mode Hz/Notes stockés PAR SLOT dans `SoundSettingsState`, seedés depuis les défauts du registre.
+  - Persistance : `sound-settings-v2` format v3 (46 floats/slot) ; les anciennes sessions sont migrées automatiquement depuis les params par voix (`needs_param_seed`, seed one-shot RT-safe dans `process()`).
+  - Moteur : `voice_settings_for(slot, voice, …)` lit specials + algo par slot ; UI Sound Panel, menus plock/morph, Snapshot et morphing rebranchés sur les atomics par slot.
+  - Ranges algo unifiés ("Slot N Algo", `max_algo_index()`) : un Kick sur n'importe quel slot peut changer d'algo ; fixe aussi les ranges 0..0 crashogènes (`algo_cymbal`, `algo_s13`).
+  - ⚠️ Les special params ne sont plus automatisables par le DAW (ils restent plockables par step) ; les params legacy servent uniquement de source de migration.
+- **Onglets refaits : `Sound Editor` | `Track` (retour utilisateur).**
+  - Les boutons par instrument disparaissent — la lane éditée se choisit en cliquant dans la grille ; l'en-tête affiche toujours "Slot N - nom".
+  - Onglet Track complet : type d'instrument, note MIDI, routing Main/Out, **Humanize, Push/Pull, Length** (mêmes params que les mini-sliders de lane) ; message dédié si le slot est vide.
+- **Choix de l'instrument à la création (retour utilisateur).**
+  - Cliquer la pastille `+N` d'une lane vide ouvre un menu avec les 11 instruments ; le slot est créé avec le kind choisi (plus de Kick imposé).
+- **Fix : le lock de longueur de lane était indexé par voix côté UI** (`draw_track_length_control`) alors que l'audio le lit par slot — aligné sur le slot.
+- Docs : `AGENTS.md` (nouvelle section "Per-slot instances"), `CLAUDE.md` (invariant mis à jour), `ADDING_AN_INSTRUMENT.md` (étapes params specials marquées obsolètes).
+
+---
+
 ## 2026-07-04 — Défaut 4 lanes + grille à hauteur fixe 14 rangées (build 20260704-195335)
 
 **Build:** `20260704-195335`
