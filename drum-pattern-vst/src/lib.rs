@@ -3146,8 +3146,10 @@ mod tests {
         let vst = DrumFlashVst::default();
         let cy_idx = DrumVoice::Cymbal as usize;
 
+        // Slot 9 is inactive in the default 4-lane layout, so its per-slot
+        // specials are seeded from the legacy voice of the same index (Cymbal).
         let settings = vst.voice_settings_for(
-            cy_idx, 6000.0, // freq
+            cy_idx, cy_idx, 6000.0, // slot, voice, freq
             2.0,    // decay
             0.4,    // volume
             8000.0, // filter_freq

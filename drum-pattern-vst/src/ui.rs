@@ -457,6 +457,9 @@ struct EditorUIState {
     plock_popup: Option<PlockPopup>,
     // Right-click page popup state (Copy/Paste/Clear page).
     page_popup: Option<PagePopup>,
+    /// Instrument picker for an empty lane (opened by the +N chip).
+    #[serde(default)]
+    add_module_popup: Option<AddModulePopup>,
 }
 
 fn select_legacy_track(state: &mut EditorUIState, slot_idx: usize) {
@@ -516,6 +519,14 @@ struct PagePopup {
     #[serde(with = "serde_pos2")]
     screen_pos: egui::Pos2,
     confirm_action: Option<PageMenuAction>,
+}
+
+/// Instrument picker for an empty lane (opened by the `+N` chip).
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct AddModulePopup {
+    slot: usize,
+    #[serde(with = "serde_pos2")]
+    screen_pos: egui::Pos2,
 }
 
 mod serde_pos2 {
@@ -1688,8 +1699,9 @@ fn draw_grid_v2(
             // so the grid height is constant and the panels below never shift.
             for slot_idx in 0..crate::track::MAX_TRACKS {
                 let Some(inst) = voice_idx_for_slot(params, slot_idx) else {
-                    // Inactive slot: the +N chip activates this specific slot.
-                    if draw_empty_slot_lane_v2(
+                    // Inactive slot: the +N chip opens the instrument picker
+                    // for this specific slot.
+                    if let Some(pos) = draw_empty_slot_lane_v2(
                         ui,
                         slot_idx,
                         page_offset,
@@ -1701,7 +1713,10 @@ fn draw_grid_v2(
                         gap,
                         cell_w,
                     ) {
-                        activate_slot(params, sound_settings, state, slot_idx);
+                        state.add_module_popup = Some(AddModulePopup {
+                            slot: slot_idx,
+                            screen_pos: pos,
+                        });
                     }
                     continue;
                 };
@@ -1776,6 +1791,7 @@ fn draw_grid_v2(
     }
 
     draw_page_popup_if_any(ui, setter, pattern, params, plock, state);
+    draw_add_module_popup_if_any(ui, params, sound_settings, state);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2053,7 +2069,7 @@ fn draw_legacy_slot_lane_v2(
             setter,
             params,
             length_param,
-            voice_idx,
+            slot_idx,
             master_length,
         ) {
             select_legacy_track(state, slot_idx);
@@ -2062,7 +2078,8 @@ fn draw_legacy_slot_lane_v2(
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Returns true when the `+N` chip was clicked (activate the slot).
+/// Returns the click position when the `+N` chip was clicked (opens the
+/// instrument picker for this slot).
 fn draw_empty_slot_lane_v2(
     ui: &mut egui::Ui,
     slot_idx: usize,
@@ -2074,15 +2091,19 @@ fn draw_empty_slot_lane_v2(
     extra_w: f32,
     gap: f32,
     cell_w: f32,
-) -> bool {
+) -> Option<egui::Pos2> {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.set_height(LANE_H);
 
         draw_seq_grip_v2(ui, grip_w, LANE_H);
-        let add_clicked = draw_empty_lane_name_v2(ui, name_w, slot_idx + 1)
-            .on_hover_text("Activate this slot (default: Kick)")
-            .clicked();
+        let name_response = draw_empty_lane_name_v2(ui, name_w, slot_idx + 1)
+            .on_hover_text("Choose an instrument for this slot");
+        let add_click_pos = if name_response.clicked() {
+            name_response.interact_pointer_pos()
+        } else {
+            None
+        };
         draw_empty_lane_chip_v2(ui, vol_w, "Empty");
         draw_empty_lane_chip_v2(ui, mst_w, "");
 
@@ -2123,7 +2144,7 @@ fn draw_empty_slot_lane_v2(
         draw_empty_lane_chip_v2(ui, extra_w, "--");
         draw_empty_lane_chip_v2(ui, extra_w, "--");
         draw_empty_lane_chip_v2(ui, extra_w, "--");
-        add_clicked
+        add_click_pos
     })
     .inner
 }
@@ -2169,13 +2190,14 @@ fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::
     response
 }
 
-/// Activate a specific inactive slot with the default Kick module.
-/// Triggered by the empty-lane `+N` chip.
+/// Activate a specific inactive slot with the chosen instrument kind.
+/// Triggered from the empty-lane instrument picker.
 fn activate_slot(
     params: &DrumFlashParams,
     sound_settings: &SoundSettingsState,
     state: &mut EditorUIState,
     slot_idx: usize,
+    kind: TrackInstrumentKind,
 ) {
     if slot_idx >= crate::track::MAX_TRACKS {
         return;
@@ -2185,13 +2207,61 @@ fn activate_slot(
     if new_state.slots[slot_idx].active {
         return;
     }
-    // Default new module: Kick (user can reassign later in the Track tab).
-    new_state.slots[slot_idx] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+    new_state.slots[slot_idx] = TrackSlot::active_with_kind(kind);
     PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
     // The slot's settings still hold whatever they were initialized with
     // (legacy defaults of the same index) — align them with the new kind.
-    sound_settings.reset_slot_to_defaults(slot_idx, TrackInstrumentKind::Kick);
+    sound_settings.reset_slot_to_defaults(slot_idx, kind);
     select_legacy_track(state, slot_idx);
+}
+
+/// Instrument picker popup for an empty lane (opened by the `+N` chip).
+fn draw_add_module_popup_if_any(
+    ui: &mut egui::Ui,
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
+    state: &mut EditorUIState,
+) {
+    let Some(popup) = state.add_module_popup else { return };
+
+    // The slot may have been activated in the meantime.
+    if params.track_layout.state.is_active(popup.slot) {
+        state.add_module_popup = None;
+        return;
+    }
+
+    let area_id = ui.id().with("add_module_popup");
+    let response = egui::Area::new(area_id)
+        .kind(egui::UiKind::Popup)
+        .order(egui::Order::Foreground)
+        .fixed_pos(popup.screen_pos)
+        .show(ui.ctx(), |ui| {
+            page_menu_frame(ui, BLUE, |ui| {
+                page_menu_header(ui, &format!("Slot {} - Add Module", popup.slot + 1), BLUE);
+                for kind_idx in 0..TrackInstrumentKind::COUNT {
+                    let Some(kind) = TrackInstrumentKind::from_index(kind_idx) else {
+                        continue;
+                    };
+                    if plock_menu_action_row(ui, kind.default_name(), BLUE).clicked() {
+                        activate_slot(params, sound_settings, state, popup.slot, kind);
+                        state.add_module_popup = None;
+                    }
+                }
+            });
+        })
+        .response;
+
+    // Close popup when clicking outside.
+    let clicked_outside = ui.input(|input| {
+        input.pointer.any_pressed()
+            && input
+                .pointer
+                .interact_pos()
+                .map_or(false, |pos| !response.rect.contains(pos))
+    });
+    if clicked_outside {
+        state.add_module_popup = None;
+    }
 }
 
 fn draw_page_popup_if_any(
@@ -3191,6 +3261,7 @@ fn draw_track_tab(
     ui: &mut egui::Ui,
     params: &DrumFlashParams,
     sound_settings: &SoundSettingsState,
+    setter: &ParamSetter,
     state: &mut EditorUIState,
 ) {
     let slot_idx = state.selected_track_slot;
@@ -3198,6 +3269,16 @@ fn draw_track_tab(
         s.clone()
     });
     let slot = &layout_state.slots[slot_idx];
+
+    if !slot.active {
+        ui.add_space(12.0);
+        ui.label(
+            RichText::new("Empty slot - click a +N chip in the grid to add a module.")
+                .font(f_sans_med(11.0))
+                .color(INK3),
+        );
+        return;
+    }
 
     ui.add_space(8.0);
     ui.label(
@@ -3320,6 +3401,59 @@ fn draw_track_tab(
     if changed {
         PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
     }
+
+    // Per-track sequencing params (same params as the lane mini-sliders).
+    ui.add_space(16.0);
+    ui.label(RichText::new("Sequencing").font(f_sans_med(10.5)).color(INK3));
+    let master_length = params.pattern_length.value().clamp(1, 64) as usize;
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            Vec2::new(70.0, 20.0),
+            egui::Label::new(RichText::new("Humanize").font(f_sans_med(11.0)).color(INK2)),
+        );
+        draw_param_mini_slider_with_value(
+            ui,
+            setter,
+            params.humanizes()[slot_idx],
+            0.0,
+            1.0,
+            90.0,
+            BLUE,
+            "Humanize",
+            |value| format!("{:>3}%", (value * 100.0).round() as i32),
+        );
+    });
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            Vec2::new(70.0, 20.0),
+            egui::Label::new(RichText::new("Push/Pull").font(f_sans_med(11.0)).color(INK2)),
+        );
+        draw_param_mini_slider_with_value(
+            ui,
+            setter,
+            params.pushes()[slot_idx],
+            -50.0,
+            50.0,
+            90.0,
+            BLUE,
+            "Push/Pull",
+            |value| format!("{:+.0} ms", value),
+        );
+    });
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            Vec2::new(70.0, 20.0),
+            egui::Label::new(RichText::new("Length").font(f_sans_med(11.0)).color(INK2)),
+        );
+        draw_track_length_control(
+            ui,
+            setter,
+            params,
+            params.lengths()[slot_idx],
+            slot_idx,
+            master_length,
+        );
+    });
 }
 
 // Sound Panel (always visible, tabbed by instrument)
@@ -3359,16 +3493,16 @@ fn draw_sound_panel(
                     .color(Color32::WHITE),
             );
             ui.add_space(2.0);
-            let header_name = match state.sound_editor_tab {
-                SoundEditorTab::Sound => {
-                    let slot_name = &layout_snapshot.slots[state.selected_instrument].name;
-                    if slot_name.is_empty() {
-                        crate::instrument_registry::INSTRUMENTS[voice_idx].name.to_string()
-                    } else {
-                        slot_name.clone()
-                    }
-                }
-                SoundEditorTab::Track => "Track Settings".to_string(),
+            // Always show which lane is being edited (lanes are selected by
+            // clicking them in the grid, there are no per-instrument tabs).
+            let header_name = {
+                let slot_name = &layout_snapshot.slots[state.selected_instrument].name;
+                let name = if slot_name.is_empty() {
+                    crate::instrument_registry::INSTRUMENTS[voice_idx].name
+                } else {
+                    slot_name.as_str()
+                };
+                format!("Slot {} - {}", state.selected_instrument + 1, name)
             };
             ui.label(
                 RichText::new(header_name)
@@ -3391,19 +3525,24 @@ fn draw_sound_panel(
     ui.allocate_ui_at_rect(tabs_rect.shrink2(Vec2::new(12.0, 9.0)), |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-            // One tab per ACTIVE slot (not per legacy voice): labels follow each
-            // slot's kind, so duplicate kinds show duplicate labels.
-            let active_slots: Vec<usize> = layout_snapshot.active_slot_indices().collect();
-            let tab_count = active_slots.len() + 1; // + Track
-            let tab_w = ((tabs_rect.width() - 24.0 - GAP_TIGHT * (tab_count - 1) as f32)
-                / tab_count as f32)
-                .floor();
-            for &slot_idx in &active_slots {
-                let inst_def = layout_snapshot.slots[slot_idx].kind.instrument_def();
-                let selected = state.sound_editor_tab == SoundEditorTab::Sound
-                    && state.selected_instrument == slot_idx;
+            // Two fixed tabs. The edited lane is chosen by clicking it in the
+            // grid (auto-edit), not through per-instrument tab buttons.
+            let tab_w = ((tabs_rect.width() - 24.0 - GAP_TIGHT) / 2.0).floor();
+            for (tab, label, hover) in [
+                (
+                    SoundEditorTab::Sound,
+                    "Sound Editor",
+                    "Synthesis settings of the selected lane",
+                ),
+                (
+                    SoundEditorTab::Track,
+                    "Track",
+                    "Instrument type, MIDI note, routing, humanize, push, length",
+                ),
+            ] {
+                let selected = state.sound_editor_tab == tab;
                 let btn = egui::Button::new(
-                    RichText::new(inst_def.label)
+                    RichText::new(label)
                         .monospace()
                         .size(10.5)
                         .color(if selected { Color32::WHITE } else { INK2 }),
@@ -3412,29 +3551,9 @@ fn draw_sound_panel(
                 .fill(if selected { BLUE } else { PANEL2 })
                 .stroke(egui::Stroke::new(1.0, if selected { BLUE } else { LINE2 }))
                 .corner_radius(6.0);
-                if ui
-                    .add(btn)
-                    .on_hover_text(format!("Slot {} - {}", slot_idx + 1, inst_def.full_name))
-                    .clicked()
-                {
-                    state.sound_editor_tab = SoundEditorTab::Sound;
-                    select_legacy_track(state, slot_idx);
+                if ui.add(btn).on_hover_text(hover).clicked() {
+                    state.sound_editor_tab = tab;
                 }
-            }
-            // Track tab
-            let track_selected = state.sound_editor_tab == SoundEditorTab::Track;
-            let track_btn = egui::Button::new(
-                RichText::new("TRK")
-                    .monospace()
-                    .size(10.5)
-                    .color(if track_selected { Color32::WHITE } else { INK2 }),
-            )
-            .min_size(Vec2::new(tab_w, CTL_HEIGHT))
-            .fill(if track_selected { BLUE } else { PANEL2 })
-            .stroke(egui::Stroke::new(1.0, if track_selected { BLUE } else { LINE2 }))
-            .corner_radius(6.0);
-            if ui.add(track_btn).on_hover_text("Track settings").clicked() {
-                state.sound_editor_tab = SoundEditorTab::Track;
             }
         });
     });
@@ -3910,7 +4029,7 @@ fn draw_sound_panel(
             }
                     }
                         SoundEditorTab::Track => {
-                            draw_track_tab(ui, params, sound_settings, state);
+                            draw_track_tab(ui, params, sound_settings, setter, state);
                         }
                     }
                 });
@@ -4096,7 +4215,7 @@ fn draw_fusion_idle_box_contents(ui: &mut egui::Ui, fusion_mode_active: bool) {
 }
 
 fn current_field_value_for_fusion(
-    params: &DrumFlashParams,
+    _params: &DrumFlashParams,
     sound_settings: &SoundSettingsState,
     instrument: usize,
     field_index: usize,
@@ -4814,7 +4933,7 @@ fn draw_plock_menu(
     plock: &PlockState,
     sound_settings: &SoundSettingsState,
     params: &DrumFlashParams,
-    setter: &ParamSetter,
+    _setter: &ParamSetter,
     instrument: usize,
     step: usize,
     state: &mut EditorUIState,
@@ -5194,7 +5313,7 @@ fn draw_fusion_morph_menu(
     pattern: &SharedPattern,
     sound_settings: &SoundSettingsState,
     params: &DrumFlashParams,
-    setter: &ParamSetter,
+    _setter: &ParamSetter,
     instrument: usize,
     fusion_index: usize,
     step: usize,
