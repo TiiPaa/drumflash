@@ -36,6 +36,8 @@ cargo run --bin test_standalone  # headless harness — exercises the engine wit
 
 After completing a task that changes plugin behavior, build and install the VST3 (`build.ps1 -Install`) and update `CHANGELOG.md` with the build ID. Don't mark a task done until it builds and installs cleanly.
 
+**Every installed build MUST be announced to the user with a numbered "À tester dans Studio One" checklist** — the exact manipulations, expected results, and regressions to watch for, covering what changed in that build. The full requirements and format live in `AGENTS.md` → "Deployment Rule → Manual test instructions" (AGENTS.md is the source of truth; read it).
+
 ## Architecture (layers)
 
 - **`src/lib.rs`** — plugin entry. Declares `DrumFlashParams` (every persisted/automatable param), `AUDIO_IO_LAYOUTS` (Main Mix + `AUX_OUT_COUNT` stereo auxes), the sample loop, and host-transport sync. `process()` calls `Sequencer::process_sample` → `DrumSynthesizer::trigger` → mixes into main + aux buffers, emitting NoteOn/NoteOff on MIDI channel 10.
