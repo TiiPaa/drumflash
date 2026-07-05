@@ -404,3 +404,52 @@ impl<'a> PersistentField<'a, Vec<f32>> for PersistentSoundSettings {
         f(&values)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::track::{TrackInstrumentKind, TrackLayoutState};
+
+    #[test]
+    fn v3_roundtrip_preserves_specials_and_freq_mode() {
+        let layout = TrackLayoutState::default_layout();
+        let state = SoundSettingsState::new(&layout);
+        state.instruments[0].set_special(6, 2.0);
+        state.instruments[0].set_freq_mode(true);
+        let blob = state.read_all();
+        assert_eq!(blob.len(), MAX_TRACKS * FIELDS_PER_INSTRUMENT_V3);
+
+        let restored = SoundSettingsState::new(&layout);
+        restored.write_all(&blob);
+        assert_eq!(restored.instruments[0].special_value(6), 2.0);
+        assert!(restored.instruments[0].freq_mode());
+        assert!(!restored.needs_param_seed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn legacy_blob_restores_standards_and_requests_param_seed() {
+        let layout = TrackLayoutState::from_legacy_13();
+        let state = SoundSettingsState::new(&layout);
+        // Legacy 14x13 format: standards only, no specials.
+        let legacy = vec![0.5f32; MAX_TRACKS * FIELDS_PER_INSTRUMENT];
+        state.write_all(&legacy);
+        let (freq, ..) = state.instruments[3].load();
+        assert_eq!(freq, 0.5);
+        assert!(state.needs_param_seed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn reset_slot_to_defaults_applies_kind_specials() {
+        let layout = TrackLayoutState::default_layout();
+        let state = SoundSettingsState::new(&layout);
+        state.instruments[5].set_special(0, 99.0);
+        state.reset_slot_to_defaults(5, TrackInstrumentKind::Kick);
+        for def in crate::instrument_registry::special_params(0) {
+            assert_eq!(
+                state.instruments[5].special_value(def.special_index),
+                def.default
+            );
+        }
+        assert!(!state.instruments[5].freq_mode());
+    }
+}

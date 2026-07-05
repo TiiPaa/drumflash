@@ -267,37 +267,28 @@ Modifier `src/lib.rs` dans `DrumFlashParams` :
 1. Ajouter les paramètres `humanize_perc2`, `push_perc2`, `length_perc2`, `mute_perc2`, `mix_perc2`, `solo_perc2` (suivre le pattern existant).
 2. Ajouter l'algo param : `algo_perc2: IntParam`.
 3. **Si l'instrument est une bass drum** (fréquence de sustain différente du slider), ajouter un paramètre `freq_mode` :
-   ```rust
-   #[id = "freq_mode_perc2"]
-   pub freq_mode_perc2: BoolParam,
-   ```
-   Cela permet le switch Hz/Notes dans le Sound Panel et le plock.
-4. Ajouter les special params **avec des `#[id = "..."]` uniques** :
-   - `perc2_sweep: FloatParam` (special[0])
-   - `perc2_saturation_type: FloatParam` (special[1])
-   - `perc2_saturation_amount: FloatParam` (special[2])
-   - etc.
-5. Dans `impl Default for DrumFlashParams`, instancier chaque nouveau paramètre avec `FloatParam::new(...)`.
-6. Dans `impl DrumFlashParams`, mettre à jour **toutes** les méthodes d'accès indexé : `mutes()`, `solos()`, `mixes()`, `algos()`, `humanizes()`, etc. (ajouter le 14e élément).
-7. Dans **`special_param()`**, ajouter impérativement les match arms — **sans ça les paramètres apparaissent dans l'UI mais valent toujours 0 dans le moteur audio** :
-```rust
-(13, 0) => Some(&self.perc2_sweep),
-(13, 1) => Some(&self.perc2_saturation_type),
-(13, 2) => Some(&self.perc2_saturation_amount),
-(13, 3) => Some(&self.perc2_saturation_mix),
-(13, 4) => Some(&self.perc2_saturation_output_gain),
-(13, 5) => Some(&self.perc2_saturation_pre_filter),
-```
+   > ⚠️ **OBSOLÈTE depuis ST-7 (build 20260705-122315)** — les étapes barrées
+   > ci-dessous datent de l'époque où specials et freq_mode étaient des
+   > paramètres nih-plug par voix. **Ils vivent maintenant PAR SLOT dans
+   > `SoundSettingsState` (`special[32]` + `freq_mode`), seedés depuis les
+   > `default` du registre.** Pour un nouvel instrument :
+   > - **AUCUN** `FloatParam`/`BoolParam` à déclarer pour les specials ni le mode Hz/Notes.
+   > - Il suffit de déclarer les `SpecialParamDef` (avec leurs `default`) dans le
+   >   registre et d'implémenter `set_special_param()` dans la voix.
+   > - Les params legacy par voix (`kick_click`, `freq_mode_kick`, …) et
+   >   `special_param()` ne servent plus qu'à la **migration des anciennes
+   >   sessions** — ne pas en ajouter, ne pas les lire ailleurs.
+   > - `voice_settings_for(slot_idx, voice_idx, …)` lit les specials via
+   >   `instruments[slot_idx].load_specials()` et l'algo via
+   >   `params.algos()[slot_idx]` (params positionnels par slot, range partagé
+   >   `max_algo_index()`), sans match par voix.
 
 ### Étape 7 — voice_settings_for
 
-Dans `src/lib.rs`, méthode `voice_settings_for()`, ajouter le match arm pour l'algo :
-
-```rust
-13 => self.params.algo_perc2.value() as u8,
-```
-
-> **Pas besoin de toucher les special params ici** : `voice_settings_for()` boucle déjà sur `instrument_registry::INSTRUMENTS[voice_idx].special_params` et lit chaque paramètre via `self.params.special_param()`. Tant que tu as ajouté les match arms dans `special_param()` (Étape 6), les valeurs seront injectées automatiquement dans `VoiceSettings.special[]`.
+Plus rien à faire ici depuis ST-7 : les specials sont injectés depuis le stockage
+par slot et l'algo depuis `params.algos()[slot_idx]`. Vérifie seulement que
+`instrument_registry::max_algo_index()` couvre le `algo_count` du nouvel
+instrument (il est calculé depuis le registre, donc automatique).
 
 ### Étape 8 — Constants diverses
 
