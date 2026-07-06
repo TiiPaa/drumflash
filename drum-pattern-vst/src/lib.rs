@@ -36,24 +36,35 @@ pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
 /// Number of dedicated stereo aux outputs. Changed to 14 for the modular grid.
 const AUX_OUT_COUNT: usize = 14;
 const OUTPUT_PORT_NAMES: [&str; AUX_OUT_COUNT] = [
-    "Kick",
-    "Snare",
-    "Hi-Hat",
-    "Open HH",
-    "Tom 1",
-    "Tom 2",
-    "Tom 3",
-    "Clap",
-    "Ride",
-    "Cymbal",
-    "Snare 606",
-    "808 Kick",
-    "Perc1",
-    "Out 14",
+    "Out 1", "Out 2", "Out 3", "Out 4", "Out 5", "Out 6", "Out 7", "Out 8", "Out 9", "Out 10",
+    "Out 11", "Out 12", "Out 13", "Out 14",
 ];
 const STEP_COUNT: usize = 64;
 
 const PATTERN_STATE_FIELD: &str = "pattern-v5";
+
+#[inline]
+fn add_stereo_aux_sample(
+    channels: &mut [&mut [f32]],
+    sample_idx: usize,
+    left: f32,
+    right: f32,
+) -> bool {
+    if channels.len() < 2 {
+        return false;
+    }
+
+    let (left_channels, right_channels) = channels.split_at_mut(1);
+    let left_channel = &mut left_channels[0];
+    let right_channel = &mut right_channels[0];
+    if sample_idx >= left_channel.len() || sample_idx >= right_channel.len() {
+        return false;
+    }
+
+    left_channel[sample_idx] += left;
+    right_channel[sample_idx] += right;
+    true
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PatternBankActionResult {
@@ -2193,7 +2204,19 @@ impl Plugin for DrumFlashVst {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate;
-        self.synthesizer.initialize(buffer_config.sample_rate);
+        let track_layout = PersistentField::<crate::track::TrackLayoutState>::map(
+            &self.params.track_layout,
+            |state| state.clone(),
+        );
+        self.synthesizer
+            .initialize_with_layout(buffer_config.sample_rate, &track_layout);
+        self.last_slot_kinds = std::array::from_fn(|slot| {
+            track_layout
+                .slots
+                .get(slot)
+                .filter(|track_slot| track_slot.active)
+                .map(|track_slot| track_slot.kind)
+        });
         self.last_sound_settings_version = u64::MAX; // force re-sync on next process()
         self.remember_current_pattern();
         self.sequencer.play();
@@ -2325,13 +2348,10 @@ impl Plugin for DrumFlashVst {
 
         self.sequencer.set_mutes(effective_mutes);
 
-        let mix_gains: [f32; crate::track::MAX_TRACKS] = std::array::from_fn(|i| {
-            if i < crate::track::MAX_TRACKS && self.params.mixes()[i].value() {
-                1.0f32
-            } else {
-                0.0f32
-            }
-        });
+        let track_routings: [crate::track::TrackRouting; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| self.params.track_layout.state.routing_for_slot(i));
+        let mix_gains: [f32; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| if track_routings[i].main_on { 1.0 } else { 0.0 });
 
         for aux_buffer in aux.outputs.iter_mut() {
             for channel in aux_buffer.as_slice().iter_mut() {
@@ -2782,13 +2802,21 @@ impl Plugin for DrumFlashVst {
                 *sample = if ch == 0 { mixed_left } else { mixed_right };
             }
 
-            for (slot_idx, aux_buffer) in aux.outputs.iter_mut().enumerate() {
-                if slot_idx >= crate::track::MAX_TRACKS {
-                    break;
-                }
+            for (slot_idx, routing) in track_routings.iter().enumerate() {
+                let crate::track::TrackAudioOut::Out(out_number) = routing.out_select else {
+                    continue;
+                };
+                let aux_idx = out_number.saturating_sub(1) as usize;
+                let Some(aux_buffer) = aux.outputs.get_mut(aux_idx) else {
+                    continue;
+                };
                 let channels = aux_buffer.as_slice();
-                channels[0][sample_idx] = voice_outputs[slot_idx][0] * master_vol;
-                channels[1][sample_idx] = voice_outputs[slot_idx][1] * master_vol;
+                add_stereo_aux_sample(
+                    channels,
+                    sample_idx,
+                    voice_outputs[slot_idx][0] * master_vol,
+                    voice_outputs[slot_idx][1] * master_vol,
+                );
             }
         }
 
@@ -3171,6 +3199,35 @@ mod tests {
         for _ in 0..2_205 {
             assert!(params.master_volume.smoothed.next().is_finite());
         }
+    }
+
+    #[test]
+    fn add_stereo_aux_sample_skips_inactive_or_incomplete_outputs() {
+        let mut empty_left: [f32; 0] = [];
+        let mut empty_right: [f32; 0] = [];
+        let mut inactive_channels: [&mut [f32]; 2] = [&mut empty_left, &mut empty_right];
+        assert!(!add_stereo_aux_sample(&mut inactive_channels, 0, 1.0, 1.0));
+
+        let mut mono = [0.0f32; 4];
+        let mut mono_channels: [&mut [f32]; 1] = [&mut mono];
+        assert!(!add_stereo_aux_sample(&mut mono_channels, 0, 1.0, 1.0));
+
+        let mut short_left = [0.0f32; 1];
+        let mut short_right = [0.0f32; 1];
+        let mut short_channels: [&mut [f32]; 2] = [&mut short_left, &mut short_right];
+        assert!(!add_stereo_aux_sample(&mut short_channels, 1, 1.0, 1.0));
+    }
+
+    #[test]
+    fn add_stereo_aux_sample_accumulates_valid_stereo_output() {
+        let mut left = [0.0f32, 0.0, 1.0, 0.0];
+        let mut right = [0.0f32, 0.0, -1.0, 0.0];
+        let mut channels: [&mut [f32]; 2] = [&mut left, &mut right];
+
+        assert!(add_stereo_aux_sample(&mut channels, 2, 0.25, -0.5));
+
+        assert_eq!(channels[0][2], 1.25);
+        assert_eq!(channels[1][2], -1.5);
     }
 
     #[test]

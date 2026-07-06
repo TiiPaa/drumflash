@@ -248,8 +248,7 @@ pub mod stress_tests {
             let total_samples = (2.0 * sample_rate) as usize; // 2 secondes par test
 
             for _ in 0..total_samples {
-                let triggers =
-                    seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
+                let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
                 if triggers.iter().any(|trigger| trigger.should_trigger) {
                     triggers_with_push += 1;
                 }

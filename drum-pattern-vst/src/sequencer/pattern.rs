@@ -39,9 +39,8 @@ impl Default for MorphTarget {
 /// Slot 2: bits 0-15 target[2].end_value lower 16 bits,
 ///         16-23 target[3].field, 24-55 target[3].end_value.
 pub(crate) fn pack_fusion(group: &FusedGroup) -> [u64; FUSION_SLOT_COUNT] {
-    let target = |i: usize| -> MorphTarget {
-        group.morph_targets.get(i).copied().unwrap_or_default()
-    };
+    let target =
+        |i: usize| -> MorphTarget { group.morph_targets.get(i).copied().unwrap_or_default() };
 
     let t0 = target(0);
     let step_count_minus_1 = (group.step_count.clamp(1, 64) - 1) as u64;
@@ -333,7 +332,10 @@ impl FusedGroup {
     pub fn remove_morph_target(&mut self, field: usize) {
         let field = field as u8;
         let count = self.morph_count as usize;
-        if let Some(pos) = self.morph_targets[..count].iter().position(|t| t.field == field) {
+        if let Some(pos) = self.morph_targets[..count]
+            .iter()
+            .position(|t| t.field == field)
+        {
             for i in pos..count.saturating_sub(1) {
                 self.morph_targets[i] = self.morph_targets[i + 1];
             }
@@ -742,9 +744,7 @@ mod tests {
 
     #[test]
     fn pack_unpack_roundtrip_single_target() {
-        let group = make_group(&[(0, 300.0)],
-            4,
-        );
+        let group = make_group(&[(0, 300.0)], 4);
         let packed = pack_fusion(&group);
         let unpacked = unpack_fusion(packed).unwrap();
         assert_eq!(group, unpacked);
@@ -752,15 +752,7 @@ mod tests {
 
     #[test]
     fn pack_unpack_roundtrip_four_targets() {
-        let group = make_group(
-            &[
-                (0, 300.0),
-                (1, 2.5),
-                (3, 8000.0),
-                (18, 0.05),
-            ],
-            8,
-        );
+        let group = make_group(&[(0, 300.0), (1, 2.5), (3, 8000.0), (18, 0.05)], 8);
         let packed = pack_fusion(&group);
         let unpacked = unpack_fusion(packed).unwrap();
         assert_eq!(group, unpacked);
@@ -768,9 +760,7 @@ mod tests {
 
     #[test]
     fn pack_unpack_preserves_frequency_tom1() {
-        let group = make_group(&[(0, 300.0)],
-            4,
-        );
+        let group = make_group(&[(0, 300.0)], 4);
         let packed = pack_fusion(&group);
         let unpacked = unpack_fusion(packed).unwrap();
         assert_eq!(unpacked.morph_targets[0].end_value, 300.0);
@@ -814,7 +804,10 @@ mod tests {
             step_count: 4,
             morph_count: 1,
             morph_targets: [
-                MorphTarget { field: 0, end_value: 300.0 },
+                MorphTarget {
+                    field: 0,
+                    end_value: 300.0,
+                },
                 MorphTarget::default(),
                 MorphTarget::default(),
                 MorphTarget::default(),
