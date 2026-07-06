@@ -77,8 +77,11 @@ impl Widget for ToggleLED {
     fn ui(self, ui: &mut Ui) -> Response {
         let on = self.on;
         let font = f_sans_sb(11.0);
-        let text_w =
-            ui.fonts(|f| f.layout_no_wrap(self.label.clone(), font.clone(), INK).size().x);
+        let text_w = ui.fonts(|f| {
+            f.layout_no_wrap(self.label.clone(), font.clone(), INK)
+                .size()
+                .x
+        });
         // padding 12 + LED 7 + gap 7 + text + padding 12
         let w = 12.0 + 7.0 + 7.0 + text_w + 12.0;
         let (rect, response) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), Sense::click());
@@ -227,8 +230,14 @@ pub fn styled_select(
     let caret_center = egui::pos2(rect.right() - 11.0, rect.center().y + 0.5);
     painter.add(egui::Shape::convex_polygon(
         vec![
-            egui::pos2(caret_center.x - caret_size, caret_center.y - caret_size * 0.4),
-            egui::pos2(caret_center.x + caret_size, caret_center.y - caret_size * 0.4),
+            egui::pos2(
+                caret_center.x - caret_size,
+                caret_center.y - caret_size * 0.4,
+            ),
+            egui::pos2(
+                caret_center.x + caret_size,
+                caret_center.y - caret_size * 0.4,
+            ),
             egui::pos2(caret_center.x, caret_center.y + caret_size * 0.9),
         ],
         INK3,
@@ -303,8 +312,11 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
     let seg_ws: Vec<f32> = options
         .iter()
         .map(|opt| {
-            let tw =
-                ui.fonts(|f| f.layout_no_wrap((*opt).to_string(), font.clone(), INK).size().x);
+            let tw = ui.fonts(|f| {
+                f.layout_no_wrap((*opt).to_string(), font.clone(), INK)
+                    .size()
+                    .x
+            });
             // padding 12 + LED 6 + gap 6 + text + padding 12
             12.0 + 6.0 + 6.0 + tw + 12.0
         })
@@ -320,7 +332,11 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
         let w = seg_ws[i];
         let seg = egui::Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(w, h));
         let is_on = i == selected;
-        let resp = ui.interact(seg, ui.make_persistent_id(("ledseg", *opt, i)), Sense::click());
+        let resp = ui.interact(
+            seg,
+            ui.make_persistent_id(("ledseg", *opt, i)),
+            Sense::click(),
+        );
 
         if is_on {
             painter.rect_filled(seg.shrink(1.0), 0.0, blue_glow(64));

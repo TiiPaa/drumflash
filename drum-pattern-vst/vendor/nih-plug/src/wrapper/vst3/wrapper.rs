@@ -43,6 +43,28 @@ use vst3_sys as vst3_com;
 
 const DRUM_PATTERN_STATE_LOG_PATH: &str = r"E:\tmp\drum-pattern-vst-state.log";
 
+fn mapped_aux_output_idx(
+    active_output_buses: u32,
+    compact_aux_idx: usize,
+    aux_output_count: usize,
+    provided_output_count: usize,
+) -> usize {
+    if active_output_buses.count_ones() as usize >= provided_output_count {
+        let mut seen_aux_outputs = 0usize;
+        for aux_idx in 0..aux_output_count {
+            let bus_idx = aux_idx + 1;
+            if bus_idx < 32 && (active_output_buses & (1u32 << bus_idx)) != 0 {
+                if seen_aux_outputs == compact_aux_idx {
+                    return aux_idx;
+                }
+                seen_aux_outputs += 1;
+            }
+        }
+    }
+
+    compact_aux_idx
+}
+
 #[VST3(implements(
     IComponent,
     IEditController,
@@ -512,7 +534,7 @@ impl<P: Vst3Plugin> IComponent for Wrapper<P> {
         type_: vst3_sys::vst::MediaType,
         dir: vst3_sys::vst::BusDirection,
         index: i32,
-        _state: vst3_sys::base::TBool,
+        state: vst3_sys::base::TBool,
     ) -> tresult {
         let current_audio_io_layout = self.inner.current_audio_io_layout.load();
 
@@ -548,6 +570,16 @@ impl<P: Vst3Plugin> IComponent for Wrapper<P> {
                 let aux_busses = current_audio_io_layout.aux_output_ports.len() as i32;
 
                 if (0..main_busses + aux_busses).contains(&index) {
+                    if index < 32 {
+                        let bit = 1u32 << index;
+                        if state != 0 {
+                            self.inner.active_output_buses.fetch_or(bit, Ordering::SeqCst);
+                        } else {
+                            self.inner
+                                .active_output_buses
+                                .fetch_and(!bit, Ordering::SeqCst);
+                        }
+                    }
                     kResultOk
                 } else {
                     kInvalidArgument
@@ -1106,6 +1138,7 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
             let has_main_output = current_audio_io_layout.main_output_channels.is_some();
             let aux_input_start_idx = if has_main_input { 1 } else { 0 };
             let aux_output_start_idx = if has_main_output { 1 } else { 0 };
+            let active_output_buses = self.inner.active_output_buses.load(Ordering::SeqCst);
 
             // NOTE: VST3 hosts may trigger a 'parameter flush' by calling the process function for
             //       0 input samples. If this is the case then we'll only handle events and skip all
@@ -1431,17 +1464,29 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                             }
 
                             if !data.outputs.is_null() {
-                                for (aux_output_no, aux_output_channel_pointers) in buffer_source
+                                for compact_aux_output_idx in 0..buffer_source
                                     .aux_output_channel_pointers
-                                    .iter_mut()
-                                    .enumerate()
+                                    .len()
                                 {
-                                    let aux_output_idx = aux_output_no + aux_output_start_idx;
-                                    if aux_output_idx >= data.num_outputs as usize {
+                                    let host_output_idx = compact_aux_output_idx + aux_output_start_idx;
+                                    if host_output_idx >= data.num_outputs as usize {
                                         break;
                                     }
 
-                                    let audio_output = &*data.outputs.add(aux_output_idx);
+                                    let plugin_aux_output_idx = mapped_aux_output_idx(
+                                        active_output_buses,
+                                        compact_aux_output_idx,
+                                        buffer_source.aux_output_channel_pointers.len(),
+                                        data.num_outputs as usize,
+                                    );
+                                    let Some(aux_output_channel_pointers) = buffer_source
+                                        .aux_output_channel_pointers
+                                        .get_mut(plugin_aux_output_idx)
+                                    else {
+                                        continue;
+                                    };
+
+                                    let audio_output = &*data.outputs.add(host_output_idx);
                                     match NonNull::new(audio_output.buffers as *mut *mut f32) {
                                         Some(ptrs) => {
                                             let num_channels = audio_output.num_channels as usize;
@@ -1459,22 +1504,39 @@ impl<P: Vst3Plugin> IAudioProcessor for Wrapper<P> {
                     // case it still did something unexpected that we did not catch we'll still try
                     // to prevent processing audio when the slices don't contain the values we
                     // expect.
-                    let active_aux_outputs = (data.num_outputs as usize)
+                    let supplied_aux_outputs = (data.num_outputs as usize)
                         .saturating_sub(aux_output_start_idx)
                         .min(buffers.aux_outputs.len());
                     let mut buffer_is_valid = true;
-                    for output_buffer_slice in
-                        buffers.main_buffer.as_slice_immutable().iter().chain(
-                            buffers
-                                .aux_outputs
-                                .iter()
-                                .take(active_aux_outputs)
-                                .flat_map(|buffer| buffer.as_slice_immutable().iter()),
-                        )
-                    {
+                    for output_buffer_slice in buffers.main_buffer.as_slice_immutable().iter() {
                         if output_buffer_slice.is_empty() {
                             buffer_is_valid = false;
                             break;
+                        }
+                    }
+                    if buffer_is_valid {
+                        for compact_aux_output_idx in 0..supplied_aux_outputs {
+                            let plugin_aux_output_idx = mapped_aux_output_idx(
+                                active_output_buses,
+                                compact_aux_output_idx,
+                                buffers.aux_outputs.len(),
+                                data.num_outputs as usize,
+                            );
+                            let Some(output_buffer) = buffers.aux_outputs.get(plugin_aux_output_idx)
+                            else {
+                                buffer_is_valid = false;
+                                break;
+                            };
+
+                            for output_buffer_slice in output_buffer.as_slice_immutable().iter() {
+                                if output_buffer_slice.is_empty() {
+                                    buffer_is_valid = false;
+                                    break;
+                                }
+                            }
+                            if !buffer_is_valid {
+                                break;
+                            }
                         }
                     }
                     nih_debug_assert!(buffer_is_valid);
@@ -2094,5 +2156,29 @@ impl<P: Vst3Plugin> IUnitInfo for Wrapper<P> {
         _data: SharedVstPtr<dyn IBStream>,
     ) -> tresult {
         kInvalidArgument
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mapped_aux_output_idx;
+
+    #[test]
+    fn mapped_aux_output_idx_keeps_prefix_without_active_bus_info() {
+        assert_eq!(mapped_aux_output_idx(1, 0, 14, 3), 0);
+        assert_eq!(mapped_aux_output_idx(1, 1, 14, 3), 1);
+    }
+
+    #[test]
+    fn mapped_aux_output_idx_remaps_sparse_active_outputs() {
+        let main_and_out_2 = (1u32 << 0) | (1u32 << 2);
+        assert_eq!(mapped_aux_output_idx(main_and_out_2, 0, 14, 2), 1);
+    }
+
+    #[test]
+    fn mapped_aux_output_idx_remaps_multiple_sparse_outputs() {
+        let main_out_2_and_out_5 = (1u32 << 0) | (1u32 << 2) | (1u32 << 5);
+        assert_eq!(mapped_aux_output_idx(main_out_2_and_out_5, 0, 14, 3), 1);
+        assert_eq!(mapped_aux_output_idx(main_out_2_and_out_5, 1, 14, 3), 4);
     }
 }
