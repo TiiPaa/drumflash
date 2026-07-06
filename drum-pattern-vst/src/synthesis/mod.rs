@@ -665,7 +665,10 @@ impl Voice for DrumVoiceKind {
     }
 }
 
-fn create_voice_for_kind(kind: crate::track::TrackInstrumentKind, sample_rate: f32) -> DrumVoiceKind {
+fn create_voice_for_kind(
+    kind: crate::track::TrackInstrumentKind,
+    sample_rate: f32,
+) -> DrumVoiceKind {
     use crate::track::TrackInstrumentKind as K;
     match kind {
         K::Kick => DrumVoiceKind::Kick(KickVoice::new(
@@ -738,6 +741,7 @@ impl DrumSynthesizer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn initialize(&mut self, sample_rate: f32) {
         let legacy_layout = crate::track::TrackLayoutState::from_legacy_13();
         self.initialize_with_layout(sample_rate, &legacy_layout);
@@ -838,11 +842,7 @@ impl DrumSynthesizer {
         }
     }
 
-    pub fn reinitialize_slot(
-        &mut self,
-        slot_idx: usize,
-        kind: crate::track::TrackInstrumentKind,
-    ) {
+    pub fn reinitialize_slot(&mut self, slot_idx: usize, kind: crate::track::TrackInstrumentKind) {
         if slot_idx < crate::track::MAX_TRACKS {
             self.voices[slot_idx] = Some(Box::new(create_voice_for_kind(kind, self.sample_rate)));
             self.velocity_smoothers[slot_idx] =
@@ -1103,6 +1103,19 @@ mod tests {
             "B8 retrigger should still produce sound: {}",
             after
         );
+    }
+
+    #[test]
+    fn modular_default_layout_initializes_slot_4_as_tom_not_open_hihat() {
+        let mut synth = DrumSynthesizer::new();
+        let layout = crate::track::TrackLayoutState::default_layout();
+
+        synth.initialize_with_layout(44100.0, &layout);
+
+        assert!(matches!(
+            synth.voices[3].as_deref(),
+            Some(DrumVoiceKind::Tom(_))
+        ));
     }
 
     /// Test the specific attack_time=0 envelope corruption scenario.

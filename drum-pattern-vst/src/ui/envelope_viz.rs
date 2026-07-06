@@ -88,7 +88,13 @@ pub fn draw_amp_envelope(
     }
 
     let label_color = white_a(150);
-    draw_env_label(&painter, graph, "A", Pos2::new(x_attack - 3.0, base_y - 3.0), label_color);
+    draw_env_label(
+        &painter,
+        graph,
+        "A",
+        Pos2::new(x_attack - 3.0, base_y - 3.0),
+        label_color,
+    );
     draw_env_label(
         &painter,
         graph,
@@ -97,8 +103,20 @@ pub fn draw_amp_envelope(
         label_color,
     );
     if has_release {
-        draw_env_label(&painter, graph, "S", Pos2::new(x_decay + 4.0, sustain_y - 4.0), label_color);
-        draw_env_label(&painter, graph, "R", Pos2::new(x_end - 12.0, base_y - 3.0), label_color);
+        draw_env_label(
+            &painter,
+            graph,
+            "S",
+            Pos2::new(x_decay + 4.0, sustain_y - 4.0),
+            label_color,
+        );
+        draw_env_label(
+            &painter,
+            graph,
+            "R",
+            Pos2::new(x_end - 12.0, base_y - 3.0),
+            label_color,
+        );
     }
 
     response

@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audit Flash Drum — Synthèse</title>
+<style>
+  :root {
+    --bg: #f5f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --border: #dde2e9;
+    --ink: #141a20;
+    --ink-2: #4a545f;
+    --ink-3: #6f7a86;
+    --accent: #0d7c85;
+    --accent-ink: #0d7c85;
+    --accent-soft: #d6ebed;
+    --good: #1f8a5b;
+    --good-soft: #d7ede1;
+    --crit: #c0272d;
+    --crit-soft: #f6dcdd;
+    --imp: #a86913;
+    --imp-soft: #f4e6c8;
+    --sug: #2166d6;
+    --sug-soft: #dbe6fa;
+    --neutral: #59636f;
+    --neutral-soft: #e5e9ee;
+    --shadow: 0 1px 2px rgba(20,26,32,.06), 0 6px 20px rgba(20,26,32,.05);
+    --radius: 14px;
+    --radius-sm: 9px;
+    --maxw: 1080px;
+    --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "Courier New", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1014;
+      --surface: #161b21;
+      --surface-2: #1d242c;
+      --border: #29313b;
+      --ink: #e7ebf1;
+      --ink-2: #a7b2c0;
+      --ink-3: #71808f;
+      --accent: #2dd4bf;
+      --accent-ink: #4fe0cd;
+      --accent-soft: #123433;
+      --good: #4cc98a;
+      --good-soft: #16301f;
+      --crit: #ff6b6b;
+      --crit-soft: #3a1c1e;
+      --imp: #e0a441;
+      --imp-soft: #3a2e15;
+      --sug: #74a9f7;
+      --sug-soft: #16273f;
+      --neutral: #96a2b1;
+      --neutral-soft: #232b34;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f7f9; --surface: #ffffff; --surface-2: #eef1f5; --border: #dde2e9;
+    --ink: #141a20; --ink-2: #4a545f; --ink-3: #6f7a86;
+    --accent: #0d7c85; --accent-ink: #0d7c85; --accent-soft: #d6ebed;
+    --good: #1f8a5b; --good-soft: #d7ede1; --crit: #c0272d; --crit-soft: #f6dcdd;
+    --imp: #a86913; --imp-soft: #f4e6c8; --sug: #2166d6; --sug-soft: #dbe6fa;
+    --neutral: #59636f; --neutral-soft: #e5e9ee;
+    --shadow: 0 1px 2px rgba(20,26,32,.06), 0 6px 20px rgba(20,26,32,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1014; --surface: #161b21; --surface-2: #1d242c; --border: #29313b;
+    --ink: #e7ebf1; --ink-2: #a7b2c0; --ink-3: #71808f;
+    --accent: #2dd4bf; --accent-ink: #4fe0cd; --accent-soft: #123433;
+    --good: #4cc98a; --good-soft: #16301f; --crit: #ff6b6b; --crit-soft: #3a1c1e;
+    --imp: #e0a441; --imp-soft: #3a2e15; --sug: #74a9f7; --sug-soft: #16273f;
+    --neutral: #96a2b1; --neutral-soft: #232b34;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0; }
+  p { margin: 0; }
+  a { color: var(--accent-ink); }
+  code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 600;
+  }
+
+  /* Header */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner { padding: 34px 24px 30px; max-width: var(--maxw); margin: 0 auto; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 26px; }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; letter-spacing: -.01em; }
+  .brand .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .theme-toggle {
+    font: inherit; font-size: 13px; cursor: pointer; color: var(--ink-2);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+    padding: 7px 14px; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .theme-toggle:hover { color: var(--ink); border-color: var(--ink-3); }
+
+  h1 { font-size: clamp(28px, 4.4vw, 42px); font-weight: 780; letter-spacing: -.02em; }
+  .subtitle { color: var(--ink-2); margin-top: 10px; max-width: 60ch; font-size: 17px; }
+
+  .meta-row { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 22px; }
+  .meta {
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink-2);
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 5px 11px; border-radius: 999px;
+  }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  /* Verdict banner */
+  .verdict {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 22px; align-items: center;
+    margin-top: 26px; padding: 20px 22px;
+    background: var(--imp-soft); border: 1px solid color-mix(in srgb, var(--imp) 40%, transparent);
+    border-radius: var(--radius);
+  }
+  .verdict-badge {
+    font-family: var(--mono); font-weight: 700; font-size: 13px; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--imp);
+    border: 1.5px solid var(--imp); border-radius: 999px; padding: 8px 16px; white-space: nowrap;
+  }
+  .verdict-text { color: var(--ink); font-size: 15px; }
+  .verdict-text b { font-weight: 700; }
+  .gauge { text-align: center; white-space: nowrap; }
+  .gauge .num { font-family: var(--mono); font-size: 34px; font-weight: 700; line-height: 1; color: var(--imp); }
+  .gauge .den { font-family: var(--mono); font-size: 15px; color: var(--ink-3); }
+  .gauge .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 6px; }
+
+  main { padding: 40px 0 72px; }
+  section { margin-top: 46px; }
+  .sec-head { margin-bottom: 20px; }
+  .sec-head h2 { font-size: 22px; font-weight: 720; letter-spacing: -.01em; margin-top: 6px; }
+  .sec-head p { color: var(--ink-2); margin-top: 6px; font-size: 15px; max-width: 68ch; }
+
+  /* KPI strip */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 16px 15px; box-shadow: var(--shadow); position: relative; overflow: hidden;
+  }
+  .kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--k); }
+  .kpi .n { font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: 1; color: var(--k); }
+  .kpi .t { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; font-weight: 500; }
+  .kpi.crit { --k: var(--crit); }
+  .kpi.imp { --k: var(--imp); }
+  .kpi.sug { --k: var(--sug); }
+  .kpi.neutral { --k: var(--neutral); }
+
+  /* Scores */
+  .scores { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow); }
+  .score-row { display: grid; grid-template-columns: 200px 1fr 42px; align-items: center; gap: 16px; padding: 9px 0; }
+  .score-row + .score-row { border-top: 1px solid var(--border); }
+  .score-row .name { font-size: 14.5px; color: var(--ink); font-weight: 500; }
+  .score-row .name small { display: block; color: var(--ink-3); font-size: 12px; font-weight: 400; }
+  .bar { height: 9px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--sc); }
+  .score-row .val { font-family: var(--mono); font-size: 15px; font-weight: 600; text-align: right; color: var(--sc); }
+  .sc-good { --sc: var(--good); }
+  .sc-mid { --sc: var(--imp); }
+  .sc-low { --sc: var(--crit); }
+  .score-global { margin-top: 4px; }
+  .score-global .name { font-weight: 700; }
+
+  /* Two-column generic */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px 22px; box-shadow: var(--shadow);
+  }
+  .card h3 { font-size: 15px; font-weight: 680; margin-bottom: 12px; display: flex; align-items: center; gap: 9px; }
+  .card h3 .ic { color: var(--accent); font-family: var(--mono); font-weight: 700; }
+  ul.clean { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  ul.clean li { position: relative; padding-left: 20px; color: var(--ink-2); font-size: 14.5px; }
+  ul.clean li::before { content: ""; position: absolute; left: 2px; top: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  ul.clean.warn li::before { background: var(--imp); }
+  ul.clean.good li::before { background: var(--good); }
+  ul.clean li b { color: var(--ink); font-weight: 600; }
+
+  /* Actions */
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .action-list { counter-reset: step; display: flex; flex-direction: column; gap: 14px; }
+  .action {
+    display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .action .step {
+    counter-increment: step; font-family: var(--mono); font-weight: 700; font-size: 14px;
+    width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-ink);
+  }
+  .action .step::before { content: counter(step); }
+  .action p { font-size: 14.5px; color: var(--ink); }
+  .qw { display: flex; flex-direction: column; gap: 9px; }
+  .qw .qwi { display: flex; gap: 11px; align-items: flex-start; font-size: 14px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; }
+  .qw .qwi .tick { color: var(--good); font-weight: 700; font-family: var(--mono); flex: none; }
+
+  /* Risk matrix */
+  .matrix-wrap { overflow-x: auto; }
+  .matrix { border-collapse: separate; border-spacing: 8px; min-width: 640px; width: 100%; }
+  .matrix caption { text-align: left; color: var(--ink-3); font-size: 12.5px; margin-bottom: 6px; }
+  .matrix th { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 4px; }
+  .matrix th.rowh { text-align: right; width: 90px; white-space: nowrap; }
+  .matrix td { vertical-align: top; border-radius: 10px; padding: 10px; min-height: 74px; border: 1px solid var(--border); background: var(--surface); }
+  .zone-hi { background: var(--crit-soft); border-color: color-mix(in srgb, var(--crit) 35%, transparent); }
+  .zone-mid { background: var(--imp-soft); border-color: color-mix(in srgb, var(--imp) 30%, transparent); }
+  .zone-lo { background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 28%, transparent); }
+  .risk-chip { display: block; font-size: 12.5px; line-height: 1.35; color: var(--ink); margin: 4px 0; padding-left: 14px; position: relative; }
+  .risk-chip::before { content: ""; position: absolute; left: 0; top: 6px; width: 7px; height: 7px; border-radius: 2px; background: var(--rc, var(--ink-3)); }
+  .rc-crit { --rc: var(--crit); }
+  .rc-imp { --rc: var(--imp); }
+  .rc-sug { --rc: var(--sug); }
+
+  /* Findings */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .filter {
+    font: inherit; font-size: 13px; cursor: pointer; padding: 6px 13px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .filter .c { width: 8px; height: 8px; border-radius: 50%; }
+  .filter[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .filter:hover { border-color: var(--ink-3); }
+
+  .findings { display: flex; flex-direction: column; gap: 14px; }
+  .finding {
+    background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--sev);
+    border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
+  }
+  .finding.sev-critique { --sev: var(--crit); --sev-soft: var(--crit-soft); }
+  .finding.sev-important { --sev: var(--imp); --sev-soft: var(--imp-soft); }
+  .finding.sev-suggestion { --sev: var(--sug); --sev-soft: var(--sug-soft); }
+  .finding.sev-hors_securite { --sev: var(--neutral); --sev-soft: var(--neutral-soft); }
+  .f-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 11px; }
+  .sev-tag {
+    font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--sev); background: var(--sev-soft); border-radius: 6px; padding: 4px 9px;
+  }
+  .cat-tag { font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; }
+  .f-loc { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--ink-3); word-break: break-all; }
+  .f-title { font-size: 15.5px; font-weight: 650; color: var(--ink); margin-bottom: 10px; }
+  .f-body { display: flex; flex-direction: column; gap: 9px; }
+  .f-line { font-size: 14px; color: var(--ink-2); }
+  .f-line .k { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); display: inline-block; min-width: 78px; }
+  .f-line.impact { color: var(--ink); }
+  .f-line.fix { background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px; }
+  .f-ctx { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+  .ctx { font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--surface-2); border-radius: 6px; padding: 3px 8px; }
+  .ctx b { color: var(--ink); font-weight: 600; }
+  .conf { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+
+  /* Divergences table */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+  table.div { border-collapse: collapse; width: 100%; min-width: 680px; }
+  table.div th, table.div td { text-align: left; padding: 13px 16px; font-size: 14px; vertical-align: top; border-bottom: 1px solid var(--border); }
+  table.div th { font-family: var(--mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; background: var(--surface-2); }
+  table.div tr:last-child td { border-bottom: none; }
+  table.div td.doc { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); }
+  table.div td b { color: var(--ink); }
+
+  footer { border-top: 1px solid var(--border); margin-top: 60px; padding: 26px 0 40px; color: var(--ink-3); font-size: 13px; }
+  .footer-inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  @media (max-width: 780px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .cols, .actions { grid-template-columns: 1fr; }
+    .verdict { grid-template-columns: 1fr; text-align: left; }
+    .gauge { text-align: left; }
+    .score-row { grid-template-columns: 130px 1fr 38px; }
+    .score-row .name small { display: none; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .bar > i { transition: width .6s cubic-bezier(.2,.7,.2,1); }
+    .finding, .kpi { transition: opacity .2s ease; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="topbar">
+      <div class="brand"><span class="dot"></span> Flash Drum · Audit technique</div>
+      <button class="theme-toggle" id="themeBtn" type="button" aria-label="Changer de thème">
+        <span id="themeIcon">◑</span><span id="themeLbl">Thème</span>
+      </button>
+    </div>
+    <p class="eyebrow">Revue de code, architecture &amp; infrastructure</p>
+    <h1>Plugin VST3 solide et bien testé, mais son cœur temps-réel enfreint ses propres règles.</h1>
+    <p class="subtitle">Séquenceur de batterie 64 pas en Rust (nih-plug + egui), grille modulaire de 14 slots. L'ossature est saine ; les corrections à mener touchent surtout la sécurité du thread audio et quelques angles morts de couverture.</p>
+    <div class="meta-row">
+      <span class="meta">Projet&nbsp;: <b>drum-pattern-vst</b></span>
+      <span class="meta">Build audité&nbsp;: <b>20260705-122315</b></span>
+      <span class="meta">Langage&nbsp;: <b>Rust</b></span>
+      <span class="meta">Tests&nbsp;: <b>106</b></span>
+      <span class="meta">Findings&nbsp;: <b>16</b></span>
+    </div>
+    <div class="verdict">
+      <span class="verdict-badge">À retravailler</span>
+      <p class="verdict-text">Aucun blocage majeur d'architecture&nbsp;: la base peut évoluer. Mais <b>une faille critique de temps-réel</b> (verrous et allocations dans le callback audio) contredit une règle interne du projet et doit être traitée avant toute nouvelle fonctionnalité.</p>
+      <div class="gauge">
+        <span class="num">6</span><span class="den">/10</span>
+        <span class="lbl">Score global</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- KPIs -->
+  <section aria-label="Répartition des findings">
+    <div class="kpis">
+      <div class="kpi crit"><div class="n">1</div><div class="t">Critique — à corriger en priorité</div></div>
+      <div class="kpi imp"><div class="n">7</div><div class="t">Important — impact réel</div></div>
+      <div class="kpi sug"><div class="n">5</div><div class="t">Suggestion — amélioration</div></div>
+      <div class="kpi neutral"><div class="n">3</div><div class="t">Hors sécurité — dette qualité</div></div>
+    </div>
+  </section>
+
+  <!-- Résumé exécutif -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Pour le pilotage</p>
+      <h2>Ce qu'il faut retenir</h2>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <h3><span class="ic">▲</span> Le risque principal, en clair</h3>
+        <p class="f-line">Dans un plugin audio, le « thread audio » doit rendre le son sans jamais s'interrompre. La règle d'or (écrite noir sur blanc dans la doc du projet) interdit d'y poser un <b>verrou</b> ou d'y <b>réserver de la mémoire</b>, car cela peut geler le rendu quelques millisecondes&nbsp;— assez pour produire un <b>craquement audible</b> voire faire décrocher le DAW.</p>
+        <p class="f-line" style="margin-top:10px">L'audit a trouvé les deux à la fois&nbsp;: des verrous <span class="mono">Mutex</span> et des allocations mémoire s'exécutent dans ce thread, dont certains <b>automatiquement pendant la lecture</b> (mode song) et à chaque <b>changement d'instrument</b>. C'est le seul point classé critique.</p>
+      </div>
+      <div class="card">
+        <h3><span class="ic">✓</span> Ce qui est déjà bien tenu</h3>
+        <ul class="clean good">
+          <li>La boucle de rendu échantillon par échantillon, elle, est <b>propre</b> (sans allocation ni verrou)&nbsp;: le problème est localisé, pas systémique.</li>
+          <li><b>106 tests</b> couvrent le timing, la sauvegarde/restauration et les anti-craquements — un vrai filet de sécurité.</li>
+          <li>Conception <b>« data-driven »</b> claire et <b>aucun secret</b> dans le code.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Scores -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Notation /10 · plus c'est haut, mieux c'est</p>
+      <h2>Scores par dimension</h2>
+    </div>
+    <div class="scores">
+      <div class="score-row"><div class="name">Sécurité <small>surface d'attaque, secrets, mémoire</small></div><div class="bar"><i class="sc-good" style="width:70%"></i></div><div class="val sc-good">7</div></div>
+      <div class="score-row"><div class="name">Performance <small>discipline temps-réel</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
+      <div class="score-row"><div class="name">Architecture <small>structure, couplage</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
+      <div class="score-row"><div class="name">Qualité de code <small>lisibilité, dette</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
+      <div class="score-row"><div class="name">Bugs potentiels <small>robustesse</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
+      <div class="score-row"><div class="name">Dépendances <small>gestion, reproductibilité</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
+      <div class="score-row"><div class="name">Tests <small>couverture</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
+      <div class="score-row"><div class="name">Infrastructure <small>build, CI, livraison</small></div><div class="bar"><i class="sc-mid" style="width:50%"></i></div><div class="val sc-mid">5</div></div>
+      <div class="score-row score-global"><div class="name">Global</div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
+    </div>
+  </section>
+
+  <!-- Actions -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Plan d'action</p>
+      <h2>Top 3 des priorités &amp; quick wins</h2>
+      <p>À gauche, les 3 chantiers à ordonnancer. À droite, cinq actions faisables en moins de 30 minutes chacune.</p>
+    </div>
+    <div class="actions">
+      <div class="action-list">
+        <div class="action"><div class="step"></div><p><b>Sortir les verrous et allocations du thread audio.</b> Remplacer les <span class="mono">Mutex::lock()</span> par une tentative non bloquante avec report, ou passer par une file lock-free UI→audio. Pré-allouer les voix pour éviter le <span class="mono">Box::new</span> au changement d'instrument.</p></div>
+        <div class="action"><div class="step"></div><p><b>Corriger l'export MIDI.</b> Couvrir les 14 slots (aujourd'hui le 14ᵉ est perdu) et respecter la note MIDI configurée par slot dans l'onglet Track. Ajouter un test dédié.</p></div>
+        <div class="action"><div class="step"></div><p><b>Fiabiliser le générateur &amp; le combler de tests.</b> Adapter la génération aux instruments réels de chaque slot (au lieu des rôles figés par ligne), et couvrir par des tests le générateur et le routage mute/solo — aujourd'hui sans aucun filet.</p></div>
+      </div>
+      <div class="qw">
+        <div class="qwi"><span class="tick">✓</span> Versionner <span class="mono">Cargo.lock</span> (le retirer du <span class="mono">.gitignore</span>) pour des builds reproductibles.</div>
+        <div class="qwi"><span class="tick">✓</span> Retirer du dépôt <span class="mono">fix_roles.pdb</span> et les <span class="mono">.zip</span> redondants&nbsp;; ajouter <span class="mono">*.pdb</span> au <span class="mono">.gitignore</span>.</div>
+        <div class="qwi"><span class="tick">✓</span> Corriger les docs «&nbsp;13 voix / 13 sorties&nbsp;» → 14, et «&nbsp;pattern-v1&nbsp;» → «&nbsp;pattern-v5&nbsp;».</div>
+        <div class="qwi"><span class="tick">✓</span> Sortir <span class="mono">.claude/settings.local.json</span> du suivi git (chemins propres à un poste).</div>
+        <div class="qwi"><span class="tick">✓</span> Conditionner les journaux <span class="mono">nih_log!</span> du thread audio au build debug.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Risk matrix -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Impact × Probabilité</p>
+      <h2>Matrice des risques</h2>
+      <p>Positionnement des principaux risques. La zone rouge (haut-droite) concentre ce qui est à la fois grave et probable.</p>
+    </div>
+    <div class="matrix-wrap">
+      <table class="matrix">
+        <caption>Lignes&nbsp;: impact — Colonnes&nbsp;: probabilité d'occurrence</caption>
+        <thead>
+          <tr><th></th><th>Faible</th><th>Moyenne</th><th>Élevée</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th class="rowh">Impact&nbsp;élevé</th>
+            <td class="zone-mid"><span class="risk-chip rc-sug">panic=abort&nbsp;: un bug d'index fait tomber le DAW</span></td>
+            <td class="zone-hi"><span class="risk-chip rc-crit">Verrou Mutex sur le thread audio</span><span class="risk-chip rc-crit">Allocation mémoire sur le thread audio</span></td>
+            <td class="zone-hi"></td>
+          </tr>
+          <tr>
+            <th class="rowh">Impact&nbsp;moyen</th>
+            <td class="zone-lo"><span class="risk-chip rc-imp">Journaux/alloc au save/load</span></td>
+            <td class="zone-mid"><span class="risk-chip rc-imp">Export MIDI perd le 14ᵉ slot</span><span class="risk-chip rc-imp">Zones sans tests (générateur, routing)</span></td>
+            <td class="zone-hi"><span class="risk-chip rc-imp">Générateur&nbsp;: rôles incohérents</span></td>
+          </tr>
+          <tr>
+            <th class="rowh">Impact&nbsp;faible</th>
+            <td class="zone-lo"></td>
+            <td class="zone-lo"><span class="risk-chip rc-sug">Cargo.lock non versionné</span></td>
+            <td class="zone-mid"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Findings détaillés -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Détail technique · 16 findings</p>
+      <h2>Constats détaillés</h2>
+      <p>Chaque constat indique l'impact concret, la correction proposée, et des facteurs de contexte (exposition, exploitabilité, protections en place, données concernées). Filtrez par priorité&nbsp;:</p>
+    </div>
+    <div class="filters" role="group" aria-label="Filtrer par priorité">
+      <button class="filter" data-f="all" aria-pressed="true">Tous (16)</button>
+      <button class="filter" data-f="critique" aria-pressed="false"><span class="c" style="background:var(--crit)"></span> Critique (1)</button>
+      <button class="filter" data-f="important" aria-pressed="false"><span class="c" style="background:var(--imp)"></span> Important (7)</button>
+      <button class="filter" data-f="suggestion" aria-pressed="false"><span class="c" style="background:var(--sug)"></span> Suggestion (5)</button>
+      <button class="filter" data-f="hors_securite" aria-pressed="false"><span class="c" style="background:var(--neutral)"></span> Hors sécurité (3)</button>
+    </div>
+
+    <div class="findings" id="findings">
+
+      <!-- CRITIQUE -->
+      <article class="finding sev-critique" data-sev="critique">
+        <div class="f-top"><span class="sev-tag">Critique</span><span class="cat-tag">code</span><span class="f-loc">lib.rs:2750 · 1981 · 1954</span></div>
+        <div class="f-title">Verrous <span class="mono">Mutex</span> bloquants sur le thread audio (mode song, chargement, sauvegarde)</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Viole la règle interne « no blocking locks in the audio thread » (AGENTS.md L172). Si l'UI détient le verrou de la banque de patterns pendant que l'audio le demande, le rendu se bloque → craquement, voire décrochage (xrun). Le mode song déclenche ce verrou <b>automatiquement à chaque bouclage</b>. Aggravant&nbsp;: la sauvegarde alloue aussi de la mémoire dans ce thread.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Utiliser <span class="mono">try_lock()</span> avec report au bloc suivant, ou une file lock-free (SPSC) UI→audio + double-buffer atomique pour la banque de patterns.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>partielle</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <!-- IMPORTANTS -->
+      <article class="finding sev-important" data-sev="important">
+        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">synthesis/mod.rs:847 · lib.rs:2353</span></div>
+        <div class="f-title">Allocation mémoire (<span class="mono">Box::new</span>) sur le thread audio au changement d'instrument</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Réassigner ou ajouter un instrument pendant la lecture réserve de la mémoire dans le callback temps-réel → risque de craquement. Action utilisateur courante dans une grille modulaire.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Pré-allouer les 14 voix possibles (ou un pool par type) et se contenter d'un reset sans allocation&nbsp;; ou construire la voix côté UI et l'échanger via un pointeur atomique.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <article class="finding sev-important" data-sev="important">
+        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">midi_export.rs:81</span></div>
+        <div class="f-title">L'export MIDI perd le 14ᵉ slot et ignore les notes MIDI par slot</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> L'export parcourt 13 voix alors que la grille en compte 14&nbsp;: un pattern utilisant le 14ᵉ slot exporte/glisse vers le DAW sans cette piste. Et les notes MIDI personnalisées (onglet Track) ne sont pas respectées → le clip généré ne correspond pas au réglage utilisateur.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Itérer sur les 14 slots et dériver la note depuis le layout (type + note du slot), avec un test couvrant le 14ᵉ slot et une note personnalisée.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <article class="finding sev-important" data-sev="important">
+        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">lib.rs:1961 (×9)</span></div>
+        <div class="f-title">Journaux <span class="mono">nih_log!</span> (formatage + I/O) sur le thread audio</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Neuf appels de journalisation dans les chemins sauvegarde/chargement/migration exécutés sur le callback audio&nbsp;: formatage de chaîne et écriture = allocation + I/O interdites en temps-réel. Combiné au verrou du même chemin, cela amplifie le risque de glitch.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Retirer ces journaux du thread audio ou les conditionner à <span class="mono">#[cfg(debug_assertions)]</span>&nbsp;; remonter tout diagnostic via un compteur atomique côté UI.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>partielle</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <article class="finding sev-important" data-sev="important">
+        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">infrastructure</span><span class="f-loc">.gitignore:3</span></div>
+        <div class="f-title"><span class="mono">Cargo.lock</span> ignoré par git alors que le projet livre un binaire</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Sans <span class="mono">Cargo.lock</span> versionné, deux compilations à des dates différentes peuvent tirer des versions de dépendances différentes → builds non reproductibles, régressions difficiles à diagnostiquer, risque supply-chain (mise à jour transitive non maîtrisée).</p>
+          <p class="f-line fix"><span class="k">Correction</span> Committer <span class="mono">Cargo.lock</span> et le retirer du <span class="mono">.gitignore</span>&nbsp;; figer une baseline connue.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>théorique</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <article class="finding sev-important" data-sev="important">
+        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">generator/mod.rs:69</span></div>
+        <div class="f-title">Le générateur cable les rôles d'instruments par ligne, incohérent avec la grille modulaire</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> La génération suppose « ligne 0 = kick, 1 = snare, 3 = open hi-hat… » alors que le layout par défaut est BD/SD/HH/Tom et qu'un slot peut porter n'importe quel instrument. Résultat&nbsp;: GENERATE place des événements sur les mauvaises pistes (musicalement incohérent). Correspond à la tâche MG-10 du backlog.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Piloter le générateur par le type réel de chaque slot plutôt que par l'index de ligne&nbsp;; gérer les slots dupliqués.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>triviale</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <article class="finding sev-important" data-sev="important">
+        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">generator/ (tout le module)</span></div>
+        <div class="f-title">Aucun test sur le générateur de patterns</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Fonctionnalité utilisateur majeure (4 techniques de génération) sans aucun filet de régression&nbsp;: toute modification, dont le correctif des rôles ci-dessus, ne pourra pas être validée automatiquement.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Ajouter des tests déterministes avec générateur aléatoire seedé&nbsp;: densité/nombre de hits attendus, validité euclidienne, bornes de probabilité, cohérence Markov.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <article class="finding sev-important" data-sev="important">
+        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">lib.rs:2271</span></div>
+        <div class="f-title">Le routage mute / solo / mix n'a aucun test</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Logique combinatoire critique (le solo prime sur le mute, gestion de plusieurs solos, exclusion du mix principal) sans test&nbsp;: une régression (solo qui ne coupe pas, mute inversé) ne serait détectée qu'à l'oreille.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Extraire la logique de gating dans une fonction pure testable&nbsp;; cas&nbsp;: 1 mute, 1 solo, mute+solo, plusieurs solos, aucun.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <!-- SUGGESTIONS -->
+      <article class="finding sev-suggestion" data-sev="suggestion">
+        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">infrastructure</span><span class="f-loc">lib.rs:38</span></div>
+        <div class="f-title">Les noms des sorties auxiliaires sont figés sur l'ancien mapping</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Les bus auxiliaires portent des noms d'instruments legacy (« Open HH », « Tom 1 »…) qui ne correspondent plus au slot réel&nbsp;: dans le DAW, l'utilisateur route « Open HH » alors que la piste joue un Tom.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Utiliser des noms stables et génériques (Out 1…14), ou exposer le nom du slot courant si l'hôte le supporte.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>triviale</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
+      </article>
+
+      <article class="finding sev-suggestion" data-sev="suggestion">
+        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">code</span><span class="f-loc">lib.rs:47</span></div>
+        <div class="f-title"><span class="mono">panic = "abort"</span> combiné à des accès par index directs sur le thread audio</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Choix raisonnable pour un plugin, mais il transforme tout bug d'index en crash du DAW (perte de session non sauvegardée). La surface est aujourd'hui maîtrisée (indices bornés) mais fragile à l'évolution.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Garder <span class="mono">panic="abort"</span> mais préférer <span class="mono">get()</span>/<span class="mono">get_mut()</span> + branche défensive pour les indices dérivés de l'état, comme déjà fait ailleurs.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>théorique</b></span><span class="ctx">Protections&nbsp;: <b>robuste</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
+      </article>
+
+      <article class="finding sev-suggestion" data-sev="suggestion">
+        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">infrastructure</span><span class="f-loc">.claude/settings.local.json</span></div>
+        <div class="f-title">Configuration locale d'outillage versionnée (chemins propres au poste)</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Le fichier contient des chemins absolus spécifiques à une machine&nbsp;: churn git inutile, fuite de l'arborescence locale, sans valeur pour un autre contributeur.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Retirer du suivi git et ajouter au <span class="mono">.gitignore</span>&nbsp;; ne versionner qu'un settings partagé si nécessaire.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>inconnu</b></span><span class="ctx">Données&nbsp;: <b>publiques</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
+      </article>
+
+      <article class="finding sev-suggestion" data-sev="suggestion">
+        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">code</span><span class="f-loc">synthesis/settings/</span></div>
+        <div class="f-title">Un seul instrument testé pour la sauvegarde/restauration de ses réglages</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Sur ~11 modules de réglages, seul le kick a un test de round-trip. Pour les autres, un champ oublié = perte silencieuse d'un réglage utilisateur au rechargement du projet.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Généraliser le test de round-trip à toutes les voix (macro ou test paramétré), en vérifiant l'égalité de tous les champs.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>partielle</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
+      </article>
+
+      <article class="finding sev-suggestion" data-sev="suggestion">
+        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">code</span><span class="f-loc">native_drag.rs:348</span></div>
+        <div class="f-title">Code Windows bas niveau (COM/OLE) sans test ni documentation de sûreté</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> 31 blocs <span class="mono">unsafe</span> manipulant des pointeurs bruts et de la mémoire Win32 pour le drag MIDI. Fonctionnel et correct, mais une régression y serait une corruption mémoire dans le processus du DAW, difficile à diagnostiquer.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Documenter les invariants (<span class="mono">// SAFETY:</span>) sur chaque fonction unsafe et ajouter un test de la construction de la structure de drag.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>théorique</b></span><span class="ctx">Protections&nbsp;: <b>partielle</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
+      </article>
+
+      <!-- HORS SÉCURITÉ -->
+      <article class="finding sev-hors_securite" data-sev="hors_securite">
+        <div class="f-top"><span class="sev-tag">Hors sécurité</span><span class="cat-tag">infrastructure</span><span class="f-loc">fix_roles.pdb + .zip</span></div>
+        <div class="f-title">Artefacts binaires et archives commités dans le dépôt</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Un fichier de debug (<span class="mono">fix_roles.pdb</span>) et plusieurs <span class="mono">.zip</span> redondants sont versionnés (le <span class="mono">.gitignore</span> couvre .dll/.exe mais pas .pdb/.zip). Gonfle le dépôt et brouille l'historique&nbsp;; le nom « fix_roles » suggère un résidu de réparation.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Supprimer du suivi git et ajouter <span class="mono">*.pdb</span> / <span class="mono">*.zip</span> au <span class="mono">.gitignore</span>.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>inconnu</b></span><span class="ctx">Données&nbsp;: <b>publiques</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+      <article class="finding sev-hors_securite" data-sev="hors_securite">
+        <div class="f-top"><span class="sev-tag">Hors sécurité</span><span class="cat-tag">code</span><span class="f-loc">ui.rs (5919 l.) · lib.rs (3173 l.)</span></div>
+        <div class="f-title">Fichiers « god object » difficiles à maintenir</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> <span class="mono">ui.rs</span> concentre grille, éditeur de son, menus et popups sur près de 6000 lignes&nbsp;; cette densité a directement causé des bugs d'indexation répétés dans l'historique récent. Le risque de régression croît avec la taille.</p>
+          <p class="f-line fix"><span class="k">Correction</span> Découper <span class="mono">ui.rs</span> en sous-modules (grille, éditeur, menus, popups)&nbsp;; extraire les grosses tables de <span class="mono">lib.rs</span>.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>inconnu</b></span><span class="ctx">Données&nbsp;: <b>publiques</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
+      </article>
+
+      <article class="finding sev-hors_securite" data-sev="hors_securite">
+        <div class="f-top"><span class="sev-tag">Hors sécurité</span><span class="cat-tag">code</span><span class="f-loc">ui/design_system.rs · theme.rs</span></div>
+        <div class="f-title">Code d'échafaudage mort (~37 warnings de compilation)</div>
+        <div class="f-body">
+          <p class="f-line impact"><span class="k">Impact</span> Widgets et constantes jamais utilisés + une API dépréciée (<span class="mono">allocate_ui_at_rect</span>) génèrent ~37 warnings qui masquent d'éventuels vrais avertissements et entretiennent la confusion sur ce qui est réellement câblé. Déjà noté (tâche 100aa).</p>
+          <p class="f-line fix"><span class="k">Correction</span> Supprimer le code non câblé ou l'annoter avec justification&nbsp;; remplacer l'API dépréciée&nbsp;; viser 0 warning.</p>
+        </div>
+        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>inconnu</b></span><span class="ctx">Données&nbsp;: <b>publiques</b></span><span class="conf">confiance&nbsp;: haute</span></div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- Architecture & Infra -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Vue d'ensemble</p>
+      <h2>Architecture &amp; infrastructure</h2>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <h3><span class="ic">◆</span> Points forts d'architecture</h3>
+        <ul class="clean good">
+          <li>Séparation nette UI / audio, état partagé lock-free dans la boucle de rendu.</li>
+          <li>Registre d'instruments « source unique de vérité » — ajout d'instrument = édition de données.</li>
+          <li>Migrations de sauvegarde versionnées et testées.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="ic">◆</span> Points faibles</h3>
+        <ul class="clean warn">
+          <li>Verrous/allocations dans le thread audio (voir constat critique).</li>
+          <li>Double indexation « slot / voix », source récurrente de bugs.</li>
+          <li>Fichiers géants et code d'échafaudage mort.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="ic">▸</span> Infrastructure</h3>
+        <ul class="clean">
+          <li><b>Livrable</b>&nbsp;: un unique bundle VST3 chargé par un DAW. Aucun réseau, base de données ni secret.</li>
+          <li><b>Build</b>&nbsp;: script PowerShell manuel (compile, assemble, installe). <b>Aucune CI/CD.</b></li>
+          <li><b>Monitoring</b>&nbsp;: aucun (normal pour un plugin desktop)&nbsp;; identifiant de build affiché dans l'UI.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="ic">▸</span> Résilience</h3>
+        <ul class="clean">
+          <li><span class="mono">panic = "abort"</span>&nbsp;: tout panic dans le rendu fait tomber le DAW hôte.</li>
+          <li>Contention possible du verrou de banque entre UI et audio.</li>
+          <li>Pas de sauvegarde hors état de projet du DAW.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Divergences doc -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Documentation vs code réel</p>
+      <h2>Divergences de documentation</h2>
+      <p>La documentation décrit par endroits un état antérieur du produit. À aligner pour éviter les erreurs d'un nouvel arrivant.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="div">
+        <thead><tr><th>Document</th><th>Ce que dit la doc</th><th>La réalité du code</th><th>Conséquence</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="doc">CLAUDE.md · README.md · infrastructure.md</td>
+            <td>«&nbsp;13 voix&nbsp;» et «&nbsp;13 sorties stéréo aux&nbsp;»</td>
+            <td><b>14 slots</b> et <b>14 sorties</b> (13 voix DSP legacy, mais 14 slots).</td>
+            <td>Sous-estime le modèle modulaire&nbsp;; entretient la confusion slot/voix, justement source de bugs.</td>
+          </tr>
+          <tr>
+            <td class="doc">AGENTS.md · CLAUDE.md</td>
+            <td>La grille est persistée dans le champ «&nbsp;pattern-v1&nbsp;».</td>
+            <td>Le champ réel est <b>«&nbsp;pattern-v5&nbsp;»</b> (migrations v3/v4 → v5).</td>
+            <td>Instruction contradictoire&nbsp;: un agent pourrait croire devoir préserver «&nbsp;pattern-v1&nbsp;».</td>
+          </tr>
+          <tr>
+            <td class="doc">docs/infrastructure.md</td>
+            <td>Diagramme «&nbsp;13 voices + Plocks&nbsp;».</td>
+            <td>14 slots actifs possibles, défaut 4 pistes (BD/SD/HH/Tom).</td>
+            <td>Documentation d'architecture obsolète vs modèle actuel.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Positifs -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">À préserver</p>
+      <h2>Points positifs</h2>
+    </div>
+    <div class="card">
+      <ul class="clean good">
+        <li><b>Discipline temps-réel exemplaire dans le hot path</b>&nbsp;: la boucle de rendu échantillon par échantillon n'alloue pas et ne verrouille pas — état lock-free, file de déclenchements pré-allouée, types copiables. Le problème critique est en périphérie, pas au cœur.</li>
+        <li><b>Suite de tests solide (106 tests)</b>&nbsp;: timing du séquenceur (dérive, swing, polyrythmie), round-trips et migrations de sauvegarde, anti-craquement du kick, tests de charge longue durée.</li>
+        <li><b>Conception data-driven propre</b>&nbsp;: registre d'instruments unique, UI générée depuis les données, pas de dispatch dynamique dans le moteur audio.</li>
+        <li><b>Aucun secret en dur</b>, dépendances minimales et ciblées, invariants critiques documentés (AGENTS.md, guides, handoffs de session).</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap footer-inner">
+    <span>Audit généré par Claude Code · Flash Drum (drum-pattern-vst)</span>
+    <span class="mono">verdict : À retravailler · global 6/10 · 16 findings</span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById('themeBtn');
+    var icon = document.getElementById('themeIcon');
+    var lbl = document.getElementById('themeLbl');
+    function apply(mode) {
+      if (mode === 'system') { root.removeAttribute('data-theme'); }
+      else { root.setAttribute('data-theme', mode); }
+      var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      icon.textContent = dark ? '☀' : '☾';
+      lbl.textContent = dark ? 'Clair' : 'Sombre';
+    }
+    var current = 'system';
+    apply(current);
+    btn.addEventListener('click', function () {
+      var dark = current === 'dark' || (current === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      current = dark ? 'light' : 'dark';
+      apply(current);
+    });
+
+    // Filtres de priorité
+    var filters = document.querySelectorAll('.filter');
+    var cards = document.querySelectorAll('#findings .finding');
+    filters.forEach(function (f) {
+      f.addEventListener('click', function () {
+        filters.forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+        f.setAttribute('aria-pressed', 'true');
+        var v = f.getAttribute('data-f');
+        cards.forEach(function (c) {
+          c.style.display = (v === 'all' || c.getAttribute('data-sev') === v) ? '' : 'none';
+        });
+      });
+    });
+  })();
+</script>
+</body>
+</html>

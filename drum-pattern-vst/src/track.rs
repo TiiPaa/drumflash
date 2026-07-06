@@ -156,7 +156,7 @@ pub enum TrackAudioOut {
 impl TrackAudioOut {
     pub fn label(self) -> String {
         match self {
-            TrackAudioOut::Main => "Main".to_string(),
+            TrackAudioOut::Main => "No Aux".to_string(),
             TrackAudioOut::Out(n) => format!("Out {}", n),
         }
     }
@@ -244,8 +244,7 @@ impl TrackLayoutState {
     }
 
     pub fn modular_default_layout() -> Self {
-        let mut slots: [TrackSlot; MAX_TRACKS] =
-            std::array::from_fn(|_| TrackSlot::inactive());
+        let mut slots: [TrackSlot; MAX_TRACKS] = std::array::from_fn(|_| TrackSlot::inactive());
         // Default template: BD / SD / HH / Tom
         slots[0] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
         slots[1] = TrackSlot::active_with_kind(TrackInstrumentKind::Snare);
@@ -260,8 +259,7 @@ impl TrackLayoutState {
 
     /// Migrate a legacy 13-voice session into 14 slots.
     pub fn from_legacy_13() -> Self {
-        let mut slots: [TrackSlot; MAX_TRACKS] =
-            std::array::from_fn(|_| TrackSlot::inactive());
+        let mut slots: [TrackSlot; MAX_TRACKS] = std::array::from_fn(|_| TrackSlot::inactive());
         let legacy_kinds = [
             TrackInstrumentKind::Kick,
             TrackInstrumentKind::Snare,
@@ -307,6 +305,24 @@ impl TrackLayoutState {
 
     pub fn first_inactive_slot(&self) -> Option<usize> {
         self.slots.iter().position(|s| !s.active)
+    }
+
+    pub fn assign_slot_output_exclusive(&mut self, slot: usize, output: TrackAudioOut) {
+        if slot >= MAX_TRACKS {
+            return;
+        }
+
+        if let TrackAudioOut::Out(out_number) = output {
+            for (other_idx, other_slot) in self.slots.iter_mut().enumerate() {
+                if other_idx != slot
+                    && other_slot.routing.out_select == TrackAudioOut::Out(out_number)
+                {
+                    other_slot.routing.out_select = TrackAudioOut::Main;
+                }
+            }
+        }
+
+        self.slots[slot].routing.out_select = output;
     }
 }
 
@@ -538,5 +554,27 @@ mod tests {
         let atomic = AtomicTrackLayout::from_state(&modular);
         assert_eq!(atomic.kind_for_slot(3), Some(TrackInstrumentKind::Tom));
         assert_eq!(atomic.kind_for_slot(4), None);
+    }
+
+    #[test]
+    fn assigning_aux_output_is_exclusive_between_slots() {
+        let mut layout = TrackLayoutState::default_layout();
+
+        layout.assign_slot_output_exclusive(2, TrackAudioOut::Out(2));
+        layout.assign_slot_output_exclusive(3, TrackAudioOut::Out(2));
+
+        assert_eq!(layout.slots[2].routing.out_select, TrackAudioOut::Main);
+        assert_eq!(layout.slots[3].routing.out_select, TrackAudioOut::Out(2));
+    }
+
+    #[test]
+    fn assigning_main_does_not_clear_other_outputs() {
+        let mut layout = TrackLayoutState::default_layout();
+
+        layout.assign_slot_output_exclusive(2, TrackAudioOut::Out(2));
+        layout.assign_slot_output_exclusive(3, TrackAudioOut::Main);
+
+        assert_eq!(layout.slots[2].routing.out_select, TrackAudioOut::Out(2));
+        assert_eq!(layout.slots[3].routing.out_select, TrackAudioOut::Main);
     }
 }

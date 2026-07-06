@@ -94,8 +94,10 @@ impl InstrumentSettingsState {
     }
 
     pub fn set_freq_mode(&self, in_notes: bool) {
-        self.freq_mode
-            .store(if in_notes { 1.0f32 } else { 0.0f32 }.to_bits(), Ordering::Relaxed);
+        self.freq_mode.store(
+            if in_notes { 1.0f32 } else { 0.0f32 }.to_bits(),
+            Ordering::Relaxed,
+        );
     }
 
     /// Reset the special values to the registry defaults of the given voice.
@@ -252,8 +254,7 @@ impl SoundSettingsState {
                 let base = i * FIELDS_PER_INSTRUMENT_V3;
                 let v = &values[base..base + FIELDS_PER_INSTRUMENT];
                 inst.store(
-                    v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11],
-                    v[12],
+                    v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], v[12],
                 );
                 for k in 0..SPECIAL_SLOT_COUNT {
                     inst.set_special(k, values[base + FIELDS_PER_INSTRUMENT + k]);
@@ -276,7 +277,10 @@ impl SoundSettingsState {
         let current_len = MAX_TRACKS * FIELDS_PER_INSTRUMENT;
 
         let (stride, source_count) = if values.len() == legacy_12_len {
-            (LEGACY_FIELDS_PER_INSTRUMENT, crate::synthesis::DrumVoice::COUNT)
+            (
+                LEGACY_FIELDS_PER_INSTRUMENT,
+                crate::synthesis::DrumVoice::COUNT,
+            )
         } else if values.len() == legacy_13_len {
             (FIELDS_PER_INSTRUMENT, crate::synthesis::DrumVoice::COUNT)
         } else if values.len() == current_len {

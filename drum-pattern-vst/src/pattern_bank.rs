@@ -3,9 +3,7 @@
 //! Kept simple: each slot stores raw serialized bytes that can be
 //! directly fed back into the plock / seq-plock / grid systems.
 
-use crate::sequencer::pattern::{
-    FUSION_SLOT_COUNT, INSTRUMENT_COUNT, MAX_FUSIONS, STEP_COUNT,
-};
+use crate::sequencer::pattern::{FUSION_SLOT_COUNT, INSTRUMENT_COUNT, MAX_FUSIONS, STEP_COUNT};
 
 pub const SLOT_COUNT: usize = 8;
 
@@ -28,11 +26,10 @@ pub const MAX_SEQ_PLOCK_BYTES: usize = crate::sequencer::pattern::INSTRUMENT_COU
     + crate::sequencer::pattern::INSTRUMENT_COUNT * 8; // masks
 
 /// Max serialized size for fused groups.
-pub const MAX_FUSION_BYTES: usize =
-    crate::sequencer::pattern::INSTRUMENT_COUNT
-        * crate::sequencer::pattern::MAX_FUSIONS
-        * FUSION_SLOT_COUNT
-        * 8;
+pub const MAX_FUSION_BYTES: usize = crate::sequencer::pattern::INSTRUMENT_COUNT
+    * crate::sequencer::pattern::MAX_FUSIONS
+    * FUSION_SLOT_COUNT
+    * 8;
 
 /// A single saved pattern slot.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -545,10 +542,7 @@ pub fn restore_from_buffers(
     deserialize_fusions(fusion_bytes, pattern);
 }
 
-fn deserialize_fusions(
-    fusion_bytes: &[u8],
-    pattern: &crate::sequencer::pattern::SharedPattern,
-) {
+fn deserialize_fusions(fusion_bytes: &[u8], pattern: &crate::sequencer::pattern::SharedPattern) {
     let expected_new = INSTRUMENT_COUNT * MAX_FUSIONS * FUSION_SLOT_COUNT * 8;
     let expected_old = INSTRUMENT_COUNT * MAX_FUSIONS * 8;
 

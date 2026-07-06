@@ -1,5 +1,100 @@
 # Changelog
 
+## 2026-07-06 — UI routing : `No Aux` remplace `Main` dans la liste `Out` (build 20260706-192033)
+
+**Build:** `20260706-192033`
+**Validation:** `cargo test` OK (114 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- Dans l'onglet `Track`, la liste `Out` n'affiche plus `Main`.
+- L'état sans sortie auxiliaire dédiée est maintenant libellé `No Aux`.
+- Le switch `Main` reste le seul contrôle pour envoyer ou retirer la lane du Main Mix.
+
+---
+
+## 2026-07-06 — Fix init synth layout : slot Tom réactivé en OpenHH (build 20260706-190624)
+
+**Build:** `20260706-190624`
+**Validation:** `cargo test` OK (114 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `cargo test mapped_aux_output_idx` dans `vendor/nih-plug` OK (3 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige une cause interne du Tom qui pouvait sonner comme un HH après réactivation/routing.**
+  - `DrumFlashVst::initialize()` initialisait encore le synthé avec le layout legacy 13 voix (`slot 3 = OpenHH`).
+  - Si `last_slot_kinds` indiquait déjà le layout modulaire (`slot 3 = Tom`), le process ne réinitialisait pas ce slot, et la lane Tom pouvait garder physiquement une voix OpenHH.
+  - Le synthé est maintenant initialisé directement avec le `track-layout` courant et `last_slot_kinds` est aligné sur ce layout.
+- Test ajouté : le layout modulaire par défaut initialise bien le slot 4 en `Tom`, pas en `OpenHiHat`.
+
+---
+
+## 2026-07-06 — Fix VST3 sparse aux outputs Studio One (build 20260706-185857)
+
+**Build:** `20260706-185857`
+**Validation:** `cargo test` OK (113 + 75 tests), `cargo check` OK (37 warnings UI préexistants), `cargo test mapped_aux_output_idx` dans `vendor/nih-plug` OK (3 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige le bug profond où une lane routée vers `Out 2` pouvait sortir comme une autre lane selon les sorties activées dans Studio One.**
+  - Le wrapper VST3 vendored mémorise maintenant les bus audio activés via `activateBus()`.
+  - Pendant `process()`, les buffers auxiliaires compactés fournis par l'hôte sont remappés vers leurs vrais indices `Out N` au lieu d'être supposés en préfixe `Out 1..N`.
+  - Cas ciblé : Studio One active une sortie sparse (`Main + Out 2` sans `Out 1`) ; le premier buffer aux reçu est maintenant mappé vers `Out 2`, pas `Out 1`.
+- La validation défensive des buffers aux utilise le même mapping sparse.
+- Tests vendor ajoutés : fallback préfixe sans info d'activation, `Main + Out 2`, et sorties sparse multiples.
+
+---
+
+## 2026-07-06 — Fix routing : sortie auxiliaire exclusive par lane (build 20260706-175157)
+
+**Build:** `20260706-175157`
+**Validation:** `cargo test` OK (113 + 75 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige le cas où un Tom routé vers `Out 2` pouvait sembler sonner comme un HH.**
+  - L'assignation `Track > Out` est maintenant exclusive : si une lane prend `Out N`, toute autre lane déjà routée vers ce même `Out N` repasse en sortie auxiliaire `Main`/aucune aux dédiée.
+  - Objectif : éviter qu'un ancien HH ou autre slot reste caché sur le même bus auxiliaire et masque la lane qu'on vient d'assigner.
+- Tests ajoutés : exclusivité d'un `Out N` entre slots, et non-régression quand une lane repasse sur `Main`.
+
+---
+
+## 2026-07-06 — Renommage des sorties DAW en `Out 1..14` (build 20260706-173427)
+
+**Build:** `20260706-173427`
+**Validation:** `cargo test` OK (111 + 73 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- Les noms de ports auxiliaires exposés au DAW sont maintenant génériques : `Out 1` à `Out 14`.
+- Suppression des anciens noms de bus hérités (`Kick`, `Snare`, `Hi-Hat`, `Open HH`, etc.) dans `OUTPUT_PORT_NAMES`.
+- Le routing audio reste celui de la build précédente : chaque slot est envoyé vers la sortie choisie dans `Track > Out`.
+
+---
+
+## 2026-07-06 — Fix routing Track : sorties auxiliaires par slot (build 20260706-172704)
+
+**Build:** `20260706-172704`
+**Validation:** `cargo test` OK (111 + 73 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige la régression où changer `Track > Out` donnait l'impression de changer le son/instrument.**
+  - Le moteur audio lit maintenant le routing `TrackRouting` par slot au lieu d'envoyer implicitement `slot N -> Out N`.
+  - `Main` suit la case `Main` du slot ; `Out N` suit le sélecteur `Out` du même slot.
+  - Plusieurs lanes routées vers le même `Out` sont additionnées au lieu de s'écraser.
+- Le helper d'écriture aux reste défensif : bus inactifs, mono, incomplets ou trop courts sont ignorés sans panic ni écriture invalide.
+- Tests ajoutés/ajustés : écriture aux inactive/incomplète ignorée, sortie stéréo valide accumulée.
+
+---
+
+## 2026-07-06 — Fix multi-out : écriture aux défensive pendant activation/désactivation DAW (build 20260706-141836)
+
+**Build:** `20260706-141836`
+**Validation:** `cargo test` OK (111 + 73 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **Corrige le P0 [117] : distorsion lors de l'activation/désactivation d'une sortie dans le DAW.**
+  - L'écriture des sorties auxiliaires ne suppose plus que chaque bus fourni par l'hôte contient toujours 2 canaux non vides.
+  - Les bus aux inactifs, mono, incomplets ou transitoirement vides sont ignorés au lieu d'être indexés par `channels[0][sample_idx]` / `channels[1][sample_idx]`.
+  - Objectif : éviter les écritures dans des buffers invalides/stale pendant les changements d'activation de sorties Studio One.
+- Tests ajoutés : sorties aux inactives/incomplètes ignorées sans panic, sortie stéréo valide écrite correctement.
+
+---
+
 ## 2026-07-05 — Fix song-mode : reset step 0 après pattern de longueur différente (build 20260705-150850)
 
 **Build:** `20260705-150850`

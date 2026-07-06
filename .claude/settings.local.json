@@ -30,7 +30,10 @@
       "PowerShell(cargo check *)",
       "PowerShell(Select-String -Path \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\AGENTS.md\" -Pattern \"^#{1,3} \" | ForEach-Object { \"{0}: {1}\" -f $_.LineNumber, $_.Line })",
       "PowerShell(cd \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\drum-pattern-vst\"; \\(Get-Content src\\\\ui.rs -TotalCount 4105 | Select-Object -Skip 4090\\) -join \"`n\"; \"---5190---\"; \\(Get-Content src\\\\ui.rs -TotalCount 5205 | Select-Object -Skip 5190\\) -join \"`n\"; \"---4810---\"; \\(Get-Content src\\\\ui.rs -TotalCount 4825 | Select-Object -Skip 4810\\) -join \"`n\")",
-      "PowerShell(Select-String -Path \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\AGENTS.md\",\"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\ADDING_AN_INSTRUMENT.md\" -Pattern \"special_param\" | ForEach-Object { \"{0}:{1}: {2}\" -f \\(Split-Path $_.Path -Leaf\\), $_.LineNumber, $_.Line.Trim\\(\\) })"
+      "PowerShell(Select-String -Path \"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\AGENTS.md\",\"E:\\\\Dev\\\\Projets\\\\Drum Flash\\\\ADDING_AN_INSTRUMENT.md\" -Pattern \"special_param\" | ForEach-Object { \"{0}:{1}: {2}\" -f \\(Split-Path $_.Path -Leaf\\), $_.LineNumber, $_.Line.Trim\\(\\) })",
+      "Bash(awk -F: '{s+=$2} END {print s}')",
+      "Bash(python -c \"import json; d=json.load\\(open\\('audit_cr/claude-code.json', encoding='utf-8'\\)\\); print\\('JSON valide'\\); print\\('findings:', len\\(d['findings']\\)\\); print\\('positifs:', len\\(d['points_positifs']\\)\\); print\\('verdict:', d['resume']['verdict']\\); print\\('global:', d['scores']['global']\\); import collections; print\\('par priorite:', dict\\(collections.Counter\\(f['priorite'] for f in d['findings']\\)\\)\\)\")",
+      "Skill(artifact-design)"
     ]
   }
 }
