@@ -87,7 +87,7 @@ A visual reskin of the existing **fixed 13-voice** plugin to the designer mockup
 
 The plugin is a single `nih-plug` VST3 with an internal step sequencer, modular drum synthesis, and an `egui` UI. Layers:
 
-- `src/lib.rs` — plugin entry: declares `DrumFlashParams` (every persisted/automatable param), `AUDIO_IO_LAYOUTS` (Main Mix + `AUX_OUT_COUNT = 13` stereo aux outs. `DrumVoice::COUNT = 13` (Kick, Snare, HiHat, OpenHiHat, Tom1, Tom2, Tom3, Clap, Ride, Cymbal, Snare606, BassDrum808, Zap).). Wires `transport` → `Sequencer::sync_to_host` (detects seeks via 4-beat-circle diff), and runs the sample loop that calls `Sequencer::process_sample` → `DrumSynthesizer::trigger` → mixes into main + aux buffers and emits `NoteOn/NoteOff` on MIDI channel 10 (index 9).
+- `src/lib.rs` — plugin entry: declares `DrumFlashParams` (every persisted/automatable param), `AUDIO_IO_LAYOUTS` (Main Mix + `AUX_OUT_COUNT = 14` stereo aux outs for `MAX_TRACKS = 14` slots. `DrumVoice::COUNT = 13` legacy synthesis voices: Kick, Snare, HiHat, OpenHiHat, Tom1, Tom2, Tom3, Clap, Ride, Cymbal, Snare606, BassDrum808, Zap). Wires `transport` → `Sequencer::sync_to_host` (detects seeks via 4-beat-circle diff), and runs the sample loop that calls `Sequencer::process_sample` → `DrumSynthesizer::trigger` → mixes into main + aux buffers and emits `NoteOn/NoteOff` on MIDI channel 10 (index 9).
 - `src/sequencer/` — `Sequencer` holds one master `beat_position` (0..4 = 1 bar = 16 steps). Per-track state (`TrackState`) supplies `track_length`, `push_pull_ms`, `humanize_amount`. Humanize affects **velocity only**, not timing (avoids double triggers). Groove/swing is applied to the master grid (`src/groove.rs`). `SharedPattern` is the lock-free `Arc<…>` grid mutated by the UI and read by the audio thread. Step bitmask uses 13 bits (one per voice), masked at write time via `INSTRUMENT_COUNT = 13`.
 - `src/synthesis/` — one DSP file per voice (`kick.rs`, `snare.rs`, `hihat.rs`, `open_hihat.rs`, `tom.rs`, `clap.rs`, `ride.rs`, `cymbal.rs`, `snare606.rs`, `kick_808.rs`, `zap.rs`) plus `dsp.rs` primitives. `algos_for` describes per-voice algorithm variants exposed to the UI. Voice settings come from `SoundSettingsState` (versioned, polled per sample-block in `process()`). The amplitude envelope (`DecayReleaseEnvelope`) is bi-stage with `max(decay, release)` crossover; snare/HH/OH/Snare 606 also use a Hold phase between attack and decay.
 - `src/generator/` — four pattern generators (`probabilistic`, `markov`, `euclidean`, `classic`) driven by `Style` + density/variation params. Output writes back into `SharedPattern`.
@@ -100,6 +100,7 @@ The plugin is a single `nih-plug` VST3 with an internal step sequencer, modular 
 `Cargo.toml` resolves `nih_plug` and `nih_plug_egui` to `vendor/nih-plug/`. That copy carries patches required for Studio One multi-out and state save/restore parity. **Replacing it with the crates.io version will silently break multi-out and state restore.** Specifically the local fork:
 - routes audio/event bus → root unit via `get_unit_by_bus()`
 - accepts progressive output activation in `set_bus_arrangements()`
+- remaps sparse Studio One aux buffers via `active_output_buses` / `mapped_aux_output_idx()` instead of assuming active outputs are a prefix
 - allows `num_ins == 0` with a null input audio pointer
 - ignores non-activated outputs during buffer validation
 - links event/MIDI input to main audio out via `getRoutingInfo()`
@@ -158,7 +159,7 @@ Two slots of the same kind (e.g. two Kicks) are fully independent:
 
 ### Pattern persistence + legacy migration
 
-The grid is persisted in the VST3 state field **`pattern-v1`** (see `PATTERN_STATE_FIELD` in `lib.rs`), serialized directly from `SharedPattern`. Older builds stored 16 hidden `IntParam`s named `st01`…`st16`; `DrumFlashVst::filter_state` migrates those to `pattern-v1` on load and is covered by `legacy_step_params_migrate_to_persistent_pattern_field`. Don’t reintroduce `stNN` params or rename `pattern-v1` — it’s the contract that keeps existing Studio One sessions loading.
+The grid is persisted in the VST3 state field **`pattern-v5`** (see `PATTERN_STATE_FIELD` in `lib.rs`), serialized directly from `SharedPattern` with 14 slot rows. Older builds used `pattern-v1`..`pattern-v4` or 16 hidden `IntParam`s named `st01`…`st16`; `DrumFlashVst::filter_state` migrates those to `pattern-v5` on load. Don’t reintroduce `stNN` params or rename `pattern-v5` — it’s the contract that keeps existing Studio One sessions loading.
 
 ### Frozen VST3 identity
 

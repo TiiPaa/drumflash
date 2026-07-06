@@ -82,21 +82,26 @@
 - [ ] Committer `Cargo.lock` et le retirer de `.gitignore`
 - [ ] Supprimer `fix_roles.pdb` et les `.zip` redondants du suivi git
 - [ ] Retirer `.claude/settings.local.json` du suivi
-- [ ] Corriger docs : `13 voix/aux` → `14 slots`, `pattern-v1` → `pattern-v5`
+- [x] Corriger docs : `13 voix/aux` → `14 slots`, `pattern-v1` → `pattern-v5`
 
 ### [AUDIT-8] Dette UI / qualité
 - [ ] Nettoyer échafaudage UI mort (`design_system.rs`, `StyledButton`, `allocate_ui_at_rect`) → tâche [100aa]
-- [ ] Renommage ports auxiliaires génériques `Out 1..14` (optionnel)
+- [x] Renommage ports auxiliaires génériques `Out 1..14` — build 20260706-173427
 - [ ] Documenter invariants `// SAFETY:` dans `native_drag.rs` + test `build_hdrop_medium`
 
 ## Feedback utilisateur — 2026-07-05 post build 20260705-150850
 
 ### Bugs / régressions P1
-- [ ] **[REPRENDRE ICI]** [117] **P0 — Gros bug de son distordu lors de l'activation/désactivation d'une output dans le DAW**
+- [x] [117] **P0 — Gros bug de son distordu lors de l'activation/désactivation d'une output dans le DAW** — corrigé côté écriture aux défensive (build 20260706-141836) + routing Track par slot (build 20260706-172704) + sorties auxiliaires exclusives par lane (build 20260706-175157) + mapping sparse VST3 Studio One (build 20260706-185857) + init synth sur layout courant (build 20260706-190624, à valider dans Studio One)
   - Reproduire dans Studio One : activer/désactiver une sortie auxiliaire du plugin pendant que le séquenceur joue.
   - Vérifier routing main/aux, buffers non activés, état de bus VST3 côté vendor nih-plug et écriture dans `aux.outputs`.
   - Attendu : aucune distorsion, aucun burst, aucun signal corrompu lors du changement d'activation de sortie.
-- [ ] [103] **Régression : le drag & drop MIDI a disparu**
+  - Régression associée corrigée : changer `Track > Out` ne doit plus changer le son entendu ; le slot sélectionné est réellement routé vers la sortie choisie.
+  - Régression associée corrigée : assigner un Tom à `Out 2` ne doit plus laisser un HH caché sur le même bus ; un `Out N` est maintenant exclusif à une lane.
+  - Cause profonde corrigée : Studio One peut fournir des buffers auxiliaires compactés pour des sorties sparse ; le wrapper VST3 remappe maintenant ces buffers vers le vrai `Out N`.
+  - Cause profonde corrigée : à l'activation, le synthé ne doit plus recréer le slot Tom avec la voix legacy OpenHH.
+  - UX routing corrigée : la liste `Out` affiche `No Aux` au lieu de `Main`, car le Main Mix est déjà contrôlé par le switch `Main` (build 20260706-192033).
+- [ ] **[REPRENDRE ICI]** [103] **Régression : le drag & drop MIDI a disparu**
   - Vérifier le bouton `Drag`, le helper externe `drum-pattern-midi-drag-helper.exe`, l'export temporaire MIDI et l'ouverture de la fenêtre de drag.
   - Attendu : pouvoir glisser un clip MIDI vers Studio One comme avant.
 - [ ] [104] **Ligne avec le bloc Fusion décalée / perte de place**

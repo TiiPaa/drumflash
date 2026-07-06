@@ -11,7 +11,7 @@
 **Flux audio :**
 ```
 DAW appelle process() → Sequencer déclenche les steps → DrumSynthesizer
-  → 13 voix indépendantes (enum DrumVoiceKind) → mix + 13 sorties stéréo aux
+  → 14 slots modulaires adossés aux voix DrumVoiceKind → mix + 14 sorties stéréo aux
 ```
 
 **Flux données UI → audio :**
@@ -37,7 +37,7 @@ UI modifie des atomics (SoundSettingsState) → bump_version()
 | `src/lib.rs` | Plugin principal. Contient `DrumFlashParams` (tous les paramètres nih-plug), `voice_settings_for()`, et la boucle `process()`. |
 | `src/ui.rs` | Grille de séquenceur, Sound Panel, plock menu. |
 | `src/sound_settings.rs` | `SoundSettingsState` + `InstrumentSettingsState` (atomiques partagées UI/audio). |
-| `src/plock.rs` | Stockage per-step des overrides (16 steps × 13 instruments × 18 fields). |
+| `src/plock.rs` | Stockage per-step des overrides (64 steps × 14 slots × 18 fields). |
 
 ---
 
@@ -294,9 +294,9 @@ instrument (il est calculé depuis le registre, donc automatique).
 
 Dans `src/lib.rs` :
 
-1. `AUX_OUT_COUNT` doit correspondre à `DrumVoice::COUNT`.
-2. `OUTPUT_PORT_NAMES` — ajouter le nom de la sortie.
-3. `MIDI_NOTE_MAP` — ajouter la note MIDI.
+1. `AUX_OUT_COUNT` reste aligné sur le pool de slots (`MAX_TRACKS = 14`), pas sur `DrumVoice::COUNT`.
+2. `OUTPUT_PORT_NAMES` reste générique (`Out 1..14`) tant qu'on ne change pas le nombre de slots.
+3. `MIDI_NOTE_MAP` — ajouter la note MIDI si le nouvel instrument doit être déclenché par note entrante legacy.
 
 ### Étape 9 — Defaults de VoiceSettings
 
@@ -376,7 +376,7 @@ Nouvel instrument "Perc2"
 │                                    ↳ special_param() : match (13, 0..5)
 │                                    ↳ freq_mode_perc2: BoolParam (si bass drum)
 ├─> src/lib.rs                      (voice_settings_for() algo arm — special auto-injectés)
-├─> src/lib.rs                      (OUTPUT_PORT_NAMES, MIDI_NOTE_MAP, AUX_OUT_COUNT)
+├─> src/lib.rs                      (MIDI_NOTE_MAP ; sorties aux = slots génériques Out 1..14)
 ├─> src/synthesis/mod.rs            (VoiceSettings::perc2() default)
 ├─> src/synthesis/special_params.rs (algos_for Perc2 si algo_count > 1)
 └─> src/ui.rs / src/plock.rs        (data-driven, mode Notes si freq_display_ratio != 1.0)

@@ -1,0 +1,396 @@
+{
+  "contexte": {
+    "description": "Flash Drum est un plugin VST3 de sequenceur de batterie (64 pas, 4 pages x 16) ecrit en Rust avec nih-plug + egui. Il expose une grille modulaire de 14 slots d'instruments, 13 voix de synthese, 14 sorties stereo auxiliaires + un mix principal, des parameter locks (plocks) type Elektron, un generateur de patterns et l'export/drag MIDI. Cible : musiciens/producteurs utilisant un DAW (Studio One en priorite).",
+    "langages": ["Rust", "PowerShell", "HTML/JS (PoC web archive)"],
+    "frameworks": ["nih-plug (vendore, patche)", "egui / nih_plug_egui", "serde", "windows-sys (COM/OLE)"],
+    "type_projet": "Plugin audio VST3 natif (desktop, temps reel)",
+    "patterns_detectes": [
+      "Separation UI thread / audio thread temps reel",
+      "Etat partage lock-free via atomiques (SharedPattern, PlockState, AtomicTrackLayout)",
+      "Registre data-driven (instrument_registry) source unique de verite",
+      "enum dispatch au lieu de dynamic dispatch dans le moteur audio",
+      "Persistance versionnee par champ VST3 avec migration"
+    ]
+  },
+  "architecture": {
+    "resume": "Architecture a deux threads clairement separes : le thread audio (process() dans lib.rs) lit un etat partage lock-free et rend l'audio, tandis que le thread UI (egui) mute cet etat. Le sequenceur produit des declenchements par slot, le synthetiseur (une voix DSP par fichier) genere l'audio, mixe dans le bus principal + 14 aux. Le systeme est data-driven depuis instrument_registry.rs. La persistance passe par des champs d'etat VST3 versionnes avec migrations. nih-plug est vendore et patche pour le multi-out Studio One.",
+    "composants": [
+      "lib.rs — point d'entree du plugin, DrumFlashParams, process() temps reel, routing audio, migrations d'etat",
+      "sequencer/ — moteur 64 pas, timing, push/pull, humanize, fusions, polyrythmie",
+      "synthesis/ — 13 voix DSP + primitives dsp.rs + saturation, indexees par slot",
+      "instrument_registry.rs — definition data-driven des 13 instruments (source unique de verite)",
+      "plock.rs — parameter locks par step, lock-free (AtomicU64)",
+      "sound_settings.rs — reglages de synthese par slot (specials + freq_mode)",
+      "track.rs — modele de slots modulaires (14), layout atomique",
+      "pattern_bank.rs — banque de patterns P1-P8 + song mode (Mutex)",
+      "generator/ — 4 techniques de generation de patterns",
+      "ui.rs + ui/ — editeur egui (grille, sound editor, plock menus)",
+      "native_drag.rs — drag MIDI natif Windows via COM/OLE (unsafe)"
+    ],
+    "patterns": [
+      "Monolithe modulaire (un seul cdylib)",
+      "Producteur/consommateur lock-free UI->audio",
+      "Data-driven registry",
+      "State machine de sequencage"
+    ],
+    "points_forts": [
+      "Discipline temps reel globalement solide : atomiques, buffers preallouees (pending_triggers fixe a 128), tableaux de taille fixe, VoiceSettings Copy",
+      "Systeme d'instruments entierement data-driven, faible couplage UI/registre",
+      "Invariants documentes explicitement (AGENTS.md, ADDING_AN_INSTRUMENT.md)",
+      "Migrations de persistance versionnees et testees"
+    ],
+    "points_faibles": [
+      "Fichiers geants : ui.rs 5919 lignes, lib.rs 3173 lignes, instrument_registry.rs 1923 lignes",
+      "Verrous Mutex bloquants sur le thread audio (viole la regle interne du projet)",
+      "Double indexation slot/voix source recurrente de bugs (historique des sessions)",
+      "Code d'echafaudage UI mort (design_system.rs, theme.rs, StyledButton) generant ~37 warnings"
+    ],
+    "diagramme_textuel": "DAW (Studio One)\n  |\n  v\nDrumFlashVst::process()  [thread audio TR]\n  |-- lit --> SharedPattern / PlockState / AtomicTrackLayout / SoundSettingsState (atomiques, lock-free)\n  |-- Mutex.lock() --> PatternBank (song mode / load / save)  [VIOLATION TR]\n  |-- Sequencer::process_sample() -> [TriggerResult; 14]\n  |-- DrumSynthesizer (14 slots) -> process_voice_samples_stereo()\n  |-- mix -> main out (2ch) + 14 aux out (2ch)\n        ^\n        | mute UI (egui) : ui.rs mute les memes atomiques + Mutex(PatternBank)\nUI thread (egui editor)"
+  },
+  "documentation_divergences": [
+    {
+      "document": "CLAUDE.md (ligne 7), README.md (ligne 3), docs/infrastructure.md",
+      "constat": "La doc decrit '13 voix de synthese modulaire' et '13 stereo aux outs'.",
+      "realite": "Le code est passe a 14 slots modulaires : track::MAX_TRACKS = 14 et AUX_OUT_COUNT = 14 (lib.rs:37). Il y a bien 13 voix DSP legacy mais 14 slots/sorties.",
+      "impact": "Un nouvel arrivant sous-estime le nombre de slots/sorties reelles ; confusion sur la difference slot (14) vs voix (13) qui est justement la source des bugs recents."
+    },
+    {
+      "document": "AGENTS.md (section 'Pattern persistence + legacy migration', ligne 161) et CLAUDE.md (ligne 53)",
+      "constat": "La doc affirme que la grille est persistee dans le champ VST3 'pattern-v1'.",
+      "realite": "PATTERN_STATE_FIELD = \"pattern-v5\" (lib.rs:56) ; migrations pattern-v3/v4 -> v5.",
+      "impact": "Instruction contradictoire : la section recente ST-7 est a jour, mais la section persistance historique ne l'est pas. Risque qu'un agent croie devoir preserver 'pattern-v1' comme contrat actuel."
+    },
+    {
+      "document": "docs/infrastructure.md (diagramme ASCII)",
+      "constat": "Le diagramme indique '13 voices + Plocks' et '13 voix de synthese modulaire'.",
+      "realite": "14 slots actifs possibles, layout par defaut 4 lanes (BD/SD/HH/Tom) depuis 2026-07-04.",
+      "impact": "Documentation d'architecture obsolete par rapport au modele modulaire actuel."
+    }
+  ],
+  "infrastructure": {
+    "resume": "Projet desktop sans backend : le livrable est un unique bundle VST3 (cdylib) charge par un DAW hote. Le build est manuel via un script PowerShell (build.ps1) qui compile, assemble le bundle et l'installe dans C:\\Program Files\\Common Files\\VST3. Aucun service reseau, aucune base de donnees, aucun secret. Dependance systeme : COM/OLE Windows pour le drag MIDI natif. nih-plug est vendore et patche localement.",
+    "stack": [
+      "Rust (edition 2021), cargo, cdylib VST3",
+      "nih-plug vendore (vendor/nih-plug) patche multi-out Studio One",
+      "egui pour l'UI",
+      "Win32 COM/OLE (windows-sys) pour le drag MIDI",
+      "PowerShell pour le build/install (Windows uniquement)"
+    ],
+    "services_externes": [
+      "Aucun service reseau (pas d'API, BDD, auth, email, CDN)",
+      "OS Windows : APIs COM/OLE (DoDragDrop), GDI, systeme de fichiers (export MIDI vers Documents/Flash Drum)",
+      "DAW hote (Studio One / Reaper) — consommateur du plugin"
+    ],
+    "flux_donnees": [
+      "UI (egui) -> atomiques/SharedPattern -> thread audio (process) -> buffers main + aux -> DAW",
+      "DAW transport -> process() (bpm, position, play) -> resync sequenceur",
+      "Etat plugin <-> DAW project state (serde, champs versionnes pattern-v5, sound-settings-v2, plock-v1, track-layout-v1, ...)",
+      "Bouton export MIDI -> midi_export.rs -> fichier .mid ; Drag -> helper externe drum-pattern-midi-drag-helper.exe -> DoDragDrop"
+    ],
+    "deploiement": "Manuel : build.ps1 -Install (Studio One doit etre ferme car il verrouille la DLL). Le script stampe DRUM_PATTERN_BUILD_ID (timestamp) dans l'env, compile en release, copie DLL + helper dans le bundle .vst3, puis dans le dossier VST3 systeme. Aucune CI/CD (pas de workflow GitHub Actions cote projet ; ceux presents sont dans vendor/nih-plug).",
+    "monitoring": "Aucun monitoring/telemetrie (normal pour un plugin desktop). Observabilite limitee a nih_log! (journal nih-plug) et au BUILD_ID affiche dans l'UI. Pas de metriques de performance runtime.",
+    "secrets_management": "Aucun secret dans le projet (verifie : pas de cle API, mot de passe, token). Non applicable pour un plugin local.",
+    "resilience": "panic = 'abort' en release : tout panic dans process() fait tomber le processus du DAW hote. Pas de sauvegarde auto autre que l'etat de projet du DAW. Le mutex PatternBank est un point de contention potentiel entre UI et audio.",
+    "scalabilite": "Non pertinent (mono-utilisateur, mono-instance). Bottlenecks CPU : mixage O(14) par sample, process_voice_samples_stereo sur 14 voix ; borne et teste (stress_tests). La contention du Mutex PatternBank sous charge (song mode + edition UI simultanee) est le principal risque de glitch audio."
+  },
+  "findings": [
+    {
+      "categorie": "code",
+      "priorite": "critique",
+      "fichier": "drum-pattern-vst/src/lib.rs",
+      "ligne": "2750",
+      "probleme": "Verrou Mutex bloquant (std::sync::Mutex::lock()) pris sur le thread audio en mode song, dans la boucle process(). Deux autres occurrences sur le thread audio : load_pattern_from_slot (lib.rs:1981, appele depuis process aux lignes 2210 et 2771) et save_pattern_to_slot (lib.rs:1954).",
+      "pourquoi": "Viole la regle temps-reel explicite du projet (AGENTS.md ligne 172 : 'no blocking locks in the audio thread'). Si le thread UI detient le lock du PatternBank (sauvegarde/chargement/edition song) au moment ou l'audio tente lock(), le thread audio bloque -> inversion de priorite -> dropout/glitch audible, voire xrun. Le risque est reel car l'UI prend ce meme mutex a de nombreux endroits (ui.rs:994,1020,1110,1115,1292,1503,1522,1543). La branche song-mode (lib.rs:2745-2775) declenche ce lock AUTOMATIQUEMENT a chaque bouclage de pattern, sans action utilisateur. Aggravant : le chemin de sauvegarde alloue aussi sur le thread audio (save_pattern_to_slot -> slot.capture() -> pattern.load_fusions() fait Vec::with_capacity + push, pattern_bank.rs:202/604), donc lock + allocation combines.",
+      "suggestion": "Remplacer lock() par try_lock() sur le thread audio et reporter l'action au bloc suivant en cas de contention, OU passer les commandes save/load/song via une file lock-free (SPSC) UI->audio + un double-buffer atomique pour le PatternBank. La section critique est deja minimisee (copie sous lock puis release avant restore), mais lock() reste bloquant.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "partielle",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/src/midi_export.rs",
+      "ligne": "81",
+      "probleme": "L'export MIDI itere sur INSTRUMENTS (13 entrees = DrumVoice::COUNT) alors que le masque de step est indexe par slot (0..14, MAX_TRACKS). Le 14e slot est donc silencieusement absent de l'export. De plus, la note MIDI provient de def.midi_note (registre par voix) et ignore la note MIDI par slot definie dans track_layout (onglet Track).",
+      "pourquoi": "Un pattern utilisant le 14e slot exporte/draggue vers le DAW perd cette lane. Les notes MIDI personnalisees par slot (feature de l'onglet Track) ne sont pas respectees : le clip MIDI genere ne correspond pas au routing configure par l'utilisateur.",
+      "suggestion": "Iterer sur 0..MAX_TRACKS et deriver la note depuis le track_layout (kind + midi_note du slot) plutot que depuis INSTRUMENTS par bit. Ajouter un test couvrant le 14e slot et une note MIDI de slot personnalisee.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "authentifie",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "aucune",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/src/lib.rs",
+      "ligne": "1961",
+      "probleme": "Appels nih_log! sur le thread audio (9 occurrences dans lib.rs, ex. lignes 1961, 1984, 1990, 2011) dans les chemins save/load/migration. nih_log! formate une String (format!) et journalise — allocation + I/O potentielles sur le thread temps reel.",
+      "pourquoi": "Contraire a la regle 'no allocation' du thread audio. Ces chemins sont declenches par action utilisateur (moins frequents que le per-sample) mais restent sur le callback audio : une allocation/log peut provoquer un glitch, surtout combinee au Mutex du meme chemin.",
+      "suggestion": "Retirer les nih_log! du thread audio ou les conditionner a un build debug uniquement (#[cfg(debug_assertions)]). Deporter tout diagnostic vers le thread UI via un flag/compteur atomique.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "partielle",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/src/synthesis/mod.rs",
+      "ligne": "847",
+      "probleme": "Allocation heap sur le thread audio : reinitialize_slot() fait self.voices[slot_idx] = Some(Box::new(create_voice_for_kind(kind, ...))). Cette fonction est appelee depuis process() (lib.rs:2353) des qu'un slot change de kind (current_kind != last_slot_kinds[slot], lib.rs:2349-2357), c'est-a-dire a chaque ajout/reassignation d'instrument via l'UI.",
+      "pourquoi": "Box::new alloue sur le tas dans le callback temps reel, en violation de la regle 'no allocation'. Ajouter un module ou changer le type d'un slot pendant la lecture peut provoquer un glitch audio. Le declenchement est frequent (chaque changement d'instrument, action utilisateur courante dans un plugin modulaire).",
+      "suggestion": "Pre-allouer les 14 voix possibles a l'initialisation (ou un pool par kind) et se contenter d'un reset/reconfiguration sans allocation lors du changement de kind ; ou effectuer la construction de la voix sur le thread UI et la transferer via un swap de pointeur atomique / file lock-free.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "authentifie",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "aucune",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "infrastructure",
+      "priorite": "important",
+      "fichier": ".gitignore",
+      "ligne": "3",
+      "probleme": "Cargo.lock est ignore par git (ligne 'Cargo.lock' dans .gitignore) alors que le projet produit un binaire final (cdylib VST3), pas une bibliotheque.",
+      "pourquoi": "Pour un artefact livrable, ne pas versionner Cargo.lock empeche les builds reproductibles : deux compilations a des dates differentes peuvent tirer des versions de dependances differentes (serde, windows-sys, etc.), ce qui complique le debug de regressions et cree un risque supply-chain (mise a jour transitive non maitrisee).",
+      "suggestion": "Committer Cargo.lock et le retirer de .gitignore. Verifier ensuite les versions resolues (cargo tree) pour figer une baseline connue.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "theorique",
+        "mitigations": "aucune",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/src/generator/mod.rs",
+      "ligne": "69",
+      "probleme": "Les generateurs supposent des roles d'instruments fixes par index de rangee (ex. rotations euclidiennes [0,0,0,2,4,6,8,...] et styles probabilistes cablant rangee 0=kick, 1=snare, 2=hihat, 3=openhh). Or le layout par defaut est desormais 4 lanes BD/SD/HH/Tom (rangee 3 = Tom, pas OpenHH), et un slot peut porter n'importe quel kind.",
+      "pourquoi": "GENERATE ecrit des patterns concus pour un mapping de voix legacy qui ne correspond plus au layout modulaire : sur le defaut 4 lanes, la generation place des evenements 'open hi-hat' sur une lane Tom, etc. Resultat musicalement incoherent (tache MG-10 du TODO, confirmee).",
+      "suggestion": "Faire piloter le generateur par le kind reel de chaque slot (via track_layout / drum_voice_index) plutot que par l'index de rangee. Definir les roles a partir du kind et ignorer/adapter les slots dupliques.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "authentifie",
+        "exploitabilite": "triviale",
+        "mitigations": "aucune",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "infrastructure",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/src/lib.rs",
+      "ligne": "38",
+      "probleme": "OUTPUT_PORT_NAMES est code en dur avec les noms de voix legacy (Kick, Snare, Hi-Hat, Open HH, Tom 1..3, Clap, Ride, Cymbal, Snare 606, 808 Kick, Perc1, Out 14). Avec la grille modulaire, ces noms ne correspondent plus a l'instrument reellement assigne a chaque slot (ex. slot 4 = Tom par defaut mais nomme 'Open HH').",
+      "pourquoi": "Dans le DAW, les bus auxiliaires affichent des noms trompeurs : l'utilisateur route 'Open HH' alors que la lane joue un Tom. Confusion de routing, surtout apres reassignation d'instruments.",
+      "suggestion": "Soit generer des noms generiques stables (Out 1..14) decouples du kind, soit exposer le nom du slot courant si l'hote supporte le renommage dynamique des ports. Documenter le choix.",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "authentifie",
+        "exploitabilite": "triviale",
+        "mitigations": "aucune",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/src/lib.rs",
+      "ligne": "47",
+      "probleme": "Profil release avec panic = 'abort' combine a des acces par indexation directe sur le thread audio (ex. pending_triggers stocke un slot_idx puis slot_voices[slot_idx] est indexe ligne 2468 ; effective_lengths / raw_lengths indexes par std::array::from_fn). Un panic (index hors borne, unreachable) sur le thread audio abat le processus du DAW.",
+      "pourquoi": "panic = 'abort' est un choix raisonnable pour un plugin (evite le deroulement de pile dans le callback audio), mais il transforme tout bug d'indexation en crash du DAW hote (perte de session non sauvegardee). La surface est aujourd'hui maitrisee (indices bornes par MAX_TRACKS), mais fragile a l'evolution.",
+      "suggestion": "Conserver panic='abort' mais preferer systematiquement get()/get_mut() + branche defensive sur le thread audio pour les indices derives de donnees d'etat, comme deja fait pour slot_voices via 'let Some(...) else'. Auditer les indexations '[' restantes dans process().",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "theorique",
+        "mitigations": "robuste",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/src/generator/mod.rs",
+      "ligne": "78",
+      "probleme": "Absence totale de tests sur le module generator/ (classic, markov, probabilistic, euclidean, styles). C'est une fonctionnalite utilisateur majeure sans aucun filet de regression.",
+      "pourquoi": "Toute modification (densite, styles, roles d'instruments pour MG-10) peut casser silencieusement la generation. Combine au finding sur les roles cables, un correctif ne pourra pas etre valide automatiquement.",
+      "suggestion": "Ajouter des tests deterministes avec RNG seede : nombre de hits attendu par densite, validite de la repartition euclidienne, bornes de probabilite, non-vide/coherence Markov. Idealement figer le mapping role->slot pour testabilite.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "inconnu",
+        "mitigations": "aucune",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/src/lib.rs",
+      "ligne": "2271",
+      "probleme": "La logique de routing mute/solo/mix (calcul de effective_mutes, gating solo, mix_gains) dans process() n'a aucun test unitaire, alors que c'est une logique combinatoire critique (solo prioritaire sur mute, plusieurs solos, exclusion du main mix).",
+      "pourquoi": "Regression facile et invisible aux tests actuels : un solo qui ne coupe pas les autres, ou un mute inverse, ne serait detecte qu'a l'oreille. La couverture est par ailleurs excellente (106 tests) sauf sur ce chemin.",
+      "suggestion": "Extraire la logique de gating (effective_mutes/mix_gains) dans une fonction pure testable et ajouter des cas : 1 mute, 1 solo, mute+solo, plusieurs solos, aucun.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "authentifie",
+        "exploitabilite": "inconnu",
+        "mitigations": "aucune",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "infrastructure",
+      "priorite": "hors_securite",
+      "fichier": "drum-pattern-vst/fix_roles.pdb",
+      "ligne": "1",
+      "probleme": "Un artefact de debug Windows (fix_roles.pdb) est commite dans le depot, ainsi que plusieurs archives .zip (design-pack.zip, docs/design/mockup_Flash_Drum.zip, drum-pattern-vst/assets/fonts/IBMPlexSans.zip). .gitignore ignore *.dll/*.exe mais pas *.pdb ni les .zip.",
+      "pourquoi": "Cruft binaire versionne : gonfle le depot, brouille l'historique, et un .pdb orphelin (nom 'fix_roles' sans source correspondante) suggere un residu de reparation. Les .zip dupliquent des contenus deja extraits (design-pack/, assets/fonts/*.ttf).",
+      "suggestion": "Supprimer fix_roles.pdb et les .zip redondants du suivi git, ajouter '*.pdb' et '*.zip' au .gitignore (ou lister explicitement les archives a conserver).",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "inconnu",
+        "mitigations": "inconnu",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "hors_securite",
+      "fichier": "drum-pattern-vst/src/ui.rs",
+      "ligne": "1",
+      "probleme": "Fichiers 'god object' : ui.rs 5919 lignes, lib.rs 3173 lignes, instrument_registry.rs 1923 lignes, plock.rs 1141 lignes. ui.rs concentre grille, sound editor, plock menus, popups, widgets.",
+      "pourquoi": "Maintenabilite et revue difficiles : la densite de ui.rs a directement cause des bugs d'indexation slot/voix repetes (historique des sessions). Le risque de regression augmente avec la taille.",
+      "suggestion": "Decouper ui.rs en sous-modules (grid.rs, sound_editor.rs, plock_menu.rs, popups.rs) sous ui/. Extraire les gros match/tables de lib.rs (special_param, accesseurs indexes) vers des modules dedies ou une generation macro.",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "inconnu",
+        "mitigations": "inconnu",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "hors_securite",
+      "fichier": "drum-pattern-vst/src/ui/design_system.rs",
+      "ligne": "15",
+      "probleme": "Code d'echafaudage mort : design_system.rs (Typography, Spacing, panel_frame, button, tag...), constantes de theme.rs (DIVIDER, BLUE_D, GAP_SM/MD/LG...), StyledButton dans widgets.rs, methodes LocalParamSlider (suffix, reset_value) — tous 'never used'. ~37 warnings de compilation au total, plus l'usage de allocate_ui_at_rect (deprecie).",
+      "pourquoi": "Bruit de compilation masquant d'eventuels vrais warnings, dette visible, et confusion sur ce qui est reellement cable dans l'UI. La tache [100aa] du TODO le note deja.",
+      "suggestion": "Supprimer le code non cable (design_system.rs / SegmentedControl / StyledButton s'ils ne seront pas adoptes) ou l'annoter #[allow(dead_code)] avec justification. Remplacer allocate_ui_at_rect (deprecie) par allocate_new_ui. Viser 0 warning.",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "inconnu",
+        "mitigations": "inconnu",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "infrastructure",
+      "priorite": "suggestion",
+      "fichier": ".claude/settings.local.json",
+      "ligne": "1",
+      "probleme": "Un fichier de configuration locale d'outillage (.claude/settings.local.json) est versionne et contient des chemins absolus specifiques a la machine (E:\\Dev\\Projets\\Drum Flash\\...) dans des regles de permission.",
+      "pourquoi": "Ces reglages sont propres a un poste : ils generent du churn git inutile, fuient l'arborescence locale, et n'ont pas de sens pour un autre contributeur. Convention usuelle : *.local.json non versionne.",
+      "suggestion": "Retirer .claude/settings.local.json du suivi et l'ajouter au .gitignore. Ne versionner qu'un settings.json partage si necessaire.",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "inconnu",
+        "mitigations": "inconnu",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/src/synthesis/settings/mod.rs",
+      "ligne": "1",
+      "probleme": "Sur les ~11 modules de synthesis/settings/, seul kick.rs possede un test de round-trip (kick_settings_roundtrip_preserves_all_fields). snare, hihat, open_hihat, ride, cymbal, tom, perc1, snare606, clap, kick_808 n'ont aucun test de round-trip, alors qu'ils alimentent la persistance sound-settings v3.",
+      "pourquoi": "Un champ oublie dans un round-trip de settings = perte silencieuse d'un reglage utilisateur au rechargement du projet DAW, non detectee avant un retour utilisateur.",
+      "suggestion": "Generaliser le test de round-trip a toutes les voix (idealement via une macro ou un test parametre iterant sur les kinds), en verifiant l'egalite de tous les champs apres conversion VoiceSettings <-> XxxSettings.",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "authentifie",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "partielle",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/src/native_drag.rs",
+      "ligne": "348",
+      "probleme": "Le code COM/OLE unsafe (implementation manuelle d'IDataObject/IDropSource, build_hdrop_medium) est fonctionnel et globalement correct (ref-counting atomique, gestion des HRESULT), mais totalement depourvu de tests et de commentaires de securite memoire (invariants sur la duree de vie de path_wide, alignement DROPFILES).",
+      "pourquoi": "31 blocs unsafe manipulant des pointeurs bruts et de la memoire globale Win32. Une regression y serait une corruption memoire (UB) dans le processus du DAW, difficile a diagnostiquer. L'absence de test/documentation augmente le risque a la maintenance.",
+      "suggestion": "Documenter les invariants de securite (// SAFETY:) sur chaque fonction unsafe exportee, et ajouter au minimum un test de build_hdrop_medium verifiant la structure DROPFILES + le contenu wide + terminaison double-nul.",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "authentifie",
+        "exploitabilite": "theorique",
+        "mitigations": "partielle",
+        "donnees_impactees": "metier"
+      }
+    }
+  ],
+  "points_positifs": [
+    "Discipline temps reel exemplaire dans le hot path per-sample : etat lock-free (SharedPattern, PlockState en AtomicU64, AtomicTrackLayout), file de triggers preallouee de taille fixe (128), tableaux [_; MAX_TRACKS], VoiceSettings/TriggerResult Copy, RNG LCG atomique — aucune allocation dans la boucle de rendu.",
+    "Suite de tests solide et pertinente : 106 tests lib couvrant le timing du sequenceur (drift, swing, polyrythmie, push/pull), les round-trips/migrations de persistance (pattern v3/v4->v5, sound-settings v3, plock legacy), l'anti-click du kick/808 et la finitude (pas de NaN), plus des stress tests longue duree.",
+    "Conception data-driven propre : instrument_registry comme source unique de verite, Sound Panel et plock menus generes depuis le registre, dispatch par enum (pas de dynamic dispatch) dans le moteur audio.",
+    "Aucun secret en dur, dependances minimales et ciblees (serde, windows-sys avec features explicites), et invariants critiques documentes (AGENTS.md, ADDING_AN_INSTRUMENT.md, handoffs de session)."
+  ],
+  "scores": {
+    "securite": 7,
+    "performance": 6,
+    "architecture": 6,
+    "qualite_code": 6,
+    "bugs_potentiels": 6,
+    "dependances": 6,
+    "tests": 6,
+    "infrastructure": 5,
+    "global": 6
+  },
+  "resume": {
+    "verdict": "A retravailler",
+    "top_3_actions": [
+      "Eliminer les verrous Mutex bloquants du thread audio (song mode + load/save du PatternBank) : passer en try_lock + report, ou en file lock-free UI->audio. C'est la seule violation critique et elle contredit la regle interne du projet.",
+      "Corriger l'export MIDI pour couvrir les 14 slots et respecter les notes MIDI par slot (iterer 0..MAX_TRACKS, deriver la note du track_layout), avec un test dedie.",
+      "Adapter le generateur de patterns aux kinds reels des slots (MG-10) et couvrir generator/ + routing mute/solo par des tests deterministes."
+    ],
+    "quick_wins": [
+      "Committer Cargo.lock (le retirer du .gitignore) pour des builds reproductibles.",
+      "Supprimer du suivi git fix_roles.pdb et les .zip redondants ; ajouter *.pdb au .gitignore.",
+      "Corriger les divergences de doc '13 voix/aux' -> 14 et 'pattern-v1' -> 'pattern-v5' (CLAUDE.md, README.md, AGENTS.md, docs/infrastructure.md).",
+      "Retirer .claude/settings.local.json du suivi git (chemins machine-specifiques).",
+      "Conditionner les nih_log! du thread audio a #[cfg(debug_assertions)]."
+    ],
+    "risk_matrix": [
+      {"finding": "Mutex bloquant sur le thread audio (glitch/dropout par inversion de priorite)", "impact": "Eleve", "probabilite": "Moyenne"},
+      {"finding": "Allocation Box::new/Vec sur le thread audio (reinitialize_slot au changement d'instrument, save path)", "impact": "Eleve", "probabilite": "Moyenne"},
+      {"finding": "Export MIDI perd le 14e slot et ignore les notes par slot", "impact": "Moyen", "probabilite": "Moyenne"},
+      {"finding": "Generateur ecrit des roles d'instruments incoherents avec le layout modulaire", "impact": "Moyen", "probabilite": "Elevee"},
+      {"finding": "nih_log!/allocation sur le thread audio (chemins save/load)", "impact": "Moyen", "probabilite": "Faible"},
+      {"finding": "panic=abort + indexation directe -> crash du DAW en cas de bug d'index", "impact": "Eleve", "probabilite": "Faible"},
+      {"finding": "Absence de tests generator/routing -> regressions silencieuses", "impact": "Moyen", "probabilite": "Moyenne"},
+      {"finding": "Cargo.lock non versionne -> builds non reproductibles / supply chain", "impact": "Faible", "probabilite": "Moyenne"}
+    ]
+  }
+}

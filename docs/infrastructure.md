@@ -113,7 +113,7 @@ Le callback `process()` est appelé par le DAW à chaque bloc d'échantillons. C
 ### Sorties audio
 
 - **Main Mix** — Mix stéréo de toutes les voix
-- **13 sorties Aux** — Une paire stéréo par instrument (routage vers pistes séparées dans le DAW)
+- **14 sorties Aux** — Une paire stéréo générique `Out 1..14`, routée par slot depuis l'onglet `Track`
 
 ### MIDI
 
@@ -127,12 +127,12 @@ Le callback `process()` est appelé par le DAW à chaque bloc d'échantillons. C
 
 L'état du plugin est sauvegardé dans le projet du DAW via `VST3State` :
 
-- **`pattern-v1`** — Grid 64×13 (bitmasks + step data)
+- **`pattern-v5`** — Grid 64×14 slots (bitmasks + step data)
 - **`plock-v1`** — Parameter locks (masques + valeurs)
 - **`sound-settings-v1`** — Réglages de synthèse par instrument
 - **`global-v1`** — Paramètres globaux (BPM, swing, etc.)
 
-Migration legacy : les anciens paramètres `st01`…`st16` sont convertis automatiquement vers `pattern-v1`.
+Migration legacy : les anciens champs `pattern-v1`..`pattern-v4` et paramètres `st01`…`st16` sont convertis automatiquement vers `pattern-v5`.
 
 **Identité VST3 figée** : `VST3_CLASS_ID = *b"DrumFlashPlugin1"` — ne pas modifier pour préserver la compatibilité des projets.
 
@@ -181,7 +181,7 @@ cargo test stress_tests
 
 1. Ouvrir Studio One
 2. Insérer Flash Drum sur une piste instrument
-3. Activer les sorties séparées (Kick/Snare/HiHat...)
+3. Activer les sorties séparées (`Out 1`, `Out 2`, ...)
 4. Sauvegarder le projet
 5. Fermer et rouvrir — vérifier que la grille et les réglages sont restaurés
 
@@ -237,7 +237,7 @@ Points clés :
 2. Implémenter le trait `Voice`
 3. Enregistrer dans `instrument_registry.rs`
 4. Ajouter les paramètres dans `DrumFlashParams`
-5. Mettre à jour `INSTRUMENT_COUNT` et `AUX_OUT_COUNT`
+5. Mettre à jour `DrumVoice::COUNT` et le registry ; `AUX_OUT_COUNT` reste lié aux 14 slots
 6. Ajouter les tests unitaires
 
 ### Build ID

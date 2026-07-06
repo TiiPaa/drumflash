@@ -68,6 +68,11 @@ pub(crate) struct WrapperInner<P: Vst3Plugin> {
     /// IO layout is chosen as the default. Because of the way VST3 works it's not possible to
     /// change the number of busses from that default, only the channel counts can change.
     pub current_audio_io_layout: AtomicCell<AudioIOLayout>,
+    /// Bitmask of VST3 audio output busses activated through `IComponent::activateBus()`.
+    /// Bit 0 is the main output, bit 1 is aux `Out 1`, bit 2 is aux `Out 2`, etc. Some hosts send
+    /// only the active output buffers to `process()`; this lets the wrapper remap those compacted
+    /// buffers back to the plugin's fixed bus indices.
+    pub active_output_buses: AtomicU32,
     /// The current buffer configuration, containing the sample rate and the maximum block size.
     /// Will be set in `IAudioProcessor::setupProcessing()`.
     pub current_buffer_config: AtomicCell<Option<BufferConfig>>,
@@ -295,6 +300,7 @@ impl<P: Vst3Plugin> WrapperInner<P> {
             current_audio_io_layout: AtomicCell::new(
                 P::AUDIO_IO_LAYOUTS.first().copied().unwrap_or_default(),
             ),
+            active_output_buses: AtomicU32::new(1),
             current_buffer_config: AtomicCell::new(None),
             current_process_mode: AtomicCell::new(ProcessMode::Realtime),
             last_process_status: AtomicCell::new(ProcessStatus::Normal),
