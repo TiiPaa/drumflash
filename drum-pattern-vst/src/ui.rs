@@ -990,10 +990,10 @@ fn draw_pattern_bank(
                 }
             }
         }
-
-        let drag_response = chip_button(ui, "Drag", false, BLUE, egui::Sense::click_and_drag())
-            .on_hover_text("Drag the current pattern into your DAW");
-        if drag_response.clicked() || drag_response.drag_started() {
+        let drag_response =
+            chip_button(ui, "Drag", false, BLUE, egui::Sense::click())
+                .on_hover_text("Drag the current pattern into your DAW");
+        if drag_response.clicked() {
             let bpm = params.bpm.value();
             let pattern_length = params.pattern_length.value() as usize;
             match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)

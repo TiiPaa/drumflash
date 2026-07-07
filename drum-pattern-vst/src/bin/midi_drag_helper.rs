@@ -22,7 +22,6 @@ use windows_sys::Win32::{
         DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, PAINTSTRUCT, TRANSPARENT,
     },
     System::LibraryLoader::GetModuleHandleW,
-    UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON},
     UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos,
         GetMessageW, GetWindowLongPtrW, KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW,
@@ -124,12 +123,6 @@ fn run_drag_window(path: PathBuf) -> Result<(), String> {
         }
 
         ShowWindow(hwnd, SW_SHOW);
-
-        // If the user is already dragging (left button held), start the OLE drag
-        // immediately instead of waiting for a click inside the helper window.
-        if (GetAsyncKeyState(VK_LBUTTON.into()) as i16) < 0 {
-            start_drag_from_window(hwnd);
-        }
 
         let mut message: MSG = zeroed();
         while GetMessageW(&mut message, null_mut(), 0, 0) > 0 {
