@@ -1,13 +1,14 @@
 # Changelog
 
-## 2026-07-07 — Restauration du drag & drop MIDI + export 14 slots (build 20260707-091113)
+## 2026-07-07 — Restauration du drag & drop MIDI + export 14 slots (build 20260707-093611)
 
-**Build:** `20260707-091113`
-**Validation:** `cargo test` OK (114 + 76 tests + 3 tests MIDI export), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+**Build:** `20260707-093611`
+**Validation:** `cargo test` OK (115 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK (après fermeture de Studio One)
 
 ### Changements
 - **Restaure le drag & drop MIDI dans Studio One.**
-  - Le bouton `Drag MIDI` utilise maintenant `Sense::click_and_drag()` (comme avant le redesign), donc glisser la puce déclenche à nouveau l’export et le helper.
+  - Le bouton `Drag` utilise maintenant `Sense::click_and_drag()` (comme avant le redesign), donc glisser la puce déclenche à nouveau l’export et le helper.
+  - Les puces `Export` / `Drag` ont été déplacées à gauche de la barre Patterns et leur libellé raccourci, pour éviter qu’elles soient masquées/coupées à droite.
   - Le helper Windows (`drum-pattern-midi-drag-helper.exe`) démarre automatiquement le drag OLE si le bouton gauche est déjà enfoncé quand la fenêtre apparaît, évitant d’avoir à recliquer dans le helper.
 - **Corrige l’export MIDI pour les 14 slots et les notes personnalisées.**
   - `midi_export.rs` itère sur `0..MAX_TRACKS` au lieu des 13 voix legacy.
