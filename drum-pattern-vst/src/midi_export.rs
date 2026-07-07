@@ -1,6 +1,9 @@
 //! MIDI file export (SMF Type 0)
 
-use crate::{instrument_registry::INSTRUMENTS, sequencer::SharedPattern};
+use crate::{
+    sequencer::SharedPattern,
+    track::{AtomicTrackLayout, MAX_TRACKS},
+};
 use std::path::Path;
 
 const TICKS_PER_QUARTER: u32 = 480;
@@ -43,18 +46,20 @@ fn midi_header(track_length: u32) -> Vec<u8> {
 
 pub fn export_pattern_to_midi(
     pattern: &SharedPattern,
+    track_layout: &AtomicTrackLayout,
     bpm: f32,
     pattern_length: usize,
     path: &Path,
 ) -> std::io::Result<()> {
     std::fs::write(
         path,
-        export_pattern_to_midi_data(pattern, bpm, pattern_length),
+        export_pattern_to_midi_data(pattern, track_layout, bpm, pattern_length),
     )
 }
 
 fn export_pattern_to_midi_data(
     pattern: &SharedPattern,
+    track_layout: &AtomicTrackLayout,
     bpm: f32,
     pattern_length: usize,
 ) -> Vec<u8> {
@@ -78,11 +83,15 @@ fn export_pattern_to_midi_data(
 
     for step in 0..steps {
         let mask = pattern.load_step_mask(step);
-        for (instrument, def) in INSTRUMENTS.iter().enumerate() {
-            if (mask & (1u16 << instrument)) != 0 {
+        for slot in 0..MAX_TRACKS {
+            if !track_layout.is_active(slot) {
+                continue;
+            }
+            if (mask & (1u16 << slot)) != 0 {
                 let tick = step as u32 * TICKS_PER_STEP;
-                events.push((tick, vec![0x99, def.midi_note, 100]));
-                events.push((tick + 10, vec![0x89, def.midi_note, 0]));
+                let note = track_layout.midi_note_for_slot(slot);
+                events.push((tick, vec![0x99, note, 100]));
+                events.push((tick + 10, vec![0x89, note, 0]));
             }
         }
     }
@@ -113,25 +122,63 @@ fn export_pattern_to_midi_data(
 #[allow(dead_code)]
 pub fn export_pattern_to_midi_bytes(
     pattern: &SharedPattern,
+    track_layout: &AtomicTrackLayout,
     bpm: f32,
     pattern_length: usize,
 ) -> std::io::Result<Vec<u8>> {
-    Ok(export_pattern_to_midi_data(pattern, bpm, pattern_length))
+    Ok(export_pattern_to_midi_data(
+        pattern,
+        track_layout,
+        bpm,
+        pattern_length,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sequencer::pattern::Pattern;
+    use crate::{
+        sequencer::pattern::Pattern,
+        track::{AtomicTrackLayout, TrackInstrumentKind, TrackLayoutState},
+    };
+
+    fn legacy_layout() -> std::sync::Arc<AtomicTrackLayout> {
+        AtomicTrackLayout::from_state(&TrackLayoutState::from_legacy_13())
+    }
+
+    #[test]
+    fn midi_export_uses_slot_midi_note_including_fourteenth_slot() {
+        let mut layout_state = TrackLayoutState::default_layout();
+        layout_state.slots[13].active = true;
+        layout_state.slots[13].kind = TrackInstrumentKind::Kick;
+        layout_state.slots[13].midi_note = 99;
+        let layout = AtomicTrackLayout::from_state(&layout_state);
+
+        let pattern = SharedPattern::new(&Pattern::empty());
+        pattern.set_step_mask(0, 1u16 << 13);
+
+        let bytes = export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16)
+            .expect("MIDI export should succeed");
+
+        assert!(
+            bytes.windows(3).any(|window| window == [0x99, 99, 100]),
+            "14th slot note-on should use its custom MIDI note"
+        );
+        assert!(
+            bytes.windows(3).any(|window| window == [0x89, 99, 0]),
+            "14th slot note-off should use its custom MIDI note"
+        );
+    }
 
     #[test]
     fn midi_export_includes_perc1_thirteenth_instrument() {
         let pattern = SharedPattern::new(&Pattern::empty());
-        let perc1_index = INSTRUMENTS.len() - 1;
-        pattern.set_step_mask(0, 1u16 << perc1_index);
+        let perc1_slot = 12;
+        pattern.set_step_mask(0, 1u16 << perc1_slot);
+        let layout = legacy_layout();
 
-        let bytes =
-            export_pattern_to_midi_bytes(&pattern, 120.0, 16).expect("MIDI export should succeed");
+        let bytes = export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16)
+            .expect("MIDI export should succeed");
 
         assert!(
             bytes.windows(3).any(|window| window == [0x99, 37, 100]),
@@ -148,9 +195,10 @@ mod tests {
         let pattern = SharedPattern::new(&Pattern::empty());
         pattern.set_step_mask(32, 1u16 << 0); // Kick at step 32
         pattern.set_step_mask(63, 1u16 << 1); // Snare at step 63
+        let layout = legacy_layout();
 
-        let bytes =
-            export_pattern_to_midi_bytes(&pattern, 120.0, 64).expect("MIDI export should succeed");
+        let bytes = export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 64)
+            .expect("MIDI export should succeed");
 
         // Kick note = 36, Snare note = 38
         assert!(

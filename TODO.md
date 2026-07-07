@@ -63,9 +63,9 @@
 - [ ] Conditionner `nih_log!` dans `process()` à `#[cfg(debug_assertions)]` ou reporter vers UI
 
 ### [AUDIT-3] Important — Corriger l'export MIDI 14 slots + note par slot
-- [ ] Itérer `0..MAX_TRACKS` au lieu de `INSTRUMENTS` (midi_export.rs:81)
-- [ ] Lire `track_layout[slot].midi_note` plutôt que `def.midi_note`
-- [ ] Ajouter un test couvrant le 14e slot et une note personnalisée
+- [x] Itérer `0..MAX_TRACKS` au lieu de `INSTRUMENTS` (midi_export.rs:81)
+- [x] Lire `track_layout[slot].midi_note` plutôt que `def.midi_note`
+- [x] Ajouter un test couvrant le 14e slot et une note personnalisée
 
 ### [AUDIT-4] Important — Adapter le générateur aux kinds réels des slots (MG-10)
 - [ ] Mapper rôles musicaux par `kind.drum_voice_index()` / `track_layout`, pas par index de rangée
@@ -101,10 +101,11 @@
   - Cause profonde corrigée : Studio One peut fournir des buffers auxiliaires compactés pour des sorties sparse ; le wrapper VST3 remappe maintenant ces buffers vers le vrai `Out N`.
   - Cause profonde corrigée : à l'activation, le synthé ne doit plus recréer le slot Tom avec la voix legacy OpenHH.
   - UX routing corrigée : la liste `Out` affiche `No Aux` au lieu de `Main`, car le Main Mix est déjà contrôlé par le switch `Main` (build 20260706-192033).
-- [ ] **[REPRENDRE ICI]** [103] **Régression : le drag & drop MIDI a disparu**
-  - Vérifier le bouton `Drag`, le helper externe `drum-pattern-midi-drag-helper.exe`, l'export temporaire MIDI et l'ouverture de la fenêtre de drag.
-  - Attendu : pouvoir glisser un clip MIDI vers Studio One comme avant.
-- [ ] [104] **Ligne avec le bloc Fusion décalée / perte de place**
+- [x] [103] **Régression : le drag & drop MIDI a disparu** — corrigé (build 20260707-091113)
+  - Le bouton `Drag MIDI` est à nouveau sensible au glisser (`Sense::click_and_drag`).
+  - Le helper OLE démarre automatiquement si le bouton gauche est déjà enfoncé.
+  - L’export temporaire MIDI utilise le `track-layout` courant (14 slots + note par slot).
+- [ ] **[REPRENDRE ICI]** [104] **Ligne avec le bloc Fusion décalée / perte de place**
   - Revoir le placement du panneau Fusion sous la grille : il ne doit pas décaler inutilement les zones ni consommer de hauteur excessive.
 - [ ] [105] **Plock sound : Frequency à 0 par défaut sur certains instruments**
   - Probablement lié à [92] ; vérifier tous les instruments, notamment B8/HH/Tom et les slots dupliqués.
