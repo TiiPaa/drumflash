@@ -412,7 +412,7 @@ impl<'a> PersistentField<'a, Vec<f32>> for PersistentSoundSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::track::{TrackInstrumentKind, TrackLayoutState};
+    use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot};
 
     #[test]
     fn v3_roundtrip_preserves_specials_and_freq_mode() {
@@ -455,5 +455,69 @@ mod tests {
             );
         }
         assert!(!state.instruments[5].freq_mode());
+    }
+
+    /// Regression for [105]: every instrument kind must initialise its global
+    /// Frequency to a strictly positive value so the plock sound menu never
+    /// defaults to 0 Hz.
+    #[test]
+    fn default_frequency_is_nonzero_for_every_instrument_kind() {
+        use crate::instrument_registry::INSTRUMENTS;
+
+        for kind_idx in 0..TrackInstrumentKind::COUNT {
+            let kind = TrackInstrumentKind::from_index(kind_idx).unwrap();
+            let voice_idx = kind.drum_voice_index();
+            let expected = INSTRUMENTS[voice_idx].sound_settings_default[0];
+            assert!(
+                expected > 0.0,
+                "{:?} default frequency must be > 0, got {}",
+                kind,
+                expected
+            );
+
+            let mut layout = TrackLayoutState::default_layout();
+            layout.slots[0] = TrackSlot::active_with_kind(kind);
+            let state = SoundSettingsState::new(&layout);
+            let (freq, ..) = state.instruments[0].load();
+            assert!(
+                freq > 0.0,
+                "{:?} slot frequency must be > 0, got {}",
+                kind,
+                freq
+            );
+            assert!(
+                (freq - expected).abs() < 1e-6,
+                "{:?} slot frequency {} does not match registry default {}",
+                kind,
+                freq,
+                expected
+            );
+        }
+    }
+
+    /// Two slots of the same kind must both keep the kind's default Frequency,
+    /// not collapse to 0 or share a single value.
+    #[test]
+    fn duplicate_slots_keep_nonzero_default_frequency() {
+        let mut layout = TrackLayoutState::modular_default_layout();
+        layout.slots[0] = TrackSlot::active_with_kind(TrackInstrumentKind::BassDrum808);
+        layout.slots[1] = TrackSlot::active_with_kind(TrackInstrumentKind::BassDrum808);
+
+        let state = SoundSettingsState::new(&layout);
+        let (freq0, ..) = state.instruments[0].load();
+        let (freq1, ..) = state.instruments[1].load();
+
+        assert!(
+            freq0 > 0.0 && freq1 > 0.0,
+            "duplicate B8 slots must both have positive frequency (got {} and {})",
+            freq0,
+            freq1
+        );
+        assert!(
+            (freq0 - freq1).abs() < 1e-6,
+            "duplicate B8 slots must share the same default frequency ({} vs {})",
+            freq0,
+            freq1
+        );
     }
 }

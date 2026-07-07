@@ -114,8 +114,8 @@ fn plock_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mu
         .corner_radius(RADIUS_PANEL)
         .inner_margin(egui::Margin::same(12));
     frame.show(ui, |ui| {
-        ui.set_min_width(260.0);
-        ui.set_max_width(284.0);
+        ui.set_min_width(280.0);
+        ui.set_max_width(350.0);
         // Top accent bar
         let bar_rect = ui.available_rect_before_wrap();
         let bar_rect = egui::Rect::from_min_max(
@@ -479,6 +479,9 @@ struct EditorUIState {
     /// Instrument picker for an empty lane (opened by the +N chip).
     #[serde(default)]
     add_module_popup: Option<AddModulePopup>,
+    /// Visual flash timer for the Test (T) button when triggered by external MIDI.
+    #[serde(skip)]
+    slot_flash_until: [f64; crate::track::MAX_TRACKS],
 }
 
 fn select_legacy_track(state: &mut EditorUIState, slot_idx: usize) {
@@ -572,6 +575,7 @@ pub fn create_editor(
     current_steps: Arc<[AtomicU32; crate::track::MAX_TRACKS]>,
     pattern: Arc<SharedPattern>,
     voice_test_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
+    external_midi_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
     sound_settings_state: Arc<SoundSettingsState>,
     plock_state: Arc<PlockState>,
     save_pattern_request: Arc<AtomicU32>,
@@ -586,6 +590,7 @@ pub fn create_editor(
     let editor_state = params.editor_state.clone();
     let pattern_for_ui = pattern.clone();
     let voice_test_triggers_for_ui = voice_test_triggers.clone();
+    let external_midi_triggers_for_ui = external_midi_triggers.clone();
     let sound_settings_for_ui = sound_settings_state.clone();
     let current_steps_for_ui = current_steps.clone();
     let plock_for_ui = plock_state.clone();
@@ -704,6 +709,7 @@ pub fn create_editor(
                             &params_for_ui,
                             &pattern_for_ui,
                             &voice_test_triggers_for_ui,
+                            &external_midi_triggers_for_ui,
                             &current_step,
                             &current_steps_for_ui,
                             &sound_settings_for_ui,
@@ -976,8 +982,16 @@ fn draw_pattern_bank(
         if chip_button(ui, "Export", false, BLUE, egui::Sense::click()).clicked() {
             let bpm = params.bpm.value();
             let pattern_length = params.pattern_length.value() as usize;
-            match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)
-            {
+            let swing = params.swing.value();
+            let groove_type = params.groove_type.value();
+            match export_midi_to_documents(
+                pattern,
+                &params.track_layout.state,
+                bpm,
+                pattern_length,
+                swing,
+                groove_type,
+            ) {
                 Ok(path) => {
                     nih_log!("MIDI exported to: {}", path.display());
                     state.last_midi_export_path = Some(path.display().to_string());
@@ -990,14 +1004,22 @@ fn draw_pattern_bank(
                 }
             }
         }
-        let drag_response =
-            chip_button(ui, "Drag", false, BLUE, egui::Sense::click())
-                .on_hover_text("Drag the current pattern into your DAW");
+        let drag_response = chip_button(ui, "Drag", false, BLUE, egui::Sense::click())
+            .on_hover_text("Drag the current pattern into your DAW");
         if drag_response.clicked() {
             let bpm = params.bpm.value();
             let pattern_length = params.pattern_length.value() as usize;
-            match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)
-                .and_then(|path| start_external_midi_drag(&path).map(|_| path))
+            let swing = params.swing.value();
+            let groove_type = params.groove_type.value();
+            match export_midi_to_documents(
+                pattern,
+                &params.track_layout.state,
+                bpm,
+                pattern_length,
+                swing,
+                groove_type,
+            )
+            .and_then(|path| start_external_midi_drag(&path).map(|_| path))
             {
                 Ok(path) => {
                     nih_log!("MIDI drag helper started from: {}", path.display());
@@ -1526,7 +1548,8 @@ fn draw_generator_bar(
                 rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
                 (rng_state as f32) / (u64::MAX as f32)
             };
-            let generated = generator::generate(&gen_params, &mut rng);
+            let generated =
+                generator::generate(&gen_params, params.track_layout.state.as_ref(), &mut rng);
             let pattern_length = params.pattern_length.value() as usize;
             clear_all_fusions(pattern);
             load_pattern_for_ui_with_length(pattern, &generated, pattern_length);
@@ -1663,6 +1686,7 @@ fn draw_grid_v2(
     params: &DrumFlashParams,
     pattern: &SharedPattern,
     voice_test_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
+    external_midi_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
     current_step: &AtomicU32,
     current_steps: &[AtomicU32; crate::track::MAX_TRACKS],
     sound_settings: &SoundSettingsState,
@@ -1775,6 +1799,7 @@ fn draw_grid_v2(
                     params,
                     pattern,
                     voice_test_triggers,
+                    external_midi_triggers,
                     sound_settings,
                     plock,
                     state,
@@ -1801,7 +1826,9 @@ fn draw_grid_v2(
             }
         });
 
+    let mut fusion_edit_box_rect = None;
     ui.horizontal(|ui| {
+        ui.set_height(28.0);
         ui.spacing_mut().item_spacing.x = 12.0;
         ui.label(
             RichText::new("P-Lock Mode")
@@ -1818,10 +1845,7 @@ fn draw_grid_v2(
                 .size(10.5)
                 .color(INK3),
         );
-    });
 
-    let mut fusion_edit_box_rect = None;
-    ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             fusion_edit_box_rect = Some(draw_fusion_edit_box(
                 ui,
@@ -1849,6 +1873,7 @@ fn draw_legacy_slot_lane_v2(
     params: &DrumFlashParams,
     pattern: &SharedPattern,
     voice_test_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
+    external_midi_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
     sound_settings: &SoundSettingsState,
     plock: &PlockState,
     state: &mut EditorUIState,
@@ -1934,7 +1959,12 @@ fn draw_legacy_slot_lane_v2(
             {
                 select_legacy_track(state, slot_idx);
             }
-            if draw_tag_button_v2(ui, "T", BLUE, Color32::WHITE, false, "Test").clicked() {
+            let now = ui.ctx().input(|i| i.time);
+            if external_midi_triggers[slot_idx].swap(false, Ordering::Acquire) {
+                state.slot_flash_until[slot_idx] = now + 0.10;
+            }
+            let is_flashing = now < state.slot_flash_until[slot_idx];
+            if draw_tag_button_v2(ui, "T", AMBER, Color32::BLACK, is_flashing, "Test").clicked() {
                 voice_test_triggers[slot_idx].store(true, Ordering::Release);
                 if params.auto_edit.value() {
                     select_legacy_track(state, slot_idx);
@@ -2023,6 +2053,7 @@ fn draw_legacy_slot_lane_v2(
                     is_current && !beyond_len,
                     is_fusion_mid,
                     fusion_span,
+                    beyond_len,
                 );
 
                 if !beyond_len && response.double_clicked() {
@@ -2173,6 +2204,7 @@ fn draw_empty_slot_lane_v2(
                     false,
                     false,
                     None,
+                    true,
                 )
                 .on_hover_text(format!("Empty slot - step {}", step));
             }
@@ -2480,56 +2512,78 @@ fn draw_page_bar_v2(
             state.follow_mode = !state.follow_mode;
         }
 
-        ui.add_space((ui.available_width() - 420.0).max(12.0));
-        ui.label(RichText::new("Len").font(f_sans_sb(10.5)).color(INK3));
-        header_param_slider(ui, setter, &params.pattern_length, 132.0, "", false);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            ui.label(
-                RichText::new(format!("{}", master_length))
-                    .font(f_mono(12.0))
-                    .color(INK),
-            );
-            ui.label(RichText::new("steps").font(f_sans(9.5)).color(INK3));
-        });
-        for &len in &[16, 32, 48, 64] {
-            let active = master_length == len;
-            let btn = egui::Button::new(RichText::new(format!("{}", len)).monospace().size(10.5))
-                .min_size(Vec2::new(36.0, CTL_HEIGHT))
-                .fill(if active { BLUE } else { PANEL2 })
-                .stroke(egui::Stroke::new(1.0, if active { BLUE } else { LINE2 }))
-                .corner_radius(6.0);
-            if ui.add(btn).clicked() {
-                setter.set_parameter(&params.pattern_length, len as i32);
-            }
-        }
-        let can_double = master_length <= 32;
-        let x2 = egui::Button::new(RichText::new("x2").monospace().size(10.5))
-            .min_size(Vec2::new(36.0, CTL_HEIGHT))
-            .fill(PANEL2)
-            .stroke(egui::Stroke::new(1.0, LINE2))
-            .corner_radius(6.0);
-        if ui.add_enabled(can_double, x2).clicked() {
-            for i in 0..master_length {
-                pattern.set_step_mask(master_length + i, pattern.load_step_mask(i));
-                for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
-                    if plock.masks.is_active(inst, i) {
-                        let field_mask = plock.field_masks.get_raw(inst, i);
-                        plock.masks.set_active(inst, master_length + i, true);
-                        plock
-                            .field_masks
-                            .set_raw(inst, master_length + i, field_mask);
-                        for field in 0..crate::plock::FIELD_COUNT {
-                            let value = plock.values.get(inst, i, field);
-                            plock.values.set(inst, master_length + i, field, value);
-                        }
+        const LEN_GROUP_W: f32 = 468.0;
+        const LEN_VALUE_W: f32 = 64.0;
+        ui.add_space((ui.available_width() - LEN_GROUP_W).max(12.0));
+        ui.allocate_ui_with_layout(
+            Vec2::new(LEN_GROUP_W, CTL_HEIGHT),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.label(RichText::new("Len").font(f_sans_sb(10.5)).color(INK3));
+                header_param_slider(ui, setter, &params.pattern_length, 132.0, "", false);
+                draw_len_value_fixed(ui, master_length, LEN_VALUE_W);
+                for &len in &[16, 32, 48, 64] {
+                    let active = master_length == len;
+                    let btn =
+                        egui::Button::new(RichText::new(format!("{}", len)).monospace().size(10.5))
+                            .min_size(Vec2::new(36.0, CTL_HEIGHT))
+                            .fill(if active { BLUE } else { PANEL2 })
+                            .stroke(egui::Stroke::new(1.0, if active { BLUE } else { LINE2 }))
+                            .corner_radius(6.0);
+                    if ui.add(btn).clicked() {
+                        setter.set_parameter(&params.pattern_length, len as i32);
                     }
                 }
-            }
-            duplicate_fusions_for_x2(pattern, params, plock, master_length);
-            setter.set_parameter(&params.pattern_length, (master_length * 2) as i32);
-        }
+                let can_double = master_length <= 32;
+                let x2 = egui::Button::new(RichText::new("x2").monospace().size(10.5))
+                    .min_size(Vec2::new(36.0, CTL_HEIGHT))
+                    .fill(PANEL2)
+                    .stroke(egui::Stroke::new(1.0, LINE2))
+                    .corner_radius(6.0);
+                if ui.add_enabled(can_double, x2).clicked() {
+                    for i in 0..master_length {
+                        pattern.set_step_mask(master_length + i, pattern.load_step_mask(i));
+                        for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+                            if plock.masks.is_active(inst, i) {
+                                let field_mask = plock.field_masks.get_raw(inst, i);
+                                plock.masks.set_active(inst, master_length + i, true);
+                                plock
+                                    .field_masks
+                                    .set_raw(inst, master_length + i, field_mask);
+                                for field in 0..crate::plock::FIELD_COUNT {
+                                    let value = plock.values.get(inst, i, field);
+                                    plock.values.set(inst, master_length + i, field, value);
+                                }
+                            }
+                        }
+                    }
+                    duplicate_fusions_for_x2(pattern, params, plock, master_length);
+                    setter.set_parameter(&params.pattern_length, (master_length * 2) as i32);
+                }
+            },
+        );
     });
+}
+
+fn draw_len_value_fixed(ui: &mut egui::Ui, master_length: usize, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, CTL_HEIGHT), egui::Sense::hover());
+    let number_text = format!("{:>2}", master_length);
+    let number_pos = egui::pos2(rect.left(), rect.center().y);
+    ui.painter().text(
+        number_pos,
+        egui::Align2::LEFT_CENTER,
+        number_text,
+        f_mono(12.0),
+        INK,
+    );
+    ui.painter().text(
+        egui::pos2(rect.left() + 23.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        "steps",
+        f_sans(9.5),
+        INK3,
+    );
 }
 
 fn draw_seq_header_v2(
@@ -2706,6 +2760,7 @@ fn draw_step_cell_v2(
     playhead: bool,
     is_fusion_mid: bool,
     fusion_span: Option<usize>,
+    dashed_border: bool,
 ) -> egui::Response {
     let sense = if enabled {
         egui::Sense::click()
@@ -2735,8 +2790,12 @@ fn draw_step_cell_v2(
     if !is_fusion_mid {
         ui.painter().rect_filled(block_rect, 4.0, fill);
         if stroke.width > 0.0 && stroke.color.a() > 0 {
-            ui.painter()
-                .rect_stroke(block_rect, 4.0, stroke, egui::StrokeKind::Inside);
+            if dashed_border {
+                draw_dashed_rect(ui.painter(), block_rect.shrink(0.5));
+            } else {
+                ui.painter()
+                    .rect_stroke(block_rect, 4.0, stroke, egui::StrokeKind::Inside);
+            }
         }
     }
 
@@ -2761,6 +2820,42 @@ fn draw_step_cell_v2(
     response
 }
 
+fn draw_dashed_rect(painter: &egui::Painter, rect: egui::Rect) {
+    let stroke = egui::Stroke::new(2.5, Color32::from_rgba_unmultiplied(0, 0, 0, 235));
+    let dash = 6.0;
+    let gap = 3.0;
+    let step = dash + gap;
+    let corner = 4.0;
+
+    let mut x = rect.left() + corner;
+    while x < rect.right() - corner {
+        let end = (x + dash).min(rect.right() - corner);
+        painter.line_segment(
+            [egui::pos2(x, rect.top()), egui::pos2(end, rect.top())],
+            stroke,
+        );
+        painter.line_segment(
+            [egui::pos2(x, rect.bottom()), egui::pos2(end, rect.bottom())],
+            stroke,
+        );
+        x += step;
+    }
+
+    let mut y = rect.top() + corner;
+    while y < rect.bottom() - corner {
+        let end = (y + dash).min(rect.bottom() - corner);
+        painter.line_segment(
+            [egui::pos2(rect.left(), y), egui::pos2(rect.left(), end)],
+            stroke,
+        );
+        painter.line_segment(
+            [egui::pos2(rect.right(), y), egui::pos2(rect.right(), end)],
+            stroke,
+        );
+        y += step;
+    }
+}
+
 fn step_colors_v2(
     ctx: &egui::Context,
     sequencer_mode: bool,
@@ -2778,8 +2873,8 @@ fn step_colors_v2(
 ) -> (Color32, egui::Stroke) {
     if disabled {
         return (
-            Color32::from_rgba_unmultiplied(28, 28, 36, 72),
-            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(58, 58, 72, 72)),
+            Color32::from_rgb(10, 10, 14),
+            egui::Stroke::new(1.0, Color32::from_rgb(0, 0, 0)),
         );
     }
     if selection_start {
@@ -3550,7 +3645,7 @@ fn draw_track_tab(
         PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
     }
 
-    // Per-track sequencing params (same params as the lane mini-sliders).
+    // Per-track sequencing params kept out of the grid only where useful.
     ui.add_space(16.0);
     ui.label(
         RichText::new("Sequencing")
@@ -3558,44 +3653,6 @@ fn draw_track_tab(
             .color(INK3),
     );
     let master_length = params.pattern_length.value().clamp(1, 64) as usize;
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            Vec2::new(70.0, 20.0),
-            egui::Label::new(RichText::new("Humanize").font(f_sans_med(11.0)).color(INK2)),
-        );
-        draw_param_mini_slider_with_value(
-            ui,
-            setter,
-            params.humanizes()[slot_idx],
-            0.0,
-            1.0,
-            90.0,
-            BLUE,
-            "Humanize",
-            |value| format!("{:>3}%", (value * 100.0).round() as i32),
-        );
-    });
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            Vec2::new(70.0, 20.0),
-            egui::Label::new(
-                RichText::new("Push/Pull")
-                    .font(f_sans_med(11.0))
-                    .color(INK2),
-            ),
-        );
-        draw_param_mini_slider_with_value(
-            ui,
-            setter,
-            params.pushes()[slot_idx],
-            -50.0,
-            50.0,
-            90.0,
-            BLUE,
-            "Push/Pull",
-            |value| format!("{:+.0} ms", value),
-        );
-    });
     ui.horizontal(|ui| {
         ui.add_sized(
             Vec2::new(70.0, 20.0),
@@ -3689,7 +3746,7 @@ fn draw_sound_panel(
                 (
                     SoundEditorTab::Track,
                     "Track",
-                    "Instrument type, MIDI note, routing, humanize, push, length",
+                    "Instrument type, MIDI note, routing, length",
                 ),
             ] {
                 let selected = state.sound_editor_tab == tab;
@@ -4405,137 +4462,173 @@ fn current_field_value_for_fusion(
     }
 }
 
+/// Read the current end value for a morph target, or the global/plock value if
+/// the field is not a target. Uses the live `new_fusions` slice so mutations
+/// made earlier in the same frame are visible.
+fn fusion_morph_state(
+    new_fusions: &[crate::sequencer::pattern::FusedGroup],
+    fusion_index: usize,
+    field_index: usize,
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
+    instrument: usize,
+) -> (f32, bool) {
+    let Some(group) = new_fusions.get(fusion_index) else {
+        return (0.0, false);
+    };
+    if group.has_morph_target(field_index) {
+        let end = group.morph_targets[..group.morph_count as usize]
+            .iter()
+            .find(|t| t.field == field_index as u8)
+            .map(|t| t.end_value)
+            .unwrap_or(0.0);
+        (end, true)
+    } else {
+        (
+            current_field_value_for_fusion(params, sound_settings, instrument, field_index),
+            false,
+        )
+    }
+}
+
 fn draw_fusion_edit_box(
     ui: &mut egui::Ui,
     pattern_for_ui: &SharedPattern,
     params: &DrumFlashParams,
-    sound_settings: &SoundSettingsState,
+    _sound_settings: &SoundSettingsState,
     state: &mut EditorUIState,
     fusion_mode_active: bool,
 ) -> egui::Rect {
-    let box_size = Vec2::new(720.0, 28.0);
+    let box_size = Vec2::new(380.0, 28.0);
 
-    ui.allocate_ui_with_layout(
-        box_size,
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            egui::Frame::new()
-                .fill(Color32::from_rgb(24, 24, 30))
-                .stroke(egui::Stroke::new(1.0, LINE2))
-                .corner_radius(5.0)
-                .inner_margin(4.0)
-                .show(ui, |ui| {
-                    ui.set_min_size(Vec2::new(box_size.x - 8.0, box_size.y - 8.0));
-                    ui.horizontal(|ui| {
-                        if let Some((instrument, index, group)) =
-                            edited_fusion_for_ui(pattern_for_ui, state)
-                        {
-                            ui.label(
-                                RichText::new(format!(
-                                    "Fusion {}-{} (cells)",
-                                    group.start_cell + 1,
-                                    group.end_cell + 1
-                                ))
-                                .strong()
-                                .size(11.0),
+    // Allocate the exact outer size so the parent row never grows, even if the
+    // edit-content widgets are slightly taller than the idle-content widgets.
+    let (rect, response) = ui.allocate_exact_size(box_size, egui::Sense::hover());
+    ui.allocate_ui_at_rect(rect, |ui| {
+        egui::Frame::new()
+            .fill(Color32::from_rgb(24, 24, 30))
+            .stroke(egui::Stroke::new(1.0, LINE2))
+            .corner_radius(5.0)
+            .inner_margin(3.0)
+            .show(ui, |ui| {
+                let inner_size = Vec2::new(box_size.x - 6.0, box_size.y - 6.0);
+                ui.set_min_size(inner_size);
+                ui.set_max_size(inner_size);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    if let Some((instrument, index, group)) =
+                        edited_fusion_for_ui(pattern_for_ui, state)
+                    {
+                        ui.label(
+                            RichText::new(format!(
+                                "F {}-{}",
+                                group.start_cell + 1,
+                                group.end_cell + 1
+                            ))
+                            .strong()
+                            .size(11.0),
+                        );
+                        ui.label(RichText::new("Steps:").size(11.0));
+
+                        let mut step_text = group.step_count.to_string();
+                        let step_edit_id = ui.id().with("fusion_step_count");
+                        let text_edit = egui::TextEdit::singleline(&mut step_text)
+                            .id(step_edit_id)
+                            .desired_width(40.0)
+                            .font(egui::TextStyle::Monospace);
+                        let output = ui
+                            .allocate_ui_with_layout(
+                                Vec2::new(40.0, 18.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| text_edit.show(ui),
+                            )
+                            .inner;
+                        let te_response = output.response;
+                        if state.fusion_edit_focus_request {
+                            state.fusion_edit_focus_request = false;
+                            te_response.request_focus();
+                            let mut new_state = output.state;
+                            let text_len = step_text.chars().count();
+                            let all = egui::text::CCursorRange::two(
+                                egui::text::CCursor::default(),
+                                egui::text::CCursor::new(text_len),
                             );
-                            ui.label(RichText::new("Steps:").size(11.0));
-
-                            let mut step_text = group.step_count.to_string();
-                            let step_edit_id = ui.id().with("fusion_step_count");
-                            let text_edit = egui::TextEdit::singleline(&mut step_text)
-                                .id(step_edit_id)
-                                .desired_width(48.0)
-                                .font(egui::TextStyle::Monospace);
-                            let output = ui
-                                .allocate_ui_with_layout(
-                                    Vec2::new(48.0, 18.0),
-                                    egui::Layout::left_to_right(egui::Align::Center),
-                                    |ui| text_edit.show(ui),
-                                )
-                                .inner;
-                            let te_response = output.response;
-                            if state.fusion_edit_focus_request {
-                                state.fusion_edit_focus_request = false;
-                                te_response.request_focus();
-                                let mut new_state = output.state;
-                                let text_len = step_text.chars().count();
-                                let all = egui::text::CCursorRange::two(
-                                    egui::text::CCursor::default(),
-                                    egui::text::CCursor::new(text_len),
-                                );
-                                new_state.cursor.set_char_range(Some(all));
-                                new_state.store(ui.ctx(), step_edit_id);
-                            }
-                            if te_response.lost_focus() || te_response.changed() {
-                                if let Ok(value) = step_text.parse::<u8>() {
-                                    let clamped = value.clamp(1, 64);
-                                    let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                                    if let Some(group) = new_fusions.get_mut(index) {
-                                        group.step_count = clamped;
-                                        pattern_for_ui.store_fusions(instrument, &new_fusions);
-                                    }
+                            new_state.cursor.set_char_range(Some(all));
+                            new_state.store(ui.ctx(), step_edit_id);
+                        }
+                        if te_response.lost_focus() || te_response.changed() {
+                            if let Ok(value) = step_text.parse::<u8>() {
+                                let clamped = value.clamp(1, 64);
+                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                                if let Some(group) = new_fusions.get_mut(index) {
+                                    group.step_count = clamped;
+                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
                                 }
                             }
+                        }
 
-                            // Morph targets display
-                            if group.morph_count > 0 {
-                                ui.label(RichText::new("Morph:").size(11.0));
-                                let morphable = crate::instrument_registry::morphable_fields(
-                                    schema_voice_idx(params, instrument),
-                                );
-                                for t in &group.morph_targets[..group.morph_count as usize] {
-                                    let name = morphable
+                        // Morph targets display (compact)
+                        if group.morph_count > 0 {
+                            let morphable = crate::instrument_registry::morphable_fields(
+                                schema_voice_idx(params, instrument),
+                            );
+                            let names: Vec<&str> = group.morph_targets
+                                [..group.morph_count as usize]
+                                .iter()
+                                .map(|t| {
+                                    morphable
                                         .iter()
                                         .find(|f| f.field_index == t.field as usize)
                                         .map(|f| f.label)
-                                        .unwrap_or("?");
-                                    let value_text = format_value_for_plock_special(
-                                        t.end_value,
-                                        morphable
-                                            .iter()
-                                            .find(|f| f.field_index == t.field as usize)
-                                            .map(|f| f.min)
-                                            .unwrap_or(0.0),
-                                        morphable
-                                            .iter()
-                                            .find(|f| f.field_index == t.field as usize)
-                                            .map(|f| f.max)
-                                            .unwrap_or(1.0),
-                                    );
-                                    ui.label(
-                                        RichText::new(format!("{} → {}", name, value_text))
-                                            .size(10.5)
-                                            .color(INK2),
-                                    );
-                                }
-                            } else {
-                                ui.label(RichText::new("Morph: Off").size(11.0).color(INK2));
-                            }
-
-                            if ui.button("Delete").clicked() {
-                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                                if index < new_fusions.len() {
-                                    new_fusions.remove(index);
-                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
-                                }
-                                state.fusion_editing = None;
-                            }
-                            if ui.button("Close").clicked() {
-                                finish_fusion_editing_for_ui(pattern_for_ui, state);
-                            }
+                                        .unwrap_or("?")
+                                })
+                                .collect();
+                            ui.label(
+                                RichText::new(format!("M: {}", names.join(", ")))
+                                    .size(10.0)
+                                    .color(INK2),
+                            );
                         } else {
-                            if state.fusion_editing.is_some() {
-                                state.fusion_editing = None;
-                            }
-                            draw_fusion_idle_box_contents(ui, fusion_mode_active);
+                            ui.label(RichText::new("M: Off").size(10.0).color(INK2));
                         }
-                    });
+
+                        let del_clicked = ui
+                            .allocate_ui_with_layout(
+                                Vec2::new(32.0, 18.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| ui.add(egui::Button::new("Del").small()),
+                            )
+                            .inner
+                            .clicked();
+                        if del_clicked {
+                            let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                            if index < new_fusions.len() {
+                                new_fusions.remove(index);
+                                pattern_for_ui.store_fusions(instrument, &new_fusions);
+                            }
+                            state.fusion_editing = None;
+                        }
+                        let close_clicked = ui
+                            .allocate_ui_with_layout(
+                                Vec2::new(22.0, 18.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| ui.add(egui::Button::new("×").small()),
+                            )
+                            .inner
+                            .clicked();
+                        if close_clicked {
+                            finish_fusion_editing_for_ui(pattern_for_ui, state);
+                        }
+                    } else {
+                        if state.fusion_editing.is_some() {
+                            state.fusion_editing = None;
+                        }
+                        draw_fusion_idle_box_contents(ui, fusion_mode_active);
+                    }
                 });
-        },
-    )
-    .response
-    .rect
+            });
+    });
+
+    response.rect
 }
 
 fn close_fusion_editing_on_outside_click(
@@ -5021,6 +5114,8 @@ fn export_midi_to_documents(
     track_layout: &crate::track::AtomicTrackLayout,
     bpm: f32,
     pattern_length: usize,
+    swing: f32,
+    groove_type: crate::groove::GrooveType,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let docs = std::env::var("USERPROFILE")
         .ok()
@@ -5036,7 +5131,15 @@ fn export_midi_to_documents(
     let filename = format!("drum_pattern_{:.0}bpm_{}.mid", bpm, timestamp);
     let path = export_dir.join(filename);
 
-    midi_export::export_pattern_to_midi(pattern, track_layout, bpm, pattern_length, &path)?;
+    midi_export::export_pattern_to_midi(
+        pattern,
+        track_layout,
+        bpm,
+        pattern_length,
+        swing,
+        groove_type,
+        &path,
+    )?;
     Ok(path)
 }
 
@@ -5475,26 +5578,9 @@ fn draw_fusion_morph_menu(
     let title = format!("Morph {}", inst_def.label);
 
     let mut new_fusions = pattern.load_fusions(instrument);
-    let Some(group) = new_fusions.get(fusion_index).copied() else {
+    if new_fusions.get(fusion_index).is_none() {
         return;
-    };
-
-    // Helper: current end value if this field is a morph target, otherwise global/plock value.
-    let morph_state = |field_index: usize| -> (f32, bool) {
-        if group.has_morph_target(field_index) {
-            let end = group.morph_targets[..group.morph_count as usize]
-                .iter()
-                .find(|t| t.field == field_index as u8)
-                .map(|t| t.end_value)
-                .unwrap_or(0.0);
-            (end, true)
-        } else {
-            (
-                current_field_value_for_fusion(params, sound_settings, instrument, field_index),
-                false,
-            )
-        }
-    };
+    }
 
     plock_menu_frame(ui, ACCENT, |ui| {
         if plock_menu_header(ui, &title, step, ACCENT) {
@@ -5502,7 +5588,16 @@ fn draw_fusion_morph_menu(
         }
 
         // Mode indicator
-        let mode_text = if group.morph_count == 0 { "Off" } else { "On" };
+        let mode_text = if new_fusions
+            .get(fusion_index)
+            .map(|g| g.morph_count)
+            .unwrap_or(0)
+            == 0
+        {
+            "Off"
+        } else {
+            "On"
+        };
         ui.horizontal(|ui| {
             ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -5529,7 +5624,15 @@ fn draw_fusion_morph_menu(
         // Volume
         {
             let vol_field = crate::instrument_registry::StandardField::Volume.plock_field_index();
-            let (mut vol_value, is_target) = morph_state(vol_field);
+            let (mut vol_value, is_target) = fusion_morph_state(
+                &new_fusions,
+                fusion_index,
+                vol_field,
+                params,
+                sound_settings,
+                instrument,
+            );
+            vol_value = vol_value.clamp(0.0, 2.0);
             let vol_response = plock_menu_row(
                 ui,
                 "Volume",
@@ -5539,7 +5642,7 @@ fn draw_fusion_morph_menu(
                 |ui| {
                     let slider = ui.add(
                         LocalParamSlider::new(&mut vol_value, 0.0..=2.0)
-                            .with_width(104.0)
+                            .with_width(96.0)
                             .without_value(),
                     );
                     if is_target {
@@ -5583,7 +5686,14 @@ fn draw_fusion_morph_menu(
                 continue;
             }
             let field_index = def.field.plock_field_index();
-            let (mut value, is_target) = morph_state(field_index);
+            let (mut value, is_target) = fusion_morph_state(
+                &new_fusions,
+                fusion_index,
+                field_index,
+                params,
+                sound_settings,
+                instrument,
+            );
 
             // Special case: frequency in note mode for bass drums
             if def.field == crate::instrument_registry::StandardField::Freq && freq_in_notes {
@@ -5627,12 +5737,13 @@ fn draw_fusion_morph_menu(
                     ..
                 } => {
                     let value_text = format_value_for_plock(def.field, value, *min, *max);
+                    value = value.clamp(*min, *max);
                     let row_response =
                         plock_menu_row(ui, def.label, ACCENT, is_target, Some(&value_text), |ui| {
                             let slider = ui.add(
                                 LocalParamSlider::new(&mut value, *min..=*max)
                                     .logarithmic(*logarithmic)
-                                    .with_width(104.0)
+                                    .with_width(96.0)
                                     .without_value(),
                             );
                             if is_target {
@@ -5672,14 +5783,32 @@ fn draw_fusion_morph_menu(
             }
         }
 
-        // Special params
+        // Special params (continuous only — discrete params can't be morphed).
+        // Also skip any special param whose plock field overlaps a standard field
+        // (e.g. special_index 4 → field 18 which is also Attack).
+        let standard_field_indices: std::collections::HashSet<usize> = inst_def
+            .standard_params
+            .iter()
+            .map(|def| def.field.plock_field_index())
+            .collect();
         let special_defs = crate::instrument_registry::special_params(voice_idx);
         for def in special_defs {
-            if def.special_index >= 8 {
+            if def.special_index >= 8 || !def.continuous {
                 continue;
             }
             let field = SPECIAL_FIELD_START + def.special_index;
-            let (mut value, is_target) = morph_state(field);
+            if standard_field_indices.contains(&field) {
+                continue;
+            }
+            let (mut value, is_target) = fusion_morph_state(
+                &new_fusions,
+                fusion_index,
+                field,
+                params,
+                sound_settings,
+                instrument,
+            );
+            value = value.clamp(def.min, def.max);
             let log = def.min > 0.0 && def.max / def.min >= 20.0;
             let value_text = format_value_for_plock_special(value, def.min, def.max);
             let special_response =
@@ -5687,7 +5816,7 @@ fn draw_fusion_morph_menu(
                     let slider = ui.add(
                         LocalParamSlider::new(&mut value, def.min..=def.max)
                             .logarithmic(log)
-                            .with_width(104.0)
+                            .with_width(96.0)
                             .without_value(),
                     );
                     if is_target {

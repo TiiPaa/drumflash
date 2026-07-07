@@ -1,5 +1,401 @@
 # Changelog
 
+## 2026-07-07 — Grille : boutons de longueur stables quand `Len < 10` (build 20260707-174844)
+
+**Build:** `20260707-174844`
+**Validation:** `cargo fmt` OK, `cargo check` OK (37 warnings UI préexistants), `cargo test` OK (127 + 76 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[107] Correction du déplacement des boutons `16/32/48/64` quand l'indicateur `Len` passe à un chiffre.**
+  - `src/ui.rs` : l'indicateur `N steps` est maintenant dessiné dans un rectangle alloué en taille exacte.
+  - Le nombre est formaté sur 2 digits (` 9`, `10`) et le texte `steps` garde une position fixe.
+  - Les boutons de longueur ne dépendent plus de la largeur réelle du texte `9 steps` vs `10 steps`.
+
+### À tester dans Studio One (build 20260707-174844)
+1. Descendre `Len` global de `10` à `9` → les boutons `16`, `32`, `48`, `64` ne doivent plus bouger horizontalement.
+2. Remonter `Len` de `9` à `10` → les boutons doivent rester exactement en place.
+3. Tester `Len` `1`, `8`, `9`, `10`, `16` → l'indicateur change, mais le groupe de boutons reste stable.
+4. Vérifier que les boutons `16`, `32`, `48`, `64` et `x2` restent cliquables et fonctionnels.
+
+---
+
+## 2026-07-07 — Grille : largeur stable quand `Len < 10` (build 20260707-174302)
+
+**Build:** `20260707-174302`
+**Validation:** `cargo fmt` OK, `cargo check` OK (37 warnings UI préexistants), `cargo test` OK (127 + 76 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[107] Correction du décalage UI quand `Len` global passe sous 10.**
+  - `src/ui.rs` : la zone complète `Len` de la page-bar réserve désormais une largeur fixe.
+  - L'affichage `N steps` a aussi une sous-zone fixe, donc `9 steps` ne réduit plus le bloc par rapport à `10 steps`.
+  - La grille conserve la même largeur et le reste de l'interface ne doit plus bouger lors du passage `10 -> 9` ou `9 -> 10`.
+
+### À tester dans Studio One (build 20260707-174302)
+1. Dans la page-bar, descendre `Len` global de `10` à `9` avec le slider → le bloc grille ne doit pas rétrécir et aucun panneau ne doit se décaler.
+2. Remonter `Len` global de `9` à `10` → aucune expansion/saut horizontal ne doit apparaître.
+3. Tester aussi `Len` `1`, `8`, `16`, `32` → la page-bar doit rester stable et les cellules hors longueur doivent toujours s'afficher correctement.
+4. Vérifier que les boutons `16`, `32`, `48`, `64` et `x2` fonctionnent toujours.
+
+---
+
+## 2026-07-07 — Grille : contraste inactif renforcé + lanes non activées (build 20260707-173031)
+
+**Build:** `20260707-173031`
+**Validation:** `cargo fmt` OK, `cargo check` OK (37 warnings UI préexistants), `cargo test` OK (127 + 76 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[107] Contraste renforcé entre cellules actives et inactives.**
+  - `src/ui.rs` : l'état disabled utilise maintenant un fond beaucoup plus sombre (`10,10,14`) et une bordure pointillée noire plus épaisse.
+  - Les cellules hors longueur et les cellules des lanes non activées partagent désormais le même rendu inactif.
+  - Aucun changement audio ou interaction : hors longueur / lanes vides restent non cliquables et non jouées.
+
+### À tester dans Studio One (build 20260707-173031)
+1. Mettre `Len` global à `16`, aller page 2 → les cellules hors longueur doivent fortement contraster avec les cellules actives de la page 1.
+2. Sur une lane active, régler `Length` individuel à `8` dans `Track` → les steps 9-16 doivent être clairement inactifs, avec fond très sombre + pointillés épais.
+3. Regarder une lane non activée (`+N`) → ses cellules doivent avoir le même design inactif que les cellules hors longueur.
+4. Cliquer sur une cellule inactivée ou hors longueur → elle ne doit pas s'activer ni déclencher de note.
+
+---
+
+## 2026-07-07 — Grille : pointillés hors longueur plus visibles (build 20260707-171944)
+
+**Build:** `20260707-171944`
+**Validation:** `cargo fmt` OK, `cargo check` OK (37 warnings UI préexistants), `cargo test` OK (127 + 76 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[107] Retouche visuelle des cellules hors longueur.**
+  - `src/ui.rs` : les segments du contour pointillé passent à 5 px avec un trait 2 px.
+  - La couleur du pointillé est assombrie pour rendre l'état hors longueur beaucoup plus évident.
+  - Aucun changement de logique : ces cellules restent non cliquables et non jouées.
+
+### À tester dans Studio One (build 20260707-171944)
+1. Mettre `Len` global à `16`, aller page 2 → les pointillés hors longueur doivent être nettement plus gros et plus sombres qu'avant.
+2. Sur une lane active, régler `Length` individuel à `8` dans `Track` → les steps 9-16 doivent être immédiatement identifiables comme hors longueur.
+3. Cliquer sur une cellule pointillée hors longueur → elle ne doit pas s'activer ni déclencher de note.
+4. Vérifier une lane vide (`+N`) → elle doit rester grisée normalement, sans pointillés sombres.
+
+---
+
+## 2026-07-07 — Grille : cellules hors longueur en pointillé (build 20260707-165324)
+
+**Build:** `20260707-165324`
+**Validation:** `cargo fmt` OK, `cargo check` OK (37 warnings UI préexistants), `cargo test` OK (127 + 76 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[107] Les cellules hors longueur sont maintenant visuellement distinctes.**
+  - `src/ui.rs` : `draw_step_cell_v2()` accepte un état `dashed_border` séparé de `enabled`.
+  - Les cellules dont `global_step >= lane_length` conservent le fond désactivé existant mais remplacent la bordure continue par un contour segmenté.
+  - Les cellules de slots vides restent avec leur rendu désactivé classique, sans pointillés.
+
+### À tester dans Studio One (build 20260707-165324)
+1. Mettre `Len` global à `16`, aller page 2 → les cellules visibles hors longueur doivent être grisées avec bordure pointillée, et ne doivent pas être cliquables.
+2. Sur une lane active, régler `Length` individuel à `8` dans `Track` → les steps 9-16 de cette lane doivent apparaître pointillés, sans toucher aux autres lanes.
+3. Remettre la lane en `Follow pattern length` → les pointillés doivent suivre à nouveau le `Len` global.
+4. Vérifier une lane vide (`+N`) → elle doit rester grisée normalement, sans nouvelle bordure pointillée.
+
+---
+
+## 2026-07-07 — Track tab : retrait Humanize / Push-Pull (build 20260707-164821)
+
+**Build:** `20260707-164821`
+**Validation:** `cargo fmt` OK, `cargo check` OK (37 warnings UI préexistants), `cargo test` OK (127 + 76 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[106] `Humanize` et `Push/Pull` retirés de l'onglet `Track`.**
+  - `src/ui.rs` : suppression des deux lignes de sliders dans la section `Sequencing` du Track tab.
+  - Les contrôles restent présents dans la grille, conformément au retour utilisateur.
+  - Le tooltip de l'onglet `Track` est ajusté : `Instrument type, MIDI note, routing, length`.
+
+### À tester dans Studio One (build 20260707-164821)
+1. Ouvrir l'onglet `Track` sur une lane active → les lignes `Humanize` et `Push/Pull` ne doivent plus apparaître.
+2. Vérifier que `Length` est toujours présent et modifiable dans `Track`.
+3. Vérifier sur la grille que les mini-sliders `Hum` et `Push` sont toujours visibles et fonctionnels.
+4. Modifier `Hum`/`Push` depuis la grille puis lancer la lecture → le comportement audio doit rester identique à avant.
+
+---
+
+## 2026-07-07 — Generator : HiHats différenciés par style (build 20260707-163927)
+
+**Build:** `20260707-163927`
+**Validation:** `cargo fmt` OK, `cargo test` OK (127 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[113] Les rôles HiHat ne sont plus quasi identiques entre styles.**
+  - `src/generator/styles.rs` : chaque style a maintenant une signature HiHat dédiée.
+  - Rock : 8ths + ghost 16ths légers.
+  - Funk : offbeat 8ths + ghost notes.
+  - Techno / Metal / Disco : 16ths droits.
+  - Hip-Hop : sparse/swung.
+  - Jazz : 8ths + skip-beat accents.
+  - Latin : pattern syncopé type clave.
+  - Trap : 8ths avec rolls 16ths très probables.
+  - Reggae : one-drop sparse.
+- **Test de régression ajouté.**
+  - `src/generator/mod.rs` : `hihat_roles_are_style_specific` vérifie qu’au moins 8 signatures HiHat distinctes existent et verrouille des anchors représentatifs (`Funk`, `Latin`, `Reggae`).
+
+### À tester dans Studio One (build 20260707-163927)
+1. Layout 4 lanes `Kick / Snare / HiHat / Tom` → `GENERATE` en `Rock` → HiHat majoritairement en 8ths, avec peu de 16ths.
+2. Même layout → `Funk` → HiHat sur les offbeats/contretemps, différent du Rock.
+3. `Techno` puis `Disco` → HiHat très droit en 16ths, régulier.
+4. `Hip-Hop` → HiHat plus sparse/swung, pas le même tapis 8ths que Rock.
+5. `Latin` → HiHat syncopé type clave, accents irréguliers.
+6. `Trap` → HiHat plus dense, avec beaucoup de 16ths/roll feel.
+7. `Reggae` → HiHat sparse one-drop, surtout steps 2/6/10/14.
+
+---
+
+## 2026-07-07 — Générateur : mapping par `track_layout` et variations sur duplicates (build 20260707-161620)
+
+**Build:** `20260707-161620`
+**Validation:** `cargo test` OK (126 + 76 tests), `cargo check` OK (40 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[MG-10] Le générateur s’adapte désormais au `track_layout` courant.**
+  - `src/generator/mod.rs` : `generate()` accepte un `AtomicTrackLayout` et appelle `remap_roles_to_slots()` après la génération des rôles legacy.
+  - Les rôles musicaux (Kick, Snare, HiHat, OpenHH, Tom, Clap, Ride, Cymbal, Snare606, 808 Kick, Perc1) sont assignés aux slots actifs selon leur `TrackInstrumentKind::drum_voice_index()`, et non plus selon leur index de rangée.
+  - Les slots vides/inactifs restent silencieux après `GENERATE`.
+- **Gestion des duplicates.**
+  - Jusqu’à 3 slots `Tom` répartissent naturellement les rôles legacy `Tom1/Tom2/Tom3`.
+  - Pour toute autre duplication de kind (ex. deux Kicks) ou un 4e Tom, une variation déterministe est appliquée (shift de phase + éclaircissement/ajouts proportionnels au paramètre `Variation`).
+- **Tests de régression ajoutés dans `src/generator/mod.rs`.**
+  - `generate_maps_kick_to_kick_slot_not_opens_hh` : en layout 4 lanes par défaut, le slot 3 (Tom) ne reçoit plus le rôle OpenHH.
+  - `generate_uses_distinct_tom_roles_for_multiple_toms` : 3 slots Tom produisent des patterns différents.
+  - `generate_varies_duplicate_kick_slots` : deux slots Kick avec `Variation=1.0` ne sont pas identiques.
+  - `generate_leaves_empty_slots_silent` : les slots inactifs restent vides.
+
+### À tester dans Studio One (build 20260707-161620)
+1. **Layout 4 lanes par défaut** (Kick/Snare/HiHat/Tom) → cliquer `GENERATE` (style Rock, density 0.8) → le Tom (lane 4) doit jouer uniquement en fin de mesure (steps 14-15), pas les offbeats d’OpenHH.
+2. **Layout legacy 13 voix** → `GENERATE` → chaque instrument reçoit son rôle attendu (Kick sur 1/3, Snare sur 2/4, HiHat en 8e, OpenHH sur offbeats, Toms en fill, etc.).
+3. **Deux slots Kick** → `GENERATE` avec `Variation > 0` → les deux lanes Kick ont des patterns différents (pas de copie conforme).
+4. **Trois slots Tom** → `GENERATE` → les 3 lanes Tom ont des fills distincts (Tom1/Tom2/Tom3).
+5. **Slot vide** → après `GENERATE`, il reste vide (pas de notes parasites).
+6. **Tester les 4 modes de générateur** (Probabilistic, Markov, Euclidean, Classic) sur le layout 4 lanes : le Kick/Snare/HiHat/Tom doivent tous recevoir un pattern cohérent avec le style choisi.
+
+---
+
+## 2026-07-07 — Morphing : correction généralisée à tous les instruments (build 20260707-155108)
+
+**Build:** `20260707-155108`
+**Validation:** `cargo test` OK (122 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[118] Généralisation du fix morph à tous les instruments.**
+  - `src/ui.rs` : popup Morph élargi de 284 px à 350 px et sliders réduits de 104 px à 96 px, afin d’éviter que les longs labels (`Saturation Output Gain`, `bassdrum808_saturation_amount`, etc.) ne poussent le slider hors du cadre et ne perdent l’interaction au relâchement.
+  - Clamp systématique des valeurs morph affichées/stockées à `[min, max]` pour Volume, les champs standard sliders et les paramètres spéciaux continus.
+- **Cohérence `morphable_fields()` avec le menu Morph.**
+  - `src/instrument_registry.rs` : les champs standard de type checkbox (ex. `Stereo`) sont désormais inclus dans `morphable_fields()` avec `min=0.0, max=1.0`, puisque le menu Morph les permet déjà. Évite que la Fusion box affiche `?` à la place de `Stereo` quand celui-ci est une cible de morph.
+- **Test de régression ajouté.**
+  - `src/lib.rs` : `morphable_fields_include_checkbox_standard_fields` vérifie que chaque champ standard de chaque instrument est présent dans `morphable_fields()` et que les checkbox ont les bonnes bornes.
+
+### À tester dans Studio One (build 20260707-155108)
+1. **Tom** : Fusion → Morph → `Saturation Amount` / `Saturation Mix` : valeur fixée au relâchement, `×` visible, ré-ouverture conservée.
+2. **Kick / Snare / 808 Kick** : Fusion → Morph → `Saturation Amount`, `Saturation Mix`, et si visible `Saturation Output Gain` (selon l’instrument) : même comportement stable.
+3. **HiHat / OpenHiHat / Ride / Cymbal / Snare606 / Perc1** : vérifier que les paramètres continus spéciaux (shimmer, saturation, width, etc.) peuvent être morphés sans retour à la valeur de base.
+4. **Kick / Snare606 / 808 Kick / Perc1** : Fusion → Morph → `Stereo` (checkbox) : cocher/décocher, fermer le menu, ré-ouvrir → l’état cible est conservé et la Fusion box affiche `M: Stereo` au lieu de `M: ?`.
+5. **Tous instruments** : vérifier visuellement qu’aucun slider du menu Morph ne dépasse de la fenêtre, même après avoir défini une cible (apparition du `×`).
+
+---
+
+## 2026-07-07 — Morphing Tom : popup plus large + clamp morph (build 20260707-153553)
+
+**Build:** `20260707-153553`
+**Validation:** `cargo test` OK (121 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK après fermeture de Studio One
+
+### Changements
+- **[118] Correction du retour à la valeur de base pour `Saturation Amount` et `Saturation Mix` dans le menu Morph.**
+  - `src/ui.rs` : largeur max du popup `plock_menu_frame` augmentée de 284 px à 320 px, car les longs labels `Saturation Amount` / `Saturation Mix` poussaient le slider hors du cadre et faisaient perdre l’interaction au relâchement.
+  - Clamp systématique de la valeur morph affichée et stockée à `[min, max]` pour Volume, les champs standard et les specials continus.
+- **TODO.md** : ajout de l’item [118] et marquage comme corrigé.
+
+### À tester dans Studio One (build 20260707-153553)
+1. Sur une lane Tom, créer une Fusion de plusieurs steps (ex. F 1-4) → ouvrir son menu Morph.
+2. Régler `Saturation Amount` sur une valeur autre que 0, relâcher le slider → la valeur reste affichée et le petit `×` apparaît (cible enregistrée).
+3. Régler `Saturation Mix` sur une valeur autre que 1.0, relâcher → idem, pas de retour à 1.0.
+4. Fermer/ré-ouvrir le menu Morph de la même Fusion → les deux valeurs cibles sont conservées.
+5. Lancer la lecture → le morph entre la valeur globale et la cible doit s’entendre sur les pulses de la fusion.
+6. Vérifier que les autres paramètres continus du menu Morph (Volume, Freq, Decay, etc.) conservent aussi leur cible au relâchement.
+
+---
+
+## 2026-07-07 — Morphing Tom : params discrets exclus + conflit Attack/saturation évités (build 20260707-151057)
+
+**Build:** `20260707-151057`
+**Validation:** `cargo test` OK (121 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **Menu Morph : les paramètres spéciaux discrets ne sont plus proposés.**
+  - `src/ui.rs` : le menu morph exclut désormais les specials `!continuous` (ex. `Saturation Type`, `Saturation Pre-Filter`).
+  - Ces paramètres étant indexés (pas interpolables), les afficher comme des sliders faisait revenir leur valeur à la base au relâchement.
+- **Évite les conflits entre champs standard et spéciaux dans la liste morphable.**
+  - `src/ui.rs` + `src/instrument_registry.rs` : un special dont l'index de champ plock entre en collision avec un champ standard (cas connu : `Attack` utilise le champ 18, qui est aussi `SPECIAL_FIELD_START + 4` pour `Saturation Output Gain` / `Saturation Pre-Filter` / `Saturation Type` selon l'instrument) est ignoré dans le menu morph.
+  - Cela empêche deux sliders de partager le même champ et de s'écraser mutuellement.
+- **Lecture fraîche de l'état morph à chaque ligne.**
+  - Remplacement de la closure `morph_state` qui capturait un `group` copié au début du menu par une fonction `fusion_morph_state` qui relit `new_fusions[fusion_index]` à chaque appel. Évite que la valeur affichée ne reprenne un état obsolète.
+- **Tests de régression ajoutés.**
+  - `src/lib.rs` : vérification que `morphable_fields()` n'a pas d'indices en double, n'inclut pas de params discrets, et n'overlappe pas les champs standard.
+
+---
+
+## 2026-07-07 — Fusion box : centrage vertical du contenu d’édition (build 20260707-142118)
+
+**Build:** `20260707-142118`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[104] Centrage vertical du contenu de la Fusion box en mode édition.**
+  - `src/ui.rs` : le layout interne passe explicitement à `left_to_right(Align::Center)`.
+  - Les boutons `Del` et `×` sont maintenant alloués dans des emplacements de 18 px de hauteur pour être alignés avec le TextEdit.
+  - Objectif : tous les éléments de la ligne d’édition (`F x-y`, `Steps:`, champ, `M: …`, `Del`, `×`) sont sur la même ligne de base / centrés verticalement dans le bloc.
+
+---
+
+## 2026-07-07 — Fusion box : marge interne réduite de 4 px à 3 px (build 20260707-140953)
+
+**Build:** `20260707-140953`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[104] Marge interne de la Fusion box réduite de 4 px à 3 px.**
+  - `src/ui.rs` : `inner_margin(4.0)` → `inner_margin(3.0)` et `inner_size` calculé avec `box_size - 6.0` au lieu de `box_size - 8.0`.
+  - Objectif : laisser 1 px de plus de chaque côté pour le trait extérieur du cadre, afin que le contenu en mode édition (TextEdit + petits boutons) ne déborde pas visuellement et ne fasse plus sauter la ligne de 1–2 px.
+
+---
+
+## 2026-07-07 — Fusion box : hauteur de ligne verrouillée à 28 px (build 20260707-140333)
+
+**Build:** `20260707-140333`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[104] La ligne `P-Lock Mode / Fusion` est maintenant clampée à exactement 28 px de haut.**
+  - `src/ui.rs` : `ui.set_height(28.0)` remplacé par `ui.set_min_size(..., 28.0)` + `ui.set_max_size(..., 28.0)` sur le `horizontal` parent.
+  - Conséquence : le passage idle ↔ édition d’une fusion ne peut plus faire pousser/rétrécir la ligne, même si les widgets internes (TextEdit, petits boutons) ont des tailles naturelles différentes.
+
+---
+
+## 2026-07-07 — Validation installée : Fusion box, Plock Frequency, preset Tom (build 20260707-135525)
+
+**Build:** `20260707-135525`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[104][105][111] Build final installé après fermeture de Studio One.**
+  - Aucun changement de code supplémentaire ; ce build consolide les corrections déjà documentées dans les builds `20260707-125743`, `20260707-113932` et `20260707-120216`.
+  - Installation réussie dans `C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3`.
+
+---
+
+## 2026-07-07 — Fusion box : allocation de taille exacte, plus de saut d’interface (build 20260707-125743)
+
+**Build:** `20260707-125743`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[104] La Fusion box utilise maintenant `allocate_exact_size` (380×28 px).**
+  - `src/ui.rs` : le rectangle externe est alloué avec une taille fixe, indépendamment du contenu idle ou édition.
+  - Le contenu est dessiné dans ce rectangle via `allocate_ui_at_rect`, avec une taille interne min/max verrouillée.
+  - Conséquence : la hauteur de la ligne P-Lock Mode/Fusion reste identique ; la Pattern Bank et le Bottom Panel ne bougent plus quand on entre/sort de l’édition d’une Fusion.
+
+---
+
+## 2026-07-07 — Fusion box : suppression du micro-saut idle/édition (build 20260707-124135)
+
+**Build:** `20260707-124135`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[104] Fix du décalage de 2-3 px entre idle et édition de la Fusion box.**
+  - `src/ui.rs` : la zone interne de la Fusion box est maintenant contrainte à une taille max égale à sa taille min (20 px de contenu), empêchant les boutons d’agrandir la hauteur en mode édition.
+  - Boutons `Del` et `×` passés en `small_button` pour tenir dans l’espace fixe.
+
+---
+
+## 2026-07-07 — Placement Fusion box : même ligne que P-Lock Mode (build 20260707-121720)
+
+**Build:** `20260707-121720`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[104] Fusion box sur la même ligne que le sélecteur P-Lock Mode.**
+  - `src/ui.rs` : la Fusion box (380 px) est dessinée à droite de la barre `P-Lock Mode | Sound/Sequencer` au lieu d’occuper une ligne dédiée sous la grille.
+  - Réduction de la largeur de la box de 720 px à 380 px ; labels et boutons compactés (`F x-y`, `M: ...`, `Del`, `×`).
+  - Conséquence : la Pattern Bank et le Bottom Panel ne sont plus décalés vers le bas par la Fusion box.
+
+---
+
+## 2026-07-07 — Ajustement Tom : fréquence par défaut à 196 Hz (build 20260707-120216)
+
+**Build:** `20260707-120216`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[111] Fréquence du Tom par défaut fixée à 196 Hz.**
+  - `instrument_registry.rs` : Tom1 (lane `Tom` par défaut) passe de 150 Hz à **196 Hz** ; Tom2 reste à 150 Hz, Tom3 à 100 Hz.
+  - `synthesis/mod.rs` : `VoiceSettings::tom1()` aligné sur 196 Hz.
+
+---
+
+## 2026-07-07 — Preset Tom retravaillé (build 20260707-115036)
+
+**Build:** `20260707-115036`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **[111] Preset Tom plus musical/utilisable dès création de lane.**
+  - `instrument_registry.rs` : ajustement des `sound_settings_default` des 3 voix Tom et du défaut du paramètre spécial *Stick Attack* (0.5 → 0.3).
+  - `synthesis/mod.rs` : alignement de `VoiceSettings::tom1/2/3()` sur les nouveaux défauts du registre.
+  - Nouvelle famille Tom :
+    - **Tom1** (utilisé par la lane `Tom` par défaut) : 150 Hz, decay 0.35 s, volume 0.7, filter 600 Hz, release 0.25 s.
+    - **Tom2** : 200 Hz, decay 0.30 s, volume 0.7, filter 650 Hz, release 0.20 s.
+    - **Tom3** : 100 Hz, decay 0.45 s, volume 0.7, filter 500 Hz, release 0.35 s.
+  - Objectif : moins aigu et plus audible que l’ancien défaut Tom1 à 300 Hz / volume 0.5.
+
+---
+
+## 2026-07-07 — Plock sound : vérification Frequency > 0 + tests de régression (build 20260707-113932)
+
+**Build:** `20260707-113932`
+**Validation:** `cargo test` OK (118 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **Investigation du retour [105] : `Frequency` à 0 par défaut dans le menu plock sound.**
+  - Le code actuel (`ST-7` + `reset_slot_to_defaults`) initialise correctement la fréquence globale de chaque slot depuis les défauts du registre ; le menu plock sound affiche déjà la valeur globale courante quand aucun override n’est actif.
+  - Aucun instrument du registre n’a de fréquence par défaut à 0 (Kick 60, Snare 220, HiHat 1000, OpenHH 300, Tom 120/200/120, Clap 1000, Ride 3000, Cymbal 5000, Snare606 220, BassDrum808 50, Perc1 800).
+- **Ajout de tests de régression dans `sound_settings.rs`.**
+  - `default_frequency_is_nonzero_for_every_instrument_kind` : pour chaque kind, un slot actif obtient la fréquence par défaut attendue et elle est strictement positive.
+  - `duplicate_slots_keep_nonzero_default_frequency` : deux slots B8 ont chacun la fréquence par défaut 50 Hz et sont indépendants.
+
+---
+
+## 2026-07-07 — Ajustement visuel : flash `T` en AMBER (build 20260707-111442)
+
+**Build:** `20260707-111442`
+**Validation:** `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **Le flash visuel du bouton `T` passe du bleu à l’ambre.**
+  - L’indicateur d’activité MIDI externe utilise maintenant `AMBER` avec du texte noir, plus harmonieux avec les pastilles rouge (`M`) et verte (`S`).
+
+---
+
+## 2026-07-07 — Ext MIDI : playhead gelée, flash T, swing exporté (build 20260707-103907)
+
+**Build:** `20260707-103907`
+**Validation:** `cargo test` OK (116 + 76 tests), `cargo check` OK (37 warnings UI préexistants), `build.ps1 -Install` OK
+
+### Changements
+- **En mode Ext MIDI, la tête de lecture interne est masquée.**
+  - Quand `Seq` est sur `Ext MIDI`, `current_step`/`current_steps` sont stockés avec une valeur hors plage (`u32::MAX`) au lieu de suivre le transport hôte.
+  - Aucune cellule de grille n’est donc surlignée comme "en cours" ; le plugin se contente de répondre aux notes MIDI entrantes.
+- **Le bouton `T` (Test) de chaque lane clignote quand la lane est déclenchée par MIDI externe.**
+  - Le thread audio lève un drapeau atomique par slot à la réception d’un `NoteOn` correspondant.
+  - L’UI lit ce drapeau et allume le `T` en bleu pendant ~100 ms.
+- **L’export MIDI (fichier + drag) applique maintenant le swing/groove.**
+  - `midi_export.rs` reçoit `swing` et `groove_type` ; les steps impairs sont décalés selon l’algorithme actif (`Swing16`, `Shuffle`, `MPC`).
+  - Test ajouté : un step 1 avec Swing16 +50 % est exporté à 160 ticks au lieu de 120.
+
+---
+
 ## 2026-07-07 — Restauration du drag & drop MIDI + export 14 slots (build 20260707-094444)
 
 **Build:** `20260707-094444`
@@ -3371,3 +3767,6 @@ ih_plug_egui::ensure_window_focus() exposée
 - DAW sync validated: play, stop, tempo, repositionnement.
 - Presets Rock, Funk, Disco.
 - Mutes and solos per instrument.
+
+
+
