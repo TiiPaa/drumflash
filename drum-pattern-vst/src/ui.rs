@@ -1211,10 +1211,11 @@ fn draw_pattern_bank(
         ui.add_space(16.0);
 
         // MIDI export chips (right side)
-        if chip_button(ui, "Export MIDI", false, BLUE).clicked() {
+        if chip_button(ui, "Export MIDI", false, BLUE, egui::Sense::click()).clicked() {
             let bpm = params.bpm.value();
             let pattern_length = params.pattern_length.value() as usize;
-            match export_midi_to_documents(pattern, bpm, pattern_length) {
+            match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)
+            {
                 Ok(path) => {
                     nih_log!("MIDI exported to: {}", path.display());
                     state.last_midi_export_path = Some(path.display().to_string());
@@ -1228,12 +1229,13 @@ fn draw_pattern_bank(
             }
         }
 
-        let drag_response = chip_button(ui, "Drag MIDI", false, BLUE)
-            .on_hover_text("Drag the current pattern into your DAW");
+        let drag_response =
+            chip_button(ui, "Drag MIDI", false, BLUE, egui::Sense::click_and_drag())
+                .on_hover_text("Drag the current pattern into your DAW");
         if drag_response.clicked() || drag_response.drag_started() {
             let bpm = params.bpm.value();
             let pattern_length = params.pattern_length.value() as usize;
-            match export_midi_to_documents(pattern, bpm, pattern_length)
+            match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)
                 .and_then(|path| start_external_midi_drag(&path).map(|_| path))
             {
                 Ok(path) => {
@@ -1418,7 +1420,7 @@ fn draw_preset_bar(
             state.last_loaded_slot = None;
         }
         ui.add_space(8.0);
-        if chip_button(ui, "⟳ Random", true, PL_LINK).clicked() {
+        if chip_button(ui, "⟳ Random", true, PL_LINK, egui::Sense::click()).clicked() {
             params.plock_state.state.clear_all();
             params.seq_plock_state.state.clear_all();
             clear_all_fusions(pattern);
@@ -4969,7 +4971,13 @@ fn genrow_label(ui: &mut egui::Ui, label: &str, min_w: f32) {
     );
 }
 
-fn chip_button(ui: &mut egui::Ui, label: &str, accent: bool, color: Color32) -> egui::Response {
+fn chip_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    accent: bool,
+    color: Color32,
+    sense: egui::Sense,
+) -> egui::Response {
     let text_color = if accent { color } else { INK2 };
     let stroke = if accent { color } else { LINE2 };
     let fill = if accent {
@@ -4992,7 +5000,8 @@ fn chip_button(ui: &mut egui::Ui, label: &str, accent: bool, color: Color32) -> 
         .min_size(Vec2::new(0.0, CTL_HEIGHT))
         .fill(fill)
         .stroke(egui::Stroke::new(1.0, stroke))
-        .corner_radius(6.0),
+        .corner_radius(6.0)
+        .sense(sense),
     )
 }
 
@@ -5010,6 +5019,7 @@ fn algo_combo(ui: &mut egui::Ui, setter: &ParamSetter, param: &IntParam, algo_na
 
 fn export_midi_to_documents(
     pattern: &SharedPattern,
+    track_layout: &crate::track::AtomicTrackLayout,
     bpm: f32,
     pattern_length: usize,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -5027,7 +5037,7 @@ fn export_midi_to_documents(
     let filename = format!("drum_pattern_{:.0}bpm_{}.mid", bpm, timestamp);
     let path = export_dir.join(filename);
 
-    midi_export::export_pattern_to_midi(pattern, bpm, pattern_length, &path)?;
+    midi_export::export_pattern_to_midi(pattern, track_layout, bpm, pattern_length, &path)?;
     Ok(path)
 }
 
