@@ -972,6 +972,48 @@ fn draw_pattern_bank(
         );
         ui.add_space(8.0);
 
+        // MIDI export chips (left side, always visible)
+        if chip_button(ui, "Export", false, BLUE, egui::Sense::click()).clicked() {
+            let bpm = params.bpm.value();
+            let pattern_length = params.pattern_length.value() as usize;
+            match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)
+            {
+                Ok(path) => {
+                    nih_log!("MIDI exported to: {}", path.display());
+                    state.last_midi_export_path = Some(path.display().to_string());
+                    state.last_midi_export_error = None;
+                }
+                Err(e) => {
+                    nih_log!("MIDI export failed: {}", e);
+                    state.last_midi_export_path = None;
+                    state.last_midi_export_error = Some(e.to_string());
+                }
+            }
+        }
+
+        let drag_response = chip_button(ui, "Drag", false, BLUE, egui::Sense::click_and_drag())
+            .on_hover_text("Drag the current pattern into your DAW");
+        if drag_response.clicked() || drag_response.drag_started() {
+            let bpm = params.bpm.value();
+            let pattern_length = params.pattern_length.value() as usize;
+            match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)
+                .and_then(|path| start_external_midi_drag(&path).map(|_| path))
+            {
+                Ok(path) => {
+                    nih_log!("MIDI drag helper started from: {}", path.display());
+                    state.last_midi_export_path = Some(path.display().to_string());
+                    state.last_midi_export_error = None;
+                }
+                Err(e) => {
+                    nih_log!("MIDI drag failed: {}", e);
+                    state.last_midi_export_path = None;
+                    state.last_midi_export_error = Some(e.to_string());
+                }
+            }
+        }
+
+        ui.add_space(8.0);
+
         // Save button (blinks when save mode is active)
         let is_save_mode = state.save_mode_active;
         let time = ui.ctx().input(|i| i.time);
@@ -1205,49 +1247,6 @@ fn draw_pattern_bank(
                 // Enter confirmation mode, cancel save mode if active
                 state.clear_confirm_mode = true;
                 state.save_mode_active = false;
-            }
-        }
-
-        ui.add_space(16.0);
-
-        // MIDI export chips (right side)
-        if chip_button(ui, "Export MIDI", false, BLUE, egui::Sense::click()).clicked() {
-            let bpm = params.bpm.value();
-            let pattern_length = params.pattern_length.value() as usize;
-            match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)
-            {
-                Ok(path) => {
-                    nih_log!("MIDI exported to: {}", path.display());
-                    state.last_midi_export_path = Some(path.display().to_string());
-                    state.last_midi_export_error = None;
-                }
-                Err(e) => {
-                    nih_log!("MIDI export failed: {}", e);
-                    state.last_midi_export_path = None;
-                    state.last_midi_export_error = Some(e.to_string());
-                }
-            }
-        }
-
-        let drag_response =
-            chip_button(ui, "Drag MIDI", false, BLUE, egui::Sense::click_and_drag())
-                .on_hover_text("Drag the current pattern into your DAW");
-        if drag_response.clicked() || drag_response.drag_started() {
-            let bpm = params.bpm.value();
-            let pattern_length = params.pattern_length.value() as usize;
-            match export_midi_to_documents(pattern, &params.track_layout.state, bpm, pattern_length)
-                .and_then(|path| start_external_midi_drag(&path).map(|_| path))
-            {
-                Ok(path) => {
-                    nih_log!("MIDI drag helper started from: {}", path.display());
-                    state.last_midi_export_path = Some(path.display().to_string());
-                    state.last_midi_export_error = None;
-                }
-                Err(e) => {
-                    nih_log!("MIDI drag failed: {}", e);
-                    state.last_midi_export_path = None;
-                    state.last_midi_export_error = Some(e.to_string());
-                }
             }
         }
 
