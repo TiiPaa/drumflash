@@ -260,13 +260,13 @@ impl VoiceSettings {
 
     pub fn tom1() -> Self {
         Self {
-            frequency: 300.0,
-            decay: 0.3,
-            volume: 0.5,
-            filter_freq: 500.0,
+            frequency: 196.0,
+            decay: 0.35,
+            volume: 0.7,
+            filter_freq: 600.0,
             attack: 0.0015,
-            release: 0.3,
-            decay_curve: 4.2,
+            release: 0.25,
+            decay_curve: 4.0,
             release_curve: 3.0,
             hold: 0.0,
             filter_env_amount: 1.0,
@@ -275,7 +275,7 @@ impl VoiceSettings {
             stereo: 0.0,
             algo: 0,
             special: [
-                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -283,13 +283,13 @@ impl VoiceSettings {
 
     pub fn tom2() -> Self {
         Self {
-            frequency: 200.0,
-            decay: 0.4,
-            volume: 0.5,
-            filter_freq: 500.0,
+            frequency: 150.0,
+            decay: 0.3,
+            volume: 0.7,
+            filter_freq: 650.0,
             attack: 0.0015,
-            release: 0.4,
-            decay_curve: 4.2,
+            release: 0.2,
+            decay_curve: 4.0,
             release_curve: 3.0,
             hold: 0.0,
             filter_env_amount: 1.0,
@@ -298,7 +298,7 @@ impl VoiceSettings {
             stereo: 0.0,
             algo: 0,
             special: [
-                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -306,13 +306,13 @@ impl VoiceSettings {
 
     pub fn tom3() -> Self {
         Self {
-            frequency: 120.0,
-            decay: 0.5,
-            volume: 0.5,
+            frequency: 100.0,
+            decay: 0.45,
+            volume: 0.7,
             filter_freq: 500.0,
             attack: 0.0015,
-            release: 0.5,
-            decay_curve: 4.2,
+            release: 0.35,
+            decay_curve: 4.0,
             release_curve: 3.0,
             hold: 0.0,
             filter_env_amount: 1.0,
@@ -321,7 +321,7 @@ impl VoiceSettings {
             stereo: 0.0,
             algo: 0,
             special: [
-                0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }

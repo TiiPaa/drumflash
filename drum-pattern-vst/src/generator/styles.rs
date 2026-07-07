@@ -111,11 +111,11 @@ impl MusicalTemplate {
                     candidate_prob: 0.1,
                     exclusions: &[0, 8],
                 },
-                // HiHat: steady 8ths
+                // HiHat: steady 8ths with light 16th ghost notes
                 RhythmicRole {
                     anchors: &[0, 2, 4, 6, 8, 10, 12, 14],
                     candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
-                    candidate_prob: 0.05,
+                    candidate_prob: 0.1,
                     exclusions: &[],
                 },
                 // Open HH: offbeats occasionally
@@ -213,10 +213,11 @@ impl MusicalTemplate {
                     candidate_prob: 0.35,
                     exclusions: &[0, 8],
                 },
+                // HiHat: offbeat 8ths + 16th ghost notes
                 RhythmicRole {
-                    anchors: &[0, 2, 4, 6, 8, 10, 12, 14],
-                    candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
-                    candidate_prob: 0.15,
+                    anchors: &[1, 3, 5, 7, 9, 11, 13, 15],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.25,
                     exclusions: &[],
                 },
                 RhythmicRole {
@@ -312,10 +313,11 @@ impl MusicalTemplate {
                     candidate_prob: 0.05,
                     exclusions: &[1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15],
                 },
+                // HiHat: machine 16ths
                 RhythmicRole {
-                    anchors: &[0, 2, 4, 6, 8, 10, 12, 14],
-                    candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
-                    candidate_prob: 0.1,
+                    anchors: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidates: &[],
+                    candidate_prob: 0.0,
                     exclusions: &[],
                 },
                 RhythmicRole {
@@ -411,9 +413,10 @@ impl MusicalTemplate {
                     candidate_prob: 0.15,
                     exclusions: &[0, 8],
                 },
+                // HiHat: sparse swung hats
                 RhythmicRole {
-                    anchors: &[0, 2, 4, 6, 8, 10, 12, 14],
-                    candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
+                    anchors: &[2, 6, 10, 14],
+                    candidates: &[0, 4, 8, 12, 1, 5, 9, 13],
                     candidate_prob: 0.1,
                     exclusions: &[],
                 },
@@ -510,10 +513,11 @@ impl MusicalTemplate {
                     candidate_prob: 0.1,
                     exclusions: &[0, 8],
                 },
+                // HiHat: ride 8ths with skip-beat accents
                 RhythmicRole {
                     anchors: &[0, 2, 4, 6, 8, 10, 12, 14],
-                    candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
-                    candidate_prob: 0.05,
+                    candidates: &[3, 7, 11, 15],
+                    candidate_prob: 0.15,
                     exclusions: &[],
                 },
                 RhythmicRole {
@@ -609,6 +613,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.25,
                     exclusions: &[1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15],
                 },
+                // HiHat: blast-beat 16ths
                 RhythmicRole {
                     anchors: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
                     candidates: &[],
@@ -708,10 +713,11 @@ impl MusicalTemplate {
                     candidate_prob: 0.3,
                     exclusions: &[0, 8],
                 },
+                // HiHat: syncopated clave-like pattern
                 RhythmicRole {
-                    anchors: &[0, 2, 4, 6, 8, 10, 12, 14],
-                    candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
-                    candidate_prob: 0.1,
+                    anchors: &[0, 3, 6, 10, 12, 15],
+                    candidates: &[2, 4, 8, 11, 14],
+                    candidate_prob: 0.15,
                     exclusions: &[],
                 },
                 RhythmicRole {
@@ -807,6 +813,7 @@ impl MusicalTemplate {
                     candidate_prob: 0.05,
                     exclusions: &[1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15],
                 },
+                // HiHat: four-on-the-floor 16ths
                 RhythmicRole {
                     anchors: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
                     candidates: &[],
@@ -906,10 +913,11 @@ impl MusicalTemplate {
                     candidate_prob: 0.3,
                     exclusions: &[0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15],
                 },
+                // HiHat: dense 16ths / rolls
                 RhythmicRole {
                     anchors: &[0, 2, 4, 6, 8, 10, 12, 14],
                     candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
-                    candidate_prob: 0.4,
+                    candidate_prob: 0.55,
                     exclusions: &[],
                 },
                 RhythmicRole {
@@ -1005,9 +1013,10 @@ impl MusicalTemplate {
                     candidate_prob: 0.1,
                     exclusions: &[1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15],
                 },
+                // HiHat: one-drop sparse
                 RhythmicRole {
-                    anchors: &[0, 2, 4, 6, 8, 10, 12, 14],
-                    candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
+                    anchors: &[2, 6, 10, 14],
+                    candidates: &[0, 4, 8, 12],
                     candidate_prob: 0.1,
                     exclusions: &[],
                 },

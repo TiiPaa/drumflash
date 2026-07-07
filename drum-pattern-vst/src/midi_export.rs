@@ -1,6 +1,7 @@
 //! MIDI file export (SMF Type 0)
 
 use crate::{
+    groove::GrooveType,
     sequencer::SharedPattern,
     track::{AtomicTrackLayout, MAX_TRACKS},
 };
@@ -8,6 +9,23 @@ use std::path::Path;
 
 const TICKS_PER_QUARTER: u32 = 480;
 const TICKS_PER_STEP: u32 = TICKS_PER_QUARTER / 4;
+const TICKS_PER_EIGHTH: u32 = TICKS_PER_QUARTER / 2;
+
+/// Absolute tick offset of a step with swing/groove applied.
+fn step_tick_offset(step: usize, swing: f32, groove_type: GrooveType) -> u32 {
+    if groove_type == GrooveType::Straight {
+        return step as u32 * TICKS_PER_STEP;
+    }
+    let ratio = crate::groove::swing_ratio_for(swing, groove_type).clamp(0.02, 0.98);
+    let pair = step / 2;
+    let is_odd = step % 2 == 1;
+    let base = pair as u32 * TICKS_PER_EIGHTH;
+    if is_odd {
+        base + ((TICKS_PER_EIGHTH as f64 * ratio).round() as u32)
+    } else {
+        base
+    }
+}
 
 fn encode_vlq(mut value: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -49,11 +67,20 @@ pub fn export_pattern_to_midi(
     track_layout: &AtomicTrackLayout,
     bpm: f32,
     pattern_length: usize,
+    swing: f32,
+    groove_type: GrooveType,
     path: &Path,
 ) -> std::io::Result<()> {
     std::fs::write(
         path,
-        export_pattern_to_midi_data(pattern, track_layout, bpm, pattern_length),
+        export_pattern_to_midi_data(
+            pattern,
+            track_layout,
+            bpm,
+            pattern_length,
+            swing,
+            groove_type,
+        ),
     )
 }
 
@@ -62,6 +89,8 @@ fn export_pattern_to_midi_data(
     track_layout: &AtomicTrackLayout,
     bpm: f32,
     pattern_length: usize,
+    swing: f32,
+    groove_type: GrooveType,
 ) -> Vec<u8> {
     let microseconds_per_quarter = (60_000_000.0 / bpm).round() as u32;
     let steps = pattern_length.clamp(1, 64);
@@ -88,7 +117,7 @@ fn export_pattern_to_midi_data(
                 continue;
             }
             if (mask & (1u16 << slot)) != 0 {
-                let tick = step as u32 * TICKS_PER_STEP;
+                let tick = step_tick_offset(step, swing, groove_type);
                 let note = track_layout.midi_note_for_slot(slot);
                 events.push((tick, vec![0x99, note, 100]));
                 events.push((tick + 10, vec![0x89, note, 0]));
@@ -125,12 +154,16 @@ pub fn export_pattern_to_midi_bytes(
     track_layout: &AtomicTrackLayout,
     bpm: f32,
     pattern_length: usize,
+    swing: f32,
+    groove_type: GrooveType,
 ) -> std::io::Result<Vec<u8>> {
     Ok(export_pattern_to_midi_data(
         pattern,
         track_layout,
         bpm,
         pattern_length,
+        swing,
+        groove_type,
     ))
 }
 
@@ -157,8 +190,9 @@ mod tests {
         let pattern = SharedPattern::new(&Pattern::empty());
         pattern.set_step_mask(0, 1u16 << 13);
 
-        let bytes = export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16)
-            .expect("MIDI export should succeed");
+        let bytes =
+            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight)
+                .expect("MIDI export should succeed");
 
         assert!(
             bytes.windows(3).any(|window| window == [0x99, 99, 100]),
@@ -177,8 +211,9 @@ mod tests {
         pattern.set_step_mask(0, 1u16 << perc1_slot);
         let layout = legacy_layout();
 
-        let bytes = export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16)
-            .expect("MIDI export should succeed");
+        let bytes =
+            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight)
+                .expect("MIDI export should succeed");
 
         assert!(
             bytes.windows(3).any(|window| window == [0x99, 37, 100]),
@@ -197,8 +232,9 @@ mod tests {
         pattern.set_step_mask(63, 1u16 << 1); // Snare at step 63
         let layout = legacy_layout();
 
-        let bytes = export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 64)
-            .expect("MIDI export should succeed");
+        let bytes =
+            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 64, 0.0, GrooveType::Straight)
+                .expect("MIDI export should succeed");
 
         // Kick note = 36, Snare note = 38
         assert!(
@@ -208,6 +244,48 @@ mod tests {
         assert!(
             bytes.windows(3).any(|window| window == [0x99, 38, 100]),
             "Snare note-on at step 63 should be exported"
+        );
+    }
+
+    #[test]
+    fn midi_export_applies_swing16_to_odd_steps() {
+        let pattern = SharedPattern::new(&Pattern::empty());
+        // Put a kick on step 1 (the first off-beat 16th)
+        pattern.set_step_mask(1, 1u16 << 0);
+        let layout = legacy_layout();
+
+        let straight =
+            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight)
+                .expect("MIDI export should succeed");
+        let swung =
+            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.5, GrooveType::Swing16)
+                .expect("MIDI export should succeed");
+
+        // Straight step 1 is at tick 120; with +50 % swing16 ratio = 2/3,
+        // the odd step moves to tick 160.
+        assert!(
+            straight.windows(3).any(|window| window == [0x99, 36, 100]),
+            "Kick should be present in straight export"
+        );
+        // Look for the note-on delta preceding the kick note in the swung export.
+        // Step 1 straight delta from step 0 off = 120; swung delta = 160.
+        let note_on_pos = swung
+            .windows(3)
+            .position(|window| window == [0x99, 36, 100])
+            .expect("swung export should contain kick note-on");
+        // Decode the VLQ delta immediately preceding the note-on.
+        let mut delta_start = note_on_pos - 1;
+        while delta_start > 0 && (swung[delta_start - 1] & 0x80) != 0 {
+            delta_start -= 1;
+        }
+        let mut delta = 0u32;
+        for b in &swung[delta_start..note_on_pos] {
+            delta = (delta << 7) | ((b & 0x7F) as u32);
+        }
+        assert_eq!(
+            delta, 160,
+            "swung step 1 should land at tick 160, got delta {}",
+            delta
         );
     }
 }
