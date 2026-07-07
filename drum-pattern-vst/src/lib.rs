@@ -144,6 +144,7 @@ pub struct DrumFlashVst {
     pattern: Arc<SharedPattern>,
     last_step_masks: [u16; STEP_COUNT],
     voice_test_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
+    external_midi_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
     sound_settings_state: Arc<SoundSettingsState>,
     last_sound_settings_version: u64,
     /// Last host beat position, used to detect seeks.
@@ -1788,6 +1789,7 @@ impl Default for DrumFlashVst {
         let pattern = params.pattern_state.shared();
         let default_masks = pattern.step_masks();
         let voice_test_triggers = Arc::new(std::array::from_fn(|_| AtomicBool::new(false)));
+        let external_midi_triggers = Arc::new(std::array::from_fn(|_| AtomicBool::new(false)));
         let sound_settings_state = params.sound_settings.state.clone();
         let mut plugin = Self {
             params,
@@ -1799,6 +1801,7 @@ impl Default for DrumFlashVst {
             current_steps: Arc::new(std::array::from_fn(|_| AtomicU32::new(0))),
             last_step_masks: default_masks,
             voice_test_triggers: voice_test_triggers.clone(),
+            external_midi_triggers: external_midi_triggers.clone(),
             sound_settings_state: sound_settings_state.clone(),
             last_sound_settings_version: 0,
             last_host_pos: None,
@@ -2185,6 +2188,7 @@ impl Plugin for DrumFlashVst {
             self.current_steps.clone(),
             self.pattern.clone(),
             self.voice_test_triggers.clone(),
+            self.external_midi_triggers.clone(),
             self.sound_settings_state.clone(),
             self.params.plock_state.state.clone(),
             self.save_pattern_request.clone(),
@@ -2732,6 +2736,7 @@ impl Plugin for DrumFlashVst {
                             else {
                                 continue;
                             };
+                            self.external_midi_triggers[slot_idx].store(true, Ordering::Release);
                             let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
                             let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
                                 continue;
@@ -2872,10 +2877,19 @@ impl Plugin for DrumFlashVst {
             self.last_loop_count = self.sequencer.loop_count();
         }
 
-        self.current_step
-            .store(self.sequencer.current_step() as u32, Ordering::Relaxed);
-        for (i, step) in self.sequencer.current_steps().iter().enumerate() {
-            self.current_steps[i].store(*step as u32, Ordering::Relaxed);
+        if use_internal_sequencer {
+            self.current_step
+                .store(self.sequencer.current_step() as u32, Ordering::Relaxed);
+            for (i, step) in self.sequencer.current_steps().iter().enumerate() {
+                self.current_steps[i].store(*step as u32, Ordering::Relaxed);
+            }
+        } else {
+            // In external MIDI mode the internal playhead is not meaningful;
+            // hide it from the UI by storing an out-of-range sentinel.
+            self.current_step.store(u32::MAX, Ordering::Relaxed);
+            for s in self.current_steps.iter() {
+                s.store(u32::MAX, Ordering::Relaxed);
+            }
         }
 
         ProcessStatus::Normal
@@ -3045,6 +3059,125 @@ mod tests {
                 "instrument {} should have morphable fields",
                 inst
             );
+        }
+    }
+
+    #[test]
+    fn morphable_fields_have_unique_indices_and_no_standard_conflicts() {
+        for inst in 0..crate::instrument_registry::INSTRUMENTS.len() {
+            let fields = crate::instrument_registry::morphable_fields(inst);
+            let mut seen = std::collections::HashSet::new();
+            for f in &fields {
+                assert!(
+                    seen.insert(f.field_index),
+                    "instrument {} has duplicate morphable field index {}",
+                    inst,
+                    f.field_index
+                );
+                assert!(
+                    f.field_index < crate::plock::FIELD_COUNT,
+                    "instrument {} has morphable field index {} out of range",
+                    inst,
+                    f.field_index
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn morphable_fields_only_include_continuous_params() {
+        use crate::instrument_registry::{special_params, INSTRUMENTS};
+        for inst in 0..INSTRUMENTS.len() {
+            let inst_def = &INSTRUMENTS[inst];
+            let standard_indices: std::collections::HashSet<usize> = inst_def
+                .standard_params
+                .iter()
+                .map(|def| def.field.plock_field_index())
+                .collect();
+            let fields = crate::instrument_registry::morphable_fields(inst);
+            let special_defs = special_params(inst);
+            for f in &fields {
+                // Skip standard fields that happen to live in the special range (Attack at 18).
+                if standard_indices.contains(&f.field_index) {
+                    continue;
+                }
+                if f.field_index >= crate::plock::SPECIAL_FIELD_START {
+                    let special_index = f.field_index - crate::plock::SPECIAL_FIELD_START;
+                    let def = special_defs
+                        .iter()
+                        .find(|d| d.special_index == special_index)
+                        .expect("morphable special field should match a defined special param");
+                    assert!(
+                        def.continuous,
+                        "instrument {} special param {} ({}) is discrete but listed as morphable",
+                        inst, special_index, def.label
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn morphable_fields_do_not_overlap_standard_fields() {
+        use crate::instrument_registry::INSTRUMENTS;
+        for inst in 0..INSTRUMENTS.len() {
+            let inst_def = &INSTRUMENTS[inst];
+            let standard_indices: std::collections::HashSet<usize> = inst_def
+                .standard_params
+                .iter()
+                .map(|def| def.field.plock_field_index())
+                .collect();
+            let fields = crate::instrument_registry::morphable_fields(inst);
+            for f in &fields {
+                // Only check special-origin fields; Attack (field 18) is a standard field.
+                if standard_indices.contains(&f.field_index) {
+                    continue;
+                }
+                assert!(
+                    !standard_indices.contains(&f.field_index),
+                    "instrument {} morphable field {} ({}) overlaps a standard field",
+                    inst,
+                    f.field_index,
+                    f.label
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn morphable_fields_include_checkbox_standard_fields() {
+        use crate::instrument_registry::{ParamWidget, INSTRUMENTS};
+        for inst in 0..INSTRUMENTS.len() {
+            let inst_def = &INSTRUMENTS[inst];
+            let fields = crate::instrument_registry::morphable_fields(inst);
+            let field_indices: std::collections::HashSet<usize> =
+                fields.iter().map(|f| f.field_index).collect();
+            for def in inst_def.standard_params {
+                let field_index = def.field.plock_field_index();
+                assert!(
+                    field_indices.contains(&field_index),
+                    "instrument {} standard field {} ({:?}) is missing from morphable_fields",
+                    inst,
+                    def.label,
+                    def.widget
+                );
+                if let ParamWidget::Checkbox = def.widget {
+                    let f = fields
+                        .iter()
+                        .find(|f| f.field_index == field_index)
+                        .expect("checked above");
+                    assert_eq!(
+                        f.min, 0.0,
+                        "instrument {} checkbox field {} should have min 0.0",
+                        inst, def.label
+                    );
+                    assert_eq!(
+                        f.max, 1.0,
+                        "instrument {} checkbox field {} should have max 1.0",
+                        inst, def.label
+                    );
+                }
+            }
         }
     }
 

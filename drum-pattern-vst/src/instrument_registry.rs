@@ -1114,7 +1114,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp(
                 "tom_stick",
                 "Stick Attack",
-                0.5,
+                0.3,
                 0.0,
                 1.0,
                 0,
@@ -1168,7 +1168,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, filter env, no stereo
         sound_settings_default: [
-            300.0, 0.3, 0.5, 500.0, 0.0015, 0.3, 4.2, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
+            196.0, 0.35, 0.7, 600.0, 0.0015, 0.25, 4.0, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -1185,7 +1185,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp(
                 "tom_stick",
                 "Stick Attack",
-                0.5,
+                0.3,
                 0.0,
                 1.0,
                 0,
@@ -1239,7 +1239,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, filter env, no stereo
         sound_settings_default: [
-            200.0, 0.4, 0.5, 500.0, 0.0015, 0.4, 4.2, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
+            150.0, 0.3, 0.7, 650.0, 0.0015, 0.2, 4.0, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -1256,7 +1256,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp(
                 "tom_stick",
                 "Stick Attack",
-                0.5,
+                0.3,
                 0.0,
                 1.0,
                 0,
@@ -1310,7 +1310,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, filter env, no stereo
         sound_settings_default: [
-            120.0, 0.5, 0.5, 500.0, 0.0015, 0.5, 4.2, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
+            100.0, 0.45, 0.7, 500.0, 0.0015, 0.35, 4.0, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -1843,25 +1843,46 @@ pub fn morphable_fields(voice_idx: usize) -> Vec<MorphableField> {
     let mut fields = Vec::new();
 
     for def in inst.standard_params {
-        if let ParamWidget::Slider { min, max, .. } = def.widget {
-            fields.push(MorphableField {
-                field_index: def.field.plock_field_index(),
-                label: def.label,
-                min,
-                max,
-            });
+        match def.widget {
+            ParamWidget::Slider { min, max, .. } => {
+                fields.push(MorphableField {
+                    field_index: def.field.plock_field_index(),
+                    label: def.label,
+                    min,
+                    max,
+                });
+            }
+            ParamWidget::Checkbox => {
+                fields.push(MorphableField {
+                    field_index: def.field.plock_field_index(),
+                    label: def.label,
+                    min: 0.0,
+                    max: 1.0,
+                });
+            }
         }
     }
 
+    let standard_field_indices: std::collections::HashSet<usize> = inst
+        .standard_params
+        .iter()
+        .map(|def| def.field.plock_field_index())
+        .collect();
+
     for def in inst.special_params {
-        if def.continuous {
-            fields.push(MorphableField {
-                field_index: SPECIAL_FIELD_START + def.special_index,
-                label: def.label,
-                min: def.min,
-                max: def.max,
-            });
+        if !def.continuous {
+            continue;
         }
+        let field_index = SPECIAL_FIELD_START + def.special_index;
+        if standard_field_indices.contains(&field_index) {
+            continue;
+        }
+        fields.push(MorphableField {
+            field_index,
+            label: def.label,
+            min: def.min,
+            max: def.max,
+        });
     }
 
     fields

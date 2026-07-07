@@ -28,6 +28,22 @@ pub enum GrooveType {
     Mpc,
 }
 
+/// Raw swing ratio for the odd step of each 8th-note pair.
+/// 0.5 = straight, 0.666... = triplet, 0.75 = heavy shuffle.
+pub fn swing_ratio_for(swing: f32, groove_type: GrooveType) -> f64 {
+    match groove_type {
+        GrooveType::Straight => 0.5,
+        GrooveType::Swing16 => 0.5 + (swing as f64 / 3.0),
+        GrooveType::Shuffle => 0.5 + (swing as f64 / 2.0),
+        GrooveType::Mpc => {
+            let abs_swing = (swing as f64).abs();
+            let sign = if swing >= 0.0 { 1.0 } else { -1.0 };
+            let curved = abs_swing.powf(0.75) * sign;
+            0.5 + (curved / 3.0)
+        }
+    }
+}
+
 /// Convert a beat position (0..16) into a swung step index (0..63).
 pub fn beat_to_step(beat_pos: f64, swing: f32, groove_type: GrooveType) -> usize {
     match groove_type {

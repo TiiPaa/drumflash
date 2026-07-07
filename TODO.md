@@ -19,7 +19,11 @@
   - [x] [MG-7a.2] Activer `+ Add Module` avec sélection d'instrument et mutation contrôlée du `track-layout-v1` (build 20260702-215053)
 - [x] [MG-8] Sound editor tabs per track (Sound / Track) + instrument selector + per-slot routing — rollback 20260701 (build 20260702-215053)
 - [ ] [MG-9] MIDI note/channel behavior per spec — needs revalidation after rollback
-- [ ] [MG-10] Adapt generator to track types and duplicate variations — urgent depuis le défaut 4 lanes : les générateurs supposent encore les rôles legacy par rangée (rangée 3 = OpenHH alors que la lane 4 du template est un Tom) → GENERATE écrit des patterns incohérents. Alternative quick-win : [92] (défauts plock — en partie résolu par ST-7, re-vérifier avant de coder). Voir `docs/notes/handoff-2026-07-05-st7-complete-ui-tabs.md`.
+- [x] [MG-10] **Adapt generator to track types and duplicate variations** — corrigé (build 20260707-161620)
+  - Le générateur prend désormais le `track_layout` courant en entrée et mappe les rôles musicaux par `kind.drum_voice_index()` au lieu de l’index de rangée.
+  - Jusqu’à 3 slots `Tom` utilisent les rôles Tom1/Tom2/Tom3 existants ; au-delà (ou pour toute autre duplication de kind) une variation déterministe est appliquée.
+  - Les slots vides restent vides après `GENERATE`.
+  - Tests déterministes ajoutés : mapping 4 lanes par défaut, rôles Tom distincts, variation des duplicates, slots vides silencieux.
 - [x] [MG-11] Build, test, install, update CHANGELOG — done (build 20260702-215053)
 
 ## [P0] Stabilisation modular grid 14 slots (session 2026-07-03)
@@ -105,39 +109,62 @@
   - Le bouton `Drag MIDI` est à nouveau sensible au glisser (`Sense::click_and_drag`).
   - Le helper OLE démarre automatiquement si le bouton gauche est déjà enfoncé.
   - L’export temporaire MIDI utilise le `track-layout` courant (14 slots + note par slot).
-- [ ] **[REPRENDRE ICI]** [104] **Ligne avec le bloc Fusion décalée / perte de place**
+
+### Retours Studio One — 2026-07-07 post build 20260707-094444
+- [x] **Ext MIDI : tête de lecture interne masquée** — corrigé (build 20260707-103907)
+  - En mode `Ext MIDI` la grille ne surligne plus de step ; le playhead interne est gelé.
+- [x] **Ext MIDI : flash visuel du `T` par lane** — corrigé (build 20260707-103907)
+  - Chaque lane dont la note MIDI est reçue fait clignoter sa pastille `T`.
+  - Couleur ajustée en AMBER/texte noir dans la build 20260707-111442.
+- [x] **Export MIDI : swing/groove appliqué** — corrigé (build 20260707-103907)
+  - Les fichiers MIDI exportés (Export + Drag) respectent le Swing et le Groove sélectionnés.
+
+- [x] [118] **Morphing : Saturation Amount / Mix reveniennent à la valeur de base + cohérence tous instruments** — corrigé (build 20260707-155108)
+  - Popup Morph élargi (284 → 350 px) et sliders réduits (104 → 96 px) pour éviter que les longs labels ne poussent le slider hors du cadre sur tous les instruments.
+  - Clamp systématique de la valeur morph affichée/stockée à min..max (Volume, standard params, specials continus).
+  - `morphable_fields()` inclut désormais les champs standard de type checkbox (ex. `Stereo`) pour correspondre au menu Morph ; test de régression ajouté.
+  - Correction similaire s'applique à tous les instruments : Kick, Snare, HiHat, OpenHiHat, Tom1/2/3, Clap, Ride, Cymbal, Snare606, 808 Kick, Perc1, Zap.
+
+- [x] [104] **Ligne avec le bloc Fusion décalée / perte de place** — corrigé (build 20260707-125743)
   - Revoir le placement du panneau Fusion sous la grille : il ne doit pas décaler inutilement les zones ni consommer de hauteur excessive.
-- [ ] [105] **Plock sound : Frequency à 0 par défaut sur certains instruments**
+  - La Fusion box (380 px) est maintenant affichée sur la même ligne que le sélecteur P-Lock Mode (Sound/Sequencer), alignée à droite. Elle ne pousse plus la Pattern Bank et le Bottom Panel vers le bas.
+  - Fix : allocation de taille exacte (`allocate_exact_size`) pour que la hauteur de la box soit identique en idle et en édition, évitant tout saut de l’interface.
+- [x] [105] **Plock sound : Frequency à 0 par défaut sur certains instruments** — vérifié + tests de régression (build 20260707-113932)
   - Probablement lié à [92] ; vérifier tous les instruments, notamment B8/HH/Tom et les slots dupliqués.
   - Attendu : le menu plock doit initialiser `Frequency` avec la valeur globale courante du slot/instrument, jamais `0` sauf si c'est réellement la valeur globale.
+  - Résultat : les défauts du registre et le reset aux défauts du kind (`ST-3`/`ST-7`) garantissent une fréquence > 0 ; tests `default_frequency_is_nonzero_for_every_instrument_kind` et `duplicate_slots_keep_nonzero_default_frequency` ajoutés.
 
 ### UX grille / lanes P1
-- [ ] [106] **Retirer Hum et Push de la grille**
-  - Laisser `Humanize` et `Push/Pull` uniquement dans l'onglet `Track`.
-  - Objectif : simplifier les lanes et récupérer de la place horizontale/verticale.
-- [ ] [107] **Cellules hors longueur en pointillé**
+- [x] [106] **Retirer Hum et Push de l'onglet Track** — corrigé (build 20260707-164821)
+  - Décision utilisateur 2026-07-07 : conserver `Humanize` et `Push/Pull` dans la grille pour l'instant, et les retirer seulement de l'onglet `Track`.
+  - L'onglet `Track` garde `Instrument`, `Routing`, `MIDI Note` et `Length`.
+- [x] [107] **Cellules hors longueur en pointillé** — corrigé (build 20260707-174844)
   - Quand `Len` global ou individuel est inférieur au maximum affiché, rendre les cellules non jouées en pointillé.
   - Attendu : distinguer clairement les steps visibles mais inactifs à cause de la longueur.
+  - Résultat : les cellules hors longueur et les lanes non activées utilisent le même design inactif : fond très sombre + bordure segmentée épaisse/sombre.
+  - Fix layout : le bloc `Len` global conserve une largeur fixe quand la valeur passe sous 10 ; l'indicateur `N steps` est dessiné dans un rectangle fixe pour que les boutons `16/32/48/64` ne se décalent plus.
 - [ ] [108] **Réarranger les lanes avec la poignée**
   - Activer le drag de lanes via la poignée prévue dans le design.
   - Préserver instrument, paramètres, séquence, plocks, longueur, mute/solo/routing lors du déplacement.
 
 ### Presets / gestion lanes P1
-- [ ] [109] **Boutons de presets de lanes**
+- [ ] **[REPRENDRE ICI]** [109] **Boutons de presets de lanes**
   - Ajouter `Clear All Lanes`.
   - Ajouter `Preset 12 Lanes`.
   - Ajouter `Preset 4 Lanes`.
   - Vérifier que les zones UI restent stables : aucune ligne conditionnelle qui décale les panneaux.
 - [ ] [110] **Garder le preset de la BD pour les nouvelles lanes**
   - Quand on ajoute une nouvelle BD/Kick, elle doit reprendre le preset BD attendu plutôt qu'un état résiduel ou trop neutre.
-- [ ] [111] **Revoir le preset du Tom**
+- [x] [111] **Revoir le preset du Tom** — ajusté (build 20260707-120216)
   - Ajuster les valeurs par défaut Tom pour un rendu plus musical/utilisable dès création de lane.
+  - Changements : Tom1 (lane Tom par défaut) **196 Hz** / 0.35 s / vol 0.7 / filter 600 Hz / release 0.25 ; Tom2 150 Hz / 0.30 s ; Tom3 100 Hz / 0.45 s. Stick Attack ramené à 0.3. `VoiceSettings::tom1/2/3()` alignés sur les défauts du registre.
 
 ### Song / Generator P1
 - [ ] [112] **Revoir le Song Editor, actuellement peu pratique**
   - Repenser l'édition de chaîne patterns/répétitions/activation song pour un workflow plus rapide en Studio One.
-- [ ] [113] **Revoir le Generator : HiHats trop similaires entre styles**
-  - Les HH font quasiment toujours la même chose quel que soit le style sélectionné.
+- [x] [113] **Revoir le Generator : HiHats trop similaires entre styles** — corrigé (build 20260707-163927)
+  - Les rôles HiHat sont maintenant différenciés par style : Rock 8ths, Funk offbeats, Techno/Metal/Disco 16ths, Hip-Hop sparse/swung, Jazz skip-beats, Latin clave-like, Trap dense rolls, Reggae one-drop.
+  - Test `hihat_roles_are_style_specific` ajouté pour éviter un retour au motif quasi identique sur tous les styles.
   - Attendu : varier densité, accents, ouvertures, syncopes et probabilités selon style.
 
 ### Sound Editor / synthèse P2
@@ -571,7 +598,7 @@
   - Complexite : Faible
   - Correctif (build `20260623-120806`) : lors d'un clic normal, si le clic ne porte pas sur le groupe fusionné en cours d'édition, `finish_fusion_editing_for_ui` est appelé avant de traiter le toggle.
 
-- [ ] [92] **Valeurs du menu plock sound par defaut = valeurs globales de l'instrument** (P1, Donnees)
+- [x] [92] **Valeurs du menu plock sound par defaut = valeurs globales de l'instrument** (P1, Donnees) — résolu par ST-7 + tests de régression (build 20260707-113932)
   - Constate : la frequence de BD8 (BassDrum808) est a 0 dans le plock au lieu de la valeur globale
   - Verifier que tous les instruments initialisent correctement les valeurs par defaut des plocks
   - Complexite : Faible
@@ -848,3 +875,7 @@ Probl�me: "Je veux un m�lange des deux"
 - TR-909 style: Kick=0.8, Snare=0.7, Tom=0.9 (l�g�rement digital)
 - Modern Techno: Kick=0.2, Snare=0.3, Tom=0.4 (plus digital)
 - Acoustic simulation: Tous � 1.0 avec long decay
+
+
+
+
