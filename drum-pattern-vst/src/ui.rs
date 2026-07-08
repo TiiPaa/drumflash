@@ -17,7 +17,7 @@ use std::{
 use crate::{
     generator::{self, GeneratorType, Style},
     midi_export,
-    pattern_bank::SLOT_COUNT,
+    pattern_bank::{SLOT_COUNT, SONG_BLOCKS},
     plock::PlockState,
     preset_dumps,
     sequencer::{FusedGroup, MorphTarget, Pattern, SharedPattern},
@@ -447,6 +447,8 @@ struct EditorUIState {
     selected_track_slot: usize,
     #[serde(default)]
     sound_editor_tab: SoundEditorTab,
+    #[serde(default)]
+    bottom_panel_tab: usize,
     selected_pattern_slot: usize,
     last_midi_export_path: Option<String>,
     last_midi_export_error: Option<String>,
@@ -479,6 +481,21 @@ struct EditorUIState {
     /// Instrument picker for an empty lane (opened by the +N chip).
     #[serde(default)]
     add_module_popup: Option<AddModulePopup>,
+    /// Pending global lane preset. Requires explicit confirmation because it mutates the current pattern/layout.
+    #[serde(default)]
+    lane_preset_confirm: Option<LanePresetAction>,
+    /// Source slot while dragging a lane reorder handle.
+    #[serde(default)]
+    lane_drag_source: Option<usize>,
+    /// Selected step in the Song Editor (0..15).
+    #[serde(default)]
+    song_selected_step: usize,
+    /// Clipboard for a song step: (slot, repeat).
+    #[serde(default)]
+    song_clipboard: Option<(i8, u8)>,
+    /// True when the user clicked "Clear All" and must confirm.
+    #[serde(default)]
+    song_clear_confirm: bool,
     /// Visual flash timer for the Test (T) button when triggered by external MIDI.
     #[serde(skip)]
     slot_flash_until: [f64; crate::track::MAX_TRACKS],
@@ -545,6 +562,27 @@ struct PagePopup {
     #[serde(with = "serde_pos2")]
     screen_pos: egui::Pos2,
     confirm_action: Option<PageMenuAction>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum LanePresetAction {
+    ClearAll,
+    Preset4,
+    Preset12,
+}
+
+impl LanePresetAction {
+    fn label(self) -> &'static str {
+        match self {
+            LanePresetAction::ClearAll => "Clear All",
+            LanePresetAction::Preset4 => "Preset 4",
+            LanePresetAction::Preset12 => "Preset 12",
+        }
+    }
+
+    fn apply_label(self) -> String {
+        format!("Apply {}", self.label())
+    }
 }
 
 /// Instrument picker for an empty lane (opened by the `+N` chip).
@@ -1298,11 +1336,11 @@ fn draw_bottom_panel(
     params: &DrumFlashParams,
     pattern: &SharedPattern,
     state: &mut EditorUIState,
-    song_mode: &Arc<AtomicBool>,
+    _song_mode: &Arc<AtomicBool>,
     song_position: &Arc<AtomicU32>,
 ) {
     let panel_w = ui.available_width();
-    let panel_h = 144.0;
+    let panel_h = 210.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(panel_w, panel_h), egui::Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, RADIUS_PANEL, PANEL);
@@ -1324,25 +1362,23 @@ fn draw_bottom_panel(
         ui.horizontal(|ui| {
             ui.set_height(42.0);
             ui.spacing_mut().item_spacing.x = 0.0;
-            let is_song = params.song_mode.value();
-            // Generator | Song segmented tabs
-            let _options = ["Generator", "Song"];
-            let selected = if is_song { 1 } else { 0 };
+            // Generator | Song segmented tabs: view only, no longer toggle song mode.
+            let selected = state.bottom_panel_tab.min(1);
             let new_selected = generator_song_segmented(ui, selected);
             if new_selected != selected {
-                setter.set_parameter(&params.song_mode, new_selected == 1);
+                state.bottom_panel_tab = new_selected;
             }
 
             ui.add_space(12.0);
 
             // Meta text
-            let meta = if params.song_mode.value() {
+            let meta = if state.bottom_panel_tab == 1 {
                 if let Ok(bank) = params.pattern_bank.bank.lock() {
-                    let total_reps = bank.song.steps[..bank.song.length as usize]
+                    let blocks = (bank.song.length as usize).min(SONG_BLOCKS);
+                    let total_reps = bank.song.steps[..blocks]
                         .iter()
                         .filter(|&&s| s >= 0)
                         .count();
-                    let blocks = bank.song.length as usize;
                     format!("{} blocks · {} patterns", blocks, total_reps)
                 } else {
                     "Song chain".to_string()
@@ -1356,17 +1392,6 @@ fn draw_bottom_panel(
                 )
             };
             ui.label(RichText::new(meta).monospace().size(10.5).color(INK3));
-
-            ui.add_space(ui.available_width() - 104.0);
-
-            // Song Enabled toggle (only visible in Song mode)
-            if params.song_mode.value() {
-                let song_enabled = song_mode.load(Ordering::Relaxed);
-                let tog = led_toggle(ui, "Song Enabled", song_enabled);
-                if tog.clicked() {
-                    song_mode.store(!song_enabled, Ordering::Relaxed);
-                }
-            }
         });
     });
 
@@ -1378,8 +1403,8 @@ fn draw_bottom_panel(
         ui.set_clip_rect(body_rect);
         ui.set_width(body_rect.width());
         ui.set_height(body_rect.height());
-        if params.song_mode.value() {
-            draw_song_editor(ui, setter, params, state, song_mode, song_position);
+        if state.bottom_panel_tab == 1 {
+            draw_song_editor(ui, setter, params, state, song_position);
         } else {
             draw_generator_panel_content(ui, setter, params, pattern, state);
         }
@@ -1559,122 +1584,201 @@ fn draw_generator_bar(
 }
 fn draw_song_editor(
     ui: &mut egui::Ui,
-    _setter: &ParamSetter,
+    setter: &ParamSetter,
     params: &DrumFlashParams,
-    _state: &mut EditorUIState,
-    song_mode: &Arc<AtomicBool>,
+    state: &mut EditorUIState,
     song_position: &Arc<AtomicU32>,
 ) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Song Sequence").strong().size(12.0));
-        ui.add_space(8.0);
+    let current_song_pos = song_position.load(Ordering::Relaxed) as usize;
+    let is_song_active = params.song_mode.value();
 
-        // Loop toggle
-        if let Ok(mut bank) = params.pattern_bank.bank.lock() {
-            let loop_enabled = bank.song.loop_enabled;
-            let btn = egui::Button::new(RichText::new("Loop").size(10.0))
-                .min_size(Vec2::new(40.0, 22.0))
-                .fill(if loop_enabled {
-                    Color32::from_rgb(74, 158, 255)
-                } else {
-                    PANEL2
-                })
-                .stroke(egui::Stroke::new(1.0, LINE2))
-                .corner_radius(5.0);
-            if ui.add(btn).clicked() {
-                bank.song.loop_enabled = !loop_enabled;
-            }
+    let mut bank = match params.pattern_bank.bank.lock() {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+
+    // Always use 16 song blocks and always loop.
+    bank.song.length = SONG_BLOCKS as u8;
+    bank.song.loop_enabled = true;
+
+    let selected = state.song_selected_step.min(SONG_BLOCKS - 1);
+
+    // Header: Song Mode checkbox, Clear All
+    ui.horizontal(|ui| {
+        ui.set_height(26.0);
+        ui.spacing_mut().item_spacing.x = 6.0;
+
+        let mut song_enabled = params.song_mode.value();
+        if ui.checkbox(&mut song_enabled, "Song Mode").changed() {
+            setter.set_parameter(&params.song_mode, song_enabled);
         }
 
         ui.add_space(8.0);
-
-        // Song length control
-        if let Ok(mut bank) = params.pattern_bank.bank.lock() {
-            let len = bank.song.length;
-            ui.label(
-                RichText::new(format!("Len: {}", len))
-                    .size(10.0)
-                    .monospace(),
-            );
-            if ui.button("+").clicked() && bank.song.length < 64 {
-                bank.song.length += 1;
+        if state.song_clear_confirm {
+            let btn = egui::Button::new(RichText::new("Confirm?").size(10.0).color(Color32::WHITE))
+                .min_size(Vec2::new(70.0, 20.0))
+                .fill(Color32::from_rgb(180, 60, 60))
+                .stroke(egui::Stroke::new(1.0, LINE2))
+                .corner_radius(5.0);
+            if ui.add(btn).clicked() {
+                for step in 0..SONG_BLOCKS {
+                    bank.song.set_step(step, -1);
+                    bank.song.set_repeat(step, 1);
+                }
+                state.song_clear_confirm = false;
             }
-            if ui.button("-").clicked() && bank.song.length > 0 {
-                bank.song.length -= 1;
+        } else {
+            let btn = egui::Button::new(RichText::new("Clear All").size(10.0))
+                .min_size(Vec2::new(70.0, 20.0))
+                .fill(PANEL2)
+                .stroke(egui::Stroke::new(1.0, LINE2))
+                .corner_radius(5.0);
+            if ui.add(btn).clicked() {
+                state.song_clear_confirm = true;
             }
         }
     });
 
     ui.add_space(4.0);
 
-    // Song steps grid
-    let current_song_pos = song_position.load(Ordering::Relaxed) as usize;
+    // Step grid: 1 row of 16 editable blocks (pattern on top, repeat on bottom).
+    let body_w = ui.available_width();
+    let cell_h = 64.0;
+    let cell_w = ((body_w - 2.0 * (SONG_BLOCKS as f32 - 1.0)) / SONG_BLOCKS as f32).max(18.0);
+    let steps_per_row = SONG_BLOCKS;
 
-    if let Ok(mut bank) = params.pattern_bank.bank.lock() {
-        let len = bank.song.length as usize;
-        let steps_per_row = 16_usize;
-        let rows = (len + steps_per_row - 1) / steps_per_row;
+    ui.horizontal(|ui| {
+        ui.set_height(cell_h);
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for step_idx in 0..steps_per_row {
+            let is_current = step_idx == current_song_pos && is_song_active;
+            let is_selected = step_idx == selected;
+            let slot = bank.song.steps[step_idx];
+            let occupied =
+                slot >= 0 && (slot as usize) < SLOT_COUNT && bank.slots[slot as usize].occupied;
 
-        for row in 0..rows.max(1) {
-            ui.horizontal(|ui| {
-                for col in 0..steps_per_row {
-                    let step_idx = row * steps_per_row + col;
-                    if step_idx >= len {
-                        break;
-                    }
+            let fill = if is_current {
+                BLUE
+            } else if occupied {
+                PANEL2
+            } else {
+                Color32::from_rgb(18, 18, 24)
+            };
+            let stroke_color = if is_selected {
+                BLUE
+            } else if is_current {
+                BLUE
+            } else {
+                LINE2
+            };
 
-                    let is_current =
-                        step_idx == current_song_pos && song_mode.load(Ordering::Relaxed);
-                    let slot = bank.song.steps[step_idx];
-                    let occupied = slot >= 0
-                        && (slot as usize) < SLOT_COUNT
-                        && bank.slots[slot as usize].occupied;
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::new(cell_w, cell_h), egui::Sense::click());
+            ui.painter().rect_filled(rect, 3.0, fill);
+            ui.painter().rect_stroke(
+                rect,
+                3.0,
+                egui::Stroke::new(1.0, stroke_color),
+                egui::StrokeKind::Inside,
+            );
 
-                    let text = if slot < 0 {
+            // Top half: pattern selector.
+            let inner = rect.shrink(2.0);
+            let top_rect = egui::Rect::from_min_size(
+                inner.min,
+                Vec2::new(inner.width(), inner.height() * 0.5),
+            );
+            ui.allocate_ui_at_rect(top_rect, |ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    let mut slot = bank.song.steps[step_idx];
+                    let selected_text = if slot < 0 {
                         "--".to_string()
                     } else {
                         format!("P{}", slot + 1)
                     };
-
-                    let btn = egui::Button::new(RichText::new(text).size(9.0).monospace())
-                        .min_size(Vec2::new(28.0, 22.0))
-                        .fill(if is_current {
-                            Color32::from_rgb(255, 100, 100)
-                        } else if occupied {
-                            PANEL2
-                        } else {
-                            Color32::from_rgb(28, 28, 36)
-                        })
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            if is_current {
-                                Color32::from_rgb(255, 150, 150)
-                            } else {
-                                LINE2
-                            },
-                        ))
-                        .corner_radius(4.0);
-
-                    let response = ui.add(btn);
-                    if response.clicked() {
-                        // Cycle through P1-P8 and empty
-                        let next_slot = if slot < 0 {
-                            0
-                        } else if (slot as usize) >= SLOT_COUNT - 1 {
-                            -1
-                        } else {
-                            slot + 1
-                        };
-                        bank.song.set_step(step_idx, next_slot);
+                    egui::ComboBox::from_id_salt(format!("song_pattern_select_{}", step_idx))
+                        .selected_text(selected_text)
+                        .width(ui.available_width().max(20.0))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut slot, -1, "--");
+                            for i in 0..SLOT_COUNT {
+                                if bank.slots[i].occupied {
+                                    let text = format!("P{}", i + 1);
+                                    ui.selectable_value(&mut slot, i as i8, text);
+                                }
+                            }
+                        });
+                    if slot != bank.song.steps[step_idx] {
+                        bank.song.set_step(step_idx, slot);
                     }
-                    if response.secondary_clicked() {
-                        // Right click to clear
-                        bank.song.set_step(step_idx, -1);
+                });
+            });
+
+            // Bottom half: repeat editor.
+            let bottom_rect = egui::Rect::from_min_size(
+                egui::pos2(inner.left(), inner.top() + inner.height() * 0.5),
+                Vec2::new(inner.width(), inner.height() * 0.5),
+            );
+            ui.allocate_ui_at_rect(bottom_rect, |ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    let mut repeat = bank.song.repeats[step_idx];
+                    ui.add_sized(
+                        Vec2::new(ui.available_width(), ui.available_height()),
+                        egui::DragValue::new(&mut repeat)
+                            .range(1..=64)
+                            .speed(1.0)
+                            .fixed_decimals(0)
+                            .custom_formatter(|n, _| {
+                                if n <= 1.0 {
+                                    "x1".to_string()
+                                } else {
+                                    format!("x{}", n as i64)
+                                }
+                            }),
+                    );
+                    if repeat != bank.song.repeats[step_idx] {
+                        bank.song.set_repeat(step_idx, repeat);
                     }
+                });
+            });
+
+            if response.clicked() {
+                state.song_selected_step = step_idx;
+            }
+            response.context_menu(|ui| {
+                if ui.button("Copy").clicked() {
+                    state.song_clipboard =
+                        Some((bank.song.steps[step_idx], bank.song.repeats[step_idx]));
+                    ui.close_menu();
+                }
+                if ui
+                    .add_enabled(state.song_clipboard.is_some(), egui::Button::new("Paste"))
+                    .clicked()
+                {
+                    if let Some((slot, repeat)) = state.song_clipboard {
+                        bank.song.set_step(step_idx, slot);
+                        bank.song.set_repeat(step_idx, repeat);
+                    }
+                    ui.close_menu();
+                }
+                if ui.button("Duplicate").clicked() {
+                    let next = step_idx + 1;
+                    if next < SONG_BLOCKS {
+                        let slot = bank.song.steps[step_idx];
+                        let repeat = bank.song.repeats[step_idx];
+                        bank.song.set_step(next, slot);
+                        bank.song.set_repeat(next, repeat);
+                    }
+                    ui.close_menu();
+                }
+                if ui.button("Clear").clicked() {
+                    bank.song.set_step(step_idx, -1);
+                    bank.song.set_repeat(step_idx, 1);
+                    ui.close_menu();
                 }
             });
         }
-    }
+    });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1702,6 +1806,7 @@ fn draw_grid_v2(
         setter,
         params,
         pattern,
+        sound_settings,
         plock,
         state,
         play_page,
@@ -1763,6 +1868,8 @@ fn draw_grid_v2(
             let lengths: [&IntParam; crate::track::MAX_TRACKS] =
                 std::array::from_fn(|i| params.lengths()[i]);
             state.selected_track_slot = state.selected_track_slot.min(crate::track::MAX_TRACKS - 1);
+            let mut lane_row_rects: [Option<egui::Rect>; crate::track::MAX_TRACKS] =
+                [None; crate::track::MAX_TRACKS];
 
             // Always render the full 14 rows (active lanes + styled empty lanes)
             // so the grid height is constant and the panels below never shift.
@@ -1770,7 +1877,7 @@ fn draw_grid_v2(
                 let Some(inst) = voice_idx_for_slot(params, slot_idx) else {
                     // Inactive slot: the +N chip opens the instrument picker
                     // for this specific slot.
-                    if let Some(pos) = draw_empty_slot_lane_v2(
+                    let (row_response, add_pos) = draw_empty_slot_lane_v2(
                         ui,
                         slot_idx,
                         page_offset,
@@ -1781,7 +1888,9 @@ fn draw_grid_v2(
                         extra_w,
                         gap,
                         cell_w,
-                    ) {
+                    );
+                    lane_row_rects[slot_idx] = Some(row_response.rect);
+                    if let Some(pos) = add_pos {
                         state.add_module_popup = Some(AddModulePopup {
                             slot: slot_idx,
                             screen_pos: pos,
@@ -1793,7 +1902,7 @@ fn draw_grid_v2(
                 let fusions = pattern.load_fusions(slot_idx);
                 let lane_length = effective_lane_length_for_ui(params, slot_idx, master_length);
                 let lane_play_step = current_steps[slot_idx].load(Ordering::Relaxed) as usize;
-                draw_legacy_slot_lane_v2(
+                let row_response = draw_legacy_slot_lane_v2(
                     ui,
                     setter,
                     params,
@@ -1823,7 +1932,27 @@ fn draw_grid_v2(
                     cell_w,
                     &mut fusion_editing_started_this_frame,
                 );
+                lane_row_rects[slot_idx] = Some(row_response.rect);
             }
+
+            if state.lane_drag_source.is_some() {
+                if let Some(pointer_pos) = ui.input(|input| input.pointer.interact_pos()) {
+                    if let Some(gap) = compute_reorder_gap(&lane_row_rects, pointer_pos) {
+                        draw_lane_reorder_indicator(ui, &lane_row_rects, gap);
+                    }
+                }
+            }
+
+            handle_lane_reorder_drop(
+                ui,
+                setter,
+                params,
+                pattern,
+                sound_settings,
+                plock,
+                state,
+                &lane_row_rects,
+            );
         });
 
     let mut fusion_edit_box_rect = None;
@@ -1896,12 +2025,21 @@ fn draw_legacy_slot_lane_v2(
     gap: f32,
     cell_w: f32,
     fusion_editing_started_this_frame: &mut bool,
-) {
+) -> egui::Response {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.set_height(LANE_H);
 
-        draw_seq_grip_v2(ui, grip_w, LANE_H);
+        let grip_response = draw_seq_grip_v2(ui, grip_w, LANE_H)
+            .on_hover_cursor(egui::CursorIcon::Grab)
+            .on_hover_text("Drag to reorder lane");
+        if grip_response.is_pointer_button_down_on() || grip_response.drag_started() {
+            state.lane_drag_source = Some(slot_idx);
+            select_legacy_track(state, slot_idx);
+        }
+        if state.lane_drag_source == Some(slot_idx) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
 
         let selected = state.selected_track_slot == slot_idx;
         let name_response = draw_lane_name_v2(
@@ -2142,7 +2280,8 @@ fn draw_legacy_slot_lane_v2(
         if draw_track_length_control(ui, setter, params, length_param, slot_idx, master_length) {
             select_legacy_track(state, slot_idx);
         }
-    });
+    })
+    .response
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2159,8 +2298,8 @@ fn draw_empty_slot_lane_v2(
     extra_w: f32,
     gap: f32,
     cell_w: f32,
-) -> Option<egui::Pos2> {
-    ui.horizontal(|ui| {
+) -> (egui::Response, Option<egui::Pos2>) {
+    let inner = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.set_height(LANE_H);
 
@@ -2214,8 +2353,8 @@ fn draw_empty_slot_lane_v2(
         draw_empty_lane_chip_v2(ui, extra_w, "--");
         draw_empty_lane_chip_v2(ui, extra_w, "--");
         add_click_pos
-    })
-    .inner
+    });
+    (inner.response, inner.inner)
 }
 
 fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) -> egui::Response {
@@ -2257,6 +2396,338 @@ fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::
         );
     }
     response
+}
+
+fn lane_move_order(from: usize, to: usize) -> [usize; crate::track::MAX_TRACKS] {
+    let mut order = std::array::from_fn(|i| i);
+    if from >= crate::track::MAX_TRACKS || to >= crate::track::MAX_TRACKS || from == to {
+        return order;
+    }
+
+    let moved = order[from];
+    if from < to {
+        for idx in from..to {
+            order[idx] = order[idx + 1];
+        }
+    } else {
+        for idx in (to + 1..=from).rev() {
+            order[idx] = order[idx - 1];
+        }
+    }
+    order[to] = moved;
+    order
+}
+
+fn moved_slot_index(order: &[usize; crate::track::MAX_TRACKS], old_idx: usize) -> usize {
+    order
+        .iter()
+        .position(|&idx| idx == old_idx)
+        .unwrap_or(old_idx.min(crate::track::MAX_TRACKS - 1))
+}
+
+fn remap_slot_index(order: &[usize; crate::track::MAX_TRACKS], slot: usize) -> usize {
+    if slot >= crate::track::MAX_TRACKS {
+        slot
+    } else {
+        moved_slot_index(order, slot)
+    }
+}
+
+fn move_mask_bits(mask: u16, order: &[usize; crate::track::MAX_TRACKS]) -> u16 {
+    let mut new_mask = 0u16;
+    for (new_idx, &old_idx) in order.iter().enumerate() {
+        if (mask & (1u16 << old_idx)) != 0 {
+            new_mask |= 1u16 << new_idx;
+        }
+    }
+    new_mask
+}
+
+fn set_bool_param_if_changed(setter: &ParamSetter, param: &BoolParam, value: bool) {
+    if param.value() != value {
+        setter.begin_set_parameter(param);
+        setter.set_parameter(param, value);
+        setter.end_set_parameter(param);
+    }
+}
+
+fn set_float_param_if_changed(setter: &ParamSetter, param: &FloatParam, value: f32) {
+    if (param.value() - value).abs() > f32::EPSILON {
+        setter.begin_set_parameter(param);
+        setter.set_parameter(param, value);
+        setter.end_set_parameter(param);
+    }
+}
+
+fn set_int_param_if_changed(setter: &ParamSetter, param: &IntParam, value: i32) {
+    if param.value() != value {
+        setter.begin_set_parameter(param);
+        setter.set_parameter(param, value);
+        setter.end_set_parameter(param);
+    }
+}
+
+fn compute_reorder_gap(
+    lane_row_rects: &[Option<egui::Rect>; crate::track::MAX_TRACKS],
+    pointer_pos: egui::Pos2,
+) -> Option<usize> {
+    let mut count = 0usize;
+    for rect in lane_row_rects.iter() {
+        if let Some(rect) = rect {
+            if pointer_pos.y < rect.center().y {
+                return Some(count);
+            }
+            count += 1;
+        }
+    }
+    Some(count)
+}
+
+fn draw_lane_reorder_indicator(
+    ui: &mut egui::Ui,
+    lane_row_rects: &[Option<egui::Rect>; crate::track::MAX_TRACKS],
+    gap: usize,
+) {
+    let top = lane_row_rects.get(gap).and_then(|r| *r);
+    let bottom = gap
+        .checked_sub(1)
+        .and_then(|i| lane_row_rects.get(i))
+        .and_then(|r| *r);
+    let y = match (top, bottom) {
+        (Some(t), Some(_)) => t.top(),
+        (Some(t), None) => t.top(),
+        (None, Some(b)) => b.bottom(),
+        (None, None) => return,
+    };
+    let x_min = lane_row_rects
+        .iter()
+        .find_map(|rect| rect.map(|r| r.left()))
+        .unwrap_or(0.0);
+    let x_max = lane_row_rects
+        .iter()
+        .find_map(|rect| rect.map(|r| r.right()))
+        .unwrap_or(0.0);
+    ui.painter().line_segment(
+        [egui::pos2(x_min, y), egui::pos2(x_max, y)],
+        egui::Stroke::new(2.0, BLUE),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_lane_reorder_drop(
+    ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    sound_settings: &SoundSettingsState,
+    plock: &PlockState,
+    state: &mut EditorUIState,
+    lane_row_rects: &[Option<egui::Rect>; crate::track::MAX_TRACKS],
+) {
+    let Some(from) = state.lane_drag_source else {
+        return;
+    };
+
+    if ui.input(|input| input.pointer.primary_down()) {
+        return;
+    }
+
+    state.lane_drag_source = None;
+    let Some(pointer_pos) = ui.input(|input| input.pointer.interact_pos()) else {
+        return;
+    };
+    let Some(gap) = compute_reorder_gap(lane_row_rects, pointer_pos) else {
+        return;
+    };
+    let to = gap.min(crate::track::MAX_TRACKS - 1);
+
+    if from != to {
+        apply_lane_reorder_move(
+            setter,
+            params,
+            pattern,
+            sound_settings,
+            plock,
+            state,
+            from,
+            to,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_lane_reorder_move(
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    sound_settings: &SoundSettingsState,
+    plock: &PlockState,
+    state: &mut EditorUIState,
+    from: usize,
+    to: usize,
+) {
+    if from >= crate::track::MAX_TRACKS || to >= crate::track::MAX_TRACKS || from == to {
+        return;
+    }
+
+    let order = lane_move_order(from, to);
+
+    let old_step_masks = pattern.step_masks();
+    let old_fusions: [Vec<FusedGroup>; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| pattern.load_fusions(slot));
+    for (step, mask) in old_step_masks.iter().copied().enumerate() {
+        pattern.set_step_mask(step, move_mask_bits(mask, &order));
+    }
+    for (new_idx, &old_idx) in order.iter().enumerate() {
+        pattern.store_fusions(new_idx, &old_fusions[old_idx]);
+    }
+
+    let sound_values = sound_settings.read_all();
+    let sound_stride = crate::sound_settings::FIELDS_PER_INSTRUMENT_V3;
+    let mut new_sound_values = sound_values.clone();
+    for (new_idx, &old_idx) in order.iter().enumerate() {
+        let dst = new_idx * sound_stride;
+        let src = old_idx * sound_stride;
+        new_sound_values[dst..dst + sound_stride]
+            .copy_from_slice(&sound_values[src..src + sound_stride]);
+    }
+    sound_settings.write_all(&new_sound_values);
+
+    let old_plock_masks: [u64; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| plock.masks.masks[slot].load(Ordering::Relaxed));
+    let old_plock_field_masks: Vec<Vec<u64>> = (0..crate::track::MAX_TRACKS)
+        .map(|slot| {
+            (0..crate::plock::STEP_COUNT)
+                .map(|step| plock.field_masks.get_raw(slot, step))
+                .collect()
+        })
+        .collect();
+    let old_plock_values: Vec<Vec<Vec<f32>>> = (0..crate::track::MAX_TRACKS)
+        .map(|slot| {
+            (0..crate::plock::STEP_COUNT)
+                .map(|step| {
+                    (0..crate::plock::FIELD_COUNT)
+                        .map(|field| plock.values.get(slot, step, field))
+                        .collect()
+                })
+                .collect()
+        })
+        .collect();
+    for (new_idx, &old_idx) in order.iter().enumerate() {
+        plock.masks.masks[new_idx].store(old_plock_masks[old_idx], Ordering::Relaxed);
+        for step in 0..crate::plock::STEP_COUNT {
+            plock
+                .field_masks
+                .set_raw(new_idx, step, old_plock_field_masks[old_idx][step]);
+            for field in 0..crate::plock::FIELD_COUNT {
+                plock
+                    .values
+                    .set(new_idx, step, field, old_plock_values[old_idx][step][field]);
+            }
+        }
+    }
+
+    let seq = &params.seq_plock_state.state;
+    let old_seq_masks: [u64; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| seq.masks[slot].load(Ordering::Relaxed));
+    let old_seq_probabilities: Vec<Vec<u32>> = (0..crate::track::MAX_TRACKS)
+        .map(|slot| {
+            (0..crate::plock::STEP_COUNT)
+                .map(|step| seq.probabilities[slot][step].load(Ordering::Relaxed))
+                .collect()
+        })
+        .collect();
+    let old_seq_stutters: Vec<Vec<u32>> = (0..crate::track::MAX_TRACKS)
+        .map(|slot| {
+            (0..crate::plock::STEP_COUNT)
+                .map(|step| seq.stutters[slot][step].load(Ordering::Relaxed))
+                .collect()
+        })
+        .collect();
+    let old_seq_conditions: Vec<Vec<u32>> = (0..crate::track::MAX_TRACKS)
+        .map(|slot| {
+            (0..crate::plock::STEP_COUNT)
+                .map(|step| seq.conditions[slot][step].load(Ordering::Relaxed))
+                .collect()
+        })
+        .collect();
+    let old_seq_microtimings: Vec<Vec<u32>> = (0..crate::track::MAX_TRACKS)
+        .map(|slot| {
+            (0..crate::plock::STEP_COUNT)
+                .map(|step| seq.microtimings[slot][step].load(Ordering::Relaxed))
+                .collect()
+        })
+        .collect();
+    for (new_idx, &old_idx) in order.iter().enumerate() {
+        seq.masks[new_idx].store(old_seq_masks[old_idx], Ordering::Relaxed);
+        for step in 0..crate::plock::STEP_COUNT {
+            seq.probabilities[new_idx][step]
+                .store(old_seq_probabilities[old_idx][step], Ordering::Relaxed);
+            seq.stutters[new_idx][step].store(old_seq_stutters[old_idx][step], Ordering::Relaxed);
+            seq.conditions[new_idx][step]
+                .store(old_seq_conditions[old_idx][step], Ordering::Relaxed);
+            seq.microtimings[new_idx][step]
+                .store(old_seq_microtimings[old_idx][step], Ordering::Relaxed);
+        }
+    }
+
+    let mute_values: [bool; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| params.mutes()[slot].value());
+    let solo_values: [bool; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| params.solos()[slot].value());
+    let mix_values: [bool; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| params.mixes()[slot].value());
+    let algo_values: [i32; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| params.algos()[slot].value());
+    let humanize_values: [f32; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| params.humanizes()[slot].value());
+    let push_values: [f32; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| params.pushes()[slot].value());
+    let length_values: [i32; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| params.lengths()[slot].value());
+
+    for (new_idx, &old_idx) in order.iter().enumerate() {
+        set_bool_param_if_changed(setter, params.mutes()[new_idx], mute_values[old_idx]);
+        set_bool_param_if_changed(setter, params.solos()[new_idx], solo_values[old_idx]);
+        set_bool_param_if_changed(setter, params.mixes()[new_idx], mix_values[old_idx]);
+        set_int_param_if_changed(setter, params.algos()[new_idx], algo_values[old_idx]);
+        set_float_param_if_changed(
+            setter,
+            params.humanizes()[new_idx],
+            humanize_values[old_idx],
+        );
+        set_float_param_if_changed(setter, params.pushes()[new_idx], push_values[old_idx]);
+        set_int_param_if_changed(setter, params.lengths()[new_idx], length_values[old_idx]);
+    }
+
+    let old_lock_mask = PersistentField::<u16>::map(&params.lane_length_locks, |mask| *mask);
+    PersistentField::<u16>::set(
+        &params.lane_length_locks,
+        move_mask_bits(old_lock_mask, &order),
+    );
+
+    let old_selection = state.selected_track_slot;
+    let old_selected_instrument = state.selected_instrument;
+    let old_fusion_selection = state.fusion_selection_start;
+    let old_slot_flash_until = state.slot_flash_until;
+    state.selected_track_slot = remap_slot_index(&order, old_selection);
+    state.selected_instrument = remap_slot_index(&order, old_selected_instrument);
+    state.fusion_selection_start =
+        std::array::from_fn(|new_idx| old_fusion_selection[order[new_idx]]);
+    state.slot_flash_until = std::array::from_fn(|new_idx| old_slot_flash_until[order[new_idx]]);
+    state.fusion_editing = state
+        .fusion_editing
+        .map(|(slot, group)| (remap_slot_index(&order, slot), group));
+    state.plock_popup = state.plock_popup.map(|mut popup| {
+        popup.instrument = remap_slot_index(&order, popup.instrument);
+        popup
+    });
+    state.add_module_popup = None;
+
+    let mut new_layout =
+        PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+    new_layout.move_slot(from, to);
+    PersistentField::<TrackLayoutState>::set(&params.track_layout, new_layout);
 }
 
 /// Activate a specific inactive slot with the chosen instrument kind.
@@ -2438,6 +2909,7 @@ fn draw_page_bar_v2(
     setter: &ParamSetter,
     params: &DrumFlashParams,
     pattern: &SharedPattern,
+    sound_settings: &SoundSettingsState,
     plock: &PlockState,
     state: &mut EditorUIState,
     play_page: usize,
@@ -2446,9 +2918,12 @@ fn draw_page_bar_v2(
     let page_count = (master_length + 15) / 16;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        ui.add_sized(
-            Vec2::new(84.0, CTL_HEIGHT),
-            egui::Label::new(RichText::new("Page").font(f_sans_sb(10.5)).color(INK3)),
+        ui.allocate_ui_with_layout(
+            Vec2::new(50.0, CTL_HEIGHT),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.label(RichText::new("Page").font(f_sans_sb(10.5)).color(INK3));
+            },
         );
         for page in 0..4 {
             let enabled = page < page_count.max(1);
@@ -2511,10 +2986,26 @@ fn draw_page_bar_v2(
         if ui.add(follow).clicked() {
             state.follow_mode = !state.follow_mode;
         }
-
         const LEN_GROUP_W: f32 = 468.0;
         const LEN_VALUE_W: f32 = 64.0;
-        ui.add_space((ui.available_width() - LEN_GROUP_W).max(12.0));
+        const PRESET_W: f32 = 104.0;
+        const PRESET_LEN_GAP: f32 = 34.0;
+        let between_follow_and_len_w = (ui.available_width() - LEN_GROUP_W).max(PRESET_W);
+        let len_gap = if between_follow_and_len_w >= PRESET_W + PRESET_LEN_GAP {
+            PRESET_LEN_GAP
+        } else {
+            16.0
+        };
+        let preset_zone_w = (between_follow_and_len_w - len_gap).max(PRESET_W);
+        ui.allocate_ui_with_layout(
+            Vec2::new(preset_zone_w, CTL_HEIGHT),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.add_space(((preset_zone_w - PRESET_W) * 0.5).max(0.0));
+                draw_lane_preset_dropdown(ui, state);
+            },
+        );
+        ui.add_space(len_gap);
         ui.allocate_ui_with_layout(
             Vec2::new(LEN_GROUP_W, CTL_HEIGHT),
             egui::Layout::left_to_right(egui::Align::Center),
@@ -2564,6 +3055,115 @@ fn draw_page_bar_v2(
             },
         );
     });
+    draw_lane_preset_warning_if_any(ui, params, sound_settings, pattern, state);
+}
+
+fn draw_lane_preset_dropdown(ui: &mut egui::Ui, state: &mut EditorUIState) {
+    egui::ComboBox::from_id_salt("lane_preset_dropdown")
+        .selected_text(RichText::new("Preset").font(f_sans_sb(10.5)).color(INK2))
+        .width(94.0)
+        .show_ui(ui, |ui| {
+            ui.set_min_width(132.0);
+            if ui
+                .selectable_label(
+                    false,
+                    RichText::new("Clear All").font(f_sans_med(11.0)).color(RED),
+                )
+                .clicked()
+            {
+                state.lane_preset_confirm = Some(LanePresetAction::ClearAll);
+                ui.close_menu();
+            }
+            if ui
+                .selectable_label(false, RichText::new("Preset 4").font(f_sans_med(11.0)))
+                .clicked()
+            {
+                state.lane_preset_confirm = Some(LanePresetAction::Preset4);
+                ui.close_menu();
+            }
+            if ui
+                .selectable_label(false, RichText::new("Preset 12").font(f_sans_med(11.0)))
+                .clicked()
+            {
+                state.lane_preset_confirm = Some(LanePresetAction::Preset12);
+                ui.close_menu();
+            }
+        });
+}
+
+fn draw_lane_preset_warning_if_any(
+    ui: &mut egui::Ui,
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
+    pattern: &SharedPattern,
+    state: &mut EditorUIState,
+) {
+    let Some(action) = state.lane_preset_confirm else {
+        return;
+    };
+
+    let screen_rect = ui.ctx().screen_rect();
+    let panel_w = 318.0;
+    let pos = egui::pos2(
+        screen_rect.center().x - panel_w * 0.5,
+        screen_rect.top() + 92.0,
+    );
+    egui::Area::new(ui.id().with("lane_preset_warning"))
+        .kind(egui::UiKind::Popup)
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::NONE
+                .fill(P_ACTIVE)
+                .corner_radius(RADIUS_PANEL)
+                .inner_margin(egui::Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_width(panel_w);
+                    ui.label(RichText::new("Warning").font(f_sans_sb(12.0)).color(RED));
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(format!(
+                            "{} modifies the current pattern and lane layout.",
+                            action.label()
+                        ))
+                        .font(f_sans_med(10.5))
+                        .color(INK2),
+                    );
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        let apply = egui::Button::new(
+                            RichText::new(action.apply_label())
+                                .font(f_sans_sb(10.5))
+                                .color(Color32::WHITE),
+                        )
+                        .min_size(Vec2::new(128.0, CTL_HEIGHT))
+                        .fill(RED)
+                        .stroke(egui::Stroke::new(1.0, RED))
+                        .corner_radius(6.0);
+                        if ui.add(apply).clicked() {
+                            apply_lane_preset_action(
+                                params,
+                                sound_settings,
+                                pattern,
+                                state,
+                                action,
+                            );
+                            state.lane_preset_confirm = None;
+                        }
+
+                        let cancel = egui::Button::new(
+                            RichText::new("Cancel").font(f_sans_sb(10.5)).color(INK2),
+                        )
+                        .min_size(Vec2::new(82.0, CTL_HEIGHT))
+                        .fill(PANEL2)
+                        .stroke(egui::Stroke::new(1.0, LINE2))
+                        .corner_radius(6.0);
+                        if ui.add(cancel).clicked() {
+                            state.lane_preset_confirm = None;
+                        }
+                    });
+                });
+        });
 }
 
 fn draw_len_value_fixed(ui: &mut egui::Ui, master_length: usize, width: f32) {
@@ -2648,19 +3248,25 @@ fn draw_seq_header_v2(
     });
 }
 
-fn draw_seq_grip_v2(ui: &mut egui::Ui, width: f32, height: f32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
+fn draw_seq_grip_v2(ui: &mut egui::Ui, width: f32, height: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::drag());
     // 2x3 dot matrix (drag-handle look; avoids relying on braille glyph coverage)
     let c = rect.center();
+    let dot_color = if response.dragged() || response.hovered() {
+        INK2
+    } else {
+        FAINT
+    };
     for col in 0..2 {
         for row in 0..3 {
             let p = egui::pos2(
                 c.x + (col as f32 - 0.5) * 4.0,
                 c.y + (row as f32 - 1.0) * 3.0,
             );
-            ui.painter().circle_filled(p, 1.0, FAINT);
+            ui.painter().circle_filled(p, 1.0, dot_color);
         }
     }
+    response
 }
 
 fn draw_lane_name_v2(ui: &mut egui::Ui, width: f32, selected: bool, label: &str) -> egui::Response {
@@ -3667,6 +4273,56 @@ fn draw_track_tab(
             master_length,
         );
     });
+}
+
+fn apply_lane_layout_preset(
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
+    pattern: &SharedPattern,
+    state: &mut EditorUIState,
+    layout: TrackLayoutState,
+    clear_pattern_data: bool,
+) {
+    if clear_pattern_data {
+        load_pattern_for_ui(pattern, &crate::sequencer::pattern::Pattern::empty());
+        params.plock_state.state.clear_all();
+        params.seq_plock_state.state.clear_all();
+        clear_all_fusions(pattern);
+        state.last_loaded_slot = None;
+    }
+
+    for (slot_idx, slot) in layout.slots.iter().enumerate() {
+        if slot.active {
+            sound_settings.reset_slot_to_defaults(slot_idx, slot.kind);
+        }
+    }
+
+    let selected_slot = layout.active_slot_indices().next().unwrap_or(0);
+    PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
+    state.add_module_popup = None;
+    select_legacy_track(state, selected_slot);
+}
+
+fn apply_lane_preset_action(
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
+    pattern: &SharedPattern,
+    state: &mut EditorUIState,
+    action: LanePresetAction,
+) {
+    let (layout, clear_pattern_data) = match action {
+        LanePresetAction::ClearAll => (TrackLayoutState::empty_layout(), true),
+        LanePresetAction::Preset4 => (TrackLayoutState::modular_default_layout(), false),
+        LanePresetAction::Preset12 => (TrackLayoutState::preset_12_layout(), false),
+    };
+    apply_lane_layout_preset(
+        params,
+        sound_settings,
+        pattern,
+        state,
+        layout,
+        clear_pattern_data,
+    );
 }
 
 // Sound Panel (always visible, tabbed by instrument)

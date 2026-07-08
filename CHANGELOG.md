@@ -1,5 +1,170 @@
 # Changelog
 
+## 2026-07-08 — Song Editor : finition, blocks vides assombris, Clear All avec confirmation (build 20260708-185335)
+
+**Build:** `20260708-185335`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (132 + 79 tests), `build.ps1 -Install` OK (Studio One fermé pour l’installation)
+
+### Changements
+- **[112] Polish du Song Editor.**
+  - `src/ui.rs` : les widgets pattern/répétition sont maintenant encadrés avec une marge de 2 px à l’intérieur du block, ce qui évite que les bordures débordent quand le block est sélectionné.
+  - `src/ui.rs` : les blocks sans pattern ont un fond assombri (`Color32::from_rgb(18, 18, 24)`).
+  - `src/ui.rs` : suppression du bouton `Reset`.
+  - `src/ui.rs` : `Clear All` demande maintenant une confirmation via un état `song_clear_confirm` (le bouton devient rouge "Confirm?" après le premier clic).
+  - Menu contextuel `Copy / Paste / Duplicate / Clear` conservé.
+
+### À tester dans Studio One (build 20260708-185335)
+1. Ouvrir l’onglet `Song` → vérifier que les widgets ne débordent plus du contour du block sélectionné.
+2. Vérifier que les blocks vides sont plus sombres que les blocks occupés.
+3. Confirmer que le bouton `Reset` a disparu.
+4. Cliquer sur `Clear All` → le bouton doit devenir rouge `Confirm?` ; cliquer une seconde fois vide la song.
+5. Clic droit sur un block → `Copy / Paste / Duplicate / Clear` fonctionnent toujours.
+6. Éditer pattern/répétition directement dans les blocks et lire la song pour vérifier le comportement de boucle.
+
+---
+
+## 2026-07-08 — Song Editor : panneau agrandi, édition directe dans les blocks (build 20260708-183824)
+
+**Build:** `20260708-183824`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants + 2 nouveaux `allocate_ui_at_rect` dans la grille), `cargo test` OK (132 + 79 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[112] Suite de la refonte du Song Editor.**
+  - `src/ui.rs` : hauteur du panneau Song/Generator passée de 180 px à 210 px.
+  - Suppression de la rangée d’inspection `Step X` / dropdown Pattern / `Rpt`.
+  - Chaque block est maintenant éditable directement : partie supérieure = `ComboBox` de pattern, partie inférieure = `DragValue` de répétition (`xN`).
+  - La sélection du block (stroke bleue) est conservée ; le clic sur le fond d’un block le sélectionne.
+  - Menu contextuel (clic droit) conservé : `Copy / Paste / Duplicate / Clear`.
+
+### À tester dans Studio One (build 20260708-183824)
+1. Ouvrir l’onglet `Song` → vérifier que le panneau est plus haut (210 px) et que les 16 blocks ne sont plus tronqués.
+2. Cliquer sur la partie supérieure d’un block → un dropdown permet de choisir le pattern (`P1`–`P8` ou vide).
+3. Cliquer/glisser sur la partie inférieure d’un block → régler le nombre de répétitions (`x1`–`x64`).
+4. Vérifier qu’il n’y a plus de rangée `Step X` / `Rpt` sous l’en-tête Song.
+5. Vérifier que la lecture en mode Song boucle correctement sur les blocks remplis et revient au début sur un block vide.
+6. Clic droit sur un block → `Copy / Paste / Duplicate / Clear` fonctionnent.
+
+---
+
+## 2026-07-08 — Song Editor : 16 blocks fixes, mode Song via checkbox, loop implicite (build 20260708-182802)
+
+**Build:** `20260708-182802`
+**Validation:** `cargo fmt` OK, `cargo check` OK (39 warnings UI préexistants), `cargo test` OK (132 + 79 tests), `build.ps1 -Install` OK (Studio One fermé pour l’installation)
+
+### Changements
+- **[112] Refonte du Song Editor.**
+  - `src/pattern_bank.rs` : ajout de `SONG_BLOCKS = 16` et `SongSequence::default().length = 16`.
+  - `src/lib.rs` : la longueur du mode song est plafonnée à 16 blocks ; quand le prochain block est vide, la song revient au début ; en fin de song, elle boucle toujours ; le paramètre `loop_enabled` n’est plus utilisé.
+  - `src/ui.rs` : l’onglet `Generator | Song` ne fait plus que changer la vue (`bottom_panel_tab` dans `EditorUIState` sérialisé).
+  - `src/ui.rs` : ajout d’une checkbox `Song Mode` dans le panneau Song pour activer/désactiver le mode song.
+  - Suppression du bouton `Loop` et du paramètre `Len` du mode song.
+  - Grille désormais une seule rangée de 16 blocks, chaque cellule affiche le pattern en haut (`P1`) et le nombre de répétitions en bas (`x4`), ou `--` si vide.
+  - `Clear All` et `Duplicate` ne touchent plus que les 16 premiers blocks.
+
+### À tester dans Studio One (build 20260708-182802)
+1. Ouvrir l’onglet `Song` → vérifier que la grille affiche 16 blocks en une ligne.
+2. Cocher `Song Mode` → la lecture doit suivre la song (et non plus le pattern courant).
+3. Décocher `Song Mode` → la lecture revient au pattern classique.
+4. Remplir les blocks 1-3 avec des patterns, régler leurs répétitions, puis laisser le block 4 vide → en lecture, la song doit boucler sur les 3 premiers blocks et ne jamais avancer au-delà.
+5. Remplir le block 16 → en fin de song, elle doit repartir au block 1 automatiquement.
+6. Vérifier que le bouton `Loop` a disparu et que `Len` n’est plus présent dans le panneau Song.
+7. Clic droit sur un block → `Copy / Paste / Duplicate / Clear` doivent fonctionner sans dépasser 16 blocks.
+8. Passer à l’onglet `Generator` puis revenir à `Song` : le panneau doit revenir à la vue Song, et la checkbox doit refléter l’état réel du mode song.
+
+---
+
+## 2026-07-08 — Song Editor : fixes UI dropdown / repeat / couleur / hauteur de ligne (build 20260708-171322)
+
+**Build:** `20260708-171322`
+**Validation:** `cargo fmt` OK, `cargo check` OK (39 warnings UI préexistants), `cargo test` OK (132 + 79 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[112] Fix UI Song Editor.**
+  - `src/ui.rs` : le dropdown de pattern de l’inspecteur utilisait `ui.selectable_label(...).clicked()` et mettait à jour le bank à l’intérieur du `show_ui` ; il est remplacé par `ui.selectable_value(&mut slot, ...)` avec mise à jour du bank après fermeture du popup.
+  - Le nombre de répétitions est maintenant affiché dans la cellule de la grille sous la forme `P1x4` (uniquement si `repeat > 1`).
+  - Le step courant utilise le bleu `BLUE` à la place du rouge vif, avec le texte en `INK` (blanc) pour rester lisible.
+  - Les cellules sont dimensionnées avec `ui.add_sized(Vec2::new(cell_w, cell_h), btn)` et `cell_h` passe à 18 px, ce qui empêche les rangées 2-3-4 d’être absorbées/coupées par la mise en page.
+  - Le contexte du bouton de cellule propose `Copy / Paste / Duplicate / Clear`.
+
+### À tester dans Studio One (build 20260708-171322)
+1. Ouvrir l’onglet `Song`, sélectionner une step, ouvrir le dropdown `Pattern` et choisir un pattern occupé → la case de la grille affiche `P1` et le step joue ce pattern.
+2. Régler `Rpt` à 3 ou plus → la grille affiche `P1x3`, et la lecture répète le pattern 3 fois.
+3. Lancer la lecture en mode Song et regarder le step courant → le fond est bleu et le texte blanc reste lisible (pas de rouge).
+4. Remplir des steps au-delà de la 16e (rangées 2, 3, 4) → toutes les cases 4×16 sont visibles et alignées.
+5. Faire un clic droit sur une cellule → `Copy / Paste / Duplicate / Clear` fonctionnent comme avant.
+
+---
+
+## 2026-07-08 — Song Editor : répétitions par step, inspecteur et workflow retravaillé (build 20260708-164626)
+
+**Build:** `20260708-164626`
+**Validation:** `cargo fmt` OK, `cargo check` OK (39 warnings UI préexistants), `cargo test` OK (132 + 79 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[112] Rework du Song Editor.**
+  - `src/pattern_bank.rs` : ajout du champ `repeats: [u8; 64]` dans `SongSequence` avec `#[serde(default)]` pour compatibilité `pattern-bank-v1`.
+  - `src/lib.rs` : le moteur audio reste sur le step courant pendant `repeats` boucles de pattern avant d’avancer ; ajout de `song_repeat_counter` et `last_song_position` pour détecter les resets UI.
+  - `src/ui.rs` : panneau Song/Generator passé de 144 px à 180 px ; nouvelle rangée d’inspection avec dropdown `P1-P8` / vide, compteur de répétitions, `Copy` / `Paste` / `Dup` / `Clear`.
+  - La grille 4×16 reste : clic gauche sélectionne la step, clic droit menu `Copy / Paste / Duplicate / Clear`.
+  - Boutons globaux `Reset` (remet la song à 0) et `Clear All`.
+  - Suppression du toggle `Song Enabled` redondant ; le suivi du playhead song fonctionne dès que l’onglet `Song` est actif.
+  - Reset automatique de `song_position` quand on quitte le mode Song ou quand le transport s’arrête.
+- **Tests ajoutés.**
+  - `song_sequence_repeat_clamps_and_defaults`, `pattern_bank_legacy_load_without_repeats_defaults_to_one`, `pattern_bank_persistence_roundtrips_song` mis à jour avec les répétitions.
+
+### À tester dans Studio One (build 20260708-164626)
+1. Basculer sur l’onglet `Song` → vérifier que le panneau est plus haut (180 px) et affiche la rangée d’inspection au-dessus de la grille.
+2. Sélectionner une step, choisir un pattern dans le dropdown, régler `Rpt` à 4 → lire la song : le pattern doit boucler 4 fois avant de passer à la step suivante.
+3. Remplir plusieurs steps avec des répétitions différentes, activer `Loop` et lire → la chaîne avance au bon rythme.
+4. Cliquer `Reset` pendant la lecture → la song repart de la step 1 (la position audio se reset au prochain process).
+5. Passer de l’onglet `Song` à `Generator` puis revenir à `Song` → la position de lecture doit être remise à 0.
+6. Faire un clic droit sur une cellule de la grille → le menu doit proposer `Copy / Paste / Duplicate / Clear`.
+7. Copier une step, coller sur une autre → le pattern et le nombre de répétitions doivent être transposés.
+8. Vérifier que les songs sauvegardées avant cette build se chargent toujours (test de compatibilité `pattern-bank-v1`).
+9. Vérifier que les répétitions sont conservées après sauvegarde/recharge du projet Studio One.
+
+---
+
+## 2026-07-08 — Grille : alignement précis de l’indicateur de drop (build 20260708-162542)
+
+**Build:** `20260708-162542`
+**Validation:** `cargo fmt` OK, `cargo check` OK (37 warnings UI préexistants), `cargo test` OK (130 + 79 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[108] Correction du décalage du trait de drop.**
+  - Le trait est maintenant dessiné à la limite exacte de la lane cible : en haut de la ligne visée, ou en bas de la dernière ligne pour un drop après la fin.
+  - `compute_reorder_gap()` retourne un index de gap `0..14` ; `handle_lane_reorder_drop()` le clampe à l’index slot valide `0..13`.
+  - `draw_lane_reorder_indicator()` utilise le haut de la ligne cible au lieu du milieu de l’intervalle, corrigeant notamment le positionnement à la fin de la grille.
+
+### À tester dans Studio One (build 20260708-162542)
+1. Glisser une lane vers le haut de la grille → le trait doit apparaître exactement au-dessus de la première ligne quand le curseur est dans la moitié supérieure de cette ligne.
+2. Glisser une lane vers le bas de la grille → le trait doit descendre au bas de la dernière ligne quand on dépasse son centre, et non rester coincé au milieu de l’intervalle précédent.
+3. Déplacer le curseur lentement entre deux lanes → le trait doit basculer nettement au bord supérieur de la lane cible, au même emplacement où la lane sera insérée.
+4. Relâcher quand le trait est sur le bord supérieur d’une lane → la lane doit être insérée juste avant cette ligne.
+5. Vérifier que les données (steps, plocks, volume, routing, etc.) suivent toujours la lane déplacée.
+
+---
+
+## 2026-07-08 — Grille : feedback visuel de drop pour le drag-reorder (build 20260708-161106)
+
+**Build:** `20260708-161106`
+**Validation:** `cargo fmt` OK, `cargo check` OK (37 warnings UI préexistants), `cargo test` OK (130 + 79 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[108] Trait indicateur de position de drop pendant le drag-reorder des lanes.**
+  - `src/ui.rs` : ajout de `compute_reorder_gap()` et `draw_lane_reorder_indicator()`.
+  - Le trait bleu est dessiné dans l’intervalle entre deux lanes (ou au-dessus/en-dessous des extrémités) pendant qu’une poignée est traînée.
+  - La position de drop est calculée à partir du centre vertical de chaque lane : le pointeur au-dessus du centre d’une lane déplace la ligne juste au-dessus, en dessous juste au-dessous.
+  - `handle_lane_reorder_drop()` utilise maintenant cette logique gap-based pour déterminer l’index cible.
+
+### À tester dans Studio One (build 20260708-161106)
+1. Sur le layout 4 lanes, cliquer-glisser la poignée d’une lane → un trait bleu doit apparaître entre les lanes au fur et à mesure du déplacement du curseur.
+2. Déplacer le curseur lentement d’une lane à l’autre → le trait doit basculer de manière nette au milieu de l’intervalle entre deux lanes.
+3. Relâcher la poignée quand le trait est entre deux lanes → la lane doit être insérée à l’emplacement indiqué par le trait, pas sur la lane survolée.
+4. Vérifier que les données (steps, plocks, volume, routing, etc.) suivent toujours la lane déplacée.
+
+---
+
 ## 2026-07-07 — Grille : boutons de longueur stables quand `Len < 10` (build 20260707-174844)
 
 **Build:** `20260707-174844`

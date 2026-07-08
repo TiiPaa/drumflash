@@ -136,39 +136,53 @@
 
 ### UX grille / lanes P1
 - [x] [106] **Retirer Hum et Push de l'onglet Track** — corrigé (build 20260707-164821)
-  - Décision utilisateur 2026-07-07 : conserver `Humanize` et `Push/Pull` dans la grille pour l'instant, et les retirer seulement de l'onglet `Track`.
-  - L'onglet `Track` garde `Instrument`, `Routing`, `MIDI Note` et `Length`.
+  - Décision utilisateur 2026-07-07 : conserver `Humanize` et `Push/Pull` dans la grille pour l'instant, et les retirer seulement de l’onglet `Track`.
+  - L’onglet `Track` garde `Instrument`, `Routing`, `MIDI Note` et `Length`.
 - [x] [107] **Cellules hors longueur en pointillé** — corrigé (build 20260707-174844)
   - Quand `Len` global ou individuel est inférieur au maximum affiché, rendre les cellules non jouées en pointillé.
   - Attendu : distinguer clairement les steps visibles mais inactifs à cause de la longueur.
   - Résultat : les cellules hors longueur et les lanes non activées utilisent le même design inactif : fond très sombre + bordure segmentée épaisse/sombre.
-  - Fix layout : le bloc `Len` global conserve une largeur fixe quand la valeur passe sous 10 ; l'indicateur `N steps` est dessiné dans un rectangle fixe pour que les boutons `16/32/48/64` ne se décalent plus.
-- [ ] [108] **Réarranger les lanes avec la poignée**
+  - Fix layout : le bloc `Len` global conserve une largeur fixe quand la valeur passe sous 10 ; l’indicateur `N steps` est dessiné dans un rectangle fixe pour que les boutons `16/32/48/64` ne se décalent plus.
+- [x] [108] **Réarranger les lanes avec la poignée** — corrigé (build 20260708-162542)
   - Activer le drag de lanes via la poignée prévue dans le design.
   - Préserver instrument, paramètres, séquence, plocks, longueur, mute/solo/routing lors du déplacement.
+  - Résultat : drag depuis la poignée vers une autre rangée active ou vide ; détection immédiate au clic via `is_pointer_button_down_on` + geste drag classique ; curseur Grab/Grabbing.
+  - Feedback visuel : trait bleu horizontal (2 px) affiché à la limite exacte de la lane cible (haut de la ligne cible, ou bas de la dernière ligne pour le drop final), calculé par rapport au centre des lanes.
+  - Déplacement complet de `track-layout`, pattern, fusions, plocks sound/seq, sound settings, algo, mute/solo/mix, Hum/Push/Len, locks et sélection UI.
 
 ### Presets / gestion lanes P1
-- [ ] **[REPRENDRE ICI]** [109] **Boutons de presets de lanes**
+- [x] [109] **Boutons de presets de lanes** — corrigé (build 20260708-145331)
   - Ajouter `Clear All Lanes`.
   - Ajouter `Preset 12 Lanes`.
   - Ajouter `Preset 4 Lanes`.
   - Vérifier que les zones UI restent stables : aucune ligne conditionnelle qui décale les panneaux.
-- [ ] [110] **Garder le preset de la BD pour les nouvelles lanes**
-  - Quand on ajoute une nouvelle BD/Kick, elle doit reprendre le preset BD attendu plutôt qu'un état résiduel ou trop neutre.
+  - Résultat : dropdown global `Preset` centré entre `Follow` et `Len` dans la page-bar avec marge dédiée avant `Len`, options `Clear All`, `Preset 4`, `Preset 12`; warning de confirmation avant application ; les presets ne sont plus dans l’onglet `Track`; tests `empty_layout_has_no_active_lanes` et `preset_12_layout_uses_core_legacy_kit_without_perc1` ajoutés.
 - [x] [111] **Revoir le preset du Tom** — ajusté (build 20260707-120216)
   - Ajuster les valeurs par défaut Tom pour un rendu plus musical/utilisable dès création de lane.
   - Changements : Tom1 (lane Tom par défaut) **196 Hz** / 0.35 s / vol 0.7 / filter 600 Hz / release 0.25 ; Tom2 150 Hz / 0.30 s ; Tom3 100 Hz / 0.45 s. Stick Attack ramené à 0.3. `VoiceSettings::tom1/2/3()` alignés sur les défauts du registre.
 
 ### Song / Generator P1
-- [ ] [112] **Revoir le Song Editor, actuellement peu pratique**
-  - Repenser l'édition de chaîne patterns/répétitions/activation song pour un workflow plus rapide en Studio One.
+- [x] [112] **Revoir le Song Editor, actuellement peu pratique** — corrigé (build 20260708-164626)
+  - **Répétitions par step :** champ `repeats` ajouté à `SongSequence` (compatibilité `pattern-bank-v1` via `serde(default)`), moteur audio `lib.rs` lit `repeat_at()` et reste sur le step courant le nombre de boucles demandé avant d’avancer.
+  - **Hauteur du panneau Song/Generator augmentée** de 144 px à 180 px pour accueillir une rangée d’inspection.
+  - **Rangée d’inspection de la step sélectionnée :** dropdown `P1-P8` / vide, compteur de répétitions `1..64`, boutons `Copy` / `Paste` / `Dup` / `Clear`.
+  - **Grille 4×16 conservée :** clic gauche sélectionne la step, clic droit contextuel `Copy / Paste / Duplicate / Clear`.
+  - **Raccourcis globaux :** bouton `Reset` pour remettre la position song à 0, `Clear All` pour vider la song, `Len` via `DragValue` (0-64), `Loop` conservé.
+  - **Suppression du toggle `Song Enabled` redondant ;** le playhead song est maintenant suivi dès que l’onglet `Song` est actif (`params.song_mode`).
+  - **Reset automatique de la position song** quand on quitte le mode Song ou quand le transport s’arrête.
+  - Tests ajoutés : `song_sequence_repeat_clamps_and_defaults`, `pattern_bank_legacy_load_without_repeats_defaults_to_one`, `pattern_bank_persistence_roundtrips_song` mis à jour avec les répétitions.
+  - [x] Corrections UI post-build : dropdown d’inspection inscriptif, répétition affichée `P1xN`, step courant bleu lisible, hauteur de grille fixée pour les 4 rangées (build 20260708-171322).
+  - [x] Refonte UX : 16 blocks fixes, onglet Song = vue uniquement, checkbox `Song Mode` dans le panneau, suppression de `Loop`/`Len`, cellule en deux parties (pattern en haut, repeat en bas), retour au début sur block vide (build 20260708-182802).
+  - [x] Ajustement : panneau Song/Generator agrandi de 30 px (210 px total), suppression de la rangée d'inspection, édition directe du pattern et du repeat dans chaque block (build 20260708-183824).
+  - [x] Polish : marge interne aux blocks pour éviter les débordements, blocks vides assombris, retrait de `Reset`, confirmation sur `Clear All` (build 20260708-185335).
+
 - [x] [113] **Revoir le Generator : HiHats trop similaires entre styles** — corrigé (build 20260707-163927)
   - Les rôles HiHat sont maintenant différenciés par style : Rock 8ths, Funk offbeats, Techno/Metal/Disco 16ths, Hip-Hop sparse/swung, Jazz skip-beats, Latin clave-like, Trap dense rolls, Reggae one-drop.
   - Test `hihat_roles_are_style_specific` ajouté pour éviter un retour au motif quasi identique sur tous les styles.
   - Attendu : varier densité, accents, ouvertures, syncopes et probabilités selon style.
 
 ### Sound Editor / synthèse P2
-- [ ] [114] **Clarifier Frequency / algorithme du HiHat**
+- [ ] **REPRENDRE ICI** [114] **Clarifier Frequency / algorithme du HiHat**
   - Vérifier ce que fait `Frequency` sur HH et comment l'algorithme l'utilise réellement.
   - Si le paramètre est peu audible ou ambigu, renommer, documenter, ou ajuster le mapping.
 - [ ] [115] **Mettre Analog au milieu pour tous les instruments**
