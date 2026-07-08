@@ -63,24 +63,36 @@ impl Default for PatternSlot {
     }
 }
 
+/// Default repeat count for a song step (one play-through).
+fn default_repeats() -> [u8; 64] {
+    [1u8; 64]
+}
+
+/// Number of pattern blocks in the song sequence.
+pub const SONG_BLOCKS: usize = 16;
+
 /// A song sequence — an ordered chain of pattern slots.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct SongSequence {
     /// Steps reference pattern slots (0-7 = P1-P8, -1 = empty/end).
     #[serde(with = "serde_arrays")]
     pub steps: [i8; 64],
-    /// Number of active steps (1-64).
+    /// Number of active steps (1-SONG_BLOCKS).
     pub length: u8,
     /// Loop the song when reaching the end.
     pub loop_enabled: bool,
+    /// How many times each step plays before advancing to the next step.
+    #[serde(with = "serde_arrays", default = "default_repeats")]
+    pub repeats: [u8; 64],
 }
 
 impl Default for SongSequence {
     fn default() -> Self {
         Self {
             steps: [-1; 64],
-            length: 0,
+            length: SONG_BLOCKS as u8,
             loop_enabled: true,
+            repeats: [1u8; 64],
         }
     }
 }
@@ -107,6 +119,18 @@ impl SongSequence {
     pub fn set_step(&mut self, step: usize, slot: i8) {
         if step < 64 {
             self.steps[step] = slot.clamp(-1, SLOT_COUNT as i8 - 1);
+        }
+    }
+
+    /// Return the repeat count for a given song step, clamped to at least 1.
+    pub fn repeat_at(&self, step: usize) -> u8 {
+        self.repeats.get(step).copied().unwrap_or(1).max(1)
+    }
+
+    /// Set the repeat count for a given song step (clamped to 1..255).
+    pub fn set_repeat(&mut self, step: usize, count: u8) {
+        if step < 64 {
+            self.repeats[step] = count.max(1);
         }
     }
 }
@@ -774,6 +798,8 @@ mod tests {
             guard.song.set_step(0, 1);
             guard.song.set_step(1, 3);
             guard.song.loop_enabled = true;
+            guard.song.set_repeat(0, 4);
+            guard.song.set_repeat(1, 2);
         }
 
         let bytes = persistent.map(|b| b.clone());
@@ -786,6 +812,36 @@ mod tests {
         assert_eq!(guard.song.slot_at(0), Some(1));
         assert_eq!(guard.song.slot_at(1), Some(3));
         assert!(guard.song.loop_enabled);
+        assert_eq!(guard.song.repeat_at(0), 4);
+        assert_eq!(guard.song.repeat_at(1), 2);
+        assert_eq!(guard.song.repeat_at(2), 1); // default
+    }
+
+    #[test]
+    fn song_sequence_repeat_clamps_and_defaults() {
+        let mut song = SongSequence::new();
+        song.length = 4;
+        song.set_repeat(0, 0);
+        song.set_repeat(1, 255);
+        song.set_repeat(2, 5);
+        // step 3 untouched -> default 1
+
+        assert_eq!(song.repeat_at(0), 1);
+        assert_eq!(song.repeat_at(1), 255);
+        assert_eq!(song.repeat_at(2), 5);
+        assert_eq!(song.repeat_at(3), 1);
+        assert_eq!(song.repeat_at(100), 1); // out of bounds
+    }
+
+    #[test]
+    fn pattern_bank_legacy_load_without_repeats_defaults_to_one() {
+        // Simulate a pattern-bank-v1 JSON blob without the `repeats` field.
+        let legacy = br#"{"slots":[{"step_masks":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"plock_bytes":[],"seq_plock_bytes":[],"fusion_bytes":[],"pattern_length":16,"occupied":false},{"step_masks":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"plock_bytes":[],"seq_plock_bytes":[],"fusion_bytes":[],"pattern_length":16,"occupied":false},{"step_masks":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"plock_bytes":[],"seq_plock_bytes":[],"fusion_bytes":[],"pattern_length":16,"occupied":false},{"step_masks":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"plock_bytes":[],"seq_plock_bytes":[],"fusion_bytes":[],"pattern_length":16,"occupied":false},{"step_masks":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"plock_bytes":[],"seq_plock_bytes":[],"fusion_bytes":[],"pattern_length":16,"occupied":false},{"step_masks":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"plock_bytes":[],"seq_plock_bytes":[],"fusion_bytes":[],"pattern_length":16,"occupied":false},{"step_masks":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"plock_bytes":[],"seq_plock_bytes":[],"fusion_bytes":[],"pattern_length":16,"occupied":false},{"step_masks":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"plock_bytes":[],"seq_plock_bytes":[],"fusion_bytes":[],"pattern_length":16,"occupied":false}],"song":{"steps":[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],"length":0,"loop_enabled":true}}"#;
+        let restored = PersistentPatternBank::new();
+        restored.set(legacy.to_vec());
+        let guard = restored.bank.lock().unwrap();
+        assert_eq!(guard.song.repeat_at(0), 1);
+        assert_eq!(guard.song.repeat_at(63), 1);
     }
 
     #[test]
