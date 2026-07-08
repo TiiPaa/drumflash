@@ -257,6 +257,40 @@ impl TrackLayoutState {
         }
     }
 
+    pub fn empty_layout() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| TrackSlot::inactive()),
+            global_midi_channel: 10,
+            global_base_note: 36,
+        }
+    }
+
+    pub fn preset_12_layout() -> Self {
+        let mut slots: [TrackSlot; MAX_TRACKS] = std::array::from_fn(|_| TrackSlot::inactive());
+        let kinds = [
+            TrackInstrumentKind::Kick,
+            TrackInstrumentKind::Snare,
+            TrackInstrumentKind::HiHat,
+            TrackInstrumentKind::OpenHiHat,
+            TrackInstrumentKind::Tom,
+            TrackInstrumentKind::Tom,
+            TrackInstrumentKind::Tom,
+            TrackInstrumentKind::Clap,
+            TrackInstrumentKind::Ride,
+            TrackInstrumentKind::Cymbal,
+            TrackInstrumentKind::Snare606,
+            TrackInstrumentKind::BassDrum808,
+        ];
+        for (slot, kind) in slots.iter_mut().zip(kinds) {
+            *slot = TrackSlot::active_with_kind(kind);
+        }
+        Self {
+            slots,
+            global_midi_channel: 10,
+            global_base_note: 36,
+        }
+    }
+
     /// Migrate a legacy 13-voice session into 14 slots.
     pub fn from_legacy_13() -> Self {
         let mut slots: [TrackSlot; MAX_TRACKS] = std::array::from_fn(|_| TrackSlot::inactive());
@@ -301,6 +335,24 @@ impl TrackLayoutState {
 
     pub fn active_count(&self) -> usize {
         self.slots.iter().filter(|s| s.active).count()
+    }
+
+    pub fn move_slot(&mut self, from: usize, to: usize) {
+        if from >= MAX_TRACKS || to >= MAX_TRACKS || from == to {
+            return;
+        }
+
+        let moved = self.slots[from].clone();
+        if from < to {
+            for idx in from..to {
+                self.slots[idx] = self.slots[idx + 1].clone();
+            }
+        } else {
+            for idx in (to + 1..=from).rev() {
+                self.slots[idx] = self.slots[idx - 1].clone();
+            }
+        }
+        self.slots[to] = moved;
     }
 
     pub fn first_inactive_slot(&self) -> Option<usize> {
@@ -526,6 +578,53 @@ mod tests {
         assert_eq!(layout.slots[2].kind, TrackInstrumentKind::HiHat);
         assert_eq!(layout.slots[3].kind, TrackInstrumentKind::Tom);
         assert!(layout.slots[4..].iter().all(|slot| !slot.active));
+    }
+
+    #[test]
+    fn empty_layout_has_no_active_lanes() {
+        let layout = TrackLayoutState::empty_layout();
+        assert_eq!(layout.active_count(), 0);
+        assert!(layout.slots.iter().all(|slot| !slot.active));
+    }
+
+    #[test]
+    fn preset_12_layout_uses_core_legacy_kit_without_perc1() {
+        let layout = TrackLayoutState::preset_12_layout();
+        assert_eq!(layout.active_count(), 12);
+        assert_eq!(layout.slots[0].kind, TrackInstrumentKind::Kick);
+        assert_eq!(layout.slots[1].kind, TrackInstrumentKind::Snare);
+        assert_eq!(layout.slots[2].kind, TrackInstrumentKind::HiHat);
+        assert_eq!(layout.slots[3].kind, TrackInstrumentKind::OpenHiHat);
+        assert_eq!(layout.slots[4].kind, TrackInstrumentKind::Tom);
+        assert_eq!(layout.slots[5].kind, TrackInstrumentKind::Tom);
+        assert_eq!(layout.slots[6].kind, TrackInstrumentKind::Tom);
+        assert_eq!(layout.slots[11].kind, TrackInstrumentKind::BassDrum808);
+        assert!(!layout.slots[12].active);
+        assert!(!layout.slots[13].active);
+    }
+
+    #[test]
+    fn move_slot_preserves_slot_data_and_shifts_intermediate_slots() {
+        let mut layout = TrackLayoutState::modular_default_layout();
+        layout.slots[0].name = "Custom BD".to_string();
+        layout.slots[0].routing.out_select = TrackAudioOut::Out(3);
+        layout.slots[0].midi_note = 45;
+        layout.move_slot(0, 3);
+
+        assert_eq!(layout.slots[0].kind, TrackInstrumentKind::Snare);
+        assert_eq!(layout.slots[1].kind, TrackInstrumentKind::HiHat);
+        assert_eq!(layout.slots[2].kind, TrackInstrumentKind::Tom);
+        assert_eq!(layout.slots[3].kind, TrackInstrumentKind::Kick);
+        assert_eq!(layout.slots[3].name, "Custom BD");
+        assert_eq!(layout.slots[3].routing.out_select, TrackAudioOut::Out(3));
+        assert_eq!(layout.slots[3].midi_note, 45);
+
+        layout.move_slot(3, 1);
+        assert_eq!(layout.slots[0].kind, TrackInstrumentKind::Snare);
+        assert_eq!(layout.slots[1].kind, TrackInstrumentKind::Kick);
+        assert_eq!(layout.slots[2].kind, TrackInstrumentKind::HiHat);
+        assert_eq!(layout.slots[3].kind, TrackInstrumentKind::Tom);
+        assert_eq!(layout.slots[1].name, "Custom BD");
     }
 
     #[test]

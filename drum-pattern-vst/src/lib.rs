@@ -23,6 +23,7 @@ mod track;
 mod ui;
 
 use generator::{GeneratorType, Style};
+use pattern_bank::SONG_BLOCKS;
 use plock::{PersistentPlockState, PersistentSequencerPlockState};
 use sequencer::{pattern::PersistentPattern, Pattern, Sequencer, SharedPattern};
 use sound_settings::{PersistentSoundSettings, SoundSettingsState};
@@ -168,6 +169,10 @@ pub struct DrumFlashVst {
     song_position: Arc<AtomicU32>,
     /// Last observed loop count to detect pattern wrap.
     last_loop_count: usize,
+    /// How many times the current song step has repeated since it was loaded.
+    song_repeat_counter: u32,
+    /// Last song position seen by the audio thread, used to detect UI resets.
+    last_song_position: usize,
     /// Last observed master length so we can resync the sequencer when it changes.
     last_master_length: usize,
     /// Last active track layout kinds, so the audio thread can reinitialize
@@ -1814,6 +1819,8 @@ impl Default for DrumFlashVst {
             song_mode: Arc::new(AtomicBool::new(false)),
             song_position: Arc::new(AtomicU32::new(0)),
             last_loop_count: 0,
+            song_repeat_counter: 0,
+            last_song_position: 0,
             last_master_length: 16,
             last_slot_kinds: [None; crate::track::MAX_TRACKS],
             pending_pattern_length: Arc::new(AtomicI32::new(0)),
@@ -2824,34 +2831,55 @@ impl Plugin for DrumFlashVst {
                 );
             }
         }
-
-        // Song mode: advance to next pattern when current pattern wraps.
+        // Song mode: advance to next pattern when current pattern wraps, respecting per-step repeats.
         if self.params.song_mode.value() && self.sequencer.is_playing() {
             let current_loop_count = self.sequencer.loop_count();
             if current_loop_count != self.last_loop_count {
-                let song_step = {
+                let song_advance = {
                     match self.params.pattern_bank.bank.try_lock() {
                         Ok(bank) => {
                             let song = &bank.song;
+                            let song_length = (song.length as usize).min(SONG_BLOCKS).max(1);
                             let current_pos = self.song_position.load(Ordering::Relaxed) as usize;
-                            let next_pos = current_pos + 1;
+                            // Detect a UI reset or out-of-bounds song position and restart the repeat counter.
+                            if current_pos != self.last_song_position || current_pos >= song_length
+                            {
+                                self.last_song_position = current_pos.min(song_length - 1);
+                                self.song_repeat_counter = 0;
+                            }
+                            let current_pos = self.last_song_position;
+                            let repeats = song.repeat_at(current_pos) as u32;
 
-                            if next_pos < song.length as usize {
-                                let slot = song.slot_at(next_pos);
-                                Some((slot, Some(next_pos)))
-                            } else if song.loop_enabled && song.length > 0 {
-                                let slot = song.slot_at(0);
-                                Some((slot, Some(0)))
+                            if self.song_repeat_counter + 1 < repeats {
+                                // Stay on the current song step for another pattern loop.
+                                self.song_repeat_counter += 1;
+                                self.last_loop_count = current_loop_count;
+                                None
                             } else {
-                                Some((None, None))
+                                // Advance to the next song step.
+                                let next_pos = current_pos + 1;
+                                if next_pos < song_length {
+                                    let slot = song.slot_at(next_pos);
+                                    if slot.is_some() {
+                                        Some((slot, Some(next_pos)))
+                                    } else {
+                                        // Empty block: loop back to the start.
+                                        let slot = song.slot_at(0);
+                                        Some((slot, Some(0)))
+                                    }
+                                } else {
+                                    // End of the song: always loop back to the start.
+                                    let slot = song.slot_at(0);
+                                    Some((slot, Some(0)))
+                                }
                             }
                         }
                         Err(TryLockError::WouldBlock) => None,
-                        Err(TryLockError::Poisoned(_)) => Some((None, None)),
+                        Err(TryLockError::Poisoned(_)) => Some((None, Some(0))),
                     }
                 };
 
-                if let Some((next_slot, next_pos)) = song_step {
+                if let Some((next_slot, next_pos)) = song_advance {
                     let mut advance_song = true;
                     if let Some(slot) = next_slot {
                         match self.load_pattern_from_slot(slot) {
@@ -2867,14 +2895,19 @@ impl Plugin for DrumFlashVst {
                     if advance_song {
                         self.last_loop_count = current_loop_count;
                         if let Some(pos) = next_pos {
+                            self.last_song_position = pos;
                             self.song_position.store(pos as u32, Ordering::Relaxed);
+                            self.song_repeat_counter = 0;
                         }
                     }
                 }
             }
         } else {
-            // Reset song position when not in song mode
+            // Reset song position when not in song mode or when transport is stopped
+            // so the song always starts from the top when re-enabled.
             self.last_loop_count = self.sequencer.loop_count();
+            self.song_position.store(0, Ordering::Relaxed);
+            self.song_repeat_counter = 0;
         }
 
         if use_internal_sequencer {
