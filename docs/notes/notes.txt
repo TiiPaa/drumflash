@@ -11,8 +11,7 @@
 - Ajouter un bouton Follow off dans le panel song pour que le grid ne suive pas le pattern joué en mode song
 - L'édition des patterns semble bloqué en mode song ?
 - Fonction morphing : Pouvoir choisir si les param de morphing d'une cellule fusionnée sont les params d'origine ou cible
-
-
-
-
-
+- retirer le paramètre mix dans le sound editor, remplacer par main dans track editor
+- prevoir un menu setting pour gérer les paramètres globaux (ex derives du paramètre analog)
+- option supprimer un lane
+- bug dans le graph du filter decay du T1

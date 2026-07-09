@@ -16,6 +16,9 @@ pub struct HiHatSettings {
     pub analog: f32,
     pub stereo: f32,
     pub algo: u8,
+    pub noise_type: u8,
+    pub resonance: f32,
+    pub shimmer: f32,
     pub saturation_type: u8,
     pub saturation_amount: f32,
     pub saturation_mix: f32,
@@ -39,7 +42,10 @@ impl From<VoiceSettings> for HiHatSettings {
             hold: v.hold,
             analog: v.analog,
             stereo: v.stereo,
-            algo: v.algo,
+            algo: 0, // Algorithme retiré de l’UI ; toujours Standard.
+            noise_type: v.special[5] as u8,
+            resonance: v.special[6],
+            shimmer: v.special[7],
             saturation_type: v.special[0] as u8,
             saturation_amount: v.special[1],
             saturation_mix: v.special[2],
@@ -57,6 +63,9 @@ impl From<HiHatSettings> for VoiceSettings {
         special[2] = h.saturation_mix;
         special[3] = h.saturation_output_gain;
         special[4] = h.saturation_pre_filter;
+        special[5] = h.noise_type as f32;
+        special[6] = h.resonance;
+        special[7] = h.shimmer;
         Self {
             frequency: h.frequency,
             attack: h.attack,

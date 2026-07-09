@@ -6,7 +6,7 @@
 - [x] [MG-4] Adapt sequencer to iterate active tracks
 - [x] [MG-5] Adapt audio engine to 14 independent synth instances + routing
 - [x] [MG-6] Adapt pattern bank to store only musical data (no layout)
-- [ ] [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change) — rollback 20260701: reverted after Studio One startup crash
+- [ ] **REPRENDRE ICI** [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change) — rollback 20260701: reverted after Studio One startup crash
   - [x] [MG-7.1] Checkpoint sûr : ajouter `selected_track_slot` dans l'état UI, synchronisé avec les 13 lanes fixes, sans changement VST3/state audio (build 20260701-172602)
   - [x] [MG-7.2] Checkpoint sûr : sélectionner le slot via les interactions de grille/lane restantes (volume, Hum, Push, Len, fusion double-clic/shift-clic, plock clic-droit) sans changement VST3/state audio (build 20260701-173832)
   - [x] [MG-7.2a] Fix compat audio : tant que l'UI affiche 13 lanes fixes, le layout par défaut et le template 4 slots buggué sont migrés vers les 13 voix legacy pour éviter les lanes 5+ silencieuses (build 20260701-174700)
@@ -182,17 +182,30 @@
   - Attendu : varier densité, accents, ouvertures, syncopes et probabilités selon style.
 
 ### Sound Editor / synthèse P2
-- [ ] **REPRENDRE ICI** [114] **Clarifier Frequency / algorithme du HiHat**
-  - Vérifier ce que fait `Frequency` sur HH et comment l'algorithme l'utilise réellement.
-  - Si le paramètre est peu audible ou ambigu, renommer, documenter, ou ajuster le mapping.
-- [ ] [115] **Mettre Analog au milieu pour tous les instruments**
-  - Harmoniser la position du paramètre `Analog` dans les sections de tous les instruments.
+- [x] [114] **Clarifier et enrichir HiHat / OpenHiHat** (build 20260709-121611)
+  - Renommer `Frequency` → `Tone` (range 100–20000 Hz) et `Filter` → `Cutoff`.
+  - Ajouter `Resonance`, `Noise Type` (White/Pink/Brown/Blue), `Shimmer`.
+  - Supprimer l’algorithme `Bright` inutilisé.
+- [x] [115] **Mettre Analog au milieu pour tous les instruments** (build 20260709-141013)
+  - Création d’une famille `ParamFamily::Analog` dédiée.
+  - Déplacement du champ `Analog` depuis `Output` vers la nouvelle section `Analog` pour tous les instruments.
+  - Ordre UI : `Osc` → `Env` → `Analog` → `Filter` → `Sat` → `Output`.
+  - Pour les instruments tonaux (Kick, Snare, Tom, Kick808, Perc1, Snare606), le slider `Analog` pilote `AnalogDrift` (pitch/level/time par hit).
+  - Pour les instruments non tonaux (HiHat, OpenHiHat, Clap, Ride, Cymbal), le slider `Analog` module désormais le **tone** :
+    - HiHat / OpenHiHat : `Tone` (centre du peaking filter), dérive **±25 %**.
+    - Ride : `Frequency` (base des oscillateurs inharmoniques), dérive **±7.5 %**.
+    - Clap / Cymbal : `Cutoff` / `Filter` (highpass cutoff), dérive **±25 %**.
+  - `Zap` n’existe pas dans le code actuel ; la 13e voix est `Perc1`.
 
 ### Copier / coller lanes P2
-- [ ] [116] **Copier/coller une lane vers une autre**
-  - Mode 1 : copier `instrument + paramètres + séquence`.
-  - Mode 2 : copier `instrument + paramètres` seulement.
-  - Définir le comportement pour plocks, seq-plocks, fusions, length lock, routing, mute/solo.
+- [x] [116] **Copier/coller une lane vers une autre** — corrigé (build 20260709-182258)
+  - Menu contextuel sur le nom d'une lane active : `Copy Lane`, `Paste Lane`, `Paste Grid`.
+  - Menu contextuel sur le nom d'une lane active : `Clear Grid` avec confirmation en deux clics.
+  - Menu contextuel sur une lane vide : `Paste Lane` si un clipboard existe.
+  - `Paste Lane` copie instrument, réglages sonores (standard + specials + Hz/Notes), algo, steps, fusions, sound plocks, seq plocks, Humanize, Push/Pull, Len et lock Len.
+  - `Paste Grid` copie uniquement les steps on/off de la grille sur une lane active cible ; instrument, réglages sonores, algo, fusions, plocks, Hum/Push/Len, lock Len, routing, mute/solo/mix et note MIDI restent inchangés sur la cible.
+  - `Clear Grid` efface uniquement les steps/fusions/sound plocks/seq plocks de la lane active ; instrument, réglages sonores, algo, Hum/Push/Len, lock Len, routing, mute/solo/mix et note MIDI restent inchangés.
+  - Routing, Main/Out, note MIDI source personnalisée, mute/solo/mix ne sont pas copiés ; un changement d'instrument remet la note MIDI du slot cible sur le défaut du kind.
 
 ## Court terme (Stabilisation V1 — En cours)
 

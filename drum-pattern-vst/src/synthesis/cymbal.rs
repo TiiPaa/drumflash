@@ -25,6 +25,8 @@ pub struct CymbalVoice {
     filter_r: dsp::OnePoleFilter,
     amp_env: dsp::DecayReleaseEnvelope,
     saturation: saturation::SaturationConfig,
+    // Per-hit drift for tone, level, and timing.
+    analog_drift: dsp::ToneDrift,
 
     // FM shimmer state
     fm_phase: f32,
@@ -67,6 +69,7 @@ impl CymbalVoice {
                 output_gain: settings.saturation_output_gain,
                 pre_filter: settings.saturation_pre_filter > 0.5,
             },
+            analog_drift: dsp::ToneDrift::new(0xC0DE_C0DE, 0.25),
             fm_phase: 0.0,
             active: false,
         }
@@ -111,6 +114,15 @@ impl Voice for CymbalVoice {
     fn trigger(&mut self) {
         self.active = true;
         // Keep filter state and FM LFO phase continuous across triggers.
+        self.analog_drift.trigger(self.settings.analog);
+        // Apply timing drift (±5 ms) to the amplitude envelope attack.
+        let attack_drift_ms = (self.analog_drift.timing_offset * 2.0).clamp(-0.005, 0.005) * 1000.0;
+        self.amp_env
+            .with_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
+        // Apply timing drift (±2 ms) to the amplitude envelope attack.
+        let attack_drift_ms = (self.analog_drift.timing_offset * 2.0).clamp(-0.002, 0.002) * 1000.0;
+        self.amp_env
+            .with_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
         self.amp_env.trigger();
     }
 
@@ -135,12 +147,20 @@ impl Voice for CymbalVoice {
         self.fm_phase -= self.fm_phase.floor();
         let fm =
             (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * self.settings.shimmer_amount + 1.0;
-        let modulated_cutoff = self.settings.filter_freq * fm;
+        // Désactiver la dérive de tone quand analog = 0 pour isoler level/timing.
+        let modulated_cutoff = if self.settings.analog == 0.0 {
+            self.settings.filter_freq * fm
+        } else {
+            self.settings.filter_freq * self.analog_drift.multiplier * fm
+        };
         self.filter
             .set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
         let filtered = self.filter.process(noise);
 
-        self.saturation.process(filtered) * env * self.settings.volume
+        self.saturation.process(filtered)
+            * env
+            * self.settings.volume
+            * self.analog_drift.level_multiplier
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -165,12 +185,12 @@ impl Voice for CymbalVoice {
         self.fm_phase -= self.fm_phase.floor();
         let fm =
             (self.fm_phase * 2.0 * std::f32::consts::PI).sin() * self.settings.shimmer_amount + 1.0;
-        let c = (self.settings.filter_freq * fm).max(1000.0);
+        let c = (self.settings.filter_freq * self.analog_drift.multiplier * fm).max(1000.0);
         self.filter.set_cutoff(c, self.sample_rate);
         self.filter_r.set_cutoff(c, self.sample_rate);
         let filtered_l = self.filter.process(noise_l);
         let filtered_r = self.filter_r.process(noise_r);
-        let vol = env * self.settings.volume;
+        let vol = env * self.settings.volume * self.analog_drift.level_multiplier;
         (
             self.saturation.process(filtered_l) * vol,
             self.saturation.process(filtered_r) * vol,
@@ -357,6 +377,43 @@ mod tests {
             "Expected significant divergence after set_settings with different shimmer_freq (got {} diffs in {} samples)",
             diffs,
             out_fast.len()
+        );
+    }
+
+    /// Verify that the "Analog" parameter modulates the highpass cutoff
+    /// (tone) so consecutive hits differ.
+    #[test]
+    fn test_cymbal_analog_affects_tone() {
+        let sample_rate = 44100.0;
+        let mut settings = VoiceSettings::cymbal();
+        settings.stereo = 0.0;
+        settings.special[2] = 0.0; // shimmer_amount = 0 to isolate cutoff drift
+        let mut voice = CymbalVoice::new(sample_rate, CymbalSettings::from(settings));
+
+        settings.analog = 1.0;
+        voice.set_settings(settings);
+
+        voice.trigger();
+        let mut hit1 = Vec::with_capacity(4000);
+        for _ in 0..4000 {
+            hit1.push(voice.process_sample());
+        }
+
+        voice.trigger();
+        let mut hit2 = Vec::with_capacity(4000);
+        for _ in 0..4000 {
+            hit2.push(voice.process_sample());
+        }
+
+        let diffs = hit1
+            .iter()
+            .zip(hit2.iter())
+            .filter(|(a, b)| (*a - *b).abs() > 0.0001)
+            .count();
+        assert!(
+            diffs > 500,
+            "analog=1 should vary the cymbal tone between hits (got {} diffs)",
+            diffs
         );
     }
 

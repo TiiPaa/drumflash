@@ -2118,6 +2118,10 @@ impl DrumFlashVst {
         hard: bool,
         settings: synthesis::VoiceSettings,
     ) {
+        println!(
+            "fire_voice_trigger(slot_idx={}, voice_idx={}, velocity={}, sample_idx={})",
+            slot_idx, voice_idx, velocity, sample_idx
+        );
         let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
             return;
         };

@@ -54,6 +54,8 @@ pub struct ClapVoice {
     snap_hp: dsp::OnePoleFilter,
     snap_hp_r: dsp::OnePoleFilter,
     saturation: saturation::SaturationConfig,
+    // Per-hit drift for tone, level, and timing.
+    analog_drift: dsp::ToneDrift,
 
     burst_count: usize,
     samples_since_trigger: usize,
@@ -110,6 +112,7 @@ impl ClapVoice {
                 output_gain: settings.saturation_output_gain,
                 pre_filter: settings.saturation_pre_filter > 0.5,
             },
+            analog_drift: dsp::ToneDrift::new(0xC1A0_C1A0, 0.25),
             burst_count: 0,
             samples_since_trigger: 0,
             active: false,
@@ -124,7 +127,7 @@ impl ClapVoice {
     }
 
     fn lp_for_burst(&self, burst_idx: usize) -> f32 {
-        let hp = self.settings.filter_freq.max(400.0);
+        let hp = (self.settings.filter_freq * self.analog_drift.multiplier).max(400.0);
         let lp_base = (hp * LP_RATIO).min(self.sample_rate * 0.45);
         let default_ratio = BURST_LP_RATIOS[burst_idx.min(BURST_LP_RATIOS.len() - 1)];
         // Interpolate the LP ratio toward 1.0 (no shift) as echo → 0.
@@ -147,7 +150,12 @@ impl ClapVoice {
     }
 
     fn update_derived_params(&mut self) {
-        let hp = self.settings.filter_freq.max(400.0);
+        // Désactiver la dérive de tone quand analog = 0 pour isoler level/timing.
+        let hp = if self.settings.analog == 0.0 {
+            self.settings.filter_freq
+        } else {
+            (self.settings.filter_freq * self.analog_drift.multiplier).max(400.0)
+        };
         self.filter_hp.set_cutoff(hp, self.sample_rate);
         self.filter_hp_r.set_cutoff(hp, self.sample_rate);
         // LP is set per-burst (in process_sample) so the timbre evolves; here
@@ -172,6 +180,19 @@ impl Voice for ClapVoice {
         // amp_env and snap are triggered per-burst in process_sample so each
         // echo gets its own audible transient instead of fading into the tail
         // of the first hit.
+        self.analog_drift.trigger(self.settings.analog);
+        // Apply timing drift (±5 ms) to the amplitude envelope attack.
+        let attack_drift_ms = (self.analog_drift.timing_offset * 2.0).clamp(-0.005, 0.005) * 1000.0;
+        self.amp_env
+            .set_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
+        // Désactiver la dérive de tone quand analog = 0 pour isoler level/timing.
+        let hp = if self.settings.analog == 0.0 {
+            self.settings.filter_freq
+        } else {
+            (self.settings.filter_freq * self.analog_drift.multiplier).max(400.0)
+        };
+        self.filter_hp.set_cutoff(hp, self.sample_rate);
+        self.filter_hp_r.set_cutoff(hp, self.sample_rate);
         self.amp_env.trigger();
         self.snap.trigger();
         self.snap_r.trigger();
@@ -222,12 +243,16 @@ impl Voice for ClapVoice {
         let noise = self.noise.next();
         let hp = self.filter_hp.process(noise);
         let lp = self.filter_lp.process(hp);
-        let body = lp * env * burst_intensity * self.settings.volume;
+        let body =
+            lp * env * burst_intensity * self.settings.volume * self.analog_drift.level_multiplier;
 
         // Snap transient: highpassed to keep only the "paper / dry slap" band.
         // Scaled by burst_intensity so echo-snaps are quieter than the main hit.
         let snap_signal = if self.snap.is_active() {
-            self.snap_hp.process(self.snap.next()) * self.settings.volume * burst_intensity
+            self.snap_hp.process(self.snap.next())
+                * self.settings.volume
+                * burst_intensity
+                * self.analog_drift.level_multiplier
         } else {
             0.0
         };
@@ -273,16 +298,30 @@ impl Voice for ClapVoice {
         let hp_r = self.filter_hp_r.process(noise_r);
         let lp_l = self.filter_lp.process(hp_l);
         let lp_r = self.filter_lp_r.process(hp_r);
-        let body_l = lp_l * env * burst_intensity * self.settings.volume;
-        let body_r = lp_r * env * burst_intensity * self.settings.volume;
+        let body_l = lp_l
+            * env
+            * burst_intensity
+            * self.settings.volume
+            * self.analog_drift.level_multiplier;
+        let body_r = lp_r
+            * env
+            * burst_intensity
+            * self.settings.volume
+            * self.analog_drift.level_multiplier;
 
         let snap_l = if self.snap.is_active() {
-            self.snap_hp.process(self.snap.next()) * self.settings.volume * burst_intensity
+            self.snap_hp.process(self.snap.next())
+                * self.settings.volume
+                * burst_intensity
+                * self.analog_drift.level_multiplier
         } else {
             0.0
         };
         let snap_r = if self.snap_r.is_active() {
-            self.snap_hp_r.process(self.snap_r.next()) * self.settings.volume * burst_intensity
+            self.snap_hp_r.process(self.snap_r.next())
+                * self.settings.volume
+                * burst_intensity
+                * self.analog_drift.level_multiplier
         } else {
             0.0
         };
@@ -344,5 +383,45 @@ impl Voice for ClapVoice {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clap_analog_affects_tone() {
+        let sample_rate = 44100.0;
+        let mut settings = VoiceSettings::clap();
+        settings.stereo = 0.0;
+        settings.special[0] = 0.0; // echo = 0 to collapse bursts to a single impact
+        let mut voice = ClapVoice::new(sample_rate, ClapSettings::from(settings));
+
+        settings.analog = 1.0;
+        voice.set_settings(settings);
+
+        voice.trigger();
+        let mut hit1 = Vec::with_capacity(8000);
+        for _ in 0..8000 {
+            hit1.push(voice.process_sample());
+        }
+
+        voice.trigger();
+        let mut hit2 = Vec::with_capacity(8000);
+        for _ in 0..8000 {
+            hit2.push(voice.process_sample());
+        }
+
+        let diffs = hit1
+            .iter()
+            .zip(hit2.iter())
+            .filter(|(a, b)| (*a - *b).abs() > 0.0001)
+            .count();
+        assert!(
+            diffs > 500,
+            "analog=1 should vary the clap tone between hits (got {} diffs)",
+            diffs
+        );
     }
 }

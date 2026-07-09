@@ -34,7 +34,7 @@ pub const SNARE606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 
 // ── HiHat (closed & open share the same algo set) ───────────────────────────
 
-pub const HIHAT_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }, AlgoDef { name: "Bright" }];
+pub const HIHAT_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 
 // ── Tom ─────────────────────────────────────────────────────────────────────
 
