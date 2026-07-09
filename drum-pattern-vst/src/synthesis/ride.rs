@@ -20,6 +20,8 @@ pub struct RideVoice {
     filter_r: dsp::OnePoleFilter,
     amp_env: dsp::DecayReleaseEnvelope,
     saturation: saturation::SaturationConfig,
+    // Per-hit drift for tone, level, and timing.
+    analog_drift: dsp::ToneDrift,
 
     active: bool,
 }
@@ -65,6 +67,7 @@ impl RideVoice {
                 output_gain: settings.saturation_output_gain,
                 pre_filter: settings.saturation_pre_filter > 0.5,
             },
+            analog_drift: dsp::ToneDrift::new(0xCAFE_D0D0, 0.075),
             active: false,
         }
     }
@@ -78,7 +81,7 @@ impl RideVoice {
         self.amp_env.set_release(self.settings.release);
         self.amp_env.set_decay_curve(self.settings.decay_curve);
         self.amp_env.set_release_curve(self.settings.release_curve);
-        let base_freq = self.settings.frequency.max(200.0);
+        let base_freq = (self.settings.frequency * self.analog_drift.multiplier).max(200.0);
         self.osc1.set_freq(base_freq * 1.0);
         self.osc2.set_freq(base_freq * 1.71);
         self.osc3.set_freq(base_freq * 2.41);
@@ -91,6 +94,15 @@ impl Voice for RideVoice {
         // Keep oscillator phases and filter state continuous across triggers —
         // critical here because three tonal sines collapsing to phase 0
         // simultaneously is the worst case for retrigger clicks.
+        self.analog_drift.trigger(self.settings.analog);
+        // Apply timing drift (±2 ms) to the amplitude envelope attack.
+        let attack_drift_ms = (self.analog_drift.timing_offset * 2.0).clamp(-0.002, 0.002) * 1000.0;
+        self.amp_env
+            .set_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
+        let base = (self.settings.frequency * self.analog_drift.multiplier).max(200.0);
+        self.osc1.set_freq(base * 1.0);
+        self.osc2.set_freq(base * 1.71);
+        self.osc3.set_freq(base * 2.41);
         self.amp_env.trigger();
     }
 
@@ -114,7 +126,10 @@ impl Voice for RideVoice {
         let metallic = self.osc1.next() * 0.5 + self.osc2.next() * 0.3 + self.osc3.next() * 0.2;
         let raw = metallic + self.noise.next() * 0.4;
         let filtered = self.filter.process(raw);
-        self.saturation.process(filtered) * env * self.settings.volume
+        self.saturation.process(filtered)
+            * env
+            * self.settings.volume
+            * self.analog_drift.level_multiplier
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -155,7 +170,7 @@ impl Voice for RideVoice {
 
         let filtered_l = self.filter.process(raw_l);
         let filtered_r = self.filter_r.process(raw_r);
-        let vol = env * self.settings.volume;
+        let vol = env * self.settings.volume * self.analog_drift.level_multiplier;
         (
             self.saturation.process(filtered_l) * vol,
             self.saturation.process(filtered_r) * vol,
@@ -211,5 +226,44 @@ impl Voice for RideVoice {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ride_analog_affects_tone() {
+        let sample_rate = 44100.0;
+        let mut settings = VoiceSettings::ride();
+        settings.stereo = 0.0;
+        let mut voice = RideVoice::new(sample_rate, RideSettings::from(settings));
+
+        settings.analog = 1.0;
+        voice.set_settings(settings);
+
+        voice.trigger();
+        let mut hit1 = Vec::with_capacity(4000);
+        for _ in 0..4000 {
+            hit1.push(voice.process_sample());
+        }
+
+        voice.trigger();
+        let mut hit2 = Vec::with_capacity(4000);
+        for _ in 0..4000 {
+            hit2.push(voice.process_sample());
+        }
+
+        let diffs = hit1
+            .iter()
+            .zip(hit2.iter())
+            .filter(|(a, b)| (*a - *b).abs() > 0.0001)
+            .count();
+        assert!(
+            diffs > 500,
+            "analog=1 should vary the ride tone between hits (got {} diffs)",
+            diffs
+        );
     }
 }

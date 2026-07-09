@@ -20,12 +20,55 @@ use crate::{
     pattern_bank::{SLOT_COUNT, SONG_BLOCKS},
     plock::PlockState,
     preset_dumps,
-    sequencer::{FusedGroup, MorphTarget, Pattern, SharedPattern},
-    sound_settings::SoundSettingsState,
+    sequencer::{pattern::STEP_COUNT, FusedGroup, MorphTarget, Pattern, SharedPattern},
+    sound_settings::{SoundSettings, SoundSettingsState},
     synthesis::{self, DrumVoice, VoiceSettings},
     track::{TrackInstrumentKind, TrackLayoutState, TrackSlot},
     DrumFlashParams, BUILD_ID,
 };
+
+/// Data stored in the clipboard for lane copy/paste.
+#[derive(Debug, Clone)]
+struct LaneClipboardData {
+    /// The instrument kind (Kick, Snare, HiHat, etc.).
+    kind: TrackInstrumentKind,
+    /// The sound settings for this lane (all parameters).
+    settings: SoundSettings,
+    /// Per-slot synthesis algorithm.
+    algo: i32,
+    /// The step sequence for this lane.
+    steps: [bool; STEP_COUNT],
+    /// Step Fusion groups for this lane.
+    fusions: Vec<FusedGroup>,
+    /// Sound plocks for this lane.
+    sound_plocks: LaneSoundPlocks,
+    /// Sequencer plocks for this lane.
+    seq_plocks: LaneSeqPlocks,
+    /// Lane humanize value.
+    humanize: f32,
+    /// Lane push/pull value in ms.
+    push_pull: f32,
+    /// Lane length parameter.
+    length: i32,
+    /// Whether the lane has an individual length lock.
+    length_locked: bool,
+}
+
+#[derive(Debug, Clone)]
+struct LaneSoundPlocks {
+    mask: u64,
+    field_masks: [u64; crate::plock::STEP_COUNT],
+    values: [[f32; crate::plock::FIELD_COUNT]; crate::plock::STEP_COUNT],
+}
+
+#[derive(Debug, Clone)]
+struct LaneSeqPlocks {
+    mask: u64,
+    probabilities: [u32; crate::plock::STEP_COUNT],
+    stutters: [u32; crate::plock::STEP_COUNT],
+    conditions: [u32; crate::plock::STEP_COUNT],
+    microtimings: [u32; crate::plock::STEP_COUNT],
+}
 
 mod design_system;
 mod envelope_viz;
@@ -496,6 +539,12 @@ struct EditorUIState {
     /// True when the user clicked "Clear All" and must confirm.
     #[serde(default)]
     song_clear_confirm: bool,
+    /// Clipboard for lane copy/paste (instrument + settings + sequence).
+    #[serde(skip)]
+    lane_clipboard: Option<LaneClipboardData>,
+    /// Slot waiting for a second click before clearing its grid.
+    #[serde(skip)]
+    lane_clear_grid_confirm: Option<usize>,
     /// Visual flash timer for the Test (T) button when triggered by external MIDI.
     #[serde(skip)]
     slot_flash_until: [f64; crate::track::MAX_TRACKS],
@@ -582,6 +631,273 @@ impl LanePresetAction {
 
     fn apply_label(self) -> String {
         format!("Apply {}", self.label())
+    }
+}
+
+impl EditorUIState {
+    /// Copy the current lane (instrument + settings + sequence) to the clipboard.
+    fn copy_lane(
+        &mut self,
+        params: &DrumFlashParams,
+        slot: usize,
+        settings_state: &SoundSettingsState,
+        pattern: &SharedPattern,
+        plock: &PlockState,
+    ) {
+        let Some(kind) = params.track_layout.state.kind_for_slot(slot) else {
+            return;
+        };
+
+        let settings = settings_state.get_settings_for_slot(slot);
+        let algo = params.algos()[slot].value();
+        let steps = std::array::from_fn(|step| pattern.is_active(step, slot));
+        let fusions = pattern.load_fusions(slot);
+        let sound_plocks = copy_lane_sound_plocks(plock, slot);
+        let seq_plocks = copy_lane_seq_plocks(&params.seq_plock_state.state, slot);
+        let humanize = params.humanizes()[slot].value();
+        let push_pull = params.pushes()[slot].value();
+        let length = params.lengths()[slot].value();
+        let length_locked = params.lane_length_locks.is_locked(slot);
+
+        self.lane_clipboard = Some(LaneClipboardData {
+            kind,
+            settings,
+            algo,
+            steps,
+            fusions,
+            sound_plocks,
+            seq_plocks,
+            humanize,
+            push_pull,
+            length,
+            length_locked,
+        });
+    }
+
+    /// Paste the full clipboard data to the target lane.
+    /// Returns true if the paste was successful.
+    fn paste_lane(
+        &mut self,
+        setter: &ParamSetter,
+        params: &DrumFlashParams,
+        target_slot: usize,
+        settings_state: &SoundSettingsState,
+        pattern: &SharedPattern,
+        plock: &PlockState,
+    ) -> bool {
+        if target_slot >= crate::track::MAX_TRACKS {
+            return false;
+        }
+
+        let Some(clipboard) = &self.lane_clipboard else {
+            return false;
+        };
+
+        let mut layout =
+            PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+        if layout.slots[target_slot].active {
+            layout.slots[target_slot].kind = clipboard.kind;
+            layout.slots[target_slot].name = clipboard.kind.default_name().to_string();
+            layout.slots[target_slot].midi_note = clipboard.kind.default_midi_note();
+        } else {
+            layout.slots[target_slot] = TrackSlot::active_with_kind(clipboard.kind);
+        }
+        PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
+
+        settings_state.set_settings_for_slot(target_slot, &clipboard.settings);
+        set_int_param_if_changed(setter, params.algos()[target_slot], clipboard.algo);
+
+        paste_lane_steps(pattern, target_slot, &clipboard.steps);
+        pattern.store_fusions(target_slot, &clipboard.fusions);
+        paste_lane_sound_plocks(plock, target_slot, &clipboard.sound_plocks);
+        paste_lane_seq_plocks(
+            &params.seq_plock_state.state,
+            target_slot,
+            &clipboard.seq_plocks,
+        );
+        set_float_param_if_changed(setter, params.humanizes()[target_slot], clipboard.humanize);
+        set_float_param_if_changed(setter, params.pushes()[target_slot], clipboard.push_pull);
+        set_int_param_if_changed(setter, params.lengths()[target_slot], clipboard.length);
+        set_lane_length_lock_for_slot(params, target_slot, clipboard.length_locked);
+
+        select_legacy_track(self, target_slot);
+        true
+    }
+
+    /// Paste only the visible step grid to an already active target lane.
+    /// Instrument, sound settings, plocks, fusions, routing and lane controls stay untouched.
+    fn paste_grid(
+        &mut self,
+        params: &DrumFlashParams,
+        target_slot: usize,
+        pattern: &SharedPattern,
+    ) -> bool {
+        if target_slot >= crate::track::MAX_TRACKS {
+            return false;
+        }
+        if params
+            .track_layout
+            .state
+            .kind_for_slot(target_slot)
+            .is_none()
+        {
+            return false;
+        }
+
+        let Some(clipboard) = &self.lane_clipboard else {
+            return false;
+        };
+
+        paste_lane_steps(pattern, target_slot, &clipboard.steps);
+        select_legacy_track(self, target_slot);
+        true
+    }
+
+    /// Clear the musical grid for an active lane, keeping the module and settings intact.
+    fn clear_grid(
+        &mut self,
+        params: &DrumFlashParams,
+        slot: usize,
+        pattern: &SharedPattern,
+        plock: &PlockState,
+    ) -> bool {
+        if slot >= crate::track::MAX_TRACKS || !params.track_layout.state.is_active(slot) {
+            return false;
+        }
+
+        clear_grid_steps(pattern, slot);
+        pattern.store_fusions(slot, &[]);
+        clear_grid_sound_plocks(plock, slot);
+        clear_grid_seq_plocks(&params.seq_plock_state.state, slot);
+
+        self.fusion_selection_start[slot] = None;
+        self.fusion_editing = self.fusion_editing.filter(|(idx, _)| *idx != slot);
+        self.plock_popup = self.plock_popup.filter(|popup| popup.instrument != slot);
+        self.lane_clear_grid_confirm = None;
+        select_legacy_track(self, slot);
+        true
+    }
+}
+
+fn copy_lane_sound_plocks(plock: &PlockState, slot: usize) -> LaneSoundPlocks {
+    LaneSoundPlocks {
+        mask: plock.masks.masks[slot].load(Ordering::Relaxed),
+        field_masks: std::array::from_fn(|step| plock.field_masks.get_raw(slot, step)),
+        values: std::array::from_fn(|step| {
+            std::array::from_fn(|field| plock.values.get(slot, step, field))
+        }),
+    }
+}
+
+fn paste_lane_sound_plocks(plock: &PlockState, target_slot: usize, data: &LaneSoundPlocks) {
+    plock.masks.masks[target_slot].store(data.mask, Ordering::Relaxed);
+    for step in 0..crate::plock::STEP_COUNT {
+        plock
+            .field_masks
+            .set_raw(target_slot, step, data.field_masks[step]);
+        for field in 0..crate::plock::FIELD_COUNT {
+            plock
+                .values
+                .set(target_slot, step, field, data.values[step][field]);
+        }
+    }
+}
+
+fn clear_grid_sound_plocks(plock: &PlockState, slot: usize) {
+    if slot >= crate::track::MAX_TRACKS {
+        return;
+    }
+    plock.masks.masks[slot].store(0, Ordering::Relaxed);
+    for step in 0..crate::plock::STEP_COUNT {
+        plock.field_masks.set_raw(slot, step, 0);
+        for field in 0..crate::plock::FIELD_COUNT {
+            plock.values.set(slot, step, field, 0.0);
+        }
+    }
+}
+
+fn copy_lane_seq_plocks(seq: &crate::plock::SequencerPlockState, slot: usize) -> LaneSeqPlocks {
+    LaneSeqPlocks {
+        mask: seq.masks[slot].load(Ordering::Relaxed),
+        probabilities: std::array::from_fn(|step| {
+            seq.probabilities[slot][step].load(Ordering::Relaxed)
+        }),
+        stutters: std::array::from_fn(|step| seq.stutters[slot][step].load(Ordering::Relaxed)),
+        conditions: std::array::from_fn(|step| seq.conditions[slot][step].load(Ordering::Relaxed)),
+        microtimings: std::array::from_fn(|step| {
+            seq.microtimings[slot][step].load(Ordering::Relaxed)
+        }),
+    }
+}
+
+fn paste_lane_seq_plocks(
+    seq: &crate::plock::SequencerPlockState,
+    target_slot: usize,
+    data: &LaneSeqPlocks,
+) {
+    seq.masks[target_slot].store(data.mask, Ordering::Relaxed);
+    for step in 0..crate::plock::STEP_COUNT {
+        seq.probabilities[target_slot][step].store(data.probabilities[step], Ordering::Relaxed);
+        seq.stutters[target_slot][step].store(data.stutters[step], Ordering::Relaxed);
+        seq.conditions[target_slot][step].store(data.conditions[step], Ordering::Relaxed);
+        seq.microtimings[target_slot][step].store(data.microtimings[step], Ordering::Relaxed);
+    }
+}
+
+fn clear_grid_seq_plocks(seq: &crate::plock::SequencerPlockState, slot: usize) {
+    if slot >= crate::track::MAX_TRACKS {
+        return;
+    }
+    seq.masks[slot].store(0, Ordering::Relaxed);
+    for step in 0..crate::plock::STEP_COUNT {
+        seq.probabilities[slot][step].store(f32::to_bits(1.0), Ordering::Relaxed);
+        seq.stutters[slot][step].store(f32::to_bits(1.0), Ordering::Relaxed);
+        seq.conditions[slot][step].store(0, Ordering::Relaxed);
+        seq.microtimings[slot][step].store(0, Ordering::Relaxed);
+    }
+}
+
+fn set_lane_length_lock_for_slot(params: &DrumFlashParams, slot: usize, locked: bool) {
+    if slot >= crate::track::MAX_TRACKS {
+        return;
+    }
+    let old_mask = PersistentField::<u16>::map(&params.lane_length_locks, |mask| *mask);
+    let bit = 1u16 << slot;
+    let new_mask = if locked {
+        old_mask | bit
+    } else {
+        old_mask & !bit
+    };
+    if new_mask != old_mask {
+        PersistentField::<u16>::set(&params.lane_length_locks, new_mask);
+    }
+}
+
+fn paste_lane_steps(pattern: &SharedPattern, target_slot: usize, steps: &[bool; STEP_COUNT]) {
+    if target_slot >= crate::track::MAX_TRACKS {
+        return;
+    }
+    let bit = 1u16 << target_slot;
+    for (step, active) in steps.iter().copied().enumerate() {
+        let mask = pattern.load_step_mask(step);
+        let next = if active { mask | bit } else { mask & !bit };
+        if next != mask {
+            pattern.set_step_mask(step, next);
+        }
+    }
+}
+
+fn clear_grid_steps(pattern: &SharedPattern, target_slot: usize) {
+    if target_slot >= crate::track::MAX_TRACKS {
+        return;
+    }
+    let bit = 1u16 << target_slot;
+    for step in 0..STEP_COUNT {
+        let mask = pattern.load_step_mask(step);
+        let next = mask & !bit;
+        if next != mask {
+            pattern.set_step_mask(step, next);
+        }
     }
 }
 
@@ -1879,6 +2195,8 @@ fn draw_grid_v2(
                     // for this specific slot.
                     let (row_response, add_pos) = draw_empty_slot_lane_v2(
                         ui,
+                        setter,
+                        params,
                         slot_idx,
                         page_offset,
                         grip_w,
@@ -1888,6 +2206,10 @@ fn draw_grid_v2(
                         extra_w,
                         gap,
                         cell_w,
+                        state,
+                        sound_settings,
+                        pattern,
+                        plock,
                     );
                     lane_row_rects[slot_idx] = Some(row_response.rect);
                     if let Some(pos) = add_pos {
@@ -2052,6 +2374,68 @@ fn draw_legacy_slot_lane_v2(
         if name_response.clicked() {
             select_legacy_track(state, slot_idx);
         }
+
+        name_response.context_menu(|ui| {
+            if ui.button("Copy Lane").clicked() {
+                state.copy_lane(params, slot_idx, sound_settings, pattern, plock);
+                state.lane_clear_grid_confirm = None;
+                ui.close_menu();
+            }
+            if ui
+                .add_enabled(
+                    state.lane_clipboard.is_some(),
+                    egui::Button::new("Paste Lane"),
+                )
+                .clicked()
+            {
+                if state.paste_lane(setter, params, slot_idx, sound_settings, pattern, plock) {
+                    // Flash visual feedback
+                    state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
+                }
+                state.lane_clear_grid_confirm = None;
+                ui.close_menu();
+            }
+            if ui
+                .add_enabled(
+                    state.lane_clipboard.is_some(),
+                    egui::Button::new("Paste Grid"),
+                )
+                .clicked()
+            {
+                if state.paste_grid(params, slot_idx, pattern) {
+                    // Flash visual feedback
+                    state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
+                }
+                state.lane_clear_grid_confirm = None;
+                ui.close_menu();
+            }
+            ui.separator();
+            let confirm_clear_grid = state.lane_clear_grid_confirm == Some(slot_idx);
+            if ui
+                .button(
+                    RichText::new(if confirm_clear_grid {
+                        "Confirm Clear Grid?"
+                    } else {
+                        "Clear Grid"
+                    })
+                    .font(f_sans_med(11.0))
+                    .color(RED),
+                )
+                .on_hover_text(if confirm_clear_grid {
+                    "Click again to clear this lane's steps, fusions and plocks"
+                } else {
+                    "Clear this lane's grid; keeps instrument, sound, routing and lane controls"
+                })
+                .clicked()
+            {
+                if confirm_clear_grid {
+                    state.clear_grid(params, slot_idx, pattern, plock);
+                    ui.close_menu();
+                } else {
+                    state.lane_clear_grid_confirm = Some(slot_idx);
+                }
+            }
+        });
 
         let inst_state = &sound_settings.instruments[slot_idx];
         let mut lane_vol = f32::from_bits(inst_state.volume.load(Ordering::Relaxed));
@@ -2289,6 +2673,8 @@ fn draw_legacy_slot_lane_v2(
 /// instrument picker for this slot).
 fn draw_empty_slot_lane_v2(
     ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
     slot_idx: usize,
     page_offset: usize,
     grip_w: f32,
@@ -2298,6 +2684,10 @@ fn draw_empty_slot_lane_v2(
     extra_w: f32,
     gap: f32,
     cell_w: f32,
+    state: &mut EditorUIState,
+    sound_settings: &SoundSettingsState,
+    pattern: &SharedPattern,
+    plock: &PlockState,
 ) -> (egui::Response, Option<egui::Pos2>) {
     let inner = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
@@ -2311,6 +2701,22 @@ fn draw_empty_slot_lane_v2(
         } else {
             None
         };
+
+        name_response.context_menu(|ui| {
+            if ui
+                .add_enabled(
+                    state.lane_clipboard.is_some(),
+                    egui::Button::new("Paste Lane"),
+                )
+                .clicked()
+            {
+                if state.paste_lane(setter, params, slot_idx, sound_settings, pattern, plock) {
+                    // Flash visual feedback
+                    state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
+                }
+                ui.close_menu();
+            }
+        });
         draw_empty_lane_chip_v2(ui, vol_w, "Empty");
         draw_empty_lane_chip_v2(ui, mst_w, "");
 
@@ -4651,6 +5057,7 @@ fn draw_sound_panel(
             for family in [
                 crate::instrument_registry::ParamFamily::Osc,
                 crate::instrument_registry::ParamFamily::Env,
+                crate::instrument_registry::ParamFamily::Analog,
                 crate::instrument_registry::ParamFamily::Filter,
                 crate::instrument_registry::ParamFamily::Saturation,
                 crate::instrument_registry::ParamFamily::Output,
@@ -4674,6 +5081,7 @@ fn draw_sound_panel(
                 let section_title = match family {
                     crate::instrument_registry::ParamFamily::Osc => "Oscillator",
                     crate::instrument_registry::ParamFamily::Env => "Envelope",
+                    crate::instrument_registry::ParamFamily::Analog => "Analog",
                     crate::instrument_registry::ParamFamily::Filter => "Filter",
                     crate::instrument_registry::ParamFamily::Saturation => "Saturation",
                     crate::instrument_registry::ParamFamily::Output => "Output",

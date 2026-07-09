@@ -131,6 +131,42 @@ impl BlueNoise {
     }
 }
 
+// ── Switchable Noise Source ─────────────────────────────────────────────────
+
+/// Unified noise generator that selects between white, pink, brown or blue.
+/// Keeps all variants inline so switching types is allocation-free and safe
+/// for the real-time audio thread.
+#[derive(Clone, Copy, Debug)]
+pub enum NoiseSource {
+    White(WhiteNoise),
+    Pink(PinkNoise),
+    Brown(BrownNoise),
+    Blue(BlueNoise),
+}
+
+impl NoiseSource {
+    /// Create a noise source of the requested colour.
+    /// `noise_type`: 0 = white, 1 = pink, 2 = brown, 3 = blue.
+    pub fn new(noise_type: u8, seed: u32) -> Self {
+        match noise_type {
+            1 => NoiseSource::Pink(PinkNoise::new(seed)),
+            2 => NoiseSource::Brown(BrownNoise::new(seed)),
+            3 => NoiseSource::Blue(BlueNoise::new(seed)),
+            _ => NoiseSource::White(WhiteNoise::new(seed)),
+        }
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> f32 {
+        match self {
+            NoiseSource::White(n) => n.next(),
+            NoiseSource::Pink(n) => n.next(),
+            NoiseSource::Brown(n) => n.next(),
+            NoiseSource::Blue(n) => n.next(),
+        }
+    }
+}
+
 // ── One-Pole Filter ─────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1008,9 +1044,91 @@ impl AnalogDrift {
     }
 }
 
+/// Per-hit drift for tone, level, and timing: modulates the "tone"
+/// parameter (peaking center, oscillator base, or filter cutoff), output level,
+/// and envelope timing by small random amounts on each trigger. The depth scales
+/// continuously with the `analog` parameter so 0.0 is deterministic and 1.0 is
+/// maximum drift.
+#[derive(Clone, Copy, Debug)]
+pub struct ToneDrift {
+    rng: WhiteNoise,
+    /// Maximum relative drift per hit (e.g. 0.075 = ±7.5 %).
+    depth: f32,
+    /// Current frequency multiplier applied to the tone parameter.
+    pub multiplier: f32,
+    /// Current level multiplier applied to the output volume.
+    pub level_multiplier: f32,
+    /// Current timing offset in seconds (±2 ms max).
+    pub timing_offset: f32,
+}
+
+impl ToneDrift {
+    pub fn new(seed: u32, depth: f32) -> Self {
+        Self {
+            rng: WhiteNoise::new(seed),
+            depth,
+            multiplier: 1.0,
+            level_multiplier: 1.0,
+            timing_offset: 0.0,
+        }
+    }
+
+    /// Recompute the drift factors for a new hit. `analog` is the user
+    /// parameter in [0, 1]; 0 disables drift, 1 applies full `depth`.
+    #[inline]
+    pub fn trigger(&mut self, analog: f32) {
+        let amount = analog.clamp(0.0, 1.0);
+        if amount == 0.0 {
+            self.multiplier = 1.0;
+            self.level_multiplier = 1.0;
+            self.timing_offset = 0.0;
+        } else {
+            self.multiplier = 1.0 + self.rng.next() * self.depth * amount;
+            self.level_multiplier = 1.0 + self.rng.next() * 0.1 * amount; // ±10 % level
+            self.timing_offset = self.rng.next() * 0.002 * amount; // ±2 ms timing
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tone_drift_is_deterministic_at_zero_and_varies_at_full() {
+        let depth = 0.075;
+        let mut drift = ToneDrift::new(12345, depth);
+
+        // analog = 0 must always give a multiplier of exactly 1.0.
+        drift.trigger(0.0);
+        assert!(
+            (drift.multiplier - 1.0).abs() < 1e-6,
+            "analog=0 should disable tone drift: {}",
+            drift.multiplier
+        );
+
+        // analog = 1 should give a non-trivial drift within the declared depth.
+        drift.trigger(1.0);
+        assert!(
+            (drift.multiplier - 1.0).abs() > 1e-4,
+            "analog=1 should produce audible tone drift: {}",
+            drift.multiplier
+        );
+        assert!(
+            (drift.multiplier - 1.0).abs() <= depth,
+            "drift should not exceed depth: {}",
+            drift.multiplier
+        );
+
+        // Intermediate amounts should scale proportionally.
+        let mut small = ToneDrift::new(12345, depth);
+        small.trigger(0.5);
+        assert!(
+            (small.multiplier - 1.0).abs() <= depth * 0.5 + 1e-6,
+            "analog=0.5 should scale drift by 0.5: {}",
+            small.multiplier
+        );
+    }
 
     #[test]
     fn exp_decay_without_attack_jumps_to_one_on_trigger() {
