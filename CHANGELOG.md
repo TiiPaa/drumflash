@@ -1,5 +1,194 @@
 # Changelog
 
+## 2026-07-09 — Clear Grid confirmé remplace Clear Lane (build 20260709-182258)
+
+**Build:** `20260709-182258`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (138 + 85 tests), `build.ps1 -Install` OK (Studio One fermé pour l'installation)
+
+### Changements
+- **[116] `Clear Lane` remplacé par `Clear Grid` avec confirmation.**
+  - `src/ui.rs` : l'entrée destructive du menu contextuel ne supprime plus le module/lane.
+  - Premier clic : le menu passe de `Clear Grid` à `Confirm Clear Grid?`.
+  - Deuxième clic : efface les steps, fusions, sound plocks et seq plocks de la lane active.
+  - Les données non-grid restent intactes : instrument, réglages sonores, algo, Hum/Push/Len, lock Len, routing, mute/solo/mix et note MIDI.
+  - `Clear Grid` n'est disponible que sur une lane active ; les lanes vides gardent seulement `Paste Lane`.
+
+### À tester dans Studio One (build 20260709-182258)
+1. Clic droit sur une lane active → `Clear Grid` : au premier clic, rien ne doit être effacé et le menu doit demander `Confirm Clear Grid?`.
+2. Cliquer `Confirm Clear Grid?` : tous les steps de cette lane doivent disparaître et la lane ne doit plus déclencher de hits.
+3. Vérifier que la lane reste active avec le même instrument, les mêmes réglages Sound, le même routing, la même note MIDI, les mêmes Hum/Push/Len et les mêmes états mute/solo/mix.
+4. Sur une lane avec fusions, sound plocks et seq plocks → `Clear Grid` confirmé : recréer des steps aux mêmes positions ne doit pas faire réapparaître les anciennes fusions/plocks.
+5. Clic droit sur une lane vide : `Clear Grid` ne doit pas être proposé ; `Paste Lane` doit rester disponible si un clipboard existe.
+
+---
+
+## 2026-07-09 — Clear Lane dans le menu contextuel (build 20260709-181427)
+
+**Build:** `20260709-181427`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (138 + 85 tests), `build.ps1 -Install` OK
+
+### Changements
+- **[116] Ajout de `Clear Lane` dans le menu contextuel d'une lane active.**
+  - `src/ui.rs` : action rouge sous `Copy Lane` / `Paste Lane` / `Paste Grid`.
+  - `Clear Lane` désactive le slot dans `track-layout-v1`, ce qui remet immédiatement la rangée en lane vide.
+  - Nettoyage complet des données cachées du slot : steps, fusions, sound plocks, seq plocks.
+  - Remise à l'état neutre des contrôles par lane : mute off, solo off, mix on, algo 0, Hum 0, Push 0, Len 16, lock Len off.
+  - Le routing du slot est réinitialisé via `TrackSlot::inactive()` ; le clipboard de lane reste disponible pour pouvoir clear puis coller ailleurs.
+  - Après clear, la sélection UI bascule vers la prochaine lane active, ou reste sur le slot vidé si aucune lane active ne reste.
+
+### À tester dans Studio One (build 20260709-181427)
+1. Clic droit sur une lane active → `Clear Lane` : la rangée doit devenir vide (`+N` / Empty) et ne plus jouer de son.
+2. Sur une lane avec steps, fusions, sound plocks et seq plocks → `Clear Lane`, puis recréer une lane au même slot : aucun ancien step/plock/fusion ne doit réapparaître.
+3. Mettre une lane en mute/solo, changer Hum/Push/Len et activer lock Len, puis `Clear Lane` : en recréant une lane au même slot, ces contrôles doivent être revenus à l'état neutre.
+4. Faire `Copy Lane`, puis `Clear Lane` sur la source, puis `Paste Lane` ailleurs : le clipboard doit encore coller la lane copiée.
+5. Effacer la dernière lane active : l'UI doit rester stable, afficher le slot vide sélectionné, sans crash ni décalage des panneaux.
+
+---
+
+## 2026-07-09 — Copier/coller lanes + cleanup Analog HH/OH (build 20260709-180637)
+
+**Build:** `20260709-180637`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK, `build.ps1 -Install` OK (Studio One fermé pour l'installation)
+
+### Changements
+- **[116] Copier/coller une lane depuis le menu contextuel de la grille.**
+  - `src/ui.rs` : ajout d'un clipboard de lane en mémoire (`LaneClipboardData`) et des actions `Copy Lane`, `Paste Lane`, `Paste Grid` sur les lanes actives.
+  - Les lanes vides acceptent `Paste Lane`, ce qui active le slot cible avec l'instrument du clipboard.
+  - `Paste Lane` copie instrument, settings sonores complets, algo, steps, fusions, sound plocks, seq plocks, Humanize, Push/Pull, Len et lock Len.
+  - `Paste Grid` remplace `Paste Params` et copie uniquement les steps on/off de la grille sur une lane active cible.
+  - `Paste Grid` ne change pas l'instrument, les settings sonores, l'algo, les fusions, les plocks, Humanize, Push/Pull, Len, lock Len, routing, mute/solo/mix ni la note MIDI du slot cible.
+  - Routing, Main/Out, note MIDI source personnalisée, mute/solo/mix ne sont pas copiés pour éviter les effets de bord dans une session Studio One.
+- **Snapshot de settings par slot pour le clipboard.**
+  - `src/sound_settings.rs` : ajout de `SoundSettings` + `get_settings_for_slot()` / `set_settings_for_slot()` pour copier les standards, specials et le mode Hz/Notes sans repasser par les anciens params legacy.
+- **Correction de l'implémentation précédente dangereuse.**
+  - Le collage des steps ne passe plus par une sérialisation de `Pattern` ni par un remplacement de rangée global ; il ne modifie que le bit du slot cible dans chaque step.
+  - Le fichier `shared_pattern_clipboard.rs` a été retiré et `Pattern` reste non sérialisé.
+- **Cleanup Analog HH/OH.**
+  - Le drift timing HiHat / OpenHiHat ne crée plus de délai silencieux avant le hit (`timing_delay_samples` reste à 0 au trigger).
+  - Les logs de debug `println!` ajoutés pendant l'itération Analog ont été retirés.
+
+### À tester dans Studio One (build 20260709-180637)
+1. Clic droit sur une lane active (ex. BD) → `Copy Lane`, puis clic droit sur une lane vide (`+N`) → `Paste Lane` : le slot doit s'activer avec le même instrument, le même son et la même séquence.
+2. Sur une lane source avec fusions, sound plocks, seq plocks, Hum/Push/Len et Len lock, faire `Copy Lane` puis `Paste Lane` vers une autre lane : tous ces éléments doivent suivre la copie.
+3. Sur une lane active cible d'un instrument différent, faire `Paste Grid` : seuls les steps on/off doivent être remplacés ; l'instrument, le son, l'algo, les fusions/plocks, Hum/Push/Len, routing, mute/solo/mix et note MIDI de la cible doivent rester inchangés.
+4. Clic droit sur une lane vide : vérifier que `Paste Params` n'existe plus et que `Paste Grid` n'est pas proposé ; seul `Paste Lane` doit permettre d'activer la lane depuis le clipboard.
+5. Vérifier que `Paste Lane` ne recopie pas le routing Main/Out ni mute/solo/mix depuis la source : le slot cible ne doit pas déplacer le son vers une sortie inattendue ni hériter d'un état mute/solo.
+6. Sur HiHat et OpenHiHat, jouer une pattern dense avec `Analog` élevé : les hits ne doivent pas être retardés/silencieux au départ (régression possible du drift timing), et le tone doit toujours varier par hit.
+
+---
+
+## 2026-07-09 — Analog : tone drift sur HiHat / OpenHiHat / Clap / Ride / Cymbal (build 20260709-141013)
+
+**Build:** `20260709-141013`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (138 + 85 tests), `build.ps1 -Install` OK (Studio One fermé pour l’installation)
+
+### Changements
+- **[115] Le paramètre `Analog` module désormais le tone des instruments non-tonaux.**
+  - `src/synthesis/dsp.rs` : ajout de `ToneDrift` avec une profondeur configurable par instrument (0.0 = déterministe, 1.0 = maximum).
+  - `src/synthesis/hihat.rs` / `open_hihat.rs` : `Analog` décale le centre du peaking filter (`Tone`) de **±25 %** par hit.
+  - `src/synthesis/ride.rs` : `Analog` décale la fréquence de base des oscillateurs inharmoniques (`Frequency`) de **±7.5 %** par hit.
+  - `src/synthesis/clap.rs` : `Analog` décale le highpass cutoff de **±25 %** par hit.
+  - `src/synthesis/cymbal.rs` : `Analog` décale le highpass cutoff de **±25 %** avant la modulation shimmer.
+  - Anti-click : pas de reset de phase, filtre ou générateur de bruit ; la dérive est échantillonnée au trigger et appliquée via les setters de fréquence existants.
+  - Tests ajoutés : `tone_drift_is_deterministic_at_zero_and_varies_at_full` (dsp.rs), `test_hihat_analog_affects_tone`, `test_open_hihat_analog_affects_tone`, `test_ride_analog_affects_tone`, `test_clap_analog_affects_tone`, `test_cymbal_analog_affects_tone`.
+
+### À tester dans Studio One (build 20260709-141013)
+1. **HiHat** : monter `Analog` à fond et jouer une pattern dense → le pic métallique doit varier clairement d’un hit à l’autre (régression précédente : inaudible avec ±7.5 %).
+2. **OpenHiHat** : idem, vérifier que le tone varie.
+3. **Ride** : `Analog` à fond → le timbre métallique doit varier (conservé à ±7.5 %).
+4. **Clap** : `Analog` à fond → le tone/la brillance doit varier par hit.
+5. **Cymbal** : `Analog` à fond → le haut du spectre (cutoff) doit fluctuer.
+6. **Regression** : mettre `Analog` à 0 sur ces instruments → chaque hit doit être identique en tone.
+7. Vérifier que les instruments tonaux (Kick, Snare, Tom, Kick808, Perc1, Snare606) conservent leur comportement `AnalogDrift` sans régression.
+8. Recharger une session sauvegardée avant cette build : le slider `Analog` reste restauré et s’applique au tone des non-tonaux.
+
+---
+
+**Build:** `20260709-123527`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (132 + 79 tests), `build.ps1 -Install` OK (Studio One fermé pour l’installation)
+
+### Changements
+- **[115] Nouvelle section `Analog` dans le Sound Editor, positionnée entre `Envelope` et `Filter`.**
+  - `src/instrument_registry.rs` :
+    - Ajout de `ParamFamily::Analog`.
+    - Déplacement du champ `StandardField::Analog` de `ParamFamily::Output` vers `ParamFamily::Analog` dans toutes les listes standard des 13 instruments.
+  - `src/ui.rs` :
+    - `sound_family_sections()` affiche désormais la section `Analog` après `Envelope` et avant `Filter`.
+    - Ordre final des familles : `Osc`, `Env`, `Analog`, `Filter`, `Sat`, `Output`.
+  - `src/synthesis/mod.rs` / `src/synthesis/voice.rs` : `AnalogDrift` reste piloté par le paramètre `analog` pour les instruments tonaux (Kick, Snare, Tom, Kick808, Perc1, Snare606).
+  - Les instruments non tonaux (HiHat, OpenHiHat, Clap, Ride, Cymbal, Zap) affichent le slider `Analog` mais ne l’appliquent pas encore en synthèse (pas d’implémentation `AnalogDrift` sur ces voix).
+  - Tests de régression existants : `cargo test` OK (132 + 79 tests), `cargo check` OK, pas de nouveaux tests spécifiques ajoutés pour cette refonte.
+
+### À tester dans Studio One (build 20260709-123527)
+1. Sélectionner une lane Kick (ou Snare, Tom, Kick808, Perc1, Snare606) → onglet `Sound` : vérifier que la section `Analog` apparaît entre `Envelope` et `Filter` (et non plus dans `Output`).
+2. Sur la même lane tonal, monter `Analog` à fond et jouer une pattern rapide : chaque hit doit légèrement varier en hauteur/niveau/temps (drift analogique audible).
+3. Sélectionner une lane HiHat (ou OpenHiHat, Clap, Ride, Cymbal, Zap) → onglet `Sound` : vérifier que `Analog` est aussi visible entre `Envelope` et `Filter`.
+4. Sur une lane non tonale, bouger le slider `Analog` : le son ne doit pas changer pour l’instant (comportement attendu, pas de drift implémenté sur ces voix).
+5. Vérifier que la section `Output` n’affiche plus le slider `Analog` (il n’y reste que `Volume`, `Stereo`, `Main`, `Out`, etc.).
+6. Créer un plock sur un step Kick/Snare : vérifier que `Analog` est proposé dans le menu Plock (Snapshot/Link/Morph) et que sa valeur s’applique.
+7. Créer une Fusion sur une lane Kick/Snare : vérifier que `Analog` est proposé dans le menu Morph et que le morph entre la valeur globale et la cible s’entend.
+8. Recharger une session sauvegardée avant cette build : le paramètre `Analog` doit être restauré à sa valeur globale et le slider doit être visible dans la nouvelle section.
+9. Vérifier que les autres instruments conservent leur ordre de sections habituel et que `Env` reste juste avant `Analog`.
+
+---
+
+**Build:** `20260709-121611`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (132 + 79 tests), `build.ps1 -Install` OK (Studio One fermé pour l’installation)
+
+### Changements
+- **[114] Refonte complète du panneau sonore HiHat / OpenHiHat.**
+  - `src/instrument_registry.rs` :
+    - `Frequency` → `Tone` (range 100–20000 Hz).
+    - `Filter` → `Cutoff` (range 100–20000 Hz).
+    - Ajout des paramètres spéciaux : `Noise Type` (White/Pink/Brown/Blue), `Resonance` (0.1–10.0), `Shimmer` (0.0–1.0).
+    - Suppression de l’algorithme `Bright` (`algo_count: 1`).
+  - `src/synthesis/dsp.rs` : ajout de l’enum `NoiseSource` pour sélectionner le type de bruit sans allocation.
+  - `src/synthesis/hihat.rs` / `open_hihat.rs` :
+    - Remplacement des générateurs `WhiteNoise` fixes par `NoiseSource`.
+    - Le peaking filter utilise désormais `settings.resonance` à la place de Q=2.0 fixe.
+    - Ajout d’un chemin shimmer parallèle (bruit **bleu** high-pass à 8 kHz, mixé selon `Shimmer` avec un gain de 2.0).
+    - Suppression de la branche `algo == 1` (Bright).
+  - `src/synthesis/settings/hihat.rs` / `open_hihat.rs` : mapping des nouveaux special params `special[5]` (noise type), `special[6]` (resonance), `special[7]` (shimmer).
+  - `src/synthesis/mod.rs` : mise à jour des valeurs par défaut de `VoiceSettings::hihat()` / `open_hihat()` (`resonance = 2.0`).
+  - `src/synthesis/special_params.rs` : `HIHAT_ALGOS` réduit à `[Standard]`.
+
+### À tester dans Studio One (build 20260709-121611)
+1. Sélectionner la lane HiHat (HH) → onglet `Sound` : vérifier que les paramètres sont `Tone`, `Cutoff`, `Resonance`, `Noise Type`, `Shimmer` (plus d’algorithme).
+2. Sélectionner la lane OpenHiHat (OH) → idem, vérifier que les labels sont identiques et qu’il n’y a pas de dropdown Algorithme.
+3. Bouger `Tone` de 100 à 20000 Hz sur HH : le pic métallique doit se déplacer clairement dans les graves/aigus.
+4. Bouger `Cutoff` : vérifier que l’on comprend la relation avec `Tone` (Cutoff enlève les basses, Tone pousse une bande).
+5. Bouger `Resonance` de 0.1 à 10 : à 0.1 le pic doit être très large/doux, à 10 très aigu et crécelle.
+6. Changer `Noise Type` (White / Pink / Brown / Blue) : le timbre doit changer de manière audible (White = standard, Brown = sombre, Blue = très aigu).
+7. Monter `Shimmer` à 1.0 : un bruit d’air/souffle aigu doit apparaître clairement par-dessus le HiHat (régression à surveiller : rester inaudible).
+8. Jouer une pattern avec HH et OH : vérifier qu’il n’y a plus de dropdown Algorithme et que le son est proche de l’ancien `Standard` par défaut.
+9. Recharger une session sauvegardée avec des réglages HiHat : les valeurs doivent être restaurées (champs persistants inchangés, seuls les labels et les ranges ont changé).
+10. Vérifier que les autres instruments (Kick, Snare, Tom, etc.) conservent encore leurs labels et ranges d’origine.
+
+---
+
+## 2026-07-09 — Clarification HiHat : `Frequency` renommé en `Tone` (build 20260709-101109)
+
+**Build:** `20260709-101109`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (132 + 79 tests), `build.ps1 -Install` OK (Studio One fermé pour l’installation)
+
+### Changements
+- **[114] Clarification du paramètre HiHat / OpenHiHat.**
+  - `src/instrument_registry.rs` : création de `HIHAT_STD` et `OPENHIHAT_STD` où le label de `StandardField::Freq` est "Tone" au lieu de "Frequency".
+  - Les instruments HiHat et OpenHiHat utilisent désormais ces listes dédiées ; le champ persistant reste `frequency` (pas de migration nécessaire, seul le label UI change).
+  - `src/synthesis/hihat.rs` : documentation du rôle de `frequency` (centre du filtre peaking, Q=2, gain=6 dB) et des deux algorithmes (`Standard` vs `Bright`).
+  - `src/synthesis/open_hihat.rs` : documentation similaire du peaking filter et du partage des algos avec le HiHat fermé.
+  - `src/synthesis/special_params.rs` : commentaire structuré sur les algos HiHat (Standard/Bright).
+
+### À tester dans Studio One (build 20260709-101109)
+1. Sélectionner la lane HiHat (HH) → onglet `Sound` : le premier paramètre doit s’appeler `Tone` et non plus `Frequency`.
+2. Sélectionner la lane OpenHiHat (OH) → onglet `Sound` : idem, le premier paramètre doit être `Tone`.
+3. Jouer une pattern avec des notes HH/OH et bouger le knob `Tone` : on doit entendre clairement le pic métallique se déplacer dans les aigus/graves (pas de silence ou d’effet absent).
+4. Passer l’algorithme de `Standard` à `Bright` sur HH ou OH : le son doit devenir plus brillant/saturation légèrement accentuée (régression à surveiller : son identique entre les deux algos).
+5. Vérifier que les autres instruments (Kick, Snare, Tom, etc.) conservent encore leur label `Frequency`.
+6. Recharger une session sauvegardée avec des réglages HiHat : les valeurs `Tone` doivent être restaurées (le champ persistant est inchangé).
+
+---
+
 ## 2026-07-08 — Song Editor : finition, blocks vides assombris, Clear All avec confirmation (build 20260708-185335)
 
 **Build:** `20260708-185335`

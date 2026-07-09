@@ -2,6 +2,26 @@ use nih_plug::params::persist::PersistentField;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
+/// Sound settings for a single instrument (used for clipboard).
+#[derive(Debug, Clone, Default)]
+pub struct SoundSettings {
+    pub frequency: f32,
+    pub decay: f32,
+    pub volume: f32,
+    pub filter_freq: f32,
+    pub attack: f32,
+    pub release: f32,
+    pub decay_curve: f32,
+    pub release_curve: f32,
+    pub hold: f32,
+    pub filter_env_amount: f32,
+    pub filter_env_decay: f32,
+    pub analog: f32,
+    pub stereo: f32,
+    pub special: [f32; SPECIAL_SLOT_COUNT],
+    pub freq_mode: bool,
+}
+
 /// Number of per-slot special parameter values (matches `VoiceSettings::special`).
 pub const SPECIAL_SLOT_COUNT: usize = 32;
 
@@ -233,6 +253,65 @@ impl SoundSettingsState {
 
     pub fn bump_version(&self) {
         self.version.fetch_add(1, Ordering::Release);
+    }
+
+    /// Get the sound settings for a specific slot.
+    pub fn get_settings_for_slot(&self, slot: usize) -> SoundSettings {
+        if slot >= MAX_TRACKS {
+            return SoundSettings::default();
+        }
+
+        let inst = &self.instruments[slot];
+        let (f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s) = inst.load();
+        let specials = inst.load_specials();
+        let freq_mode = inst.freq_mode();
+
+        SoundSettings {
+            frequency: f,
+            decay: d,
+            volume: v,
+            filter_freq: fl,
+            attack: at,
+            release: r,
+            decay_curve: dc,
+            release_curve: rc,
+            hold: h,
+            filter_env_amount: fea,
+            filter_env_decay: fed,
+            analog: a,
+            stereo: s,
+            special: specials,
+            freq_mode,
+        }
+    }
+
+    /// Set the sound settings for a specific slot.
+    pub fn set_settings_for_slot(&self, slot: usize, settings: &SoundSettings) {
+        if slot >= MAX_TRACKS {
+            return;
+        }
+
+        let inst = &self.instruments[slot];
+        inst.store(
+            settings.frequency,
+            settings.decay,
+            settings.volume,
+            settings.filter_freq,
+            settings.attack,
+            settings.release,
+            settings.decay_curve,
+            settings.release_curve,
+            settings.hold,
+            settings.filter_env_amount,
+            settings.filter_env_decay,
+            settings.analog,
+            settings.stereo,
+        );
+        for (i, &value) in settings.special.iter().enumerate() {
+            inst.set_special(i, value);
+        }
+        inst.set_freq_mode(settings.freq_mode);
+        self.bump_version();
     }
 
     pub fn read_all(&self) -> Vec<f32> {
