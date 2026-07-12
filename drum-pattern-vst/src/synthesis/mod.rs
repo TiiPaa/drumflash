@@ -843,11 +843,17 @@ impl DrumSynthesizer {
     }
 
     pub fn reinitialize_slot(&mut self, slot_idx: usize, kind: crate::track::TrackInstrumentKind) {
-        if slot_idx < crate::track::MAX_TRACKS {
-            self.voices[slot_idx] = Some(Box::new(create_voice_for_kind(kind, self.sample_rate)));
-            self.velocity_smoothers[slot_idx] =
-                dsp::OnePoleSmoother::new(self.sample_rate, VELOCITY_SMOOTH_MS, 1.0);
+        if slot_idx >= crate::track::MAX_TRACKS {
+            return;
         }
+        let new_voice = create_voice_for_kind(kind, self.sample_rate);
+        if let Some(existing) = self.voices[slot_idx].as_mut() {
+            **existing = new_voice;
+        } else {
+            self.voices[slot_idx] = Some(Box::new(new_voice));
+        }
+        self.velocity_smoothers[slot_idx] =
+            dsp::OnePoleSmoother::new(self.sample_rate, VELOCITY_SMOOTH_MS, 1.0);
     }
 }
 

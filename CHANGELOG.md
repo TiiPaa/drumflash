@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-07-12 — AUDIT-2 : éliminer les allocations sur le thread audio (build 20260712-113358)
+
+**Build:** `20260712-113358`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (138 + 85 tests), `build.ps1 -Install` OK
+
+### Changements
+- **AUDIT-2 — Suppression des allocations sur le thread audio.**
+  - `src/synthesis/mod.rs` : `reinitialize_slot()` réutilise maintenant la `Box<DrumVoiceKind>` existante du slot. Un changement d'instrument sur une lane active n'alloue plus une nouvelle voix sur le tas ; seule la création de voix sur un slot vide alloue (cas rare).
+  - `src/pattern_bank.rs` : `capture()` (sauvegarde Pattern Bank) et `restore_from_buffers()` (chargement) utilisent des tableaux fixes `[FusedGroup; MAX_FUSIONS]` à la place de `Vec::with_capacity`/`push` pour les groupes Step Fusion.
+  - `src/lib.rs` : les `nih_log!` appelés depuis `process()` (`save_pattern_to_slot`, `load_pattern_from_slot`, `clear_plocks`) et le `println!` de `fire_voice_trigger` sont conditionnés à `#[cfg(debug_assertions)]` ; ils disparaissent en release pour éviter toute allocation/formatage sur le thread audio.
+
+### À tester dans Studio One (build 20260712-113358)
+1. Changer l'instrument d'une lane active (onglet `Track` > `Instrument`) : le slot doit rester audible, pas de freeze, pas de drop audio (régression possible : crash si l'enum `DrumVoiceKind` est placé inline sur la pile).
+2. Sauvegarder un pattern dans la Pattern Bank (`P1`…`P8`) puis le recharger : la grille, les plocks et les fusions Step Fusion doivent être restaurés tels quels.
+3. Créer des fusions Step Fusion, sauvegarder le pattern, recharger : la géométrie et le nombre de pulses des fusions doivent être conservés.
+4. Jouer un pattern dense avec des changements fréquents de kind/lane : aucun glitch ou saut de timing lié à une allocation sur le thread audio.
+5. Régression à surveiller : le bouton `Clear Plocks` et les actions Save/Load de Pattern Bank doivent toujours fonctionner ; les logs debug ne doivent plus apparaître en build release (pas de "fire_voice_trigger" dans la console DAW).
+
+---
+
+
 ## 2026-07-12 — Step Fusion : DragValue natif pour valider `Enter` sans freeze (build 20260712-110414)
 
 **Build:** `20260712-110414`
