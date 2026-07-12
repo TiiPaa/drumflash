@@ -1,5 +1,72 @@
 # Changelog
 
+## 2026-07-12 — Step Fusion : DragValue natif pour valider `Enter` sans freeze (build 20260712-110414)
+
+**Build:** `20260712-110414`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI preexistants), `cargo test` OK (138 + 85 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Correction definitive de la regression `Enter` dans Step Fusion.**
+  - `src/ui.rs` : le champ `Steps` utilise maintenant un `egui::DragValue` natif (meme famille que les champs `Len` et `Repeat`) au lieu d'un `TextEdit` manuel.
+  - Le `DragValue` gere `Enter` en interne : saisie, clamp 1..64, sortie du mode edition et perte de focus sont standards egui.
+  - L'application detecte `response.lost_focus()` pour appliquer la valeur a la fusion et fermer l'editeur inline.
+  - Suppression du `TextEdit` manuel, de `ui.input(Key::Enter)`, de `surrender_focus` et du flag `fusion_edit_close_request` qui faisaient planter Studio One.
+  - Le double-clic sur une cellule fusionnee initialise le `DragValue` avec `step_count` et lui donne automatiquement le focus.
+
+### A tester dans Studio One (build 20260712-110414)
+1. Double-cliquer une cellule fusionnee : la box Fusion affiche un champ numerique `DragValue` pour `Steps`.
+2. Modifier la valeur au clavier (ex. `4`, `8`, `16`) puis appuyer sur `Enter` : Studio One ne doit pas freezer, la valeur doit s'appliquer et la Fusion box doit sortir du mode edition.
+3. Saisir `0` puis `Enter` : le champ doit se clamp a `1` et l'edition doit se fermer sans freeze.
+4. Saisir `99` puis `Enter` : le champ doit se clamp a `64` et l'edition doit se fermer sans freeze.
+5. Cliquer ailleurs ou sur le bouton `X` : la valeur actuelle du `DragValue` doit s'appliquer et l'edition doit se fermer.
+6. Verifier que les boutons `Del` et `X` de la Fusion box fonctionnent toujours normalement.
+7. Regression a surveiller : le champ `Steps` ne doit pas perdre la valeur saisie quand on passe d'une page a l'autre ou quand on change de lane.
+
+---
+
+
+## 2026-07-12 — Step Fusion : fix freeze Studio One après Enter (build 20260712-104124)
+
+**Build:** `20260712-104124`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (138 + 85 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Correction de régression du build `20260712-103414`.**
+  - Symptôme rapporté : Studio One pouvait freezer après validation du champ Step Fusion `Steps` avec `Enter`.
+  - `src/ui.rs` : la validation `Enter` applique toujours la valeur saisie, mais relâche d'abord explicitement le focus clavier egui (`surrender_focus`).
+  - La fermeture de l'éditeur inline est décalée à la frame suivante via un flag UI transitoire non persisté, au lieu de supprimer l'état d'édition pendant que le `TextEdit` traite encore la touche.
+  - Objectif : éviter le focus clavier orphelin dans le host VST3/Studio One tout en gardant le comportement demandé.
+
+### À tester dans Studio One (build 20260712-104124)
+1. Créer une Fusion sur une lane active, double-cliquer la cellule fusionnée, modifier `Steps`, puis appuyer sur `Enter` : Studio One ne doit pas freezer, la valeur doit s'appliquer et l'édition doit se fermer.
+2. Répéter l'opération plusieurs fois d'affilée sur la même Fusion (`2`, `3`, `4`, `Enter`) : aucun gel, aucun blocage clavier, la Fusion box revient en mode normal à chaque fois.
+3. Saisir `0`, puis `Enter` : la valeur doit être clampée à `1`, l'édition doit se fermer et Studio One doit rester réactif.
+4. Saisir `99`, puis `Enter` : la valeur doit être clampée à `64`, l'édition doit se fermer et Studio One doit rester réactif.
+5. Régression à surveiller : après validation, cliquer dans d'autres champs texte/menus du plugin et utiliser les raccourcis Studio One ; le clavier ne doit pas rester capturé par le champ `Steps`.
+
+---
+
+## 2026-07-12 — Step Fusion : Enter valide et ferme l'édition Steps (build 20260712-103414)
+
+**Build:** `20260712-103414`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (138 + 85 tests), `build.ps1 -Install` OK
+
+### Changements
+- **Step Fusion : validation clavier du champ `Steps`.**
+  - `src/ui.rs` : le `TextEdit` du nombre de steps détecte maintenant `Enter` quand il a le focus ou vient de le perdre.
+  - La valeur saisie est parsée puis clampée comme avant dans `1..64`.
+  - Si la valeur est valide, `Enter` applique le nouveau `step_count` et appelle la fermeture d'édition inline, ce qui remet la Fusion box en mode normal.
+  - Aucun changement audio, pattern, plock ou persistance ; correction UI uniquement.
+
+### À tester dans Studio One (build 20260712-103414)
+1. Créer une Fusion sur une lane active, double-cliquer la cellule fusionnée, modifier `Steps`, puis appuyer sur `Enter` : la valeur doit s'appliquer et la Fusion box doit sortir du mode édition.
+2. Réouvrir la même Fusion : le nombre de `Steps` doit être conservé avec la valeur validée.
+3. Saisir `0`, puis `Enter` : la valeur doit être clampée à `1` et l'édition doit se fermer.
+4. Saisir `99`, puis `Enter` : la valeur doit être clampée à `64` et l'édition doit se fermer.
+5. Régression à surveiller : cliquer hors du champ doit toujours appliquer/fermer comme avant, et la fusion doit rester active sans désactiver la cellule.
+
+---
+
 ## 2026-07-09 — Clear Grid confirmé remplace Clear Lane (build 20260709-182258)
 
 **Build:** `20260709-182258`
