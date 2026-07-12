@@ -538,6 +538,9 @@
     - [x] Fix UI build 20260609-112628: double-clic sur cellule fusionnee traite avant le clic simple, ouvre l'edition sans desactiver la fusion et sans toggle differe
     - [x] Fix UI build 20260609-121512: premier Maj+clic de fusion colore le point central de la cellule source en bleu ; relacher Maj annule la selection et restaure la couleur normale
     - [x] Fix UI build 20260609-124302: cellule source de selection Fusion rendue comme active temporaire (`X` + fond bleu clignotant + bordure bleue) pour etre plus visible
+    - [x] Fix UI build 20260712-103414: valider le champ `Steps` avec `Enter` applique la valeur 1..64 puis ferme l'edition inline de la fusion
+    - [x] Fix UI build 20260712-104124: regression freeze Studio One apres `Enter` corrigee en relachant le focus clavier et en fermant l'edition a la frame suivante
+    - [x] Fix UI build 20260712-110414: remplacement du `TextEdit` par un `DragValue` natif egui pour le champ `Steps`; validation `Enter` geree en interne sans freeze
     - [ ] Persistance DAW (champ `fusion-v1`)
     - [x] Tests: filtrage invalides + suppression triggers internes + métadonnées pulses
 - [x] [34a] Corriger le click de retrigger kick (2 steps BD proches)
