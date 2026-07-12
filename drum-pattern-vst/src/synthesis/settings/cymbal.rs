@@ -82,3 +82,9 @@ impl From<CymbalSettings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(cymbal_settings_roundtrip, cymbal, CymbalSettings);
+}

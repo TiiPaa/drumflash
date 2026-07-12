@@ -70,3 +70,9 @@ impl From<RideSettings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(ride_settings_roundtrip, ride, RideSettings);
+}

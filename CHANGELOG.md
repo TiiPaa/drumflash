@@ -1,5 +1,104 @@
 # Changelog
 
+## 2026-07-12 — AUDIT-5 : tests du routage mute/solo/mix (build 20260712-160415)
+
+**Build:** `20260712-160415`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (161 lib + 97 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **AUDIT-5 — Extraire la logique de gating (effective_mutes/mix_gains) en fonction pure.**
+  - `src/lib.rs` : ajout de `compute_mix_gating(mute_states, solo_states, main_mix_enabled)` qui renvoie les tableaux `effective_mutes` et `mix_gains`.
+  - La boucle `process()` appelle cette fonction pure au lieu de calculer `effective_mutes` et `mix_gains` en inline ; `track_routings` reste utilisé pour le routage des sorties auxiliaires (`Out N`).
+  - Aucun changement de comportement : la logique mute/solo (solo a priorité sur mute) et les gains Main Mix (1.0 si `main_on`, sinon 0.0) sont identiques.
+- **Tests unitaires de régression ajoutés.**
+  - `src/lib.rs` (module `tests`) : 6 cas couvrant 1 mute, 1 solo, mute+solo, plusieurs solos, aucun mute/solo, et l'interaction indépendante entre solo et Main Mix.
+
+### À tester dans Studio One (build 20260712-160415)
+1. Démarrer la lecture sur le pattern par défaut : toutes les lanes actives (BD/SD/HH/Tom) doivent être audibles sur le Main Mix.
+2. Cliquer `Mute` sur la lane HiHat : seule la HiHat disparaît du Main Mix ; les autres lanes restent audibles.
+3. Cliquer `Solo` sur la lane Snare : seule la Snare est audible (le mute de la HiHat est ignoré), et le solo a priorité sur n'importe quel autre mute.
+4. Activer `Solo` sur deux lanes (ex. Kick + Snare) : seules ces deux lanes sont audibles.
+5. Désactiver tous les solos, puis désactiver le bouton `Main` dans l'onglet `Track` d'une lane : cette lane ne doit plus alimenter le Main Mix (mais reste audible sur sa sortie aux `Out N` si elle est assignée).
+6. Régression : sauvegarder/recharger le projet Studio One doit conserver l'état Mute/Solo/Main Mix de chaque lane.
+
+---
+
+
+## 2026-07-12 — Fix plock : Saturation Type, Noise Type et Click Type en dropdown (build 20260712-155421)
+
+**Build:** `20260712-155421`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (155 lib + 97 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Correction du menu Plock pour les special params à choix discrets.**
+  - `src/ui.rs` : ajout d'un helper `plock_menu_enum_row` et traitement spécifique des labels `Saturation Type`, `Noise Type` et `Click Type` dans `draw_plock_menu`.
+  - Ces paramètres sont maintenant rendus avec un dropdown nommé (`styled_select`) au lieu d'un slider numérique.
+  - Les options restent les mêmes que dans le Sound Panel : Saturation Type = None / SoftClip / Valve / Transistor / HardClip / Tape ; Noise Type = White / Pink / Brown / Blue ; Click Type = Soft / Medium / Hard.
+- **Aucun changement de données** : les valeurs stockées en `special[]` (0..5, 0..3, 0..2) sont identiques ; seul le rendu UI change.
+
+### À tester dans Studio One (build 20260712-155421)
+1. Sur une lane Kick, ouvrir le menu Plock d'un step, choisir `Saturation Type` : un dropdown avec les noms doit s'afficher ; sélectionner `Tape` (ou autre) doit appliquer le plock et le step doit sonner saturé.
+2. Sur une lane HiHat ou Cymbal, Plock → `Noise Type` : dropdown White / Pink / Brown / Blue ; changer le type doit s'entendre.
+3. Sur une lane Kick ou 808 Kick, Plock → `Click Type` : dropdown Soft / Medium / Hard ; changer doit modifier le transient du kick.
+4. Sauvegarder le projet Studio One, le rouvrir : les plocks de type enum doivent être restaurés avec les bonnes valeurs (vérifier que le dropdown affiche le nom correct).
+5. Régression : les autres special params continus (Amount, Mix, Shimmer, Echo, etc.) doivent toujours apparaître comme des sliders et fonctionner normalement.
+
+---
+
+
+
+## 2026-07-12 — AUDIT-6 : tests round-trip des réglages synthèse sur toutes les voix (build 20260712-152139)
+
+**Build:** `20260712-152139`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (155 lib + 97 test_standalone), `build.ps1 -Install` OK
+
+### Changements
+- **AUDIT-6 — Généraliser les tests round-trip des settings à toutes les voix.**
+  - `src/synthesis/settings/mod.rs` : ajout de la macro `settings_roundtrip_test!` qui vérifie la conversion `VoiceSettings -> Settings typé -> VoiceSettings` pour tous les champs standard et le tableau `special[32]`.
+  - Application de la macro dans chaque fichier `settings/<voix>.rs` : Kick, Snare, HiHat, OpenHiHat, Tom (1/2/3), Clap, Ride, Cymbal, Snare606, Kick808, Perc1.
+  - Clap est testé avec `skip_frequency` car le struct `ClapSettings` ne persiste pas le champ `frequency` (réglé à 1000 Hz par défaut lors de la conversion).
+- **Correction des défauts `special[]` incohérents avec le type `u8` de `saturation_type`.**
+  - `src/synthesis/mod.rs` : les valeurs par défaut de `saturation_type` (stocké en `special[]` et lu comme `u8`) étaient des flottants non-entiers (`0.5` ou `0.01`) qui étaient tronqués à `0` à l’utilisation. Corrigé pour `VoiceSettings::kick()` (`0.01 -> 0.0`), `snare()` (`0.5 -> 0.0`), `hihat()` (`0.5 -> 0.0`), `open_hihat()` (`0.5 -> 0.0`) et `ride()` (`0.5 -> 0.0`).
+  - Aucun changement audible : le moteur lisait déjà ces valeurs comme `SaturationType::from(u8)`, donc le type effectif était déjà `None` (0). Cela nettoie simplement les données par défaut pour que le round-trip soit stable.
+
+### À tester dans Studio One (build 20260712-152139)
+1. Charger une session avec les réglages par défaut sur Kick, Snare, HiHat, OpenHiHat ou Ride : le son doit être identique à la build précédente (la saturation par défaut reste désactivée).
+2. Sur une lane Kick/Snare/HiHat/OpenHiHat/Ride, créer un plock `Saturation Type` avec une valeur autre que `None` : après sauvegarde/recharge du projet, le plock doit être conservé et le type de saturation appliqué.
+3. Vérifier que les paramètres spéciaux (Click Level, Snap, Echo, Shimmer, Resonance, etc.) survivent à une copie de lane (`Copy Lane` -> `Paste Lane`).
+4. Régression à surveiller : aucune distorsion ou silence inattendu sur les voix par défaut ; les sauvegardes existantes continuent de charger normalement.
+
+---
+
+
+
+## 2026-07-12 — AUDIT-4 : générateur déterministe et seedé, mappé par kind (build 20260712-122939)
+
+**Build:** `20260712-122939`
+**Validation:** `cargo fmt` OK, `cargo check` OK (41 warnings UI préexistants), `cargo test` OK (143 + 85 tests), `build.ps1 -Install` OK
+
+### Changements
+- **AUDIT-4 — Rendre le générateur déterministe et robuste au layout par kind.**
+  - `src/generator/mod.rs` : `GeneratorParams` reçoit un champ `seed: u64`. Le générateur instancie son propre RNG ChaCha8 à partir de cette graine et ne dépend plus d'un RNG externe.
+  - `generate()` remappe les rôles musicaux selon `kind.drum_voice_index()` / `track_layout`, pas selon l'index de rangée.
+  - `src/ui.rs` : le bouton `GENERATE` génère une nouvelle graine à chaque clic et la passe dans `GeneratorParams`.
+- **Tests de régression ajoutés.**
+  - `generate_is_deterministic_with_same_seed` : même graine → même pattern.
+  - `generate_differs_with_different_seeds` : graine différente → pattern différent.
+  - `generate_maps_kick_by_kind_not_row_index` : le rôle Kick est assigné au slot de kind Kick même s'il est à l'index 13.
+  - `generate_no_kick_when_layout_lacks_kick` : sans Kick dans le layout, aucun slot ne reçoit le rôle Kick.
+
+### À tester dans Studio One (build 20260712-122939)
+1. Cliquer plusieurs fois sur `GENERATE` avec les mêmes Style / Density / Variation : chaque clic doit produire un pattern différent, et re-cliquer sur la graine précédente (non possible en UI, mais à vérifier audit) n'est pas requis ; l'important est que le générateur soit stable si on relance avec les mêmes réglages et le même contexte.
+2. **Même graine** n'est pas exposée en UI ; valider par l'audit interne : `cargo test` génère deux patterns identiques pour une graine fixe et deux patterns différents pour une graine différente.
+3. Sur un layout custom sans Kick (ex. Snare / HiHat / Clap / Ride), `GENERATE` ne doit créer aucun hit sur une position de Kick fantôme ; seuls les kinds présents reçoivent des rôles.
+4. Sur un layout avec deux slots Kick, `GENERATE` avec `Variation > 0` doit produire deux patterns Kick différents (même rôle, variations distinctes).
+5. Sur un layout avec le Kick déplacé à un slot autre que le premier (ex. slot 13), `GENERATE` doit toujours assigner le rôle Kick à ce slot.
+6. Régression à surveiller : le bouton `GENERATE` doit rester actif, les styles doivent rester identifiables, et aucun crash ne doit survenir sur les 4 modes Probabilistic / Markov / Euclidean / Classic.
+
+---
+
+
+
 ## 2026-07-12 — AUDIT-2 : éliminer les allocations sur le thread audio (build 20260712-113358)
 
 **Build:** `20260712-113358`

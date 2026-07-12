@@ -75,3 +75,11 @@ impl From<TomSettings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(tom1_settings_roundtrip, tom1, TomSettings);
+    crate::settings_roundtrip_test!(tom2_settings_roundtrip, tom2, TomSettings);
+    crate::settings_roundtrip_test!(tom3_settings_roundtrip, tom3, TomSettings);
+}

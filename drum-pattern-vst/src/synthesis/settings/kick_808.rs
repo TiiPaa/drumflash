@@ -77,3 +77,9 @@ impl From<Kick808Settings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(kick808_settings_roundtrip, kick808, Kick808Settings);
+}

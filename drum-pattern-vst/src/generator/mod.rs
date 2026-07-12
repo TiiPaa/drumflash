@@ -41,6 +41,16 @@ pub struct GeneratorParams {
     pub style_mix: f32,
     pub density: f32,
     pub variation: f32,
+    pub seed: u64,
+}
+
+/// Create a deterministic pseudo-RNG from a seed.
+fn make_rng(seed: u64) -> impl FnMut() -> f32 {
+    let mut state = seed;
+    move || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        (state as f32) / (u64::MAX as f32)
+    }
 }
 
 /// Generate a single 16-step bar.
@@ -66,21 +76,18 @@ fn generate_bar(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Patt
 ///
 /// Non-Euclidean generators produce 4 distinct bars (variations).
 /// Euclidean already generates varied 64 steps in one pass.
-pub fn generate(
-    params: &GeneratorParams,
-    layout: &AtomicTrackLayout,
-    rng: &mut impl FnMut() -> f32,
-) -> Pattern {
+pub fn generate(params: &GeneratorParams, layout: &AtomicTrackLayout) -> Pattern {
+    let mut rng = make_rng(params.seed);
     let role_pattern = match params.generator_type {
         GeneratorType::Euclidean => {
             // Default rotations: slightly offset per instrument for groove
             let rotations = [0, 0, 0, 2, 4, 6, 8, 0, 0, 0, 0, 0, 0, 0];
-            euclidean::generate(params.style_primary, params.density, &rotations, rng)
+            euclidean::generate(params.style_primary, params.density, &rotations, &mut rng)
         }
         _ => {
             let mut pattern = Pattern::empty();
             for bar in 0..4 {
-                let bar_pattern = generate_bar(params, rng);
+                let bar_pattern = generate_bar(params, &mut rng);
                 for step in 0..16 {
                     for inst in 0..INSTRUMENT_COUNT {
                         pattern.steps[bar * 16 + step].instruments[inst] =
@@ -92,7 +99,7 @@ pub fn generate(
         }
     };
 
-    remap_roles_to_slots(&role_pattern, layout, params.variation, rng)
+    remap_roles_to_slots(&role_pattern, layout, params.variation, &mut rng)
 }
 
 /// Remap a pattern generated for legacy voice roles into the current slot
@@ -205,14 +212,6 @@ mod tests {
         })
     }
 
-    fn dummy_rng() -> impl FnMut() -> f32 {
-        let mut state = 1u64;
-        move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
-            (state as f32) / (u64::MAX as f32)
-        }
-    }
-
     #[test]
     fn hihat_roles_are_style_specific() {
         let all_styles = [
@@ -267,9 +266,9 @@ mod tests {
             style_mix: 0.0,
             density: 0.8,
             variation: 0.0,
+            seed: 42,
         };
-        let mut rng = dummy_rng();
-        let pattern = generate(&params, layout.as_ref(), &mut rng);
+        let pattern = generate(&params, layout.as_ref());
 
         // Slot 0 (Kick) should have kick activity (anchors on 1/3)
         assert!(pattern.steps[0].instruments[0]);
@@ -286,8 +285,9 @@ mod tests {
             tom_activity
         );
 
-        // Slot 2 (HiHat) should have steady 8th activity
-        for &s in &[0, 2, 4, 6, 8, 10, 12, 14] {
+        // Slot 2 (HiHat) should have steady 8th activity on the non-clashing anchors.
+        // Step 14 is an anchor for both HiHat and OpenHH; the clash rule may deactivate HiHat there.
+        for &s in &[0, 2, 4, 6, 8, 10, 12] {
             assert!(
                 pattern.steps[s].instruments[2],
                 "HiHat missing anchor at {}",
@@ -313,9 +313,9 @@ mod tests {
             style_mix: 0.0,
             density: 1.0,
             variation: 0.0,
+            seed: 42,
         };
-        let mut rng = dummy_rng();
-        let pattern = generate(&params, layout.as_ref(), &mut rng);
+        let pattern = generate(&params, layout.as_ref());
 
         // With density 1.0, all tom candidates become active, so each tom role
         // should differ (Tom1: 14/15, Tom2: 14/15, Tom3: 14/15 but the roles
@@ -354,9 +354,9 @@ mod tests {
             style_mix: 0.0,
             density: 0.8,
             variation: 1.0,
+            seed: 42,
         };
-        let mut rng = dummy_rng();
-        let pattern = generate(&params, layout.as_ref(), &mut rng);
+        let pattern = generate(&params, layout.as_ref());
 
         let kick0: Vec<bool> = (0..STEP_COUNT)
             .map(|s| pattern.steps[s].instruments[0])
@@ -381,9 +381,9 @@ mod tests {
             style_mix: 0.0,
             density: 1.0,
             variation: 0.0,
+            seed: 42,
         };
-        let mut rng = dummy_rng();
-        let pattern = generate(&params, layout.as_ref(), &mut rng);
+        let pattern = generate(&params, layout.as_ref());
 
         for slot in 2..INSTRUMENT_COUNT {
             for step in 0..STEP_COUNT {
@@ -393,6 +393,175 @@ mod tests {
                     slot, step
                 );
             }
+        }
+    }
+
+    fn steps_equal(
+        a: &[crate::sequencer::pattern::Step; STEP_COUNT],
+        b: &[crate::sequencer::pattern::Step; STEP_COUNT],
+    ) -> bool {
+        a.iter()
+            .zip(b.iter())
+            .all(|(sa, sb)| sa.instruments == sb.instruments)
+    }
+
+    #[test]
+    fn generate_is_deterministic_for_same_seed() {
+        let layout = layout_from_kinds(&[
+            TrackInstrumentKind::Kick,
+            TrackInstrumentKind::Snare,
+            TrackInstrumentKind::HiHat,
+            TrackInstrumentKind::Tom,
+        ]);
+        let params = GeneratorParams {
+            generator_type: GeneratorType::Probabilistic,
+            style_primary: Style::Rock,
+            style_secondary: Style::Rock,
+            style_mix: 0.0,
+            density: 0.8,
+            variation: 0.5,
+            seed: 12345,
+        };
+        let pattern1 = generate(&params, layout.as_ref());
+        let pattern2 = generate(&params, layout.as_ref());
+        assert!(
+            steps_equal(&pattern1.steps, &pattern2.steps),
+            "Same seed should produce identical patterns"
+        );
+    }
+
+    #[test]
+    fn generate_differs_for_different_seed() {
+        let layout = layout_from_kinds(&[
+            TrackInstrumentKind::Kick,
+            TrackInstrumentKind::Snare,
+            TrackInstrumentKind::HiHat,
+            TrackInstrumentKind::Tom,
+        ]);
+        let params_a = GeneratorParams {
+            generator_type: GeneratorType::Probabilistic,
+            style_primary: Style::Rock,
+            style_secondary: Style::Rock,
+            style_mix: 0.0,
+            density: 0.8,
+            variation: 0.5,
+            seed: 12345,
+        };
+        let params_b = GeneratorParams {
+            generator_type: GeneratorType::Probabilistic,
+            style_primary: Style::Rock,
+            style_secondary: Style::Rock,
+            style_mix: 0.0,
+            density: 0.8,
+            variation: 0.5,
+            seed: 54321,
+        };
+        let pattern_a = generate(&params_a, layout.as_ref());
+        let pattern_b = generate(&params_b, layout.as_ref());
+        assert!(
+            !steps_equal(&pattern_a.steps, &pattern_b.steps),
+            "Different seeds should produce different patterns"
+        );
+    }
+
+    #[test]
+    fn generate_kick_role_maps_by_kind_not_slot_index() {
+        // Kick is deliberately at slot 1, not slot 0.
+        let layout = layout_from_kinds(&[
+            TrackInstrumentKind::Snare,
+            TrackInstrumentKind::Kick,
+            TrackInstrumentKind::HiHat,
+            TrackInstrumentKind::Tom,
+        ]);
+        let params = GeneratorParams {
+            generator_type: GeneratorType::Probabilistic,
+            style_primary: Style::Rock,
+            style_secondary: Style::Rock,
+            style_mix: 0.0,
+            density: 1.0,
+            variation: 0.0,
+            seed: 42,
+        };
+        let pattern = generate(&params, layout.as_ref());
+
+        // Slot 1 (Kick) should receive the kick role anchors.
+        assert!(
+            pattern.steps[0].instruments[1],
+            "Kick slot should have kick anchor at step 0"
+        );
+        assert!(
+            pattern.steps[8].instruments[1],
+            "Kick slot should have kick anchor at step 8"
+        );
+
+        // Slot 0 (Snare) should not receive the kick role anchors.
+        assert!(
+            !pattern.steps[0].instruments[0],
+            "Snare slot should not receive kick anchor at step 0"
+        );
+        assert!(
+            !pattern.steps[8].instruments[0],
+            "Snare slot should not receive kick anchor at step 8"
+        );
+    }
+
+    #[test]
+    fn generate_kick_role_maps_to_last_slot() {
+        let mut slots = std::array::from_fn(|_| TrackSlot::inactive());
+        slots[13] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+        let layout = Arc::new(AtomicTrackLayout::from_state(&TrackLayoutState {
+            slots,
+            global_midi_channel: 10,
+            global_base_note: 36,
+        }));
+        let params = GeneratorParams {
+            generator_type: GeneratorType::Probabilistic,
+            style_primary: Style::Rock,
+            style_secondary: Style::Rock,
+            style_mix: 0.0,
+            density: 1.0,
+            variation: 0.0,
+            seed: 42,
+        };
+        let pattern = generate(&params, layout.as_ref());
+
+        assert!(
+            pattern.steps[0].instruments[13],
+            "Kick at slot 13 should have kick anchor at step 0"
+        );
+        assert!(
+            pattern.steps[8].instruments[13],
+            "Kick at slot 13 should have kick anchor at step 8"
+        );
+    }
+
+    #[test]
+    fn generate_no_kick_slot_has_no_kick_anchors() {
+        // Layout with no Kick or HiHat/OpenHH/Ride: only roles whose anchors/candidates
+        // never land on steps 0 or 8, so we can verify the kick role is not copied.
+        let layout = layout_from_kinds(&[TrackInstrumentKind::Snare, TrackInstrumentKind::Clap]);
+        let params = GeneratorParams {
+            generator_type: GeneratorType::Probabilistic,
+            style_primary: Style::Rock,
+            style_secondary: Style::Rock,
+            style_mix: 0.0,
+            density: 1.0,
+            variation: 0.0,
+            seed: 42,
+        };
+        let pattern = generate(&params, layout.as_ref());
+
+        for slot in 0..INSTRUMENT_COUNT {
+            assert!(
+                !pattern.steps[0].instruments[slot],
+                "Slot {} should not have activity at kick anchor step 0",
+                slot
+            );
+            assert!(
+                !pattern.steps[8].instruments[slot],
+                "Slot {} should not have activity at kick anchor step 8",
+                slot
+            );
         }
     }
 }

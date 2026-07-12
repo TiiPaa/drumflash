@@ -85,3 +85,9 @@ impl From<OpenHiHatSettings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(open_hihat_settings_roundtrip, open_hihat, OpenHiHatSettings);
+}
