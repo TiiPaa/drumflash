@@ -85,3 +85,9 @@ impl From<HiHatSettings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(hihat_settings_roundtrip, hihat, HiHatSettings);
+}

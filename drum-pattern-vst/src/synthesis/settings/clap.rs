@@ -71,3 +71,9 @@ impl From<ClapSettings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(clap_settings_roundtrip, clap, ClapSettings, skip_frequency);
+}

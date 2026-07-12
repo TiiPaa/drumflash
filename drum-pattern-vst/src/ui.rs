@@ -278,6 +278,28 @@ fn plock_menu_action_row(ui: &mut egui::Ui, label: &str, accent: Color32) -> egu
     )
 }
 
+fn plock_menu_enum_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    accent: Color32,
+    overridden: bool,
+    current_value: f32,
+    options: &[&str],
+    id_salt: &str,
+) -> (egui::Response, Option<f32>) {
+    let current_idx = (current_value as usize).min(options.len().saturating_sub(1));
+    let value_text = options[current_idx];
+    let mut picked = None;
+    let response = plock_menu_row(ui, label, accent, overridden, Some(value_text), |ui| {
+        let (resp, p) = styled_select(ui, id_salt, current_idx, options, 120.0);
+        if let Some(p) = p {
+            picked = Some(p as f32);
+        }
+        resp
+    });
+    (response, picked)
+}
+
 fn install_egui_fonts(ctx: &egui::Context) {
     use egui::FontFamily;
     let mut fonts = egui::FontDefinitions::default();
@@ -1875,6 +1897,10 @@ fn draw_generator_bar(
         if gen_btn_response.clicked() {
             params.plock_state.state.clear_all();
             params.seq_plock_state.state.clear_all();
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos() as u64)
+                .unwrap_or(0);
             let gen_params = generator::GeneratorParams {
                 generator_type: params.generator_type.value(),
                 style_primary: params.style_primary.value(),
@@ -1882,18 +1908,9 @@ fn draw_generator_bar(
                 style_mix: params.style_mix.value(),
                 density: params.gen_density.value(),
                 variation: params.gen_variation.value(),
+                seed,
             };
-            let seed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| duration.as_nanos() as u64)
-                .unwrap_or(0);
-            let mut rng_state = seed;
-            let mut rng = || {
-                rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
-                (rng_state as f32) / (u64::MAX as f32)
-            };
-            let generated =
-                generator::generate(&gen_params, params.track_layout.state.as_ref(), &mut rng);
+            let generated = generator::generate(&gen_params, params.track_layout.state.as_ref());
             let pattern_length = params.pattern_length.value() as usize;
             clear_all_fusions(pattern);
             load_pattern_for_ui_with_length(pattern, &generated, pattern_length);
@@ -6550,27 +6567,79 @@ fn draw_plock_menu(
                 continue;
             }
             let field = SPECIAL_FIELD_START + def.special_index;
-            let mut value = if plock.field_masks.is_set(instrument, step, field) {
+            let value = if plock.field_masks.is_set(instrument, step, field) {
                 plock.values.get(instrument, step, field)
             } else {
                 inst.special_value(def.special_index)
             };
             let overridden = plock.field_masks.is_set(instrument, step, field);
-            let log = def.min > 0.0 && def.max / def.min >= 20.0;
-            let value_text = format_value_for_plock_special(value, def.min, def.max);
-            let special_response =
-                plock_menu_row(ui, def.label, ACCENT, overridden, Some(&value_text), |ui| {
-                    ui.add(
-                        LocalParamSlider::new(&mut value, def.min..=def.max)
-                            .logarithmic(log)
-                            .with_width(120.0)
-                            .without_value(),
-                    )
-                });
-            if special_response.changed() {
+            let label_lower = def.label.to_lowercase();
+
+            let new_value = if label_lower.contains("saturation type") {
+                let (_, picked) = plock_menu_enum_row(
+                    ui,
+                    def.label,
+                    ACCENT,
+                    overridden,
+                    value,
+                    &[
+                        "None",
+                        "SoftClip",
+                        "Valve",
+                        "Transistor",
+                        "HardClip",
+                        "Tape",
+                    ],
+                    def.name,
+                );
+                picked
+            } else if label_lower.contains("noise type") {
+                let (_, picked) = plock_menu_enum_row(
+                    ui,
+                    def.label,
+                    ACCENT,
+                    overridden,
+                    value,
+                    &["White", "Pink", "Brown", "Blue"],
+                    def.name,
+                );
+                picked
+            } else if label_lower.contains("click type") {
+                let (_, picked) = plock_menu_enum_row(
+                    ui,
+                    def.label,
+                    ACCENT,
+                    overridden,
+                    value,
+                    &["Soft", "Medium", "Hard"],
+                    def.name,
+                );
+                picked
+            } else {
+                let mut value = value;
+                let log = def.min > 0.0 && def.max / def.min >= 20.0;
+                let value_text = format_value_for_plock_special(value, def.min, def.max);
+                let response =
+                    plock_menu_row(ui, def.label, ACCENT, overridden, Some(&value_text), |ui| {
+                        ui.add(
+                            LocalParamSlider::new(&mut value, def.min..=def.max)
+                                .logarithmic(log)
+                                .with_width(120.0)
+                                .without_value(),
+                        )
+                    });
+                if response.changed() {
+                    Some(value)
+                } else {
+                    None
+                }
+            };
+
+            if let Some(new_value) = new_value {
+                let clamped = new_value.clamp(def.min, def.max);
                 plock.masks.set_active(instrument, step, true);
                 plock.field_masks.set(instrument, step, field);
-                plock.set_field(instrument, step, field, value);
+                plock.set_field(instrument, step, field, clamped);
             }
         }
 
