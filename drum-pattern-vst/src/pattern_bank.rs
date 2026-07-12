@@ -3,7 +3,9 @@
 //! Kept simple: each slot stores raw serialized bytes that can be
 //! directly fed back into the plock / seq-plock / grid systems.
 
-use crate::sequencer::pattern::{FUSION_SLOT_COUNT, INSTRUMENT_COUNT, MAX_FUSIONS, STEP_COUNT};
+use crate::sequencer::pattern::{
+    FusedGroup, FUSION_SLOT_COUNT, INSTRUMENT_COUNT, MAX_FUSIONS, STEP_COUNT,
+};
 
 pub const SLOT_COUNT: usize = 8;
 
@@ -220,13 +222,14 @@ impl PatternSlot {
         // Serialize fused groups — clear pre-allocated buffer (no new allocation).
         self.fusion_bytes.clear();
         for inst in 0..INSTRUMENT_COUNT {
-            let groups = pattern.load_fusions(inst);
+            let mut groups = [FusedGroup::default(); MAX_FUSIONS];
+            let group_count = pattern.load_fusions_into(inst, &mut groups);
             let mut written = 0usize;
             // Count slot
             self.fusion_bytes
-                .extend_from_slice(&((groups.len() as u64) | (1u64 << 24)).to_le_bytes());
+                .extend_from_slice(&((group_count as u64) | (1u64 << 24)).to_le_bytes());
             written += 1;
-            for group in groups.iter().copied().take(MAX_FUSIONS - 1) {
+            for group in groups[..group_count].iter().copied() {
                 let packed = crate::sequencer::pattern::pack_fusion(&group);
                 for slot in &packed {
                     self.fusion_bytes.extend_from_slice(&slot.to_le_bytes());
@@ -585,7 +588,8 @@ fn deserialize_fusions(fusion_bytes: &[u8], pattern: &crate::sequencer::pattern:
             ]);
             offset += 8;
             let count = (count_packed & 0xFF) as usize;
-            let mut groups = Vec::with_capacity(count.min(MAX_FUSIONS - 1));
+            let mut groups = [FusedGroup::default(); MAX_FUSIONS - 1];
+            let mut group_count = 0usize;
             for _ in 0..count.min(MAX_FUSIONS - 1) {
                 let slots = [
                     u64::from_le_bytes([
@@ -621,11 +625,12 @@ fn deserialize_fusions(fusion_bytes: &[u8], pattern: &crate::sequencer::pattern:
                 ];
                 offset += FUSION_SLOT_COUNT * 8;
                 if let Some(group) = crate::sequencer::pattern::unpack_fusion(slots) {
-                    groups.push(group);
+                    groups[group_count] = group;
+                    group_count += 1;
                 }
             }
             offset += (MAX_FUSIONS - 1 - count.min(MAX_FUSIONS - 1)) * FUSION_SLOT_COUNT * 8;
-            pattern.store_fusions(inst, &groups);
+            pattern.store_fusions(inst, &groups[..group_count]);
         }
     } else if fusion_bytes.len() >= expected_old {
         // Legacy single-u64 format: migrate to multi-target on load.
@@ -643,7 +648,8 @@ fn deserialize_fusions(fusion_bytes: &[u8], pattern: &crate::sequencer::pattern:
             ]);
             offset += 8;
             let count = (count_packed & 0xFF) as usize;
-            let mut groups = Vec::with_capacity(count.min(MAX_FUSIONS - 1));
+            let mut groups = [FusedGroup::default(); MAX_FUSIONS - 1];
+            let mut group_count = 0usize;
             for _ in 0..count.min(MAX_FUSIONS - 1) {
                 let packed = u64::from_le_bytes([
                     fusion_bytes[offset],
@@ -657,11 +663,12 @@ fn deserialize_fusions(fusion_bytes: &[u8], pattern: &crate::sequencer::pattern:
                 ]);
                 offset += 8;
                 if let Some(group) = crate::sequencer::pattern::unpack_fusion_legacy(packed) {
-                    groups.push(group);
+                    groups[group_count] = group;
+                    group_count += 1;
                 }
             }
             offset += (MAX_FUSIONS - 1 - count.min(MAX_FUSIONS - 1)) * 8;
-            pattern.store_fusions(inst, &groups);
+            pattern.store_fusions(inst, &groups[..group_count]);
         }
     }
 }
