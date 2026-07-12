@@ -517,6 +517,9 @@ struct EditorUIState {
     fusion_editing: Option<(usize, usize)>,
     /// True when a fusion group just entered edit mode this frame; requests focus on the step-count field.
     fusion_edit_focus_request: bool,
+    /// Current value being edited in the Step Fusion step-count field.
+    #[serde(skip)]
+    fusion_edit_steps: u8,
     // Right-click plock popup state (replaces egui context_menu to control frame chrome).
     plock_popup: Option<PlockPopup>,
     // Right-click page popup state (Copy/Paste/Clear page).
@@ -2583,6 +2586,7 @@ fn draw_legacy_slot_lane_v2(
                         select_legacy_track(state, slot_idx);
                         state.fusion_editing = Some((slot_idx, idx));
                         state.fusion_edit_focus_request = true;
+                        state.fusion_edit_steps = fusion_group.map(|g| g.step_count).unwrap_or(1);
                         *fusion_editing_started_this_frame = true;
                     }
                 } else if !beyond_len && response.clicked() && fusion_mode_active {
@@ -5593,41 +5597,22 @@ fn draw_fusion_edit_box(
                         );
                         ui.label(RichText::new("Steps:").size(11.0));
 
-                        let mut step_text = group.step_count.to_string();
-                        let step_edit_id = ui.id().with("fusion_step_count");
-                        let text_edit = egui::TextEdit::singleline(&mut step_text)
-                            .id(step_edit_id)
-                            .desired_width(40.0)
-                            .font(egui::TextStyle::Monospace);
-                        let output = ui
-                            .allocate_ui_with_layout(
-                                Vec2::new(40.0, 18.0),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| text_edit.show(ui),
-                            )
-                            .inner;
-                        let te_response = output.response;
+                        let step_drag = egui::DragValue::new(&mut state.fusion_edit_steps)
+                            .range(1..=64)
+                            .speed(1.0)
+                            .fixed_decimals(0);
+                        let step_response = ui.add_sized(Vec2::new(40.0, 18.0), step_drag);
                         if state.fusion_edit_focus_request {
                             state.fusion_edit_focus_request = false;
-                            te_response.request_focus();
-                            let mut new_state = output.state;
-                            let text_len = step_text.chars().count();
-                            let all = egui::text::CCursorRange::two(
-                                egui::text::CCursor::default(),
-                                egui::text::CCursor::new(text_len),
-                            );
-                            new_state.cursor.set_char_range(Some(all));
-                            new_state.store(ui.ctx(), step_edit_id);
+                            step_response.request_focus();
                         }
-                        if te_response.lost_focus() || te_response.changed() {
-                            if let Ok(value) = step_text.parse::<u8>() {
-                                let clamped = value.clamp(1, 64);
-                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                                if let Some(group) = new_fusions.get_mut(index) {
-                                    group.step_count = clamped;
-                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
-                                }
+                        if step_response.lost_focus() {
+                            let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                            if let Some(group) = new_fusions.get_mut(index) {
+                                group.step_count = state.fusion_edit_steps;
+                                pattern_for_ui.store_fusions(instrument, &new_fusions);
                             }
+                            finish_fusion_editing_for_ui(pattern_for_ui, state);
                         }
 
                         // Morph targets display (compact)
