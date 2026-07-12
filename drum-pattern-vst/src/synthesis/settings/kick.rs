@@ -96,25 +96,5 @@ impl From<KickSettings> for VoiceSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn kick_settings_roundtrip_preserves_all_fields() {
-        let v = VoiceSettings::kick();
-        let k = KickSettings::from(v);
-        let v2 = VoiceSettings::from(k);
-
-        assert_eq!(v.frequency, v2.frequency);
-        assert_eq!(v.attack, v2.attack);
-        assert_eq!(v.decay, v2.decay);
-        assert_eq!(v.decay_curve, v2.decay_curve);
-        assert_eq!(v.release, v2.release);
-        assert_eq!(v.release_curve, v2.release_curve);
-        assert_eq!(v.volume, v2.volume);
-        assert_eq!(v.filter_freq, v2.filter_freq);
-        assert_eq!(v.filter_env_amount, v2.filter_env_amount);
-        assert_eq!(v.filter_env_decay, v2.filter_env_decay);
-        assert_eq!(v.analog, v2.analog);
-        assert_eq!(v.algo, v2.algo);
-        assert_eq!(v.special[0], v2.special[0]);
-    }
+    crate::settings_roundtrip_test!(kick_settings_roundtrip, kick, KickSettings);
 }
