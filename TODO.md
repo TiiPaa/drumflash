@@ -6,7 +6,7 @@
 - [x] [MG-4] Adapt sequencer to iterate active tracks
 - [x] [MG-5] Adapt audio engine to 14 independent synth instances + routing
 - [x] [MG-6] Adapt pattern bank to store only musical data (no layout)
-- [ ] **REPRENDRE ICI** [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change) — rollback 20260701: reverted after Studio One startup crash
+- [ ] [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change) — rollback 20260701: reverted after Studio One startup crash
   - [x] [MG-7.1] Checkpoint sûr : ajouter `selected_track_slot` dans l'état UI, synchronisé avec les 13 lanes fixes, sans changement VST3/state audio (build 20260701-172602)
   - [x] [MG-7.2] Checkpoint sûr : sélectionner le slot via les interactions de grille/lane restantes (volume, Hum, Push, Len, fusion double-clic/shift-clic, plock clic-droit) sans changement VST3/state audio (build 20260701-173832)
   - [x] [MG-7.2a] Fix compat audio : tant que l'UI affiche 13 lanes fixes, le layout par défaut et le template 4 slots buggué sont migrés vers les 13 voix legacy pour éviter les lanes 5+ silencieuses (build 20260701-174700)
@@ -72,17 +72,20 @@
 - [x] Ajouter un test couvrant le 14e slot et une note personnalisée
 
 ### [AUDIT-4] Important — Adapter le générateur aux kinds réels des slots (MG-10)
-- [ ] Mapper rôles musicaux par `kind.drum_voice_index()` / `track_layout`, pas par index de rangée
-- [ ] Ajouter des tests déterministes seedés dès cette refonte
+- [x] Mapper rôles musicaux par `kind.drum_voice_index()` / `track_layout`, pas par index de rangée (déjà en place via `remap_roles_to_slots`)
+- [x] Ajouter `seed: u64` à `GeneratorParams` et rendre `generate()` déterministe
+- [x] Ajouter des tests déterministes seedés : même graine = même pattern, graine différente = pattern différent, Kick mappé par kind (slot 1 et 13), aucun Kick quand le layout n’en a pas
 
 ### [AUDIT-5] Important — Tests mute/solo/mix routing
-- [ ] Extraire la logique de gating (effective_mutes/mix_gains) en fonction pure (lib.rs:2271)
-- [ ] Ajouter des cas : 1 mute, 1 solo, mute+solo, plusieurs solos, aucun
+- [x] Extraire la logique de gating (effective_mutes/mix_gains) en fonction pure (lib.rs:2271)
+- [x] Ajouter des cas : 1 mute, 1 solo, mute+solo, plusieurs solos, aucun
+
 
 ### [AUDIT-6] Suggestion — Tests round-trip synth settings
-- [ ] Généraliser le test de round-trip à toutes les voix (synthesis/settings/)
+- [x] Généraliser le test de round-trip à toutes les voix (macro `settings_roundtrip_test!` dans `synthesis/settings/mod.rs`, appliquée à chaque fichier settings)
+- [x] Corriger les défauts `special[]` des saturations non-entiers (Kick, Snare, HiHat, OpenHiHat, Ride) pour que le round-trip soit stable
 
-### [AUDIT-7] Infrastructure
+### **[REPRENDRE ICI]** [AUDIT-7] Infrastructure
 - [ ] Committer `Cargo.lock` et le retirer de `.gitignore`
 - [ ] Supprimer `fix_roles.pdb` et les `.zip` redondants du suivi git
 - [ ] Retirer `.claude/settings.local.json` du suivi

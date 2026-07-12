@@ -85,3 +85,9 @@ impl From<Snare606Settings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(snare606_settings_roundtrip, snare606, Snare606Settings);
+}

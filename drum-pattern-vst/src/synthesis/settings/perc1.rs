@@ -88,3 +88,9 @@ impl From<Perc1Settings> for VoiceSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    crate::settings_roundtrip_test!(perc1_settings_roundtrip, perc1, Perc1Settings);
+}

@@ -67,6 +67,30 @@ fn add_stereo_aux_sample(
     true
 }
 
+/// Computes per-slot effective mutes and Main Mix gain factors.
+///
+/// - If at least one solo is active, every non-soloed slot is muted and the
+///   soloed slots are unmuted, regardless of the mute buttons.
+/// - If no solo is active, each slot follows its own mute button.
+/// - Main Mix gains are `1.0` for slots whose routing includes the Main bus,
+///   and `0.0` otherwise.
+fn compute_mix_gating(
+    mute_states: &[bool; crate::track::MAX_TRACKS],
+    solo_states: &[bool; crate::track::MAX_TRACKS],
+    main_mix_enabled: &[bool; crate::track::MAX_TRACKS],
+) -> ([bool; crate::track::MAX_TRACKS], [f32; crate::track::MAX_TRACKS]) {
+    let any_solo_active = solo_states.iter().copied().any(|solo| solo);
+    let effective_mutes = std::array::from_fn(|index| {
+        if any_solo_active {
+            !solo_states[index]
+        } else {
+            mute_states[index]
+        }
+    });
+    let mix_gains = std::array::from_fn(|index| if main_mix_enabled[index] { 1.0 } else { 0.0 });
+    (effective_mutes, mix_gains)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PatternBankActionResult {
     Applied,
@@ -2373,24 +2397,15 @@ impl Plugin for DrumFlashVst {
             std::array::from_fn(|i| self.params.mutes()[i].value());
         let solo_states: [bool; crate::track::MAX_TRACKS] =
             std::array::from_fn(|i| self.params.solos()[i].value());
-        let any_solo_active = solo_states.iter().copied().any(|solo| solo);
-        let effective_mutes = std::array::from_fn(|index| {
-            if index >= crate::track::MAX_TRACKS {
-                return false;
-            }
-            if any_solo_active {
-                !solo_states[index]
-            } else {
-                mute_states[index]
-            }
-        });
-
-        self.sequencer.set_mutes(effective_mutes);
-
         let track_routings: [crate::track::TrackRouting; crate::track::MAX_TRACKS] =
             std::array::from_fn(|i| self.params.track_layout.state.routing_for_slot(i));
-        let mix_gains: [f32; crate::track::MAX_TRACKS] =
-            std::array::from_fn(|i| if track_routings[i].main_on { 1.0 } else { 0.0 });
+        let main_mix_enabled: [bool; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| track_routings[i].main_on);
+
+        let (effective_mutes, mix_gains) =
+            compute_mix_gating(&mute_states, &solo_states, &main_mix_enabled);
+
+        self.sequencer.set_mutes(effective_mutes);
 
         for aux_buffer in aux.outputs.iter_mut() {
             for channel in aux_buffer.as_slice().iter_mut() {
@@ -3521,5 +3536,131 @@ mod tests {
             "cymbal_shimmer_freq should propagate to special[0], expected ~15.0 got {}",
             settings.special[0]
         );
+    }
+
+    fn bool_array(pattern: &[bool]) -> [bool; crate::track::MAX_TRACKS] {
+        assert_eq!(pattern.len(), crate::track::MAX_TRACKS);
+        std::array::from_fn(|i| pattern[i])
+    }
+
+    #[test]
+    fn mix_gating_no_mute_no_solo_routes_all_to_main() {
+        let mutes = bool_array(&[false; crate::track::MAX_TRACKS]);
+        let solos = bool_array(&[false; crate::track::MAX_TRACKS]);
+        let main = bool_array(&[true; crate::track::MAX_TRACKS]);
+
+        let (effective_mutes, gains) = compute_mix_gating(&mutes, &solos, &main);
+
+        assert!(effective_mutes.iter().all(|m| !m));
+        assert!(gains.iter().all(|g| *g == 1.0));
+    }
+
+    #[test]
+    fn mix_gating_one_mute_mutes_only_that_slot() {
+        let mut mutes = [false; crate::track::MAX_TRACKS];
+        mutes[2] = true;
+        let mutes = bool_array(&mutes);
+        let solos = bool_array(&[false; crate::track::MAX_TRACKS]);
+        let main = bool_array(&[true; crate::track::MAX_TRACKS]);
+
+        let (effective_mutes, _) = compute_mix_gating(&mutes, &solos, &main);
+
+        assert!(effective_mutes[2]);
+        assert!(
+            effective_mutes.iter().enumerate().all(|(i, m)| i == 2 || !m),
+            "only slot 2 should be muted"
+        );
+    }
+
+    #[test]
+    fn mix_gating_one_solo_ignores_mutes_and_mutes_others() {
+        let mut mutes = [false; crate::track::MAX_TRACKS];
+        mutes[2] = true;
+        mutes[5] = true;
+        let mutes = bool_array(&mutes);
+        let mut solos = [false; crate::track::MAX_TRACKS];
+        solos[7] = true;
+        let solos = bool_array(&solos);
+        let main = bool_array(&[true; crate::track::MAX_TRACKS]);
+
+        let (effective_mutes, _) = compute_mix_gating(&mutes, &solos, &main);
+
+        assert!(
+            !effective_mutes[7],
+            "soloed slot 7 must remain audible regardless of mutes"
+        );
+        assert!(
+            effective_mutes.iter().enumerate().all(|(i, m)| i == 7 || *m),
+            "all non-soloed slots should be muted when any solo is active"
+        );
+    }
+
+    #[test]
+    fn mix_gating_multiple_solos_unmute_only_those_slots() {
+        let mut solos = [false; crate::track::MAX_TRACKS];
+        solos[0] = true;
+        solos[3] = true;
+        solos[13] = true;
+        let solos = bool_array(&solos);
+        let mutes = bool_array(&[false; crate::track::MAX_TRACKS]);
+        let main = bool_array(&[true; crate::track::MAX_TRACKS]);
+
+        let (effective_mutes, _) = compute_mix_gating(&mutes, &solos, &main);
+
+        for i in 0..crate::track::MAX_TRACKS {
+            if solos[i] {
+                assert!(
+                    !effective_mutes[i],
+                    "soloed slot {} should be unmuted",
+                    i
+                );
+            } else {
+                assert!(
+                    effective_mutes[i],
+                    "non-soloed slot {} should be muted when any solo is active",
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mix_gating_main_mix_disabled_gives_zero_gain() {
+        let mutes = bool_array(&[false; crate::track::MAX_TRACKS]);
+        let solos = bool_array(&[false; crate::track::MAX_TRACKS]);
+        let mut main = [true; crate::track::MAX_TRACKS];
+        main[1] = false;
+        main[10] = false;
+        let main = bool_array(&main);
+
+        let (_, gains) = compute_mix_gating(&mutes, &solos, &main);
+
+        assert_eq!(gains[1], 0.0);
+        assert_eq!(gains[10], 0.0);
+        assert!(gains.iter().enumerate().all(|(i, g)| i == 1 || i == 10 || *g == 1.0));
+    }
+
+    #[test]
+    fn mix_gating_solo_and_main_mix_interact_independently() {
+        // Solo and Main routing affect different things: solo mutes non-soloed
+        // slots, Main routing determines whether the *allowed* slots go to Main.
+        let mut solos = [false; crate::track::MAX_TRACKS];
+        solos[2] = true;
+        solos[4] = true;
+        let solos = bool_array(&solos);
+        let mut main = [false; crate::track::MAX_TRACKS];
+        main[2] = true;
+        main[5] = true;
+        let main = bool_array(&main);
+        let mutes = bool_array(&[false; crate::track::MAX_TRACKS]);
+
+        let (effective_mutes, gains) = compute_mix_gating(&mutes, &solos, &main);
+
+        assert!(!effective_mutes[2]);
+        assert!(!effective_mutes[4]);
+        assert!(effective_mutes[5]);
+        assert_eq!(gains[2], 1.0);
+        assert_eq!(gains[4], 0.0); // soloed but not routed to Main
+        assert_eq!(gains[5], 1.0); // routed to Main; gains are independent of mute/solo
     }
 }
