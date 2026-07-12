@@ -2009,7 +2009,10 @@ impl DrumFlashVst {
             seq_plock,
             self.params.pattern_length.value() as u8,
         );
-        nih_log!("Pattern saved to slot P{}", slot + 1);
+        #[cfg(debug_assertions)]
+        {
+            nih_log!("Pattern saved to slot P{}", slot + 1);
+        }
         // Mark this slot as the current one so the UI highlights it in green.
         self.audio_last_loaded_slot
             .store(slot as u32, Ordering::Relaxed);
@@ -2036,7 +2039,10 @@ impl DrumFlashVst {
             };
             let slot_ref = &bank.slots[slot];
             if !slot_ref.occupied {
-                nih_log!("Slot P{} is empty", slot + 1);
+                #[cfg(debug_assertions)]
+                {
+                    nih_log!("Slot P{} is empty", slot + 1);
+                }
                 return PatternBankActionResult::Skipped;
             }
             let maybe_len = slot_ref.copy_data_for_restore(
@@ -2057,25 +2063,31 @@ impl DrumFlashVst {
         // 2. Wipe old plocks so nothing leaks from the previous pattern, then restore.
         let plock = &self.params.plock_state.state;
         let seq_plock = &self.params.seq_plock_state.state;
-        nih_log!(
-            "[LOAD] Slot P{}: plock_len={}, seq_plock_len={}, fusion_len={}, pattern_length={}",
-            slot + 1,
-            plock_len,
-            seq_plock_len,
-            fusion_len,
-            pattern_length
-        );
+        #[cfg(debug_assertions)]
+        {
+            nih_log!(
+                "[LOAD] Slot P{}: plock_len={}, seq_plock_len={}, fusion_len={}, pattern_length={}",
+                slot + 1,
+                plock_len,
+                seq_plock_len,
+                fusion_len,
+                pattern_length
+            );
+        }
         plock.clear_all();
         seq_plock.clear_all();
         // Clear fusions (Step Fusion feature)
         for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
             self.pattern.store_fusions(inst, &[]);
         }
-        nih_log!(
-            "[LOAD] After clear_all: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
-            plock.masks.masks[0].load(Ordering::Relaxed),
-            seq_plock.masks[0].load(Ordering::Relaxed)
-        );
+        #[cfg(debug_assertions)]
+        {
+            nih_log!(
+                "[LOAD] After clear_all: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
+                plock.masks.masks[0].load(Ordering::Relaxed),
+                seq_plock.masks[0].load(Ordering::Relaxed)
+            );
+        }
         pattern_bank::restore_from_buffers(
             &step_masks,
             &self.temp_plock_bytes[..plock_len],
@@ -2085,11 +2097,14 @@ impl DrumFlashVst {
             plock,
             seq_plock,
         );
-        nih_log!(
-            "[LOAD] After restore: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
-            plock.masks.masks[0].load(Ordering::Relaxed),
-            seq_plock.masks[0].load(Ordering::Relaxed)
-        );
+        #[cfg(debug_assertions)]
+        {
+            nih_log!(
+                "[LOAD] After restore: plock mask[0]={:016x}, seq_plock mask[0]={:016x}",
+                plock.masks.masks[0].load(Ordering::Relaxed),
+                seq_plock.masks[0].load(Ordering::Relaxed)
+            );
+        }
 
         // 3. Notify UI and record which slot the audio thread actually loaded.
         self.audio_master_length = pattern_length.clamp(1, 64) as usize;
@@ -2097,7 +2112,10 @@ impl DrumFlashVst {
             .store(pattern_length as i32, Ordering::Relaxed);
         self.audio_last_loaded_slot
             .store(slot as u32, Ordering::Relaxed);
-        nih_log!("Pattern loaded from slot P{}", slot + 1);
+        #[cfg(debug_assertions)]
+        {
+            nih_log!("Pattern loaded from slot P{}", slot + 1);
+        }
         PatternBankActionResult::Loaded(pattern_length)
     }
 
@@ -2118,10 +2136,13 @@ impl DrumFlashVst {
         hard: bool,
         settings: synthesis::VoiceSettings,
     ) {
-        println!(
-            "fire_voice_trigger(slot_idx={}, voice_idx={}, velocity={}, sample_idx={})",
-            slot_idx, voice_idx, velocity, sample_idx
-        );
+        #[cfg(debug_assertions)]
+        {
+            println!(
+                "fire_voice_trigger(slot_idx={}, voice_idx={}, velocity={}, sample_idx={})",
+                slot_idx, voice_idx, velocity, sample_idx
+            );
+        }
         let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
             return;
         };
@@ -2290,7 +2311,10 @@ impl Plugin for DrumFlashVst {
         if self.clear_plocks_request.swap(false, Ordering::Relaxed) {
             self.params.plock_state.state.clear_all();
             self.params.seq_plock_state.state.clear_all();
-            nih_log!("All plocks cleared");
+            #[cfg(debug_assertions)]
+            {
+                nih_log!("All plocks cleared");
+            }
         }
 
         let transport = context.transport();

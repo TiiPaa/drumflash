@@ -62,9 +62,9 @@
 - [ ] Option : double-buffer atomique + file SPSC UI→audio pour le song mode
 
 ### [AUDIT-2] P0 — Supprimer les allocations sur le thread audio
-- [ ] `Box::new` dans `reinitialize_slot()` (synthesis/mod.rs:847) → pool préalloué ou swap UI→audio
-- [ ] `Vec::with_capacity`/`push` dans `save_pattern_to_slot` (pattern_bank.rs:202/604) → buffer préalloué
-- [ ] Conditionner `nih_log!` dans `process()` à `#[cfg(debug_assertions)]` ou reporter vers UI
+- [x] `Box::new` dans `reinitialize_slot()` (synthesis/mod.rs:846) → réutilise la `Box` existante du slot au lieu d'allouer/désallouer sur changement de kind
+- [x] `Vec::with_capacity`/`push` dans `save_pattern_to_slot` (pattern_bank.rs:223) et `restore_from_buffers` (pattern_bank.rs:585) → tableaux fixes `[FusedGroup; MAX_FUSIONS]`
+- [x] Conditionner `nih_log!` dans `process()` à `#[cfg(debug_assertions)]` (lib.rs:2012, 2036, 2066, 2083, 2100, 2116, 2290) + `println!` de `fire_voice_trigger`
 
 ### [AUDIT-3] Important — Corriger l'export MIDI 14 slots + note par slot
 - [x] Itérer `0..MAX_TRACKS` au lieu de `INSTRUMENTS` (midi_export.rs:81)
