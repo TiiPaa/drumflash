@@ -119,6 +119,11 @@ pub fn start_midi_file_drag(path: &Path) -> Result<(), String> {
     path_wide.push(0);
 
     unsafe {
+        // SAFETY: OleInitialize is called once per drag on the thread that will
+        // call DoDragDrop. S_FALSE means OLE was already initialized on this
+        // thread and is safe to use. RPC_E_CHANGED_MODE means another COM
+        // apartment model is active; we abort rather than risk mismatching
+        // apartment states.
         let init_hr = OleInitialize(null());
         let initialized = init_hr == S_OK || init_hr == S_FALSE;
         if !initialized && init_hr != RPC_E_CHANGED_MODE {
@@ -128,6 +133,10 @@ pub fn start_midi_file_drag(path: &Path) -> Result<(), String> {
             return Err("OLE drag-and-drop unavailable on this host UI thread".to_string());
         }
 
+        // SAFETY: The COM objects are stack-allocated and live for the entire
+        // DoDragDrop call. Their vtables are static and correctly implement
+        // IUnknown/IDataObject and IUnknown/IDropSource. The cast to *mut c_void
+        // is the expected interface pointer type for DoDragDrop.
         let mut data_object = MidiFileDataObject {
             vtbl: &DATA_OBJECT_VTBL,
             ref_count: AtomicU32::new(1),
@@ -146,6 +155,7 @@ pub fn start_midi_file_drag(path: &Path) -> Result<(), String> {
             &mut effect,
         );
 
+        // SAFETY: Matches the successful OleInitialize/OleInitialize call above.
         OleUninitialize();
 
         if hr >= 0 || hr == DRAGDROP_S_CANCEL {
@@ -165,6 +175,9 @@ unsafe extern "system" fn data_query_interface(
         return E_NOINTERFACE;
     }
 
+    // SAFETY: `this` is a valid IDataObject pointer passed by OLE. The caller
+    // provides a non-null `iid` and a writable `interface` pointer. We only
+    // expose IUnknown and IDataObject.
     if guid_eq(iid, &IID_IUnknown) || guid_eq(iid, &IID_IDATAOBJECT) {
         *interface = this;
         data_add_ref(this);
@@ -176,11 +189,17 @@ unsafe extern "system" fn data_query_interface(
 }
 
 unsafe extern "system" fn data_add_ref(this: *mut c_void) -> u32 {
+    // SAFETY: `this` points to a MidiFileDataObject whose first field is the
+    // IDataObject vtable pointer. This function is only called through that
+    // vtable by OLE.
     let object = this as *mut MidiFileDataObject;
     (*object).ref_count.fetch_add(1, Ordering::Relaxed) + 1
 }
 
 unsafe extern "system" fn data_release(this: *mut c_void) -> u32 {
+    // SAFETY: Same invariant as data_add_ref. The object is stack-allocated in
+    // start_midi_file_drag, so the count never reaches zero in practice; this
+    // implementation is correct for a heap-allocated future version.
     let object = this as *mut MidiFileDataObject;
     (*object).ref_count.fetch_sub(1, Ordering::Release) - 1
 }
@@ -198,6 +217,10 @@ unsafe extern "system" fn data_get_data(
         return query;
     }
 
+    // SAFETY: `this` is a valid IDataObject pointer; we convert it to the
+    // underlying MidiFileDataObject to read the path. build_hdrop_medium copies
+    // the path into a newly allocated HGLOBAL, so the borrow ends before the
+    // function returns.
     let object = &*(this as *const MidiFileDataObject);
     match build_hdrop_medium(&object.path_wide) {
         Ok(stgmedium) => {
@@ -307,6 +330,8 @@ unsafe extern "system" fn source_query_interface(
         return E_NOINTERFACE;
     }
 
+    // SAFETY: Same invariant as data_query_interface; `this` is a valid
+    // IDropSource pointer. We expose IUnknown and IDropSource.
     if guid_eq(iid, &IID_IUnknown) || guid_eq(iid, &IID_IDROPSOURCE) {
         *interface = this;
         source_add_ref(this);
@@ -318,11 +343,16 @@ unsafe extern "system" fn source_query_interface(
 }
 
 unsafe extern "system" fn source_add_ref(this: *mut c_void) -> u32 {
+    // SAFETY: `this` points to a MidiFileDropSource whose first field is the
+    // IDropSource vtable pointer. This function is only called through that
+    // vtable by OLE.
     let object = this as *mut MidiFileDropSource;
     (*object).ref_count.fetch_add(1, Ordering::Relaxed) + 1
 }
 
 unsafe extern "system" fn source_release(this: *mut c_void) -> u32 {
+    // SAFETY: Same invariant as source_add_ref. The object is stack-allocated
+    // in start_midi_file_drag.
     let object = this as *mut MidiFileDropSource;
     (*object).ref_count.fetch_sub(1, Ordering::Release) - 1
 }
@@ -346,6 +376,10 @@ unsafe extern "system" fn source_give_feedback(_this: *mut c_void, _effect: u32)
 }
 
 unsafe fn build_hdrop_medium(path_wide: &[u16]) -> Result<STGMEDIUM, HRESULT> {
+    // SAFETY: We allocate a single HGLOBAL block large enough for the
+    // DROPFILES header plus the UTF-16 path including a terminating zero. The
+    // caller owns the returned STGMEDIUM and is responsible for freeing the
+    // HGLOBAL through the standard OLE medium-release rules.
     let path_bytes = (path_wide.len() + 1) * size_of::<u16>();
     let dropfiles_size = size_of::<DROPFILES>();
     let total_size = dropfiles_size + path_bytes;
@@ -355,6 +389,8 @@ unsafe fn build_hdrop_medium(path_wide: &[u16]) -> Result<STGMEDIUM, HRESULT> {
         return Err(DV_E_FORMATETC);
     }
 
+    // SAFETY: GlobalLock returns a writable pointer to the committed block.
+    // We checked for null and the allocation size matches the accesses below.
     let memory = GlobalLock(hglobal);
     if memory.is_null() {
         GlobalFree(hglobal);
@@ -365,10 +401,16 @@ unsafe fn build_hdrop_medium(path_wide: &[u16]) -> Result<STGMEDIUM, HRESULT> {
     (*dropfiles).pFiles = dropfiles_size as u32;
     (*dropfiles).fWide = 1;
 
+    // SAFETY: `file_list` points past the header into the remaining allocated
+    // bytes (path_bytes). copy_nonoverlapping copies `path_wide.len()` elements,
+    // and we write the terminator at index `path_wide.len()`, which is within
+    // the allocated `path_wide.len() + 1` elements.
     let file_list = (memory as *mut u8).add(dropfiles_size) as *mut u16;
     copy_nonoverlapping(path_wide.as_ptr(), file_list, path_wide.len());
     *file_list.add(path_wide.len()) = 0;
 
+    // SAFETY: GlobalUnlock decrements the lock count; this is the matching
+    // unlock for the GlobalLock above.
     GlobalUnlock(hglobal);
 
     Ok(STGMEDIUM {
@@ -379,6 +421,8 @@ unsafe fn build_hdrop_medium(path_wide: &[u16]) -> Result<STGMEDIUM, HRESULT> {
 }
 
 unsafe fn guid_eq(iid: *const GUID, expected: &GUID) -> bool {
+    // SAFETY: The caller (OLE COM machinery) always provides a valid non-null
+    // GUID pointer for QueryInterface.
     if iid.is_null() {
         return false;
     }
@@ -387,4 +431,59 @@ unsafe fn guid_eq(iid: *const GUID, expected: &GUID) -> bool {
         && iid.data2 == expected.data2
         && iid.data3 == expected.data3
         && iid.data4 == expected.data4
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_hdrop_medium_produces_valid_global_medium() {
+        // Path encoded as a null-terminated wide-char sequence, matching what
+        // start_midi_file_drag builds from an OsStr.
+        let mut path_wide: Vec<u16> = std::path::Path::new(r"C:\\temp\\drag.mid")
+            .as_os_str()
+            .encode_wide()
+            .collect();
+        path_wide.push(0);
+
+        let medium = unsafe { build_hdrop_medium(&path_wide) };
+        assert!(
+            medium.is_ok(),
+            "build_hdrop_medium should succeed for a valid path"
+        );
+
+        let medium = medium.unwrap();
+        assert_eq!(medium.tymed, TYMED_HGLOBAL as u32);
+
+        // SAFETY: `STGMEDIUM.u` is a C union; we only read the `hGlobal` member
+        // because we set `tymed` to `TYMED_HGLOBAL` above.
+        let hglobal = unsafe { medium.u.hGlobal };
+        assert!(!hglobal.is_null(), "HGLOBAL should be allocated");
+
+        // SAFETY: We own the HGLOBAL returned by build_hdrop_medium. Verify it
+        // contains a DROPFILES structure with the expected header and the path.
+        // DROPFILES is a packed struct, so fields are read with read_unaligned.
+        unsafe {
+            let memory = GlobalLock(hglobal);
+            assert!(!memory.is_null(), "HGLOBAL should be lockable");
+
+            let dropfiles = memory as *const DROPFILES;
+            let p_files = std::ptr::addr_of!((*dropfiles).pFiles).read_unaligned();
+            let f_wide = std::ptr::addr_of!((*dropfiles).fWide).read_unaligned();
+            assert_eq!(p_files, size_of::<DROPFILES>() as u32);
+            assert_eq!(f_wide, 1);
+
+            let file_list = (memory as *const u8).add(size_of::<DROPFILES>()) as *const u16;
+            let mut len = 0usize;
+            while *file_list.add(len) != 0 {
+                len += 1;
+            }
+            let stored: Vec<u16> = std::slice::from_raw_parts(file_list, len).to_vec();
+            assert_eq!(stored, path_wide[..path_wide.len() - 1]);
+
+            GlobalUnlock(hglobal);
+            GlobalFree(hglobal);
+        }
+    }
 }
