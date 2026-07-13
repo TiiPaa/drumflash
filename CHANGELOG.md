@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-13 — Song Mode joue le premier block au démarrage (build 20260713-164153)
+
+**Build:** `20260713-164153`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Le Song Mode charge maintenant le premier block dès l'activation.**
+  - Avant : quand on activait `Song Mode` pendant la lecture, le séquenceur restait sur le pattern courant et attendait le prochain loop pour avancer.
+  - Après : dès que `Song Mode` est activé (ou que le transport redémarre avec Song Mode déjà actif), le premier block de la song (step 0) est chargé immédiatement.
+- Ajout de deux flags internes dans `DrumFlashVst` :
+  - `song_mode_was_active` : détecte la transition off → on.
+  - `song_needs_init` : demande le chargement du premier block au prochain bloc audio.
+
+### À tester dans Studio One (build 20260713-164153)
+1. Préparer une song avec au moins 2 blocks différents (ex. P1 = Kick, P2 = Snare).
+2. Lancer la lecture sur un pattern autre que P1.
+3. Activer `Song Mode` → la lecture doit immédiatement passer au premier block de la song (P1 ou le slot défini au step 0).
+4. La song doit ensuite avancer normalement P1 → P2 → ... au rythme des loops.
+5. Régression : désactiver / réactiver `Song Mode` doit toujours repartir du premier block.
+6. Régression : l'auto-save des edits en mode Song (build 20260713-162128) doit continuer de fonctionner.
+
+---
+
 ## 2026-07-13 — Auto-save des edits de pattern en mode Song (build 20260713-162128)
 
 **Build:** `20260713-162128`
