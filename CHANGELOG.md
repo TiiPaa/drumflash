@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-07-13 — Vérification : [FIX] new tracks silent + solo par slot + UI track-based (build 20260713-142542)
+
+**Build:** `20260713-142542`
+**Validation:** `cargo fmt` OK, `cargo check` OK (17 warnings UI restants), `cargo test` OK, `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **TODO cleanup — l'item `[FIX] New tracks silent + solo shared by instrument family + all UI interactions now track-based` est confirmé déjà implémenté.**
+  - `src/ui.rs` : `activate_slot()` appelle `reset_slot_to_defaults()` et `reinitialize_slot()` ; les boutons Mute/Solo lisent `params.mutes()[slot]` / `params.solos()[slot]`.
+  - `src/lib.rs` : `compute_mix_gating()` traite 14 slots indépendamment ; `seq_mutes`/`seq_solos` utilisent `slot_mute_states[slot]` / `slot_solo_states[slot]`.
+  - Pattern, plocks, seq-plocks, lane length, routing, MIDI note sont indexés par slot dans toute la base de code.
+  - L'item a été coché dans `TODO.md`.
+
+### À tester dans Studio One (build 20260713-142542)
+1. Ajouter une nouvelle lane via `+5` (ex. une seconde Kick) : elle doit produire du son immédiatement et avoir les mêmes paramètres par défaut que le slot 1.
+2. Muter/Solo la nouvelle lane : seule cette lane doit être affectée ; la lane d'origine (même famille d'instrument) doit rester audible sauf si elle est aussi en solo/mute.
+3. Déplacer une lane avec la poignée de drag : ses états Mute/Solo doivent suivre la lane déplacée.
+4. Régression : aucune lane ne doit rester silencieuse après création ou changement de type d'instrument.
+
+---
+
+
 ## 2026-07-13 — MG-9 : MIDI note/channel par slot et canal global (build 20260713-102332)
 
 **Build:** `20260713-102332`
