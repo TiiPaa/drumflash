@@ -18,7 +18,7 @@
   - [x] [MG-7a.1a] Fix layout : passer la fenêtre fixe de 1480x800 à 1480x900 pour rendre visibles les options/panneaux bas après ajout du slot vide (build 20260701-230011)
   - [x] [MG-7a.2] Activer `+ Add Module` avec sélection d'instrument et mutation contrôlée du `track-layout-v1` (build 20260702-215053)
 - [x] [MG-8] Sound editor tabs per track (Sound / Track) + instrument selector + per-slot routing — rollback 20260701 (build 20260702-215053)
-- [ ] **[REPRENDRE ICI]** [MG-9] MIDI note/channel behavior per spec — needs revalidation after rollback
+- [x] [MG-9] MIDI note/channel behavior per spec — needs revalidation after rollback
 - [x] [MG-10] **Adapt generator to track types and duplicate variations** — corrigé (build 20260707-161620)
   - Le générateur prend désormais le `track_layout` courant en entrée et mappe les rôles musicaux par `kind.drum_voice_index()` au lieu de l’index de rangée.
   - Jusqu’à 3 slots `Tom` utilisent les rôles Tom1/Tom2/Tom3 existants ; au-delà (ou pour toute autre duplication de kind) une variation déterministe est appliquée.
@@ -216,7 +216,7 @@
   - Check host output enable / aux routing
   - Review audio-thread routing code for off-by-one or output-activation issue
 
-- [ ] **[FIX]** New tracks silent + solo shared by instrument family + all UI interactions now track-based — rollback 20260701: redo with Studio One compatibility preserved
+- [ ] **[REPRENDRE ICI]** **[FIX]** New tracks silent + solo shared by instrument family + all UI interactions now track-based — rollback 20260701: redo with Studio One compatibility preserved
 
 - [x] [69] Vrai fix du click parasite BD (changement de hauteur/plock) : chemin digital = reset de phase + crossfade cass� supprim�s ; phase reset�e au cold-start uniquement ; plancher d'attaque anti-click (MIN_AMP_ATTACK_MS) ; bug sweep digital +1 Hz corrig� (build 20260531-155232)
 - [x] [70] Mode analog/digital BD re-rendu audible : digital = identique au bit pr�s, analog = drift par coup (hauteur �3.5 %, niveau �10 %, temps d'enveloppe �20 %)
