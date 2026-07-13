@@ -85,13 +85,13 @@
 - [x] Généraliser le test de round-trip à toutes les voix (macro `settings_roundtrip_test!` dans `synthesis/settings/mod.rs`, appliquée à chaque fichier settings)
 - [x] Corriger les défauts `special[]` des saturations non-entiers (Kick, Snare, HiHat, OpenHiHat, Ride) pour que le round-trip soit stable
 
-### **[REPRENDRE ICI]** [AUDIT-7] Infrastructure
-- [ ] Committer `Cargo.lock` et le retirer de `.gitignore`
-- [ ] Supprimer `fix_roles.pdb` et les `.zip` redondants du suivi git
-- [ ] Retirer `.claude/settings.local.json` du suivi
+### [AUDIT-7] Infrastructure
+- [x] Committer `Cargo.lock` et le retirer de `.gitignore`
+- [x] Supprimer `fix_roles.pdb` et les `.zip` redondants du suivi git
+- [x] Retirer `.claude/settings.local.json` du suivi
 - [x] Corriger docs : `13 voix/aux` → `14 slots`, `pattern-v1` → `pattern-v5`
 
-### [AUDIT-8] Dette UI / qualité
+### **[REPRENDRE ICI]** [AUDIT-8] Dette UI / qualité
 - [ ] Nettoyer échafaudage UI mort (`design_system.rs`, `StyledButton`, `allocate_ui_at_rect`) → tâche [100aa]
 - [x] Renommage ports auxiliaires génériques `Out 1..14` — build 20260706-173427
 - [ ] Documenter invariants `// SAFETY:` dans `native_drag.rs` + test `build_hdrop_medium`
