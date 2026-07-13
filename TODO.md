@@ -210,7 +210,31 @@
   - `Clear Grid` efface uniquement les steps/fusions/sound plocks/seq plocks de la lane active ; instrument, réglages sonores, algo, Hum/Push/Len, lock Len, routing, mute/solo/mix et note MIDI restent inchangés.
   - Routing, Main/Out, note MIDI source personnalisée, mute/solo/mix ne sont pas copiés ; un changement d'instrument remet la note MIDI du slot cible sur le défaut du kind.
 
+## Feedback utilisateur — 2026-07-13
+
+### Bugs / régressions
+- [ ] [119] **Enlever le hover "empty slot" sur la cellule vide** — retirer le tooltip inutile sur les cellules hors longueur de pattern.
+- [ ] [124] **L'édition des patterns semble bloquée en mode song** — vérifier si c'est intentionnel (song = lecture) ou un bug à corriger.
+- [ ] [129] **Bug dans le graph du filter decay du T1** — le graphique d'enveloppe de filtre pour Tom1 ne s'affiche pas correctement.
+- [ ] [130] **Améliorer les différences de volumes avec/sans saturation** — ajuster le gain pour que l'activation de la saturation ne change pas drastiquement le niveau perçu.
+
+### UI / UX
+- [ ] [121] **Bouton droit sur le titre du lane → Clear lane ou aléatoire** — ajouter `Clear Lane` et `Randomize Lane` dans le menu contextuel du nom de lane.
+- [ ] [123] **Bouton Follow off dans le panel song** — toggle `Follow` pour que la grille ne suive pas automatiquement le pattern joué en mode Song.
+- [ ] [128] **Option supprimer un lane** — permettre de passer un slot en inactif (lié à [MG-7]).
+- [ ] [131] **Les cellules fusionnées ne changent pas de couleur quand elles ont un plock** — inclure la modulation (morph) comme indicateur visuel de plock.
+
+### Features
+- [ ] [120] **Changer les patterns en MIDI temps réel en mode Seq Internal / Pattern** — permettre au séquenceur interne de recevoir des notes MIDI pour changer de pattern P1-P8 en cours de lecture (hors mode Song).
+- [ ] [122] **Drag cell long press 2s** — quand on laisse le bouton gauche appuyé ~2s sur une cellule, permettre de la déplacer (avec ses plocks) à gauche/droite avec la souris.
+- [ ] [125] **Morphing : choisir origine vs cible** — pouvoir décider si les paramètres de morphing d'une cellule fusionnée restent sur les valeurs d'origine ou atteignent les valeurs cibles.
+- [ ] [126] **Retirer le paramètre mix du sound editor, remplacer par main dans track editor** — déplacer le contrôle de routage Main du panneau Sound vers l'onglet Track.
+- [ ] [127] **Menu settings global** — ajouter un menu de paramètres globaux (dérives du paramètre analog, MIDI global, etc.).
+
+---
+
 ## Court terme (Stabilisation V1 — En cours)
+
 
 - [x] **[DEBUG]** Routing `Out 1` silent in Studio One while Main Mix works
   - Check host output enable / aux routing
