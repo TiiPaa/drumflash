@@ -213,8 +213,8 @@
 ## Feedback utilisateur — 2026-07-13
 
 ### Bugs / régressions
-- [ ] [119] **Enlever le hover "empty slot" sur la cellule vide** — retirer le tooltip inutile sur les cellules hors longueur de pattern.
-- [ ] [124] **L'édition des patterns semble bloquée en mode song** — vérifier si c'est intentionnel (song = lecture) ou un bug à corriger.
+- [x] [119] **Enlever le hover "empty slot" sur la cellule vide** — retirer le tooltip inutile sur les cellules hors longueur de pattern.
+- [x] [124] **L'édition des patterns semble bloquée en mode song** — auto-save des edits vers le slot de Pattern Bank courant quand `Song Mode` est actif (build 20260713-162128).
 - [ ] [129] **Bug dans le graph du filter decay du T1** — le graphique d'enveloppe de filtre pour Tom1 ne s'affiche pas correctement.
 - [ ] [130] **Améliorer les différences de volumes avec/sans saturation** — ajuster le gain pour que l'activation de la saturation ne change pas drastiquement le niveau perçu.
 

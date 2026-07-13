@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-13 — Auto-save des edits de pattern en mode Song (build 20260713-162128)
+
+**Build:** `20260713-162128`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **L'édition du pattern n'est plus "bloquée" en mode Song.**
+  - Quand `Song Mode` est actif, chaque modification du pattern (toggle de step, édition/suppression de fusion, Clear Grid, Paste Lane/Grid) est automatiquement sauvegardée dans le slot de la Pattern Bank actuellement joué.
+  - Avant : le pattern changeait à chaque avancée de la song, et les edits récents étaient perdus.
+  - Après : les edits persistent dans le slot P1-P8 concerné ; la song les rejouera à sa prochaine boucle sur ce slot.
+- Ajout d'un flag `pattern_dirty_slot` dans `EditorUIState` qui capture le slot de la bank au moment de l'édition.
+- Ajout de `save_current_pattern_to_bank_slot()` pour sauvegarder le pattern courant (steps, fusions, plocks sonores, plocks séquenceur) depuis le thread UI.
+
+### À tester dans Studio One (build 20260713-162128)
+1. Activer `Song Mode`, créer une song avec plusieurs steps P1-P8, lancer la lecture.
+2. Pendant que la song joue, toggle un step sur le pattern courant → le step doit rester allumé/éteint.
+3. Attendre que la song revienne sur le même slot P1-P8 → le step modifié doit être rejoué (le pattern bank a bien été mis à jour).
+4. Tester l'édition d'une fusion en mode Song (créer / modifier / supprimer) → la fusion doit être conservée au retour du slot.
+5. Tester `Clear Grid` et `Paste Lane/Grid` sur une lane en mode Song → la modification doit persister au prochain passage du slot.
+6. Régression : hors mode Song, les boutons Save/Load P1-P8 doivent fonctionner comme avant (pas d'auto-save involontaire).
+
+---
+
 ## 2026-07-13 — Double-clic sur le nom de lane pour renommer (build 20260713-154411)
 
 **Build:** `20260713-154411`
