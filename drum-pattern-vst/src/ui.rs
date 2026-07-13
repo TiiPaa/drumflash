@@ -70,7 +70,6 @@ struct LaneSeqPlocks {
     microtimings: [u32; crate::plock::STEP_COUNT],
 }
 
-mod design_system;
 mod envelope_viz;
 mod local_param_slider;
 mod theme;
@@ -1077,50 +1076,66 @@ pub fn create_editor(
                     );
                     ui.painter().rect_filled(right_rect, 0.0, PANEL);
 
-                    ui.allocate_ui_at_rect(left_rect.shrink2(Vec2::new(14.0, 14.0)), |ui| {
-                        ui.set_clip_rect(left_rect.shrink2(Vec2::new(1.0, 0.0)));
-                        ui.set_width(left_rect.width() - 28.0);
-                        ui.set_height(left_rect.height() - 28.0);
-                        ui.spacing_mut().item_spacing.y = 16.0;
-                        draw_grid_v2(
-                            ui,
-                            setter,
-                            &params_for_ui,
-                            &pattern_for_ui,
-                            &voice_test_triggers_for_ui,
-                            &external_midi_triggers_for_ui,
-                            &current_step,
-                            &current_steps_for_ui,
-                            &sound_settings_for_ui,
-                            &plock_for_ui,
-                            state,
-                        );
-                        draw_pattern_bank(
-                            ui,
-                            state,
-                            &params_for_ui,
-                            &pattern_for_ui,
-                            &save_pattern_request,
-                            &load_pattern_request,
-                            &clear_plocks_request_for_ui,
-                        );
-                        draw_bottom_panel(
-                            ui,
-                            setter,
-                            &params_for_ui,
-                            &pattern_for_ui,
-                            state,
-                            &song_mode_for_ui,
-                            &song_position_for_ui,
-                        );
-                    });
+                    ui.allocate_new_ui(
+                        egui::UiBuilder::new()
+                            .max_rect(left_rect.shrink2(Vec2::new(14.0, 14.0)))
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                        |ui| {
+                            ui.set_clip_rect(left_rect.shrink2(Vec2::new(1.0, 0.0)));
+                            ui.set_width(left_rect.width() - 28.0);
+                            ui.set_height(left_rect.height() - 28.0);
+                            ui.spacing_mut().item_spacing.y = 16.0;
+                            draw_grid_v2(
+                                ui,
+                                setter,
+                                &params_for_ui,
+                                &pattern_for_ui,
+                                &voice_test_triggers_for_ui,
+                                &external_midi_triggers_for_ui,
+                                &current_step,
+                                &current_steps_for_ui,
+                                &sound_settings_for_ui,
+                                &plock_for_ui,
+                                state,
+                            );
+                            draw_pattern_bank(
+                                ui,
+                                state,
+                                &params_for_ui,
+                                &pattern_for_ui,
+                                &save_pattern_request,
+                                &load_pattern_request,
+                                &clear_plocks_request_for_ui,
+                            );
+                            draw_bottom_panel(
+                                ui,
+                                setter,
+                                &params_for_ui,
+                                &pattern_for_ui,
+                                state,
+                                &song_mode_for_ui,
+                                &song_position_for_ui,
+                            );
+                        },
+                    );
 
-                    ui.allocate_ui_at_rect(right_rect, |ui| {
-                        ui.painter().rect_filled(ui.max_rect(), 0.0, PANEL);
-                        ui.set_width(right_w);
-                        ui.set_height(body_h);
-                        draw_sound_panel(ui, &sound_settings_for_ui, &params_for_ui, setter, state);
-                    });
+                    ui.allocate_new_ui(
+                        egui::UiBuilder::new()
+                            .max_rect(right_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                        |ui| {
+                            ui.painter().rect_filled(ui.max_rect(), 0.0, PANEL);
+                            ui.set_width(right_w);
+                            ui.set_height(body_h);
+                            draw_sound_panel(
+                                ui,
+                                &sound_settings_for_ui,
+                                &params_for_ui,
+                                setter,
+                                state,
+                            );
+                        },
+                    );
 
                     // Custom plock popup to avoid egui context_menu chrome.
                     draw_plock_popup(
@@ -1270,55 +1285,61 @@ fn draw_header_bar(
 
     // Contenu avec padding horizontal
     let content_rect = rect.shrink2(egui::Vec2::new(14.0, 0.0));
-    ui.allocate_ui_at_rect(content_rect, |ui| {
-        ui.horizontal_centered(|ui| {
-            ui.set_height(content_rect.height());
-            ui.spacing_mut().item_spacing.x = 0.0;
+    ui.allocate_new_ui(
+        egui::UiBuilder::new()
+            .max_rect(content_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.set_height(content_rect.height());
+                ui.spacing_mut().item_spacing.x = 0.0;
 
-            // Brand
-            ui.label(
-                RichText::new("FLASH DRUM")
-                    .font(f_sans_bold(15.0))
-                    .color(Color32::WHITE),
-            );
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new(format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID))
-                    .font(f_mono(9.5))
-                    .color(INK3),
-            );
+                // Brand
+                ui.label(
+                    RichText::new("FLASH DRUM")
+                        .font(f_sans_bold(15.0))
+                        .color(Color32::WHITE),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID))
+                        .font(f_mono(9.5))
+                        .color(INK3),
+                );
 
-            header_vbar(ui);
+                header_vbar(ui);
 
-            // Master / Swing sliders + Groove select
-            header_param_slider(ui, setter, &params.master_volume, 172.0, "Master", true);
-            header_vbar(ui);
-            header_param_slider(ui, setter, &params.swing, 172.0, "Swing", true);
-            ui.add_space(8.0);
-            enum_combo(ui, setter, &params.groove_type, "");
+                // Master / Swing sliders + Groove select
+                header_param_slider(ui, setter, &params.master_volume, 172.0, "Master", true);
+                header_vbar(ui);
+                header_param_slider(ui, setter, &params.swing, 172.0, "Swing", true);
+                ui.add_space(8.0);
+                enum_combo(ui, setter, &params.groove_type, "");
 
-            header_vbar(ui);
+                header_vbar(ui);
 
-            // Sequencer source: Internal sequencer vs external MIDI from the host.
-            ui.label(RichText::new("Seq").font(f_sans_sb(10.5)).color(INK3));
-            ui.add_space(8.0);
-            let internal = params.use_internal_sequencer.value();
-            let sel = led_segmented(ui, &["Internal", "Ext MIDI"], if internal { 0 } else { 1 });
-            let want_internal = sel == 0;
-            if want_internal != internal {
-                setter.begin_set_parameter(&params.use_internal_sequencer);
-                setter.set_parameter(&params.use_internal_sequencer, want_internal);
-                setter.end_set_parameter(&params.use_internal_sequencer);
-            }
+                // Sequencer source: Internal sequencer vs external MIDI from the host.
+                ui.label(RichText::new("Seq").font(f_sans_sb(10.5)).color(INK3));
+                ui.add_space(8.0);
+                let internal = params.use_internal_sequencer.value();
+                let sel =
+                    led_segmented(ui, &["Internal", "Ext MIDI"], if internal { 0 } else { 1 });
+                let want_internal = sel == 0;
+                if want_internal != internal {
+                    setter.begin_set_parameter(&params.use_internal_sequencer);
+                    setter.set_parameter(&params.use_internal_sequencer, want_internal);
+                    setter.end_set_parameter(&params.use_internal_sequencer);
+                }
 
-            header_vbar(ui);
+                header_vbar(ui);
 
-            // Toggles (LED pills)
-            toggle_led_param(ui, setter, &params.hihat_chokes_oh, "Choke");
-            ui.add_space(6.0);
-            toggle_led_param(ui, setter, &params.auto_edit, "Auto-Edit");
-        });
-    });
+                // Toggles (LED pills)
+                toggle_led_param(ui, setter, &params.hihat_chokes_oh, "Choke");
+                ui.add_space(6.0);
+                toggle_led_param(ui, setter, &params.auto_edit, "Auto-Edit");
+            });
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1698,58 +1719,68 @@ fn draw_bottom_panel(
     );
 
     let header_rect = egui::Rect::from_min_size(rect.min, Vec2::new(panel_w, 42.0));
-    ui.allocate_ui_at_rect(header_rect.shrink2(Vec2::new(12.0, 0.0)), |ui| {
-        ui.set_clip_rect(header_rect);
-        ui.horizontal(|ui| {
-            ui.set_height(42.0);
-            ui.spacing_mut().item_spacing.x = 0.0;
-            // Generator | Song segmented tabs: view only, no longer toggle song mode.
-            let selected = state.bottom_panel_tab.min(1);
-            let new_selected = generator_song_segmented(ui, selected);
-            if new_selected != selected {
-                state.bottom_panel_tab = new_selected;
-            }
-
-            ui.add_space(12.0);
-
-            // Meta text
-            let meta = if state.bottom_panel_tab == 1 {
-                if let Ok(bank) = params.pattern_bank.bank.lock() {
-                    let blocks = (bank.song.length as usize).min(SONG_BLOCKS);
-                    let total_reps = bank.song.steps[..blocks]
-                        .iter()
-                        .filter(|&&s| s >= 0)
-                        .count();
-                    format!("{} blocks · {} patterns", blocks, total_reps)
-                } else {
-                    "Song chain".to_string()
+    ui.allocate_new_ui(
+        egui::UiBuilder::new()
+            .max_rect(header_rect.shrink2(Vec2::new(12.0, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            ui.set_clip_rect(header_rect);
+            ui.horizontal(|ui| {
+                ui.set_height(42.0);
+                ui.spacing_mut().item_spacing.x = 0.0;
+                // Generator | Song segmented tabs: view only, no longer toggle song mode.
+                let selected = state.bottom_panel_tab.min(1);
+                let new_selected = generator_song_segmented(ui, selected);
+                if new_selected != selected {
+                    state.bottom_panel_tab = new_selected;
                 }
-            } else {
-                format!(
-                    "{} · {} -> {}",
-                    GeneratorType::variants()[params.generator_type.value().to_index()],
-                    Style::variants()[params.style_primary.value().to_index()],
-                    Style::variants()[params.style_secondary.value().to_index()]
-                )
-            };
-            ui.label(RichText::new(meta).monospace().size(10.5).color(INK3));
-        });
-    });
+
+                ui.add_space(12.0);
+
+                // Meta text
+                let meta = if state.bottom_panel_tab == 1 {
+                    if let Ok(bank) = params.pattern_bank.bank.lock() {
+                        let blocks = (bank.song.length as usize).min(SONG_BLOCKS);
+                        let total_reps = bank.song.steps[..blocks]
+                            .iter()
+                            .filter(|&&s| s >= 0)
+                            .count();
+                        format!("{} blocks · {} patterns", blocks, total_reps)
+                    } else {
+                        "Song chain".to_string()
+                    }
+                } else {
+                    format!(
+                        "{} · {} -> {}",
+                        GeneratorType::variants()[params.generator_type.value().to_index()],
+                        Style::variants()[params.style_primary.value().to_index()],
+                        Style::variants()[params.style_secondary.value().to_index()]
+                    )
+                };
+                ui.label(RichText::new(meta).monospace().size(10.5).color(INK3));
+            });
+        },
+    );
 
     let body_rect = egui::Rect::from_min_max(
         egui::pos2(rect.left() + 12.0, rect.top() + 44.0),
         egui::pos2(rect.right() - 12.0, rect.bottom() - 8.0),
     );
-    ui.allocate_ui_at_rect(body_rect, |ui| {
-        ui.set_clip_rect(body_rect);
-        ui.set_width(body_rect.width());
-        ui.set_height(body_rect.height());
-        if state.bottom_panel_tab == 1 {
-            draw_song_editor(ui, setter, params, state, song_position);
-        } else {
-            draw_generator_panel_content(ui, setter, params, pattern, state);
-        }
-    });
+    ui.allocate_new_ui(
+        egui::UiBuilder::new()
+            .max_rect(body_rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+        |ui| {
+            ui.set_clip_rect(body_rect);
+            ui.set_width(body_rect.width());
+            ui.set_height(body_rect.height());
+            if state.bottom_panel_tab == 1 {
+                draw_song_editor(ui, setter, params, state, song_position);
+            } else {
+                draw_generator_panel_content(ui, setter, params, pattern, state);
+            }
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2024,59 +2055,69 @@ fn draw_song_editor(
                 inner.min,
                 Vec2::new(inner.width(), inner.height() * 0.5),
             );
-            ui.allocate_ui_at_rect(top_rect, |ui| {
-                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                    let mut slot = bank.song.steps[step_idx];
-                    let selected_text = if slot < 0 {
-                        "--".to_string()
-                    } else {
-                        format!("P{}", slot + 1)
-                    };
-                    egui::ComboBox::from_id_salt(format!("song_pattern_select_{}", step_idx))
-                        .selected_text(selected_text)
-                        .width(ui.available_width().max(20.0))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut slot, -1, "--");
-                            for i in 0..SLOT_COUNT {
-                                if bank.slots[i].occupied {
-                                    let text = format!("P{}", i + 1);
-                                    ui.selectable_value(&mut slot, i as i8, text);
+            ui.allocate_new_ui(
+                egui::UiBuilder::new()
+                    .max_rect(top_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Center)),
+                |ui| {
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        let mut slot = bank.song.steps[step_idx];
+                        let selected_text = if slot < 0 {
+                            "--".to_string()
+                        } else {
+                            format!("P{}", slot + 1)
+                        };
+                        egui::ComboBox::from_id_salt(format!("song_pattern_select_{}", step_idx))
+                            .selected_text(selected_text)
+                            .width(ui.available_width().max(20.0))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut slot, -1, "--");
+                                for i in 0..SLOT_COUNT {
+                                    if bank.slots[i].occupied {
+                                        let text = format!("P{}", i + 1);
+                                        ui.selectable_value(&mut slot, i as i8, text);
+                                    }
                                 }
-                            }
-                        });
-                    if slot != bank.song.steps[step_idx] {
-                        bank.song.set_step(step_idx, slot);
-                    }
-                });
-            });
+                            });
+                        if slot != bank.song.steps[step_idx] {
+                            bank.song.set_step(step_idx, slot);
+                        }
+                    });
+                },
+            );
 
             // Bottom half: repeat editor.
             let bottom_rect = egui::Rect::from_min_size(
                 egui::pos2(inner.left(), inner.top() + inner.height() * 0.5),
                 Vec2::new(inner.width(), inner.height() * 0.5),
             );
-            ui.allocate_ui_at_rect(bottom_rect, |ui| {
-                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                    let mut repeat = bank.song.repeats[step_idx];
-                    ui.add_sized(
-                        Vec2::new(ui.available_width(), ui.available_height()),
-                        egui::DragValue::new(&mut repeat)
-                            .range(1..=64)
-                            .speed(1.0)
-                            .fixed_decimals(0)
-                            .custom_formatter(|n, _| {
-                                if n <= 1.0 {
-                                    "x1".to_string()
-                                } else {
-                                    format!("x{}", n as i64)
-                                }
-                            }),
-                    );
-                    if repeat != bank.song.repeats[step_idx] {
-                        bank.song.set_repeat(step_idx, repeat);
-                    }
-                });
-            });
+            ui.allocate_new_ui(
+                egui::UiBuilder::new()
+                    .max_rect(bottom_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Center)),
+                |ui| {
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        let mut repeat = bank.song.repeats[step_idx];
+                        ui.add_sized(
+                            Vec2::new(ui.available_width(), ui.available_height()),
+                            egui::DragValue::new(&mut repeat)
+                                .range(1..=64)
+                                .speed(1.0)
+                                .fixed_decimals(0)
+                                .custom_formatter(|n, _| {
+                                    if n <= 1.0 {
+                                        "x1".to_string()
+                                    } else {
+                                        format!("x{}", n as i64)
+                                    }
+                                }),
+                        );
+                        if repeat != bank.song.repeats[step_idx] {
+                            bank.song.set_repeat(step_idx, repeat);
+                        }
+                    });
+                },
+            );
 
             if response.clicked() {
                 state.song_selected_step = step_idx;
@@ -4780,30 +4821,35 @@ fn draw_sound_panel(
         header_rect.bottom(),
         egui::Stroke::new(1.0, LINE),
     );
-    ui.allocate_ui_at_rect(header_rect.shrink2(Vec2::new(14.0, 0.0)), |ui| {
-        ui.horizontal_centered(|ui| {
-            ui.set_height(header_rect.height());
-            ui.label(
-                RichText::new("Sound Editor")
-                    .font(f_sans_bold(13.0))
-                    .color(Color32::WHITE),
-            );
-            ui.add_space(2.0);
-            // Always show which lane is being edited (lanes are selected by
-            // clicking them in the grid, there are no per-instrument tabs).
-            let header_name = {
-                let slot_name = &layout_snapshot.slots[state.selected_instrument].name;
-                let name = if slot_name.is_empty() {
-                    crate::instrument_registry::INSTRUMENTS[voice_idx].name
-                } else {
-                    slot_name.as_str()
+    ui.allocate_new_ui(
+        egui::UiBuilder::new()
+            .max_rect(header_rect.shrink2(Vec2::new(14.0, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.set_height(header_rect.height());
+                ui.label(
+                    RichText::new("Sound Editor")
+                        .font(f_sans_bold(13.0))
+                        .color(Color32::WHITE),
+                );
+                ui.add_space(2.0);
+                // Always show which lane is being edited (lanes are selected by
+                // clicking them in the grid, there are no per-instrument tabs).
+                let header_name = {
+                    let slot_name = &layout_snapshot.slots[state.selected_instrument].name;
+                    let name = if slot_name.is_empty() {
+                        crate::instrument_registry::INSTRUMENTS[voice_idx].name
+                    } else {
+                        slot_name.as_str()
+                    };
+                    format!("Slot {} - {}", state.selected_instrument + 1, name)
                 };
-                format!("Slot {} - {}", state.selected_instrument + 1, name)
-            };
-            ui.label(RichText::new(header_name).font(f_mono(11.0)).color(INK3));
-            // (Engine selector belongs to the future modular phase — omitted for now.)
-        });
-    });
+                ui.label(RichText::new(header_name).font(f_mono(11.0)).color(INK3));
+                // (Engine selector belongs to the future modular phase — omitted for now.)
+            });
+        },
+    );
 
     let tabs_rect = ui
         .allocate_exact_size(Vec2::new(ui.available_width(), 45.0), egui::Sense::hover())
@@ -4814,41 +4860,46 @@ fn draw_sound_panel(
         tabs_rect.bottom(),
         egui::Stroke::new(1.0, LINE),
     );
-    ui.allocate_ui_at_rect(tabs_rect.shrink2(Vec2::new(12.0, 9.0)), |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-            // Two fixed tabs. The edited lane is chosen by clicking it in the
-            // grid (auto-edit), not through per-instrument tab buttons.
-            let tab_w = ((tabs_rect.width() - 24.0 - GAP_TIGHT) / 2.0).floor();
-            for (tab, label, hover) in [
-                (
-                    SoundEditorTab::Sound,
-                    "Sound Editor",
-                    "Synthesis settings of the selected lane",
-                ),
-                (
-                    SoundEditorTab::Track,
-                    "Track",
-                    "Instrument type, MIDI note, routing, length",
-                ),
-            ] {
-                let selected = state.sound_editor_tab == tab;
-                let btn = egui::Button::new(
-                    RichText::new(label)
-                        .monospace()
-                        .size(10.5)
-                        .color(if selected { Color32::WHITE } else { INK2 }),
-                )
-                .min_size(Vec2::new(tab_w, CTL_HEIGHT))
-                .fill(if selected { BLUE } else { PANEL2 })
-                .stroke(egui::Stroke::new(1.0, if selected { BLUE } else { LINE2 }))
-                .corner_radius(6.0);
-                if ui.add(btn).on_hover_text(hover).clicked() {
-                    state.sound_editor_tab = tab;
+    ui.allocate_new_ui(
+        egui::UiBuilder::new()
+            .max_rect(tabs_rect.shrink2(Vec2::new(12.0, 9.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = GAP_TIGHT;
+                // Two fixed tabs. The edited lane is chosen by clicking it in the
+                // grid (auto-edit), not through per-instrument tab buttons.
+                let tab_w = ((tabs_rect.width() - 24.0 - GAP_TIGHT) / 2.0).floor();
+                for (tab, label, hover) in [
+                    (
+                        SoundEditorTab::Sound,
+                        "Sound Editor",
+                        "Synthesis settings of the selected lane",
+                    ),
+                    (
+                        SoundEditorTab::Track,
+                        "Track",
+                        "Instrument type, MIDI note, routing, length",
+                    ),
+                ] {
+                    let selected = state.sound_editor_tab == tab;
+                    let btn = egui::Button::new(
+                        RichText::new(label)
+                            .monospace()
+                            .size(10.5)
+                            .color(if selected { Color32::WHITE } else { INK2 }),
+                    )
+                    .min_size(Vec2::new(tab_w, CTL_HEIGHT))
+                    .fill(if selected { BLUE } else { PANEL2 })
+                    .stroke(egui::Stroke::new(1.0, if selected { BLUE } else { LINE2 }))
+                    .corner_radius(6.0);
+                    if ui.add(btn).on_hover_text(hover).clicked() {
+                        state.sound_editor_tab = tab;
+                    }
                 }
-            }
-        });
-    });
+            });
+        },
+    );
 
     let inst = &sound_settings.instruments[state.selected_instrument];
     let (
@@ -5589,110 +5640,115 @@ fn draw_fusion_edit_box(
     // Allocate the exact outer size so the parent row never grows, even if the
     // edit-content widgets are slightly taller than the idle-content widgets.
     let (rect, response) = ui.allocate_exact_size(box_size, egui::Sense::hover());
-    ui.allocate_ui_at_rect(rect, |ui| {
-        egui::Frame::new()
-            .fill(Color32::from_rgb(24, 24, 30))
-            .stroke(egui::Stroke::new(1.0, LINE2))
-            .corner_radius(5.0)
-            .inner_margin(3.0)
-            .show(ui, |ui| {
-                let inner_size = Vec2::new(box_size.x - 6.0, box_size.y - 6.0);
-                ui.set_min_size(inner_size);
-                ui.set_max_size(inner_size);
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    if let Some((instrument, index, group)) =
-                        edited_fusion_for_ui(pattern_for_ui, state)
-                    {
-                        ui.label(
-                            RichText::new(format!(
-                                "F {}-{}",
-                                group.start_cell + 1,
-                                group.end_cell + 1
-                            ))
-                            .strong()
-                            .size(11.0),
-                        );
-                        ui.label(RichText::new("Steps:").size(11.0));
-
-                        let step_drag = egui::DragValue::new(&mut state.fusion_edit_steps)
-                            .range(1..=64)
-                            .speed(1.0)
-                            .fixed_decimals(0);
-                        let step_response = ui.add_sized(Vec2::new(40.0, 18.0), step_drag);
-                        if state.fusion_edit_focus_request {
-                            state.fusion_edit_focus_request = false;
-                            step_response.request_focus();
-                        }
-                        if step_response.lost_focus() {
-                            let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                            if let Some(group) = new_fusions.get_mut(index) {
-                                group.step_count = state.fusion_edit_steps;
-                                pattern_for_ui.store_fusions(instrument, &new_fusions);
-                            }
-                            finish_fusion_editing_for_ui(pattern_for_ui, state);
-                        }
-
-                        // Morph targets display (compact)
-                        if group.morph_count > 0 {
-                            let morphable = crate::instrument_registry::morphable_fields(
-                                schema_voice_idx(params, instrument),
-                            );
-                            let names: Vec<&str> = group.morph_targets
-                                [..group.morph_count as usize]
-                                .iter()
-                                .map(|t| {
-                                    morphable
-                                        .iter()
-                                        .find(|f| f.field_index == t.field as usize)
-                                        .map(|f| f.label)
-                                        .unwrap_or("?")
-                                })
-                                .collect();
+    ui.allocate_new_ui(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            egui::Frame::new()
+                .fill(Color32::from_rgb(24, 24, 30))
+                .stroke(egui::Stroke::new(1.0, LINE2))
+                .corner_radius(5.0)
+                .inner_margin(3.0)
+                .show(ui, |ui| {
+                    let inner_size = Vec2::new(box_size.x - 6.0, box_size.y - 6.0);
+                    ui.set_min_size(inner_size);
+                    ui.set_max_size(inner_size);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        if let Some((instrument, index, group)) =
+                            edited_fusion_for_ui(pattern_for_ui, state)
+                        {
                             ui.label(
-                                RichText::new(format!("M: {}", names.join(", ")))
-                                    .size(10.0)
-                                    .color(INK2),
+                                RichText::new(format!(
+                                    "F {}-{}",
+                                    group.start_cell + 1,
+                                    group.end_cell + 1
+                                ))
+                                .strong()
+                                .size(11.0),
                             );
-                        } else {
-                            ui.label(RichText::new("M: Off").size(10.0).color(INK2));
-                        }
+                            ui.label(RichText::new("Steps:").size(11.0));
 
-                        let del_clicked = ui
-                            .allocate_ui_with_layout(
-                                Vec2::new(32.0, 18.0),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| ui.add(egui::Button::new("Del").small()),
-                            )
-                            .inner
-                            .clicked();
-                        if del_clicked {
-                            let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                            if index < new_fusions.len() {
-                                new_fusions.remove(index);
-                                pattern_for_ui.store_fusions(instrument, &new_fusions);
+                            let step_drag = egui::DragValue::new(&mut state.fusion_edit_steps)
+                                .range(1..=64)
+                                .speed(1.0)
+                                .fixed_decimals(0);
+                            let step_response = ui.add_sized(Vec2::new(40.0, 18.0), step_drag);
+                            if state.fusion_edit_focus_request {
+                                state.fusion_edit_focus_request = false;
+                                step_response.request_focus();
                             }
-                            state.fusion_editing = None;
+                            if step_response.lost_focus() {
+                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                                if let Some(group) = new_fusions.get_mut(index) {
+                                    group.step_count = state.fusion_edit_steps;
+                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
+                                }
+                                finish_fusion_editing_for_ui(pattern_for_ui, state);
+                            }
+
+                            // Morph targets display (compact)
+                            if group.morph_count > 0 {
+                                let morphable = crate::instrument_registry::morphable_fields(
+                                    schema_voice_idx(params, instrument),
+                                );
+                                let names: Vec<&str> = group.morph_targets
+                                    [..group.morph_count as usize]
+                                    .iter()
+                                    .map(|t| {
+                                        morphable
+                                            .iter()
+                                            .find(|f| f.field_index == t.field as usize)
+                                            .map(|f| f.label)
+                                            .unwrap_or("?")
+                                    })
+                                    .collect();
+                                ui.label(
+                                    RichText::new(format!("M: {}", names.join(", ")))
+                                        .size(10.0)
+                                        .color(INK2),
+                                );
+                            } else {
+                                ui.label(RichText::new("M: Off").size(10.0).color(INK2));
+                            }
+
+                            let del_clicked = ui
+                                .allocate_ui_with_layout(
+                                    Vec2::new(32.0, 18.0),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| ui.add(egui::Button::new("Del").small()),
+                                )
+                                .inner
+                                .clicked();
+                            if del_clicked {
+                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                                if index < new_fusions.len() {
+                                    new_fusions.remove(index);
+                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
+                                }
+                                state.fusion_editing = None;
+                            }
+                            let close_clicked = ui
+                                .allocate_ui_with_layout(
+                                    Vec2::new(22.0, 18.0),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| ui.add(egui::Button::new("×").small()),
+                                )
+                                .inner
+                                .clicked();
+                            if close_clicked {
+                                finish_fusion_editing_for_ui(pattern_for_ui, state);
+                            }
+                        } else {
+                            if state.fusion_editing.is_some() {
+                                state.fusion_editing = None;
+                            }
+                            draw_fusion_idle_box_contents(ui, fusion_mode_active);
                         }
-                        let close_clicked = ui
-                            .allocate_ui_with_layout(
-                                Vec2::new(22.0, 18.0),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| ui.add(egui::Button::new("×").small()),
-                            )
-                            .inner
-                            .clicked();
-                        if close_clicked {
-                            finish_fusion_editing_for_ui(pattern_for_ui, state);
-                        }
-                    } else {
-                        if state.fusion_editing.is_some() {
-                            state.fusion_editing = None;
-                        }
-                        draw_fusion_idle_box_contents(ui, fusion_mode_active);
-                    }
+                    });
                 });
-            });
-    });
+        },
+    );
 
     response.rect
 }
