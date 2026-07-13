@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-13 — AUDIT-7 : Infrastructure git (Cargo.lock, cruft binaire) (build 20260713-093252)
+
+**Build:** `20260713-093252`
+**Validation:** `git status` OK, commit `5c243e0`, `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **AUDIT-7 — Nettoyage de l'infrastructure git.**
+  - `.gitignore` : suppression de la règle `Cargo.lock`, ajout de `*.pdb`, `*.zip` et exclusion des `Cargo.lock` dans `vendor/`.
+  - `drum-pattern-vst/Cargo.lock` ajouté au dépôt pour des builds reproductibles.
+  - Fichiers binaires/cruft retirés du suivi git (supprimés de l'index, conservés localement sauf `fix_roles.pdb`) :
+    - `.claude/settings.local.json`
+    - `design-pack.zip`
+    - `design-pack/Flash_Drum_design_11062026.zip`
+    - `docs/design/mockup_Flash_Drum.zip`
+    - `drum-pattern-vst/assets/fonts/IBMPlexSans.zip`
+    - `drum-pattern-vst/fix_roles.pdb`
+
+### À tester dans Studio One (build 20260713-093252)
+1. Aucun test fonctionnel requis : cette build n'affecte que le suivi git et les dépendances figées. Le plugin reste identique à la build précédente.
+2. Régression : ouvrir le plugin dans Studio One, le charger, jouer un pattern, vérifier que le son est identique à la build d'hier.
+3. Vérifier que le projet Studio One sauvegardé avec la build précédente se recharge correctement (pas de changement de format VST3).
+---
+
+
 ## 2026-07-12 — AUDIT-5 : tests du routage mute/solo/mix (build 20260712-160415)
 
 **Build:** `20260712-160415`
