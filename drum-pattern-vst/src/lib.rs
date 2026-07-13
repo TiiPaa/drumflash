@@ -2146,6 +2146,23 @@ impl DrumFlashVst {
         PatternBankActionResult::Loaded(pattern_length)
     }
 
+    /// Returns the MIDI note and output channel for a given slot.
+    ///
+    /// The note is taken from the track layout (per-slot, editable in the Track
+    /// tab), not the instrument registry default. The channel is the global MIDI
+    /// channel (1-16) converted to 0-based indexing for `NoteEvent`.
+    fn resolve_midi_output_for_slot(&self, slot_idx: usize) -> (u8, u8) {
+        let note = self.params.track_layout.state.midi_note_for_slot(slot_idx);
+        let channel = self
+            .params
+            .track_layout
+            .state
+            .global_midi_channel()
+            .saturating_sub(1)
+            .min(15);
+        (note, channel)
+    }
+
     /// Fire a single voice trigger (audio + MIDI) at the given sample offset.
     /// `slot_idx` is the active track slot; `voice_idx` is the legacy DrumVoice
     /// algorithm used for MIDI note / instrument metadata.
@@ -2188,18 +2205,18 @@ impl DrumFlashVst {
                 self.synthesizer.reset_voice(oh_slot);
             }
         }
-        let note = crate::instrument_registry::INSTRUMENTS[voice_idx].midi_note;
+        let (note, channel) = self.resolve_midi_output_for_slot(slot_idx);
         context.send_event(NoteEvent::NoteOn {
             timing: sample_idx as u32,
             voice_id: None,
-            channel: 9,
+            channel,
             note,
             velocity,
         });
         context.send_event(NoteEvent::NoteOff {
             timing: sample_idx as u32,
             voice_id: None,
-            channel: 9,
+            channel,
             note,
             velocity: 0.0,
         });
@@ -2803,18 +2820,27 @@ impl Plugin for DrumFlashVst {
                                     self.synthesizer.reset_voice(oh_slot);
                                 }
                             }
-                            // Forward the MIDI event to the output
+                            // Forward the MIDI event to the output on the global
+                            // MIDI channel. The note itself is preserved from the
+                            // incoming event.
+                            let output_channel = self
+                                .params
+                                .track_layout
+                                .state
+                                .global_midi_channel()
+                                .saturating_sub(1)
+                                .min(15);
                             context.send_event(NoteEvent::NoteOn {
                                 timing: sample_idx as u32,
                                 voice_id: None,
-                                channel: 9,
+                                channel: output_channel,
                                 note,
                                 velocity,
                             });
                             context.send_event(NoteEvent::NoteOff {
                                 timing: sample_idx as u32,
                                 voice_id: None,
-                                channel: 9,
+                                channel: output_channel,
                                 note,
                                 velocity: 0.0,
                             });
@@ -3670,5 +3696,36 @@ mod tests {
         assert_eq!(gains[2], 1.0);
         assert_eq!(gains[4], 0.0); // soloed but not routed to Main
         assert_eq!(gains[5], 1.0); // routed to Main; gains are independent of mute/solo
+    }
+
+    #[test]
+    fn resolve_midi_output_uses_slot_note_and_global_channel() {
+        use std::sync::atomic::Ordering;
+
+        let vst = DrumFlashVst::default();
+        let default_kick_note = crate::instrument_registry::INSTRUMENTS[0].midi_note;
+
+        // Default layout: slot 0 is Kick, global channel is 10 -> output channel 9.
+        let (note, channel) = vst.resolve_midi_output_for_slot(0);
+        assert_eq!(note, default_kick_note);
+        assert_eq!(channel, 9);
+
+        // Override the slot MIDI note and global channel.
+        vst.params.track_layout.state.slot_midi_notes[0].store(99, Ordering::Relaxed);
+        vst.params
+            .track_layout
+            .state
+            .global_channel
+            .store(16, Ordering::Relaxed);
+
+        let (note, channel) = vst.resolve_midi_output_for_slot(0);
+        assert_eq!(
+            note, 99,
+            "MIDI output must use the per-slot note, not the instrument registry default"
+        );
+        assert_eq!(
+            channel, 15,
+            "MIDI output channel must be global MIDI channel minus one"
+        );
     }
 }
