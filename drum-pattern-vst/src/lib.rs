@@ -78,7 +78,10 @@ fn compute_mix_gating(
     mute_states: &[bool; crate::track::MAX_TRACKS],
     solo_states: &[bool; crate::track::MAX_TRACKS],
     main_mix_enabled: &[bool; crate::track::MAX_TRACKS],
-) -> ([bool; crate::track::MAX_TRACKS], [f32; crate::track::MAX_TRACKS]) {
+) -> (
+    [bool; crate::track::MAX_TRACKS],
+    [f32; crate::track::MAX_TRACKS],
+) {
     let any_solo_active = solo_states.iter().copied().any(|solo| solo);
     let effective_mutes = std::array::from_fn(|index| {
         if any_solo_active {
@@ -3567,7 +3570,10 @@ mod tests {
 
         assert!(effective_mutes[2]);
         assert!(
-            effective_mutes.iter().enumerate().all(|(i, m)| i == 2 || !m),
+            effective_mutes
+                .iter()
+                .enumerate()
+                .all(|(i, m)| i == 2 || !m),
             "only slot 2 should be muted"
         );
     }
@@ -3590,7 +3596,10 @@ mod tests {
             "soloed slot 7 must remain audible regardless of mutes"
         );
         assert!(
-            effective_mutes.iter().enumerate().all(|(i, m)| i == 7 || *m),
+            effective_mutes
+                .iter()
+                .enumerate()
+                .all(|(i, m)| i == 7 || *m),
             "all non-soloed slots should be muted when any solo is active"
         );
     }
@@ -3609,11 +3618,7 @@ mod tests {
 
         for i in 0..crate::track::MAX_TRACKS {
             if solos[i] {
-                assert!(
-                    !effective_mutes[i],
-                    "soloed slot {} should be unmuted",
-                    i
-                );
+                assert!(!effective_mutes[i], "soloed slot {} should be unmuted", i);
             } else {
                 assert!(
                     effective_mutes[i],
@@ -3637,7 +3642,10 @@ mod tests {
 
         assert_eq!(gains[1], 0.0);
         assert_eq!(gains[10], 0.0);
-        assert!(gains.iter().enumerate().all(|(i, g)| i == 1 || i == 10 || *g == 1.0));
+        assert!(gains
+            .iter()
+            .enumerate()
+            .all(|(i, g)| i == 1 || i == 10 || *g == 1.0));
     }
 
     #[test]

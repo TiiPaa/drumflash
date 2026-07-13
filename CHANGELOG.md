@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-13 — AUDIT-8 : nettoyage échafaudage UI mort + SAFETY native_drag (build 20260713-100057)
+
+**Build:** `20260713-100057`
+**Validation:** `cargo fmt` OK, `cargo check` OK (17 warnings UI restants), `cargo test` OK (161 lib + 1 midi_drag_helper + 97 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **AUDIT-8 — Nettoyage de l'échafaudage UI mort.**
+  - Suppression du module `src/ui/design_system.rs` (Typography, Spacing, panel_frame, button, tag, panel_header — tous non câblés).
+  - Suppression du widget `StyledButton` inutilisé dans `src/ui/widgets.rs`.
+  - Remplacement de l'API dépréciée `egui::Ui::allocate_ui_at_rect` par `allocate_new_ui` dans `src/ui.rs` (10 occurrences).
+  - Warnings réduits de 41 à 17.
+- **`src/native_drag.rs` — documentation des invariants unsafe.**
+  - Ajout de commentaires `// SAFETY:` sur toutes les opérations unsafe : initialisation OLE, vtables COM, gestion des références, `GlobalAlloc`/`GlobalLock`/`copy_nonoverlapping`, etc.
+  - Ajout du test `build_hdrop_medium_produces_valid_global_medium` qui vérifie la structure `CF_HDROP` construite pour le drag & drop MIDI.
+
+### À tester dans Studio One (build 20260713-100057)
+1. Ouvrir le plugin : la grille, le Sound Editor, le panneau Song/Generator et le panneau inférieur doivent s'afficher normalement (replacement de `allocate_ui_at_rect` par `allocate_new_ui`).
+2. Cliquer sur les onglets `Sound Editor` / `Track` : ils doivent basculer sans glitch visuel.
+3. Ouvrir le Song Editor et éditer un block (sélecteur de pattern + répétitions) : les widgets doivent rester alignés.
+4. Bouton `Drag MIDI` : glisser-déposer un fichier MIDI vers Studio One doit toujours créer le clip MIDI (le helper OLE est inchangé, mais le test du medium `CF_HDROP` est maintenant validé).
+5. Régression : aucune disparition de panneau, aucun décalage de layout, aucun crash à l'ouverture du plugin.
+
+---
+
+
 ## 2026-07-13 — AUDIT-7 : Infrastructure git (Cargo.lock, cruft binaire) (build 20260713-093252)
 
 **Build:** `20260713-093252`
