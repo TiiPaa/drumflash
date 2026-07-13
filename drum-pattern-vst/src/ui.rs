@@ -538,6 +538,12 @@ struct EditorUIState {
     fusion_editing: Option<(usize, usize)>,
     /// True when a fusion group just entered edit mode this frame; requests focus on the step-count field.
     fusion_edit_focus_request: bool,
+    /// Current value of the track-name field in the Track tab.
+    #[serde(skip)]
+    track_name_input: String,
+    /// Slot that `track_name_input` corresponds to; refresh on selection change.
+    #[serde(skip)]
+    track_name_input_slot: usize,
     /// Current value being edited in the Step Fusion step-count field.
     #[serde(skip)]
     fusion_edit_steps: u8,
@@ -4594,14 +4600,20 @@ fn draw_track_tab(
 
     ui.add_space(12.0);
     ui.label(RichText::new("Name").font(f_sans_med(10.5)).color(INK3));
+    if state.track_name_input_slot != slot_idx {
+        state.track_name_input = slot.name.clone();
+        state.track_name_input_slot = slot_idx;
+    }
     ui.horizontal(|ui| {
         let response = ui.add(
-            egui::TextEdit::singleline(&mut new_state.slots[slot_idx].name)
+            egui::TextEdit::singleline(&mut state.track_name_input)
+                .id(egui::Id::new(("track_name", slot_idx)))
                 .desired_width(180.0)
                 .font(f_sans_med(12.0))
                 .text_color(Color32::WHITE),
         );
         if response.changed() {
+            new_state.slots[slot_idx].name = state.track_name_input.clone();
             changed = true;
         }
     });
@@ -4659,6 +4671,15 @@ fn draw_track_tab(
                 }
             }
         });
+
+    // If the slot name changed externally (e.g. instrument change) and the
+    // user is not editing the Name field, refresh the stable input buffer.
+    let name_edit_id = egui::Id::new(("track_name", slot_idx));
+    if new_state.slots[slot_idx].name != state.track_name_input
+        && !ui.memory(|mem| mem.has_focus(name_edit_id))
+    {
+        state.track_name_input = new_state.slots[slot_idx].name.clone();
+    }
 
     ui.add_space(16.0);
     ui.label(RichText::new("Routing").font(f_sans_med(10.5)).color(INK3));

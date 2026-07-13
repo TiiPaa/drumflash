@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-13 — Fix saisie clavier du champ Name + diagnostics (build 20260713-144759)
+
+**Build:** `20260713-144759`
+**Validation:** `cargo fmt` OK, `cargo check` OK, `cargo test` OK (162 lib + 1 midi_drag_helper + 97 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Fix tentative pour la saisie clavier du champ `Name` dans l'onglet `Track`.**
+  - `src/ui.rs` : le `TextEdit` est maintenant lié à un buffer stable dans `EditorUIState` (`track_name_input`) avec un ID explicite par slot, plutôt qu'à une `String` locale recréée à chaque frame. Cela évite que le widget perde le focus/curseur à chaque frame.
+  - Le buffer est synchronisé avec `slot.name` quand on change de slot sélectionné, et rafraîchi quand le nom change par une autre voie (changement d'instrument) tant que l'utilisateur n'est pas en train d'éditer.
+- **Diagnostics temporaires dans le workaround clavier Windows.**
+  - `vendor/nih-plug/nih_plug_egui/src/editor.rs` : la fenêtre message est créée avec une taille 1×1 et sans `WS_EX_NOACTIVATE` (possible cause de non-réception du focus).
+  - Ajout d'un log `%TEMP%\flash_drum_kbd.log` qui enregistre les appels `set_keyboard_focus`, les messages reçus par `msg_wnd_proc` et les messages traduits par `subclass_proc`. Ce log permet de diagnostiquer le chemin des événements clavier si le champ ne fonctionne toujours pas.
+
+### À tester dans Studio One (build 20260713-144759)
+1. Ouvrir le plugin, sélectionner une lane, aller dans l'onglet `Track`.
+2. Cliquer dans le champ `Name` et taper un nom personnalisé → il doit s'afficher dans l'en-tête de lane.
+3. Si la saisie ne fonctionne toujours pas :
+   - Vérifier que le curseur apparaît bien dans le champ `Name` après le clic.
+   - Vérifier si la saisie clavier fonctionne dans d'autres champs texte du plugin (double-clic sur un slider de paramètre pour entrer une valeur, ou champ `Name` dans `Dev: Preset Dumps` si visible).
+   - Envoyer le fichier `%TEMP%\flash_drum_kbd.log` (il est recréé/complété à chaque ouverture du plugin).
+4. Régression : vérifier que les menus de Studio One restent accessibles quand le plugin est visible et qu'aucun champ texte n'a le focus.
+
+---
+
+
 ## 2026-07-13 — Rename de lane dans l'onglet Track (build 20260713-143422)
 
 **Build:** `20260713-143422`
