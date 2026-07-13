@@ -29,8 +29,8 @@ pub mod win_keyboard {
     //! plugin child windows via `TranslateAccelerator` and `IsDialogMessage`. The fix used
     //! by `plugin-things` (ilmai) and adapted here:
     //!
-    //! 1. A separate child window (`message window`) is registered with its own class and
-    //!    `WS_EX_NOACTIVATE`. Because it lives outside the host's dialog tree, neither
+    //! 1. A separate child window (`message window`) is registered with its own class.
+    //!    Because it lives outside the host's dialog tree, neither
     //!    `TranslateAccelerator` nor `IsDialogMessage` consume messages for it.
     //! 2. When egui needs keyboard focus, `set_keyboard_focus(true)` redirects Win32
     //!    focus to the message window. Otherwise focus stays on the baseview window
@@ -49,6 +49,19 @@ pub mod win_keyboard {
     use std::sync::atomic::{AtomicPtr, AtomicU16, Ordering};
 
     type WndProcFn = unsafe extern "system" fn(*mut c_void, u32, usize, isize) -> isize;
+
+    /// Temporary diagnostic log for the Windows keyboard workaround.
+    /// Writes to %TEMP%\flash_drum_kbd.log. Remove once keyboard input is stable.
+    fn kbd_log(msg: &str) {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        let path = std::env::temp_dir().join("flash_drum_kbd.log");
+        let _ = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .and_then(|mut f| writeln!(f, "{}", msg));
+    }
 
     #[repr(C)]
     struct WNDCLASSW {
@@ -162,7 +175,6 @@ pub mod win_keyboard {
     const WM_APP_SYSCHAR: u32 = WM_APP + 6;
 
     const WS_CHILD: u32 = 0x40000000;
-    const WS_EX_NOACTIVATE: u32 = 0x08000000;
 
     // UTF-16 null-terminated "NihPlugEguiOrigWndProc".
     const PROP_NAME: &[u16] = &[
@@ -207,6 +219,18 @@ pub mod win_keyboard {
         wparam: usize,
         lparam: isize,
     ) -> isize {
+        let log_keyboard = msg == WM_KEYDOWN
+            || msg == WM_KEYUP
+            || msg == WM_CHAR
+            || msg == WM_SYSKEYDOWN
+            || msg == WM_SYSKEYUP
+            || msg == WM_SYSCHAR;
+        if log_keyboard {
+            kbd_log(&format!(
+                "msg_wnd_proc: hwnd={:p} msg={:04x} wparam={} lparam={:016x}",
+                hwnd, msg, wparam, lparam
+            ));
+        }
         // Drop the keydown if a matching char is queued: baseview's keyboard logic
         // merges them, but only if it can see the WM_CHAR via PeekMessageW. Since we
         // forward as WM_APP+N, baseview's peek won't find it and would emit two events.
@@ -257,6 +281,12 @@ pub mod win_keyboard {
             WM_APP_SYSCHAR => WM_SYSCHAR,
             other => other,
         };
+        if translated_msg != msg {
+            kbd_log(&format!(
+                "subclass_proc: hwnd={:p} app_msg={:04x} -> real_msg={:04x} wparam={} lparam={:016x}",
+                hwnd, msg, translated_msg, wparam, lparam
+            ));
+        }
         let original = GetPropW(hwnd, PROP_NAME.as_ptr());
         if original.is_null() {
             return DefWindowProcW(hwnd, translated_msg, wparam, lparam);
@@ -316,14 +346,14 @@ pub mod win_keyboard {
         unsafe {
             let h_inst = GetModuleHandleW(null());
             CreateWindowExW(
-                WS_EX_NOACTIVATE,
+                0, // WS_EX_NOACTIVATE removed: child window needs to be able to receive focus
                 MSG_CLASS_NAME.as_ptr(),
                 null(),
                 WS_CHILD,
                 0,
                 0,
-                0,
-                0,
+                1,
+                1,
                 parent,
                 null_mut(),
                 h_inst,
@@ -389,9 +419,14 @@ pub mod win_keyboard {
             }
 
             if focused {
+                kbd_log(&format!(
+                    "set_keyboard_focus(true): plugin={:p} msg={:p} current_focus={:p} target={:p}",
+                    plugin, msg, current_focus, target
+                ));
                 if !is_window_or_descendant(plugin, current_focus)
                     && !cursor_over_window_or_descendant(plugin)
                 {
+                    kbd_log("  abort: focus and cursor are outside plugin");
                     return;
                 }
             } else if !msg.is_null() {
@@ -402,6 +437,7 @@ pub mod win_keyboard {
 
             let fg = GetForegroundWindow();
             if fg.is_null() {
+                kbd_log("  abort: no foreground window");
                 return;
             }
             // Only set focus if the plugin (or its parent DAW window) is the foreground
@@ -415,6 +451,7 @@ pub mod win_keyboard {
                 plugin_or_parent = GetParent(plugin_or_parent);
             }
             if plugin_or_parent.is_null() {
+                kbd_log("  abort: plugin not in foreground chain");
                 // Plugin is not in the foreground window chain; user switched away.
                 return;
             }
@@ -424,9 +461,12 @@ pub mod win_keyboard {
                 AttachThreadInput(my_thread, fg_thread, 1);
                 SetFocus(target);
                 AttachThreadInput(my_thread, fg_thread, 0);
+                kbd_log("  SetFocus(target) via AttachThreadInput");
                 return;
             }
             SetFocus(target);
+            kbd_log("  SetFocus(target) direct");
+
         }
     }
 }
