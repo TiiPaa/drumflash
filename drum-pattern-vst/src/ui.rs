@@ -541,9 +541,10 @@ struct EditorUIState {
     /// Current value of the track-name field in the Track tab.
     #[serde(skip)]
     track_name_input: String,
-    /// Slot that `track_name_input` corresponds to; refresh on selection change.
+    /// Slot that `track_name_input` corresponds to; `None` means it needs to be
+    /// initialized from the current slot.
     #[serde(skip)]
-    track_name_input_slot: usize,
+    track_name_input_slot: Option<usize>,
     /// Current value being edited in the Step Fusion step-count field.
     #[serde(skip)]
     fusion_edit_steps: u8,
@@ -4600,9 +4601,9 @@ fn draw_track_tab(
 
     ui.add_space(12.0);
     ui.label(RichText::new("Name").font(f_sans_med(10.5)).color(INK3));
-    if state.track_name_input_slot != slot_idx {
+    if state.track_name_input_slot != Some(slot_idx) {
         state.track_name_input = slot.name.clone();
-        state.track_name_input_slot = slot_idx;
+        state.track_name_input_slot = Some(slot_idx);
     }
     ui.horizontal(|ui| {
         let response = ui.add(
@@ -4660,6 +4661,7 @@ fn draw_track_tab(
                     new_state.slots[slot_idx].kind = kind;
                     new_state.slots[slot_idx].name = label.to_string();
                     new_state.slots[slot_idx].midi_note = kind.default_midi_note();
+                    state.track_name_input = label.to_string();
                     changed = true;
                     // New kind → new voice: align the slot's settings with the
                     // new instrument's defaults (the audio thread reinitializes
@@ -4671,15 +4673,6 @@ fn draw_track_tab(
                 }
             }
         });
-
-    // If the slot name changed externally (e.g. instrument change) and the
-    // user is not editing the Name field, refresh the stable input buffer.
-    let name_edit_id = egui::Id::new(("track_name", slot_idx));
-    if new_state.slots[slot_idx].name != state.track_name_input
-        && !ui.memory(|mem| mem.has_focus(name_edit_id))
-    {
-        state.track_name_input = new_state.slots[slot_idx].name.clone();
-    }
 
     ui.add_space(16.0);
     ui.label(RichText::new("Routing").font(f_sans_med(10.5)).color(INK3));

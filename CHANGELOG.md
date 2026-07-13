@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-13 — Fix validation Enter du champ Name (build 20260713-145653)
+
+**Build:** `20260713-145653`
+**Validation:** `cargo fmt` OK, `cargo check` OK, `cargo test` OK (162 lib + 1 midi_drag_helper + 97 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Correction du retour à l'ancien nom quand on appuie sur `Enter` dans le champ `Name`.**
+  - `src/ui.rs` : suppression du rafraîchissement automatique du buffer de saisie quand le `TextEdit` perd le focus. La sync se fait maintenant uniquement au changement de slot sélectionné (`track_name_input_slot` est un `Option<usize>` initialisé à `None`, donc le premier affichage charge bien le nom courant).
+  - Quand on change d'instrument dans le ComboBox, le buffer est explicitement mis à jour avec le nom par défaut du nouvel instrument.
+  - Le nom saisi reste donc stable après `Enter` ou perte de focus.
+
+### À tester dans Studio One (build 20260713-145653)
+1. Sélectionner une lane → onglet `Track` → champ `Name` doit afficher le nom actuel.
+2. Taper un nouveau nom, appuyer sur `Enter` : le champ doit conserver le nouveau nom (pas de retour à l'ancien).
+3. Sélectionner une autre lane puis revenir : la nouvelle valeur doit être conservée.
+4. Sauvegarder/recharger la song : le nom personnalisé persiste.
+5. Changer d'instrument : le nom retombe sur le label par défaut du nouvel instrument.
+6. Régression : vérifier que les menus de Studio One restent accessibles quand le plugin est visible et qu'aucun champ texte n'a le focus.
+
+---
+
+
 ## 2026-07-13 — Fix saisie clavier du champ Name + diagnostics (build 20260713-144759)
 
 **Build:** `20260713-144759`
