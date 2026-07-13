@@ -545,6 +545,9 @@ struct EditorUIState {
     /// initialized from the current slot.
     #[serde(skip)]
     track_name_input_slot: Option<usize>,
+    /// When true, request focus on the Track tab Name field the next time it is drawn.
+    #[serde(skip)]
+    track_name_focus_request: bool,
     /// Current value being edited in the Step Fusion step-count field.
     #[serde(skip)]
     fusion_edit_steps: u8,
@@ -2222,7 +2225,7 @@ fn draw_grid_v2(
 
             let row_w = ui.available_width();
             let grip_w = 14.0;
-            let name_w = 34.0;
+            let name_w = 50.0;
             let vol_w = 56.0;
             let mst_w = STEP_H * 3.0 + GAP_TIGHT * 2.0;
             let extra_w = 44.0;
@@ -2434,15 +2437,27 @@ fn draw_legacy_slot_lane_v2(
         let selected = state.selected_track_slot == slot_idx;
         let layout_state =
             PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
-        let slot_name = if layout_state.slots[slot_idx].name.is_empty() {
-            crate::instrument_registry::INSTRUMENTS[voice_idx].label
-        } else {
-            &layout_state.slots[slot_idx].name
+        let slot_name = {
+            let name = if layout_state.slots[slot_idx].name.is_empty() {
+                crate::instrument_registry::INSTRUMENTS[voice_idx]
+                    .label
+                    .to_string()
+            } else {
+                layout_state.slots[slot_idx].name.clone()
+            };
+            name.chars().take(6).collect::<String>()
         };
-        let name_response = draw_lane_name_v2(ui, name_w, selected, slot_name)
+        let name_response = draw_lane_name_v2(ui, name_w, selected, &slot_name)
             .on_hover_text(crate::instrument_registry::INSTRUMENTS[voice_idx].full_name);
         if name_response.clicked() {
             select_legacy_track(state, slot_idx);
+        }
+        if name_response.double_clicked() {
+            select_legacy_track(state, slot_idx);
+            state.sound_editor_tab = SoundEditorTab::Track;
+            state.track_name_input = layout_state.slots[slot_idx].name.clone();
+            state.track_name_input_slot = Some(slot_idx);
+            state.track_name_focus_request = true;
         }
 
         name_response.context_menu(|ui| {
@@ -4609,10 +4624,15 @@ fn draw_track_tab(
         let response = ui.add(
             egui::TextEdit::singleline(&mut state.track_name_input)
                 .id(egui::Id::new(("track_name", slot_idx)))
+                .char_limit(6)
                 .desired_width(180.0)
                 .font(f_sans_med(12.0))
                 .text_color(Color32::WHITE),
         );
+        if state.track_name_focus_request {
+            state.track_name_focus_request = false;
+            response.request_focus();
+        }
         if response.changed() {
             new_state.slots[slot_idx].name = state.track_name_input.clone();
             changed = true;

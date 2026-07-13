@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-07-13 — Double-clic sur le nom de lane pour renommer (build 20260713-154411)
+
+**Build:** `20260713-154411`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Double-clic sur le nom d'une lane active** pour l'éditer directement.
+  - Le double-clic sélectionne le slot, bascule l'onglet `Track` et donne le focus au champ `Name`.
+  - Le champ est initialisé avec le nom personnalisé de la lane (ou vide si aucun nom personnalisé n'est défini).
+  - La limite de 6 caractères et la persistance `track-layout-v1` restent actives.
+
+### À tester dans Studio One (build 20260713-154411)
+1. Double-cliquer sur le nom d'une lane active (ex. `BD`, `SD`) → l'onglet `Track` doit s'ouvrir et le champ `Name` doit être focusé avec le texte courant.
+2. Taper un nouveau nom (max 6 caractères) → valider avec `Enter` ou cliquer ailleurs → le nom de la lane doit se mettre à jour.
+3. Vérifier que la limite de 6 caractères bloque toujours au-delà.
+4. Sauvegarder/recharger la song → le nom modifié par double-clic doit être conservé.
+5. Régression : un clic simple sur le nom de lane doit toujours sélectionner la lane sans changer d'onglet.
+
+---
+
+## 2026-07-13 — Limite 6 caractères et largeur fixe pour le nom de lane (build 20260713-151535)
+
+**Build:** `20260713-151535`
+**Validation:** `cargo fmt` OK, `cargo check` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Limite de 6 caractères pour le nom de lane.**
+  - `src/ui.rs` : le champ `Name` dans l'onglet `Track` utilise `.char_limit(6)`.
+  - L'affichage dans l'en-tête de lane est tronqué à 6 caractères.
+- **Largeur fixe et identique pour la box de nom de toutes les lanes.**
+  - `name_w` passe de 34 px à 50 px pour accueillir 6 caractères en mono.
+  - La box est donc la même largeur pour les lanes actives et les lanes vides (`+N`).
+
+### À tester dans Studio One (build 20260713-151535)
+1. Sélectionner une lane → `Track` → tenter de taper plus de 6 caractères dans `Name` : le champ doit bloquer à 6.
+2. Vérifier que l'en-tête de lane affiche jusqu'à 6 caractères sans déborder.
+3. Vérifier que toutes les boxes de nom (lanes actives et lanes vides `+N`) ont la même largeur.
+4. Vérifier que la grille reste lisible (les 16 steps tiennent sur la ligne).
+5. Régression : sauvegarder/recharger la song conserve le nom tronqué ou saisi.
+
+---
+
+
 ## 2026-07-13 — Persiste le nom personnalisé des lanes dans track-layout-v1 (build 20260713-150831)
 
 **Build:** `20260713-150831`
