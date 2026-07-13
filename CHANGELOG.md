@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-13 — Persiste le nom personnalisé des lanes dans track-layout-v1 (build 20260713-150831)
+
+**Build:** `20260713-150831`
+**Validation:** `cargo fmt` OK, `cargo check` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Correction : le nom personnalisé d'une lane était affiché dans le champ `Name` mais pas vraiment persisté, donc l'en-tête de lane revenait toujours au label de l'instrument.**
+  - `src/track.rs` : `PersistentTrackLayout` stocke maintenant un tableau `slot_names` synchronisé avec `TrackLayoutState` dans `set()` et relu dans `map()`.
+  - Avant, `map()` reconstruisait `slot.name` à partir de `kind.default_name()` — la valeur personnalisée était perdue.
+  - Ajout du test `persistent_track_layout_preserves_custom_names`.
+
+### À tester dans Studio One (build 20260713-150831)
+1. Sélectionner une lane → onglet `Track` → champ `Name` doit afficher le nom actuel.
+2. Taper un nom personnalisé, appuyer `Enter` : l'en-tête de lane doit immédiatement afficher le nouveau nom.
+3. Changer de lane et revenir : le nom personnalisé doit être conservé.
+4. Sauvegarder/recharger la song : le nom personnalisé persiste dans le projet DAW.
+5. Changer d'instrument : le nom retombe au label par défaut du nouvel instrument.
+6. Régression : vérifier que les menus de Studio One restent accessibles quand le plugin est visible et qu'aucun champ texte n'a le focus.
+
+---
+
+
 ## 2026-07-13 — Fix validation Enter du champ Name (build 20260713-145653)
 
 **Build:** `20260713-145653`
