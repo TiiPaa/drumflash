@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-13 — Rename de lane dans l'onglet Track (build 20260713-143422)
+
+**Build:** `20260713-143422`
+**Validation:** `cargo fmt` OK, `cargo check` OK (17 warnings UI restants), `cargo test` OK (162 lib + 1 midi_drag_helper + 97 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Renommage de lane dans l'onglet `Track` (sous-point de [100i]).**
+  - `src/ui.rs` : ajout d'un champ `Name` éditable dans `draw_track_tab`, au-dessus du sélecteur d'instrument.
+  - Le nom est stocké dans `TrackSlot::name` (déjà persistant dans `track-layout-v1`).
+  - L'en-tête de lane affiche le nom personnalisé s'il est non vide ; sinon il retombe sur le label de l'instrument (BD, SD, HH…).
+  - Refactor interne : le changement d'instrument utilise maintenant le même `new_state`/`changed` que le reste de l'onglet Track, au lieu d'écrire directement l'état dans le ComboBox (évite d'écraser d'éventuelles modifications Routing/MIDI/Name faites dans la même frame).
+
+### À tester dans Studio One (build 20260713-143422)
+1. Sélectionner une lane active (ex. Kick slot 1) → l'onglet `Track` affiche son nom actuel en haut.
+2. Dans le champ `Name`, taper un nom personnalisé (ex. `MyKick`) → le nom doit s'afficher dans l'en-tête de lane à la place de `BD`.
+3. Vider le champ `Name` → l'en-tête de lane doit revenir au label de l'instrument.
+4. Changer d'instrument via le ComboBox `Instrument` → le nom retombe sur le label par défaut du nouvel instrument (comportement existant).
+5. Sauvegarder/recharger la song Studio One → le nom personnalisé doit être conservé (persisté dans `track-layout-v1`).
+6. Régression : vérifier que `Routing`, `MIDI Note` et `Length` fonctionnent toujours normalement après le refactor de `draw_track_tab`.
+
+---
+
+
 ## 2026-07-13 — Vérification : [FIX] new tracks silent + solo par slot + UI track-based (build 20260713-142542)
 
 **Build:** `20260713-142542`

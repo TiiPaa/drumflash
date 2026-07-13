@@ -2425,13 +2425,15 @@ fn draw_legacy_slot_lane_v2(
         }
 
         let selected = state.selected_track_slot == slot_idx;
-        let name_response = draw_lane_name_v2(
-            ui,
-            name_w,
-            selected,
-            crate::instrument_registry::INSTRUMENTS[voice_idx].label,
-        )
-        .on_hover_text(crate::instrument_registry::INSTRUMENTS[voice_idx].full_name);
+        let layout_state =
+            PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+        let slot_name = if layout_state.slots[slot_idx].name.is_empty() {
+            crate::instrument_registry::INSTRUMENTS[voice_idx].label
+        } else {
+            &layout_state.slots[slot_idx].name
+        };
+        let name_response = draw_lane_name_v2(ui, name_w, selected, slot_name)
+            .on_hover_text(crate::instrument_registry::INSTRUMENTS[voice_idx].full_name);
         if name_response.clicked() {
             select_legacy_track(state, slot_idx);
         }
@@ -4587,6 +4589,23 @@ fn draw_track_tab(
             .color(Color32::WHITE),
     );
 
+    let mut new_state = layout_state.clone();
+    let mut changed = false;
+
+    ui.add_space(12.0);
+    ui.label(RichText::new("Name").font(f_sans_med(10.5)).color(INK3));
+    ui.horizontal(|ui| {
+        let response = ui.add(
+            egui::TextEdit::singleline(&mut new_state.slots[slot_idx].name)
+                .desired_width(180.0)
+                .font(f_sans_med(12.0))
+                .text_color(Color32::WHITE),
+        );
+        if response.changed() {
+            changed = true;
+        }
+    });
+
     ui.add_space(12.0);
     ui.label(
         RichText::new("Instrument")
@@ -4626,11 +4645,10 @@ fn draw_track_tab(
                     .clicked()
                     && kind != current_kind
                 {
-                    let mut new_state = layout_state.clone();
                     new_state.slots[slot_idx].kind = kind;
                     new_state.slots[slot_idx].name = label.to_string();
                     new_state.slots[slot_idx].midi_note = kind.default_midi_note();
-                    PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+                    changed = true;
                     // New kind → new voice: align the slot's settings with the
                     // new instrument's defaults (the audio thread reinitializes
                     // the voice via last_slot_kinds detection).
@@ -4644,8 +4662,6 @@ fn draw_track_tab(
 
     ui.add_space(16.0);
     ui.label(RichText::new("Routing").font(f_sans_med(10.5)).color(INK3));
-    let mut new_state = layout_state.clone();
-    let mut changed = false;
     ui.horizontal(|ui| {
         let mut main_on = slot.routing.main_on;
         if ui
@@ -4699,11 +4715,7 @@ fn draw_track_tab(
     });
 
     ui.add_space(16.0);
-    ui.label(
-        RichText::new("MIDI Note")
-            .font(f_sans_med(10.5))
-            .color(INK3),
-    );
+    ui.label(RichText::new("Routing").font(f_sans_med(10.5)).color(INK3));
     ui.horizontal(|ui| {
         let mut note = slot.midi_note as i32;
         if ui
