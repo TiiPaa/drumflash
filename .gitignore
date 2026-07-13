@@ -1,8 +1,12 @@
 # Rust
 target/
-Cargo.lock
+
+# Lock files in vendored dependencies
+**/vendor/**/Cargo.lock
 
 # Build artifacts
+*.pdb
+*.zip
 drum-pattern-vst/build/
 *.dll
 *.exe
