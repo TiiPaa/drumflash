@@ -192,6 +192,11 @@ pub struct DrumFlashVst {
     clear_plocks_request: Arc<AtomicBool>,
     /// Song mode state (UI-driven, atomic for lock-free access).
     song_mode: Arc<AtomicBool>,
+    /// Previous song-mode value used to detect transitions (off -> on).
+    song_mode_was_active: bool,
+    /// When true, the song needs to restart from step 0 on the next audio block.
+    /// Set when song mode is enabled or when transport stops/starts with song mode on.
+    song_needs_init: bool,
     /// Current position in the song sequence (0-63).
     song_position: Arc<AtomicU32>,
     /// Last observed loop count to detect pattern wrap.
@@ -1844,6 +1849,8 @@ impl Default for DrumFlashVst {
             load_pattern_request: Arc::new(AtomicU32::new(0)),
             clear_plocks_request: Arc::new(AtomicBool::new(false)),
             song_mode: Arc::new(AtomicBool::new(false)),
+            song_mode_was_active: false,
+            song_needs_init: false,
             song_position: Arc::new(AtomicU32::new(0)),
             last_loop_count: 0,
             song_repeat_counter: 0,
@@ -2905,7 +2912,53 @@ impl Plugin for DrumFlashVst {
         }
         // Song mode: advance to next pattern when current pattern wraps, respecting per-step repeats.
         if self.params.song_mode.value() && self.sequencer.is_playing() {
+            // Detect song mode being enabled while the sequencer is already running:
+            // we must restart from the top of the song sequence.
+            if !self.song_mode_was_active {
+                self.song_needs_init = true;
+            }
+            self.song_mode_was_active = true;
+
             let current_loop_count = self.sequencer.loop_count();
+
+            // If the song just started (transport started with song mode on, or song mode was
+            // enabled while playing), load the first song block immediately.
+            if self.song_needs_init {
+                self.song_needs_init = false;
+                self.song_repeat_counter = 0;
+                self.song_position.store(0, Ordering::Relaxed);
+                self.last_song_position = 0;
+                self.last_loop_count = current_loop_count;
+                let first_slot: Result<Option<usize>, ()> =
+                    match self.params.pattern_bank.bank.try_lock() {
+                        Ok(bank) => Ok(bank.song.slot_at(0)),
+                        Err(_) => Err(()),
+                    };
+                match first_slot {
+                    Ok(Some(slot)) => {
+                        match self.load_pattern_from_slot(slot) {
+                            PatternBankActionResult::Loaded(_)
+                            | PatternBankActionResult::Applied => {
+                                self.pending_song_pattern_restart = true;
+                            }
+                            PatternBankActionResult::Busy => {
+                                // Bank was locked; try again next block.
+                                self.song_needs_init = true;
+                            }
+                            PatternBankActionResult::Skipped => {}
+                        }
+                    }
+                    Ok(None) => {
+                        // First song block is empty: the current pattern keeps playing
+                        // until the next loop advances or the user fills the block.
+                    }
+                    Err(_) => {
+                        // Bank locked; retry next block.
+                        self.song_needs_init = true;
+                    }
+                }
+            }
+
             if current_loop_count != self.last_loop_count {
                 let song_advance = {
                     match self.params.pattern_bank.bank.try_lock() {
@@ -2977,6 +3030,10 @@ impl Plugin for DrumFlashVst {
         } else {
             // Reset song position when not in song mode or when transport is stopped
             // so the song always starts from the top when re-enabled.
+            self.song_mode_was_active = false;
+            if self.params.song_mode.value() {
+                self.song_needs_init = true;
+            }
             self.last_loop_count = self.sequencer.loop_count();
             self.song_position.store(0, Ordering::Relaxed);
             self.song_repeat_counter = 0;
