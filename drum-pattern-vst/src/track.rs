@@ -509,12 +509,19 @@ fn decode_routing(byte: u8) -> TrackRouting {
 #[derive(Clone)]
 pub struct PersistentTrackLayout {
     pub state: Arc<AtomicTrackLayout>,
+    /// Custom names for each slot, persisted alongside the atomic layout.
+    /// Stored outside the atomic state because the audio thread does not use names.
+    slot_names: Arc<std::sync::Mutex<[String; MAX_TRACKS]>>,
 }
 
 impl PersistentTrackLayout {
     pub fn new() -> Self {
+        let layout = TrackLayoutState::default_layout();
         Self {
-            state: AtomicTrackLayout::from_state(&TrackLayoutState::default_layout()),
+            state: AtomicTrackLayout::from_state(&layout),
+            slot_names: Arc::new(std::sync::Mutex::new(std::array::from_fn(|i| {
+                layout.slots[i].name.clone()
+            }))),
         }
     }
 }
@@ -530,6 +537,11 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
 {
     fn set(&self, new_value: TrackLayoutState) {
         self.state.update_from_state(&new_value);
+        if let Ok(mut names) = self.slot_names.lock() {
+            for (i, slot) in new_value.slots.iter().enumerate() {
+                names[i] = slot.name.clone();
+            }
+        }
     }
 
     fn map<F, R>(&self, f: F) -> R
@@ -544,13 +556,20 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
             } else {
                 TrackInstrumentKind::Kick
             };
+            let name = self
+                .slot_names
+                .lock()
+                .map(|names| names[i].clone())
+                .unwrap_or_else(|_| {
+                    if active {
+                        kind.default_name().to_string()
+                    } else {
+                        String::new()
+                    }
+                });
             TrackSlot {
                 active,
-                name: if active {
-                    kind.default_name().to_string()
-                } else {
-                    String::new()
-                },
+                name,
                 kind,
                 routing: self.state.routing_for_slot(i),
                 midi_note: self.state.slot_midi_notes[i].load(Ordering::Relaxed),
@@ -568,6 +587,7 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nih_plug::params::persist::PersistentField;
 
     #[test]
     fn default_layout_is_modular_four_lanes() {
@@ -653,6 +673,23 @@ mod tests {
         let atomic = AtomicTrackLayout::from_state(&modular);
         assert_eq!(atomic.kind_for_slot(3), Some(TrackInstrumentKind::Tom));
         assert_eq!(atomic.kind_for_slot(4), None);
+    }
+
+    #[test]
+    fn persistent_track_layout_preserves_custom_names() {
+        let mut layout = TrackLayoutState::default_layout();
+        layout.slots[0].name = "Custom BD".to_string();
+        layout.slots[1].name = "Layered Snare".to_string();
+
+        let persistent = PersistentTrackLayout::new();
+        persistent.set(layout.clone());
+
+        persistent.map(|state| {
+            assert_eq!(state.slots[0].name, "Custom BD");
+            assert_eq!(state.slots[1].name, "Layered Snare");
+            assert_eq!(state.slots[0].kind, TrackInstrumentKind::Kick);
+            assert_eq!(state.slots[1].kind, TrackInstrumentKind::Snare);
+        });
     }
 
     #[test]
