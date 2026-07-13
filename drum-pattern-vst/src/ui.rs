@@ -548,6 +548,11 @@ struct EditorUIState {
     /// When true, request focus on the Track tab Name field the next time it is drawn.
     #[serde(skip)]
     track_name_focus_request: bool,
+    /// When set, the current pattern has been edited by the user and should be saved
+    /// back to the given pattern-bank slot at the end of the UI frame. Used to keep
+    /// edits made while Song Mode is active from being lost when the song advances.
+    #[serde(skip)]
+    pattern_dirty_slot: Option<usize>,
     /// Current value being edited in the Step Fusion step-count field.
     #[serde(skip)]
     fusion_edit_steps: u8,
@@ -669,6 +674,13 @@ impl LanePresetAction {
 }
 
 impl EditorUIState {
+    /// Mark the current pattern as dirty so it will be auto-saved back to the
+    /// currently loaded pattern-bank slot at the end of the frame when Song Mode
+    /// is active. This prevents edits from being lost when the song advances.
+    fn mark_pattern_dirty(&mut self) {
+        self.pattern_dirty_slot = self.last_loaded_slot;
+    }
+
     /// Copy the current lane (instrument + settings + sequence) to the clipboard.
     fn copy_lane(
         &mut self,
@@ -755,6 +767,7 @@ impl EditorUIState {
         set_lane_length_lock_for_slot(params, target_slot, clipboard.length_locked);
 
         select_legacy_track(self, target_slot);
+        self.mark_pattern_dirty();
         true
     }
 
@@ -784,6 +797,7 @@ impl EditorUIState {
 
         paste_lane_steps(pattern, target_slot, &clipboard.steps);
         select_legacy_track(self, target_slot);
+        self.mark_pattern_dirty();
         true
     }
 
@@ -808,7 +822,7 @@ impl EditorUIState {
         self.fusion_editing = self.fusion_editing.filter(|(idx, _)| *idx != slot);
         self.plock_popup = self.plock_popup.filter(|popup| popup.instrument != slot);
         self.lane_clear_grid_confirm = None;
-        select_legacy_track(self, slot);
+        self.mark_pattern_dirty();
         true
     }
 }
@@ -933,6 +947,27 @@ fn clear_grid_steps(pattern: &SharedPattern, target_slot: usize) {
             pattern.set_step_mask(step, next);
         }
     }
+}
+
+/// Capture the current pattern, plocks and fusions into the given pattern-bank slot.
+fn save_current_pattern_to_bank_slot(
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    slot: usize,
+) {
+    if slot >= crate::pattern_bank::SLOT_COUNT {
+        return;
+    }
+    let Ok(mut bank) = params.pattern_bank.bank.lock() else {
+        return;
+    };
+    let pattern_length = params.pattern_length.value() as u8;
+    bank.slots[slot].capture(
+        pattern,
+        &params.plock_state.state,
+        &params.seq_plock_state.state,
+        pattern_length,
+    );
 }
 
 /// Instrument picker for an empty lane (opened by the `+N` chip).
@@ -1157,6 +1192,20 @@ pub fn create_editor(
                         &plock_for_ui,
                         state,
                     );
+
+                    // Auto-save pattern edits to the current bank slot when Song Mode is active.
+                    // This prevents edits from being lost when the song advances to the next pattern.
+                    if params_for_ui.song_mode.value() {
+                        if let Some(slot) = state.pattern_dirty_slot.take() {
+                            save_current_pattern_to_bank_slot(
+                                &params_for_ui,
+                                &pattern_for_ui,
+                                slot,
+                            );
+                        }
+                    } else {
+                        state.pattern_dirty_slot = None;
+                    }
                 });
         },
     )
@@ -2699,6 +2748,7 @@ fn draw_legacy_slot_lane_v2(
                     } else {
                         toggle_step_for_ui(pattern, global_step, slot_idx);
                     }
+                    state.mark_pattern_dirty();
                     if params.auto_edit.value() {
                         select_legacy_track(state, slot_idx);
                     }
@@ -5586,6 +5636,7 @@ fn finish_fusion_editing_for_ui(pattern_for_ui: &SharedPattern, state: &mut Edit
     if let Some((instrument, _, group)) = edited_fusion_for_ui(pattern_for_ui, state) {
         set_step_active_for_ui(pattern_for_ui, group.start_cell as usize, instrument, true);
     }
+    state.mark_pattern_dirty();
     state.fusion_editing = None;
 }
 
@@ -7183,6 +7234,7 @@ fn draw_plock_popup(
                                             new_fusions.remove(idx);
                                             pattern.store_fusions(inst, &new_fusions);
                                         }
+                                        state.mark_pattern_dirty();
                                         state.plock_popup = None;
                                     }
                                 });
