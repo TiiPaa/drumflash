@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-13 — MG-9 : MIDI note/channel par slot et canal global (build 20260713-102332)
+
+**Build:** `20260713-102332`
+**Validation:** `cargo fmt` OK, `cargo check` OK (17 warnings UI restants), `cargo test` OK (162 lib + 1 midi_drag_helper + 97 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **MG-9 — Correction de la sortie MIDI interne pour respecter le comportement "par slot".**
+  - `src/lib.rs` : `fire_voice_trigger()` utilisait la note MIDI par défaut du registre d'instruments (`INSTRUMENTS[voice_idx].midi_note`) au lieu de la note configurée pour le slot.
+  - Ajout de `resolve_midi_output_for_slot(slot_idx)` qui lit `track_layout.state.midi_note_for_slot(slot_idx)` et `global_midi_channel()`.
+  - La sortie MIDI interne envoie désormais la note du slot et sur le canal MIDI global (10 par défaut, converti en index 9).
+  - L'external MIDI thru utilise aussi le canal global pour les événements forwardés.
+- **Test de régression ajouté :** `resolve_midi_output_uses_slot_note_and_global_channel` vérifie qu'une note MIDI personnalisée sur un slot et un canal global modifié sont bien utilisés.
+
+### À tester dans Studio One (build 20260713-102332)
+1. Insérer une piste instrument externe (ex. General MIDI drums) et la configurer pour recevoir le MIDI de Flash Drum sur le canal 10.
+2. Sur la lane Kick (slot 1), changer la note MIDI dans l'onglet `Track` (ex. `C1` → `D1`).
+3. Jouer le séquenceur : l'instrument externe doit recevoir la nouvelle note, pas le Kick par défaut.
+4. Sur un autre slot, changer la note MIDI et vérifier que chaque slot envoie sa propre note.
+5. Régression : si la note n'est pas modifiée, l'ancienne note par défaut de l'instrument doit toujours être envoyée.
+6. Mode `Ext MIDI` : envoyer une note MIDI au plugin depuis le DAW, vérifier qu'elle est retransmise sur le canal global 10.
+
+---
+
+
 ## 2026-07-13 — AUDIT-8 : nettoyage échafaudage UI mort + SAFETY native_drag (build 20260713-100057)
 
 **Build:** `20260713-100057`
