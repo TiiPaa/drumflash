@@ -59,6 +59,9 @@ pub struct HiHatVoice {
 }
 
 impl HiHatVoice {
+    /// Steepness of the filter envelope decay stage used by the engine and the UI graph.
+    pub const FILTER_ENV_CURVE: f32 = 8.0;
+
     pub fn new(sample_rate: f32, settings: HiHatSettings) -> Self {
         let mut peaking = dsp::Biquad::new();
         peaking.set_peaking(settings.frequency, settings.resonance, 6.0, sample_rate);
@@ -101,7 +104,7 @@ impl HiHatVoice {
             envelope,
             filter_env: dsp::ExpDecayEnvelope::new(
                 sample_rate,
-                8.0,
+                Self::FILTER_ENV_CURVE,
                 settings.filter_env_decay.max(0.001),
             )
             .with_attack_ms(0.3),
@@ -111,6 +114,7 @@ impl HiHatVoice {
                 mix: settings.saturation_mix,
                 output_gain: settings.saturation_output_gain,
                 pre_filter: settings.saturation_pre_filter > 0.5,
+                compensation_gain: 1.0,
             },
             dc_block_l: dsp::DcBlocker::default(),
             dc_block_r: dsp::DcBlocker::default(),
@@ -313,6 +317,7 @@ impl Voice for HiHatVoice {
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
         self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
+        self.saturation.update_compensation();
     }
 
     fn set_algo(&mut self, _algo: u8) {
@@ -370,6 +375,7 @@ impl Voice for HiHatVoice {
             }
             _ => {}
         }
+        self.saturation.update_compensation();
     }
 }
 

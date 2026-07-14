@@ -1094,7 +1094,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // Kick-like: no hold, no filter env, no stereo
         sound_settings_default: [
-            60.0, 0.5, 0.8, 30.0, 0.0015, 0.5, 5.0, 3.0, 0.0, 1.0, 0.05, 0.3, 0.0,
+            60.0, 0.5, 0.8, 30.0, 0.0015, 0.5, 5.0, 3.0, 0.0, 1.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 0.3,
         filter_type_label: "LP",
@@ -1157,7 +1157,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // Full: hold, filter env, stereo
         sound_settings_default: [
-            200.0, 0.47, 0.6, 200.0, 0.0003, 0.2, 5.0, 3.0, 0.0, 1.0, 0.03, 0.3, 1.0,
+            200.0, 0.47, 0.6, 200.0, 0.0003, 0.2, 5.0, 3.0, 0.0, 1.0, 0.03, 0.5, 1.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -1246,7 +1246,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // Full: hold, filter env, stereo
         sound_settings_default: [
-            8000.0, 0.36, 0.3, 5000.0, 0.0003, 0.0, 8.0, 3.0, 0.0, 1.0, 0.04, 1.0, 1.0,
+            8000.0, 0.36, 0.3, 5000.0, 0.0003, 0.0, 8.0, 3.0, 0.0, 1.0, 0.04, 0.5, 1.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -1335,7 +1335,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, no filter env, stereo-capable
         sound_settings_default: [
-            6000.0, 0.66, 0.4, 8000.0, 0.0003, 0.4, 5.5, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
+            6000.0, 0.66, 0.4, 8000.0, 0.0003, 0.4, 5.5, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -1406,7 +1406,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, filter env, no stereo
         sound_settings_default: [
-            196.0, 0.35, 0.7, 600.0, 0.0015, 0.25, 4.0, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
+            196.0, 0.35, 0.7, 600.0, 0.0015, 0.25, 4.0, 3.0, 0.0, 1.0, 0.06, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -1477,7 +1477,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, filter env, no stereo
         sound_settings_default: [
-            150.0, 0.3, 0.7, 650.0, 0.0015, 0.2, 4.0, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
+            150.0, 0.3, 0.7, 650.0, 0.0015, 0.2, 4.0, 3.0, 0.0, 1.0, 0.06, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -1548,7 +1548,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, filter env, no stereo
         sound_settings_default: [
-            100.0, 0.45, 0.7, 500.0, 0.0015, 0.35, 4.0, 3.0, 0.0, 1.0, 0.06, 0.3, 0.0,
+            100.0, 0.45, 0.7, 500.0, 0.0015, 0.35, 4.0, 3.0, 0.0, 1.0, 0.06, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -1611,7 +1611,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, no filter env, stereo
         sound_settings_default: [
-            1200.0, 0.03, 0.7, 1000.0, 0.0015, 0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 1.0, 1.0,
+            1200.0, 0.03, 0.7, 1000.0, 0.0015, 0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 0.5, 1.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -1673,7 +1673,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, no filter env, stereo (default mono for stability)
         sound_settings_default: [
-            8000.0, 1.2, 0.35, 10000.0, 0.002, 1.5, 3.5, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
+            8000.0, 1.2, 0.35, 10000.0, 0.002, 1.5, 3.5, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -1762,7 +1762,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, no filter env, stereo (default mono for stability)
         sound_settings_default: [
-            6000.0, 2.0, 0.4, 8000.0, 0.002, 2.5, 2.8, 3.0, 0.0, 0.0, 0.05, 0.3, 0.0,
+            6000.0, 2.0, 0.4, 8000.0, 0.002, 2.5, 2.8, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -1835,7 +1835,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // Snare606: hold, no filter env, stereo-capable
         sound_settings_default: [
-            220.0, 0.08, 0.7, 3000.0, 0.0003, 0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 1.0, 0.0,
+            220.0, 0.08, 0.7, 3000.0, 0.0003, 0.15, 5.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -1924,7 +1924,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // Minimal: no hold, no filter env, no stereo
         sound_settings_default: [
-            50.0, 0.4, 0.9, 3000.0, 0.0015, 0.0, 3.0, 3.0, 0.0, 0.0, 0.05, 0.3, 0.0,
+            50.0, 0.4, 0.9, 3000.0, 0.0015, 0.0, 3.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -2006,7 +2006,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // Full: filter env, stereo
         sound_settings_default: [
-            2000.0, 0.15, 0.6, 6000.0, 0.0005, 0.0, 5.0, 3.0, 0.0, 0.7, 0.03, 0.3, 1.0,
+            2000.0, 0.15, 0.6, 6000.0, 0.0005, 0.0, 5.0, 3.0, 0.0, 0.7, 0.03, 0.5, 1.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",

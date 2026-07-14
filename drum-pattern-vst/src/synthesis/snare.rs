@@ -46,6 +46,9 @@ pub struct SnareVoice {
 }
 
 impl SnareVoice {
+    /// Steepness of the filter envelope decay stage used by the engine and the UI graph.
+    pub const FILTER_ENV_CURVE: f32 = 8.0;
+
     pub fn new(sample_rate: f32, settings: SnareSettings) -> Self {
         let mut osc = dsp::TriangleOsc::new(sample_rate);
         osc.set_freq(settings.frequency);
@@ -76,7 +79,7 @@ impl SnareVoice {
             envelope,
             filter_env: dsp::ExpDecayEnvelope::new(
                 sample_rate,
-                8.0,
+                Self::FILTER_ENV_CURVE,
                 settings.filter_env_decay.max(0.001),
             )
             .with_attack_ms(0.3),
@@ -86,6 +89,7 @@ impl SnareVoice {
                 mix: 1.0,
                 output_gain: 1.0,
                 pre_filter: false,
+                compensation_gain: 1.0,
             },
             drift: dsp::AnalogDrift::new(0x7A7A_3333),
             dc_block_l: dsp::DcBlocker::default(),
@@ -284,6 +288,7 @@ impl Voice for SnareVoice {
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
         self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
+        self.saturation.update_compensation();
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -316,6 +321,7 @@ impl Voice for SnareVoice {
             }
             _ => {}
         }
+        self.saturation.update_compensation();
     }
 }
 

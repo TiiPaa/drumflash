@@ -151,6 +151,7 @@ impl Perc1Voice {
                 mix: 1.0,
                 output_gain: 1.0,
                 pre_filter: false,
+                compensation_gain: 1.0,
             },
             dc_block_l: dsp::DcBlocker::default(),
             dc_block_r: dsp::DcBlocker::default(),
@@ -391,6 +392,7 @@ impl Voice for Perc1Voice {
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
         self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
+        self.saturation.update_compensation();
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -426,6 +428,7 @@ impl Voice for Perc1Voice {
             }
             _ => {}
         }
+        self.saturation.update_compensation();
     }
 }
 

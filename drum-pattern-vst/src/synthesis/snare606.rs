@@ -49,6 +49,9 @@ pub struct Snare606Voice {
 }
 
 impl Snare606Voice {
+    /// Steepness of the filter envelope decay stage used by the engine and the UI graph.
+    pub const FILTER_ENV_CURVE: f32 = 8.0;
+
     pub fn new(sample_rate: f32, settings: Snare606Settings) -> Self {
         let mut lp_softener = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         lp_softener.set_cutoff(settings.filter_freq.max(500.0), sample_rate);
@@ -76,9 +79,12 @@ impl Snare606Voice {
         .with_attack_ms((settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
         envelope.set_hold(settings.hold);
 
-        let filter_env =
-            dsp::ExpDecayEnvelope::new(sample_rate, 8.0, settings.filter_env_decay.max(0.001))
-                .with_attack_ms(0.3);
+        let filter_env = dsp::ExpDecayEnvelope::new(
+            sample_rate,
+            Self::FILTER_ENV_CURVE,
+            settings.filter_env_decay.max(0.001),
+        )
+        .with_attack_ms(0.3);
 
         // Saturation stage — initialized with defaults (disabled)
         let saturation = saturation::SaturationConfig {
@@ -87,6 +93,7 @@ impl Snare606Voice {
             mix: 1.0,
             output_gain: 1.0,
             pre_filter: false,
+            compensation_gain: 1.0,
         };
 
         Self {
@@ -325,6 +332,7 @@ impl Voice for Snare606Voice {
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
         self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
+        self.saturation.update_compensation();
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -360,6 +368,7 @@ impl Voice for Snare606Voice {
             self.settings.saturation_pre_filter = value;
             self.saturation.pre_filter = value > 0.5;
         }
+        self.saturation.update_compensation();
     }
 }
 

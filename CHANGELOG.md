@@ -1,5 +1,210 @@
 # Changelog
 
+## 2026-07-14 — Option Delete Lane : désactiver un slot (build 20260714-194847)
+
+**Build:** `20260714-194847`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Clic droit sur le titre d'une lane active → nouvelle option `Delete Lane`.**
+  - Désactive le slot : la lane devient une ligne vide avec le chip `+N` et peut être réactivée plus tard via `+ Add Module`.
+  - Conférence à deux clics (`Confirm Delete Lane?`) pour éviter les fausses manips.
+  - Si le slot supprimé était sélectionné, la sélection bascule automatiquement sur la première lane active.
+  - Les données steps/fusions/plocks du slot ne sont pas effacées, mais le slot inactif n'est ni affiché ni audible.
+- Synchronisation des états de confirmation : `Clear Lane` et `Delete Lane` s'annulent l'un l'autre.
+
+### À tester dans Studio One (build 20260714-194847)
+1. Clic droit sur le titre d'une lane active (ex. Tom) → choisir `Delete Lane` puis confirmer → la lane devient une ligne vide (`+4`).
+2. Cliquer sur le chip `+4` → choisir un instrument → la lane se réactive avec le nouvel instrument.
+3. Supprimer la lane sélectionnée → la sélection doit basculer sur une autre lane active (pas de panneau vide / crash).
+4. Régression : `Clear Lane`, `Randomize Lane`, `Copy/Paste Lane` et `Paste Grid` doivent toujours fonctionner normalement.
+
+---
+
+## 2026-07-14 — Menu contextuel de lane : Clear Lane + Randomize Lane (build 20260714-193958)
+
+**Build:** `20260714-193958`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Clic droit sur le titre d'une lane active → nouvelles options `Clear Lane` et `Randomize Lane`.**
+  - `Clear Lane` remplace l'ancien label `Clear Grid` dans le menu du titre de lane ; il efface les steps, fusions et plocks de la lane tout en gardant l'instrument, les réglages sonores, le routing et les contrôles de lane.
+  - `Randomize Lane` remplit la lane de steps aléatoires avec une densité de 30 % et efface les fusions/plocks existants. Le module et les réglages sonores restent intacts.
+
+### À tester dans Studio One (build 20260714-193958)
+1. Clic droit sur le titre d'une lane active (ex. BD) → choisir `Randomize Lane` → des steps doivent apparaître aléatoirement sur la lane ; la lecture doit produire des coups.
+2. Clic droit sur le titre de la même lane → choisir `Clear Lane` puis confirmer → tous les steps, fusions et plocs de la lane doivent disparaître ; le module et les réglages sonores restent inchangés.
+3. Régression : `Copy Lane` / `Paste Lane` / `Paste Grid` doivent toujours fonctionner depuis le menu contextuel du titre de lane.
+
+---
+
+## 2026-07-14 — Vrai fix Analog 50% par défaut (build 20260714-192351)
+
+**Build:** `20260714-192351`
+**Validation:** `cargo fmt` OK, `cargo test` OK (164 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Correction de la valeur par défaut de `analog` à 0.5 pour tous les instruments.**
+  - Le build précédent (20260714-190609) n'avait modifié que `VoiceSettings::*`, mais les nouveaux slots ajoutés via `+ Add Module` utilisent `instrument_registry::INSTRUMENTS[].sound_settings_default`.
+  - Tous les tableaux `sound_settings_default` des 13 instruments passent désormais `analog` à 0.5.
+  - Ajout d'un test de régression : `default_analog_is_50_percent_for_every_instrument_kind`.
+
+### À tester dans Studio One (build 20260714-192351)
+1. Ajouter un slot via `+ Add Module` (ex. BD8) → vérifier que `Analog` démarre bien à 50 %.
+2. Réinitialiser un slot existant (changer d'instrument puis revenir) → `Analog` doit revenir à 50 %.
+3. Régression : charger un ancien preset → ses valeurs `analog` personnalisées sont conservées.
+
+---
+
+**Build:** `20260714-190609`
+**Validation:** `cargo fmt` OK, `cargo test` OK (164 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Le paramètre `analog` est désormais à 0.5 par défaut pour tous les instruments** (`VoiceSettings::kick`, `snare`, `hihat`, `open_hihat`, `tom*`, `clap`, `ride`, `cymbal`, `snare606`, `kick808`, `perc1` et le `Default`).
+  - Avant, les valeurs variaient entre 0.3 et 1.0 selon l'instrument ; les nouvelles pistes/presets ont maintenant un comportement analogique cohérent à 50 %.
+- **Les paramètres d'automation `Algo` des instruments n'ayant qu'un seul algorithme sont cachés.**
+  - Dans la disposition par défaut (13 voix legacy), les slots 3 (HiHat), 4 (OpenHiHat), 10 (Cymbal), 11 (Snare606), 12 (BassDrum808) et 14 (vide) n'exposent plus leur `Slot N Algo` au DAW.
+  - Cela évite qu'un automate affiche `BD808 Algo` avec une seule valeur possible.
+
+### À tester dans Studio One (build 20260714-190609)
+1. Ajouter une nouvelle piste / réinitialiser un slot existant → vérifier que `Analog` démarre à 50 % dans le Sound Editor.
+2. Ouvrir l'automation du slot 12 (BassDrum808) → vérifier que `Slot 12 Algo` n'apparaît plus dans la liste.
+3. Ouvrir l'automation du slot 1 (Kick) → vérifier que `Slot 1 Algo` reste disponible (Kick a plusieurs algos).
+4. Régression : charger un ancien preset sauvegardé avant cette build → ses réglages `analog` existants doivent être conservés ; seules les valeurs par défaut des nouveaux slots changent.
+
+---
+
+**Build:** `20260714-141959`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Compensation automatique du gain sur la saturation.**
+  - `SaturationConfig` calcule désormais un `compensation_gain` à chaque changement de type ou d'amount, basé sur une référence d'entrée de 0.5.
+  - Le signal saturé est atténué pour que le niveau perçu reste proche du signal sec quand on active la saturation (mix à 100 %, output gain à 1.0).
+  - Le paramètre `Output Gain` devient un réglage fin manuel plutôt qu'une obligation pour compenser.
+- **Valeur par défaut de `saturation_output_gain` corrigée à 1.0** pour tous les instruments (elle était à 0.0, ce qui rendait la saturation silencieuse dès qu'on augmentait le mix).
+- Toutes les voix appellent `update_compensation()` après chaque changement de saturation dans `set_settings` et `set_special_param`.
+
+### À tester dans Studio One (build 20260714-141959)
+1. Choisir un instrument (ex. Kick), régler `Sat Type` sur `SoftClip`, `Sat Amount` à 0.5, `Sat Mix` à 100 %, `Output Gain` à 1.0 → le niveau doit être proche du son sans saturation, sans explosion de volume.
+2. Tester les autres types de saturation (`Valve`, `Transistor`, `HardClip`, `Tape`) → le niveau global doit rester cohérent, seul le caractère change.
+3. Variation : augmenter `Sat Amount` à 1.0 → le son doit rester saturé mais le niveau perçu ne doit pas monter énormément.
+4. Régression : désactiver la saturation (`Sat Type` = `None` ou `Sat Mix` = 0 %) doit restituer le son sec exact.
+
+---
+
+**Build:** `20260714-135251`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **La création de plock (clic droit Link/Snapshot sur une cellule) est désormais autorisée uniquement en mode Pattern avec Follow OFF.**
+  - En mode Song, le clic droit sur une cellule n'affiche plus le menu plock ; seule l'ouverture du menu `Plock` dans le header reste possible pour modifier un plock existant.
+  - Avec Follow ON en mode Pattern, le clic droit est ignoré pour éviter que le défilement de la grille ne déplace la cellule sous le curseur pendant la manipulation.
+  - Cela empêche les créations de plock sur des pas qui vont être remplacés par le défilement du séquenceur, et évite le crash rencontré sur Kick 808 en mode Song.
+
+### À tester dans Studio One (build 20260714-135251)
+1. Mettre le plugin en mode **Pattern** avec `Follow OFF` → clic droit sur une cellule → le menu `Link/Snapshot` doit apparaître et créer un plock normalement.
+2. Activer `Follow ON` en mode Pattern → clic droit sur une cellule → aucun menu plock ne doit s'afficher.
+3. Passer en mode **Song** → clic droit sur une cellule → aucun menu plock ne doit s'afficher ; le plugin ne doit pas crasher.
+4. Régression : les plocks déjà existants restent éditables via le menu `Plock` dans le header, et les patterns sauvegardés se relisent avec leurs plocks.
+
+---
+
+**Build:** `20260714-122623`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Garde-fous défensifs autour des plocks et de l'affichage fréquence/note.**
+  - `freq_to_note` retourne 0 pour une fréquence <= 0 ou non-finie (évite `log2(0)` = -inf).
+  - `note_to_freq` retourne 440 Hz pour une note non-finie.
+  - `note_name` clamp la note entre 0 et 127 pour éviter un index négatif dans le tableau des noms.
+  - `PlockValues::get` et `set` vérifient désormais les bornes `instrument < INSTRUMENT_COUNT`, `step < STEP_COUNT`, `field < FIELD_COUNT`.
+- Ces correctifs visent à empêcher un panic/crash lors de la création d'un plock sur Kick 808 en mode Song (diagnostic en cours).
+
+### À tester dans Studio One (build 20260714-122623)
+1. Ouvrir le panneau Song → vérifier que le checkbox `Follow` est bien retiré.
+2. Activer `Song Mode`, lancer la lecture, créer un plock (clic droit → Link/Snapshot) sur une cellule Kick 808 (B8) → le plugin ne doit pas crasher.
+3. Si le crash persiste, noter exactement à quel moment (clic droit, choix du menu, manipulation d'un slider) et récupérer le log Event Viewer.
+4. Régression : créer des plocks sur d'autres instruments (BD, SD, HH, Tom) doit toujours fonctionner.
+
+---
+
+# Changelog
+
+## 2026-07-14 — Retrait du mode Follow dans l'onglet Song (build 20260714-114115)
+
+**Build:** `20260714-114115`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Retrait du toggle `Follow` du panneau Song.**
+  - Le checkbox `Follow` et la logique de figement de la song ont été supprimés.
+  - La song avance à nouveau normalement dès que `Song Mode` est actif.
+  - Les atomiques `song_follow` et `follow_song_step_request` ont été retirés de `DrumFlashVst`.
+  - L'auto-save des edits en mode Song (build 20260713-162128) reste en place.
+
+### À tester dans Studio One (build 20260714-114115)
+1. Ouvrir le panneau Song → vérifier que le checkbox `Follow` a disparu.
+2. Activer `Song Mode` et lancer la lecture : la song doit avancer normalement P1 → P2 → …
+3. Régression : cliquer un block de song ne doit plus figer la song ni charger un pattern différent.
+
+---
+
+# Changelog
+
+## 2026-07-13 — Correction du graphique Filter Decay pour T1 (build 20260713-171854)
+
+**Build:** `20260713-171854`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Le graphique d'enveloppe de filtre utilise désormais la courbe réelle du moteur par instrument.**
+  - Avant : le graphique prenait toujours `decay_curve` (courbe de l'enveloppe d'amplitude), qui ne correspondait pas à la courbe fixe utilisée par le moteur pour la `filter_env`.
+  - Après : le graphique utilise la courbe spécifique à chaque voix.
+- Courbes du moteur exposées via `DrumVoice::filter_env_curve()` :
+  - Tom1/Tom2/Tom3 : `6.0`
+  - Kick, Snare, HiHat, Snare606 : `8.0`
+  - Perc1 : dynamique (`decay_curve`)
+  - Les autres voix n'ont pas de `filter env`.
+- Le son des instruments n'est pas modifié ; seule la visualisation est corrigée.
+
+### À tester dans Studio One (build 20260713-171854)
+1. Sélectionner la lane T1 (Tom1) → ouvrir l'onglet `Sound` → section `Filter`.
+2. Vérifier que le graphique orange `Filter Decay` affiche une courbe exponentielle descendante cohérente avec le réglage `Filter Decay`.
+3. Changer `Filter Decay` → la courbe doit s'étirer/raccourcir en temps réel.
+4. Sélectionner Kick, Snare, HiHat ou Snare606 → le graphique doit utiliser leur courbe fixe (8.0) sans être influencé par le slider `Decay Curve` de l'enveloppe d'amplitude.
+5. Sélectionner Perc1 → le graphique doit continuer de suivre le slider `Decay Curve` (courbe dynamique).
+6. Régression : l'enveloppe d'amplitude (section `Envelope`) doit continuer d'utiliser `Decay Curve` comme avant.
+
+---
+
+# Changelog
+
+## 2026-07-13 — Bouton Follow on/off dans le panel Song (build 20260713-170024)
+
+**Build:** `20260713-170024`
+**Validation:** `cargo fmt` OK, `cargo test` OK (163 lib + 1 midi_drag_helper + 98 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Ajout d'un toggle `Follow` dans le panneau Song.**
+  - `Follow` est on par défaut : la song avance normalement et charge le pattern du block courant à chaque loop.
+  - `Follow` off : la song cesse d'avancer ; cliquer sur un block de song charge immédiatement son pattern dans la grille pour édition.
+- Communication UI → audio thread via un atomic `song_follow` et une requête `follow_song_step_request`.
+- Quand on clique un block en Follow off, le toggle passe visuellement à off et le step demandé est traité par le thread audio au prochain bloc.
+- L'auto-save des edits en mode Song (build 20260713-162128) continue de fonctionner : le pattern édité est sauvegardé dans le slot de la bank actuellement chargé.
+
+### À tester dans Studio One (build 20260713-170024)
+1. Créer une song avec plusieurs blocks (P1, P2, P3…) et lancer la lecture.
+2. Désactiver `Follow` → la song doit rester sur le block courant ; la grille doit rester sur ce pattern.
+3. Cliquer sur un autre block de la song → la grille doit charger ce pattern et le séquenceur doit le jouer (la song reste figée sur ce block).
+4. Réactiver `Follow` → la song doit reprendre son défilement normal au prochain loop.
+5. Régression : en `Follow` on, la song doit avancer normalement d'un block à l'autre.
+6. Régression : en `Follow` off, éditer la grille puis réactiver `Follow` doit conserver les modifications (auto-save).
+
+---
+
+# Changelog
+
 ## 2026-07-13 — Song Mode joue le premier block au démarrage (build 20260713-164153)
 
 **Build:** `20260713-164153`

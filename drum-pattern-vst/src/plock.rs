@@ -80,10 +80,16 @@ impl PlockValues {
     }
 
     pub fn get(&self, instrument: usize, step: usize, field: usize) -> f32 {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT || field >= FIELD_COUNT {
+            return 0.0;
+        }
         f32::from_bits(self.values[instrument][step][field].load(Ordering::Relaxed) as u32)
     }
 
     pub fn set(&self, instrument: usize, step: usize, field: usize, value: f32) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT || field >= FIELD_COUNT {
+            return;
+        }
         self.values[instrument][step][field].store(value.to_bits() as u64, Ordering::Relaxed);
     }
 }

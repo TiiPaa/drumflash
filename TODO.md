@@ -215,14 +215,17 @@
 ### Bugs / régressions
 - [x] [119] **Enlever le hover "empty slot" sur la cellule vide** — retirer le tooltip inutile sur les cellules hors longueur de pattern.
 - [x] [124] **L'édition des patterns semble bloquée en mode song** — auto-save des edits vers le slot de Pattern Bank courant quand `Song Mode` est actif (build 20260713-162128).
-- [ ] [129] **Bug dans le graph du filter decay du T1** — le graphique d'enveloppe de filtre pour Tom1 ne s'affiche pas correctement.
-- [ ] [130] **Améliorer les différences de volumes avec/sans saturation** — ajuster le gain pour que l'activation de la saturation ne change pas drastiquement le niveau perçu.
+- [x] [129] **Bug dans le graph du filter decay du T1** — le graphique d'enveloppe de filtre utilise maintenant la courbe fixe du moteur par instrument (6.0 pour Tom, 8.0 pour Kick/Snare/HiHat/Snare606, `decay_curve` pour Perc1) au lieu de l'amplitude `decay_curve` (build 20260713-171854).
+- [x] [132] **Crash plock Kick 808 en mode Song** — la création de plock est désormais interdite en mode Song ; garde-fous ajoutés sur `note_name`, `freq_to_note`, `PlockValues` (build 20260714-135251).
+- [x] [130] **Améliorer les différences de volumes avec/sans saturation** — compensation automatique du gain appliquée au signal saturé, et `saturation_output_gain` par défaut à 1.0 (build 20260714-141959).
+- [x] [133] **Analog à 50% par défaut pour tous les instruments** — `VoiceSettings::*` ET les tableaux `sound_settings_default` de `instrument_registry` passent `analog: 0.5` (build 20260714-192351).
+- [x] [134] **Cacher le paramètre Algo en automation pour les instruments mono-algo** — `Slot 3/4/10/11/12/14 Algo` masqués dans le DAW (build 20260714-190609).
 
 ### UI / UX
-- [ ] [121] **Bouton droit sur le titre du lane → Clear lane ou aléatoire** — ajouter `Clear Lane` et `Randomize Lane` dans le menu contextuel du nom de lane.
-- [ ] [123] **Bouton Follow off dans le panel song** — toggle `Follow` pour que la grille ne suive pas automatiquement le pattern joué en mode Song.
-- [ ] [128] **Option supprimer un lane** — permettre de passer un slot en inactif (lié à [MG-7]).
-- [ ] [131] **Les cellules fusionnées ne changent pas de couleur quand elles ont un plock** — inclure la modulation (morph) comme indicateur visuel de plock.
+- [x] [121] **Bouton droit sur le titre du lane → Clear lane ou aléatoire** — `Clear Lane` et `Randomize Lane` ajoutés dans le menu contextuel du nom de lane (build 20260714-193958).
+- [x] [123] **Bouton Follow off dans le panel song** — retiré (build 20260714-114115).
+- [x] [128] **Option supprimer un lane** — permettre de passer un slot en inactif (lié à [MG-7]) (build 20260714-194847).
+- [ ] **REPRENDRE ICI** [131] **Les cellules fusionnées ne changent pas de couleur quand elles ont un plock** — inclure la modulation (morph) comme indicateur visuel de plock.
 
 ### Features
 - [ ] [120] **Changer les patterns en MIDI temps réel en mode Seq Internal / Pattern** — permettre au séquenceur interne de recevoir des notes MIDI pour changer de pattern P1-P8 en cours de lecture (hors mode Song).

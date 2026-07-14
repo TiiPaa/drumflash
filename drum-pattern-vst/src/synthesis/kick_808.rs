@@ -86,6 +86,7 @@ impl Kick808Voice {
                 mix: 1.0,
                 output_gain: 1.0,
                 pre_filter: false,
+                compensation_gain: 1.0,
             },
             drift: dsp::AnalogDrift::new(0x8080_8080),
             active: false,
@@ -219,6 +220,7 @@ impl Voice for Kick808Voice {
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.update_compensation();
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -250,5 +252,6 @@ impl Voice for Kick808Voice {
             }
             _ => {}
         }
+        self.saturation.update_compensation();
     }
 }
