@@ -45,9 +45,9 @@ impl From<SaturationType> for u8 {
 /// - **Mix** (0-1) : Balance dry/wet. 0% = son original pur, 100% = son saturé pur.
 ///   À 50% tu mixes les deux — idéal pour ajouter de la chaleur sans dénaturer.
 ///
-/// - **Output Gain** (0.5-2.0) : Gain de compensation (makeup) après saturation.
-///   La saturation compresse le signal (limite les crêtes), donc le volume baisse.
-///   Monte ce paramètre pour récupérer le niveau perdu.
+/// - **Output Gain** (0.5-2.0) : Gain de compensation manuel (makeup) après saturation.
+///   La saturation applique déjà une compensation automatique pour garder le niveau
+///   perçu stable ; ce paramètre permet d'ajuster finement au goût.
 #[derive(Clone, Copy, Debug)]
 pub struct SaturationConfig {
     pub saturation_type: SaturationType,
@@ -55,6 +55,8 @@ pub struct SaturationConfig {
     pub mix: f32,         // 0.0 to 1.0 (dry/wet)
     pub output_gain: f32, // linear makeup gain
     pub pre_filter: bool, // true = pre-filter, false = post-filter
+    /// Gain appliqué au signal saturé pour que le niveau global reste proche du sec.
+    pub compensation_gain: f32,
 }
 
 impl SaturationConfig {
@@ -68,7 +70,7 @@ impl SaturationConfig {
         let drive = 1.0 + self.amount * self.amount * 19.0;
 
         let dry = x;
-        let wet = match self.saturation_type {
+        let wet_raw = match self.saturation_type {
             SaturationType::SoftClip => soft_clip(x, drive),
             SaturationType::Valve => valve(x, drive),
             SaturationType::Transistor => transistor(x, drive),
@@ -76,9 +78,34 @@ impl SaturationConfig {
             SaturationType::Tape => tape(x, drive),
             _ => x,
         };
+        // La compensation normalise le signal saturé pour que le niveau global
+        // reste proche du signal sec (référence = 0.5).
+        let wet = wet_raw * self.compensation_gain;
 
         let mixed = dry * (1.0 - self.mix) + wet * self.mix;
         mixed * self.output_gain
+    }
+
+    /// Recalcule le gain de compensation à chaque changement de type ou d'amount.
+    /// La compensation est définie pour que l'entrée de référence 0.5 donne
+    /// approximativement 0.5 en sortie (wet), quelle que soit la drive.
+    pub fn update_compensation(&mut self) {
+        if self.saturation_type == SaturationType::None || self.amount <= 0.001 {
+            self.compensation_gain = 1.0;
+            return;
+        }
+
+        let drive = 1.0 + self.amount * self.amount * 19.0;
+        let reference = 0.5;
+        let wet = match self.saturation_type {
+            SaturationType::SoftClip => soft_clip(reference, drive),
+            SaturationType::Valve => valve(reference, drive),
+            SaturationType::Transistor => transistor(reference, drive),
+            SaturationType::HardClip => hard_clip(reference, drive),
+            SaturationType::Tape => tape(reference, drive),
+            _ => reference,
+        };
+        self.compensation_gain = reference / wet.max(0.0001);
     }
 }
 
@@ -161,6 +188,7 @@ mod tests {
             mix: 1.0,
             output_gain: 1.0,
             pre_filter: false,
+            compensation_gain: 1.0,
         };
         assert_eq!(cfg.process(0.5), 0.5);
     }
@@ -181,6 +209,7 @@ mod tests {
                 mix: 1.0,
                 output_gain: 1.0,
                 pre_filter: false,
+                compensation_gain: 1.0,
             });
         }
         let input = 0.6;
@@ -230,5 +259,39 @@ mod tests {
             hard.abs() <= trans.abs(),
             "hard clip should be more limited than transistor"
         );
+        assert!(
+            hard.abs() <= tape.abs(),
+            "hard clip should be more limited than tape"
+        );
+    }
+
+    #[test]
+    fn compensation_keeps_reference_level_stable() {
+        // With compensation, a 0.5 input at amount=0.5 should stay near 0.5
+        // at full wet / unity output gain.
+        for t in [
+            SaturationType::SoftClip,
+            SaturationType::Valve,
+            SaturationType::Transistor,
+            SaturationType::HardClip,
+            SaturationType::Tape,
+        ] {
+            let mut cfg = SaturationConfig {
+                saturation_type: t,
+                amount: 0.5,
+                mix: 1.0,
+                output_gain: 1.0,
+                pre_filter: false,
+                compensation_gain: 1.0,
+            };
+            cfg.update_compensation();
+            let out = cfg.process(0.5);
+            assert!(
+                (out - 0.5).abs() < 0.05,
+                "compensation should keep reference level near 0.5 for {:?}, got {}",
+                t,
+                out
+            );
+        }
     }
 }

@@ -88,10 +88,16 @@ const EDITOR_PARAMS_W: f32 = 340.0;
 const EDITOR_VALUE_W: f32 = 52.0;
 
 fn freq_to_note(freq: f32) -> f32 {
+    if freq <= 0.0 || !freq.is_finite() {
+        return 0.0;
+    }
     69.0 + 12.0 * (freq / 440.0).log2()
 }
 
 fn note_to_freq(note: f32) -> f32 {
+    if !note.is_finite() {
+        return 440.0;
+    }
     440.0 * 2.0f32.powf((note - 69.0) / 12.0)
 }
 
@@ -138,6 +144,7 @@ fn format_value_for_plock_special(value: f32, min: f32, max: f32) -> String {
 
 fn note_name(note: f32) -> String {
     let note = note.round() as i32;
+    let note = note.clamp(0, 127);
     let octave = (note / 12) - 1;
     let note_idx = note % 12;
     let names = [
@@ -584,6 +591,9 @@ struct EditorUIState {
     /// Slot waiting for a second click before clearing its grid.
     #[serde(skip)]
     lane_clear_grid_confirm: Option<usize>,
+    /// Slot waiting for a second click before being deleted/deactivated.
+    #[serde(skip)]
+    lane_delete_confirm: Option<usize>,
     /// Visual flash timer for the Test (T) button when triggered by external MIDI.
     #[serde(skip)]
     slot_flash_until: [f64; crate::track::MAX_TRACKS],
@@ -802,7 +812,7 @@ impl EditorUIState {
     }
 
     /// Clear the musical grid for an active lane, keeping the module and settings intact.
-    fn clear_grid(
+    fn clear_lane(
         &mut self,
         params: &DrumFlashParams,
         slot: usize,
@@ -822,6 +832,34 @@ impl EditorUIState {
         self.fusion_editing = self.fusion_editing.filter(|(idx, _)| *idx != slot);
         self.plock_popup = self.plock_popup.filter(|popup| popup.instrument != slot);
         self.lane_clear_grid_confirm = None;
+        self.lane_delete_confirm = None;
+        self.mark_pattern_dirty();
+        true
+    }
+
+    /// Randomize the musical grid for an active lane, keeping the module and settings intact.
+    fn randomize_lane(
+        &mut self,
+        params: &DrumFlashParams,
+        slot: usize,
+        pattern: &SharedPattern,
+        plock: &PlockState,
+    ) -> bool {
+        if slot >= crate::track::MAX_TRACKS || !params.track_layout.state.is_active(slot) {
+            return false;
+        }
+
+        clear_grid_steps(pattern, slot);
+        pattern.store_fusions(slot, &[]);
+        clear_grid_sound_plocks(plock, slot);
+        clear_grid_seq_plocks(&params.seq_plock_state.state, slot);
+        randomize_lane_steps(pattern, slot, 0.3);
+
+        self.fusion_selection_start[slot] = None;
+        self.fusion_editing = self.fusion_editing.filter(|(idx, _)| *idx != slot);
+        self.plock_popup = self.plock_popup.filter(|popup| popup.instrument != slot);
+        self.lane_clear_grid_confirm = None;
+        self.lane_delete_confirm = None;
         self.mark_pattern_dirty();
         true
     }
@@ -943,6 +981,27 @@ fn clear_grid_steps(pattern: &SharedPattern, target_slot: usize) {
     for step in 0..STEP_COUNT {
         let mask = pattern.load_step_mask(step);
         let next = mask & !bit;
+        if next != mask {
+            pattern.set_step_mask(step, next);
+        }
+    }
+}
+
+fn randomize_lane_steps(pattern: &SharedPattern, target_slot: usize, density: f32) {
+    if target_slot >= crate::track::MAX_TRACKS {
+        return;
+    }
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos() as u64)
+        .unwrap_or(0);
+    let mut rng = seed;
+    let bit = 1u16 << target_slot;
+    for step in 0..STEP_COUNT {
+        let mask = pattern.load_step_mask(step);
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let active = (rng % 1000) < (density * 1000.0) as u64;
+        let next = if active { mask | bit } else { mask & !bit };
         if next != mask {
             pattern.set_step_mask(step, next);
         }
@@ -2513,6 +2572,7 @@ fn draw_legacy_slot_lane_v2(
             if ui.button("Copy Lane").clicked() {
                 state.copy_lane(params, slot_idx, sound_settings, pattern, plock);
                 state.lane_clear_grid_confirm = None;
+                state.lane_delete_confirm = None;
                 ui.close_menu();
             }
             if ui
@@ -2527,6 +2587,7 @@ fn draw_legacy_slot_lane_v2(
                     state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
                 }
                 state.lane_clear_grid_confirm = None;
+                state.lane_delete_confirm = None;
                 ui.close_menu();
             }
             if ui
@@ -2541,6 +2602,7 @@ fn draw_legacy_slot_lane_v2(
                     state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
                 }
                 state.lane_clear_grid_confirm = None;
+                state.lane_delete_confirm = None;
                 ui.close_menu();
             }
             ui.separator();
@@ -2548,9 +2610,9 @@ fn draw_legacy_slot_lane_v2(
             if ui
                 .button(
                     RichText::new(if confirm_clear_grid {
-                        "Confirm Clear Grid?"
+                        "Confirm Clear Lane?"
                     } else {
-                        "Clear Grid"
+                        "Clear Lane"
                     })
                     .font(f_sans_med(11.0))
                     .color(RED),
@@ -2558,16 +2620,50 @@ fn draw_legacy_slot_lane_v2(
                 .on_hover_text(if confirm_clear_grid {
                     "Click again to clear this lane's steps, fusions and plocks"
                 } else {
-                    "Clear this lane's grid; keeps instrument, sound, routing and lane controls"
+                    "Clear this lane's steps, fusions and plocks; keeps instrument, sound, routing and lane controls"
                 })
                 .clicked()
             {
                 if confirm_clear_grid {
-                    state.clear_grid(params, slot_idx, pattern, plock);
+                    state.clear_lane(params, slot_idx, pattern, plock);
                     ui.close_menu();
                 } else {
                     state.lane_clear_grid_confirm = Some(slot_idx);
+                    state.lane_delete_confirm = None;
                 }
+            }
+            let confirm_delete = state.lane_delete_confirm == Some(slot_idx);
+            if ui
+                .button(
+                    RichText::new(if confirm_delete {
+                        "Confirm Delete Lane?"
+                    } else {
+                        "Delete Lane"
+                    })
+                    .font(f_sans_med(11.0))
+                    .color(RED),
+                )
+                .on_hover_text("Deactivate this lane; the slot becomes empty and can be reactivated later")
+                .clicked()
+            {
+                if confirm_delete {
+                    deactivate_slot(params, state, slot_idx);
+                    ui.close_menu();
+                } else {
+                    state.lane_delete_confirm = Some(slot_idx);
+                    state.lane_clear_grid_confirm = None;
+                }
+            }
+            if ui
+                .button(RichText::new("Randomize Lane").font(f_sans_med(11.0)))
+                .on_hover_text("Fill this lane with random steps (30% density); clears fusions and plocks")
+                .clicked()
+            {
+                state.randomize_lane(params, slot_idx, pattern, plock);
+                // Flash visual feedback
+                state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
+                state.lane_delete_confirm = None;
+                ui.close_menu();
             }
         });
 
@@ -2756,14 +2852,19 @@ fn draw_legacy_slot_lane_v2(
                 }
 
                 if !beyond_len && response.secondary_clicked() {
-                    select_legacy_track(state, slot_idx);
-                    if let Some(pos) = response.interact_pointer_pos() {
-                        state.plock_popup = Some(PlockPopup {
-                            instrument: slot_idx,
-                            step: source_step,
-                            screen_pos: pos,
-                            morph_menu: false,
-                        });
+                    // Plock editing is only allowed in Pattern mode with grid Follow OFF.
+                    // Song mode switches patterns automatically and Follow ON scrolls pages,
+                    // both of which make the grid unstable under the cursor.
+                    if !params.song_mode.value() && !state.follow_mode {
+                        select_legacy_track(state, slot_idx);
+                        if let Some(pos) = response.interact_pointer_pos() {
+                            state.plock_popup = Some(PlockPopup {
+                                instrument: slot_idx,
+                                step: source_step,
+                                screen_pos: pos,
+                                morph_menu: false,
+                            });
+                        }
                     }
                 }
             }
@@ -3295,6 +3396,38 @@ fn activate_slot(
     // (legacy defaults of the same index) — align them with the new kind.
     sound_settings.reset_slot_to_defaults(slot_idx, kind);
     select_legacy_track(state, slot_idx);
+}
+
+/// Deactivate an active slot so it becomes an empty lane again.
+/// Triggered from the lane title context menu.
+fn deactivate_slot(
+    params: &DrumFlashParams,
+    state: &mut EditorUIState,
+    slot_idx: usize,
+) {
+    if slot_idx >= crate::track::MAX_TRACKS {
+        return;
+    }
+    let mut new_state =
+        PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+    if !new_state.slots[slot_idx].active {
+        return;
+    }
+    new_state.slots[slot_idx].active = false;
+    let next_selected = new_state.active_slot_indices().next().unwrap_or(0);
+    PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+
+    state.fusion_selection_start[slot_idx] = None;
+    state.fusion_editing = state.fusion_editing.filter(|(idx, _)| *idx != slot_idx);
+    state.plock_popup = state.plock_popup.filter(|popup| popup.instrument != slot_idx);
+    state.lane_clear_grid_confirm = None;
+    state.lane_delete_confirm = None;
+    state.add_module_popup = state.add_module_popup.filter(|popup| popup.slot != slot_idx);
+
+    if state.selected_track_slot == slot_idx {
+        state.selected_track_slot = next_selected;
+        state.selected_instrument = next_selected;
+    }
 }
 
 /// Instrument picker popup for an empty lane (opened by the `+N` chip).
@@ -5461,7 +5594,10 @@ fn draw_sound_panel(
                     crate::instrument_registry::ParamFamily::Filter => {
                         let has_filter_env = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::FilterEnvAmount);
                         if has_filter_env {
-                            draw_filter_envelope(ui, decay_curve, filter_env_decay);
+                            let filter_curve = crate::synthesis::DrumVoice::from_index(voice_idx)
+                                .and_then(|v| v.filter_env_curve())
+                                .unwrap_or(decay_curve);
+                            draw_filter_envelope(ui, filter_curve, filter_env_decay);
                         }
                     }
                     _ => {}

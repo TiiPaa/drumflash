@@ -574,6 +574,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn default_analog_is_50_percent_for_every_instrument_kind() {
+        for kind_idx in 0..TrackInstrumentKind::COUNT {
+            let kind = TrackInstrumentKind::from_index(kind_idx).unwrap();
+            let mut layout = TrackLayoutState::default_layout();
+            layout.slots[0] = TrackSlot::active_with_kind(kind);
+            let state = SoundSettingsState::new(&layout);
+            let (_, _, _, _, _, _, _, _, _, _, _, analog, _) = state.instruments[0].load();
+            assert!(
+                (analog - 0.5).abs() < 1e-6,
+                "{:?} default analog should be 0.5, got {}",
+                kind,
+                analog
+            );
+        }
+    }
+
     /// Two slots of the same kind must both keep the kind's default Frequency,
     /// not collapse to 0 or share a single value.
     #[test]

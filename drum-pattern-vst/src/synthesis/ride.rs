@@ -66,6 +66,7 @@ impl RideVoice {
                 mix: settings.saturation_mix,
                 output_gain: settings.saturation_output_gain,
                 pre_filter: settings.saturation_pre_filter > 0.5,
+                compensation_gain: 1.0,
             },
             analog_drift: dsp::ToneDrift::new(0xCAFE_D0D0, 0.075),
             active: false,
@@ -195,6 +196,7 @@ impl Voice for RideVoice {
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
         self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
+        self.saturation.update_compensation();
     }
 
     fn set_algo(&mut self, algo: u8) {
@@ -226,6 +228,7 @@ impl Voice for RideVoice {
             }
             _ => {}
         }
+        self.saturation.update_compensation();
     }
 }
 
