@@ -1,13 +1,15 @@
 
-- enlever le hover "empty slot" sur le cellule vide
+- [done] enlever le hover "empty slot" sur le cellule vide
 - En mode Seq Internal / Pattern (pas Song), prévoir un mode qui permette de changer les patterns en midi (midi note) en temps réel
-- Bouton droit sur le titre du lane (à gauche) => Clear lane ou aleatoire
+- [done] Bouton droit sur le titre du lane (à gauche) => Clear lane ou aleatoire
 - Drag cell : Quand on laisse bouton gauche appuyé sur une cellule 2sec => possibilité de déplacer la cellule (avec ses plocks) gauche ou droite avec la souris
-- Ajouter un bouton Follow off dans le panel song pour que le grid ne suive pas le pattern joué en mode song
-- L'édition des patterns semble bloqué en mode song ?
+- [done] Ajouter un bouton Follow off dans le panel song pour que le grid ne suive pas le pattern joué en mode song
+- [done] L'édition des patterns semble bloqué en mode song ?
 - Fonction morphing : Pouvoir choisir si les param de morphing d'une cellule fusionnée sont les params d'origine ou cible
 - retirer le paramètre mix dans le sound editor, remplacer par main dans track editor
-- prevoir un menu setting pour gérer les paramètres globaux (ex derives du paramètre analog)
-- option supprimer un lane
-- bug dans le graph du filter decay du T1
-- améliorer les différences de volumes avec/sans saturation.
+- prevoir un menu setting pour gérer les paramètres globaux (ex derives du paramètre analog, midi global...)
+- [done] option supprimer un lane
+- [done] bug dans le graph du filter decay du T1
+- [done] améliorer les différences de volumes avec/sans saturation.
+- les cellules fusionnes ne changes pas de couleurs quand elles ont un plock (ma modulation compte comme un plock)
+

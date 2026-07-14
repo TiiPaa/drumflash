@@ -1232,20 +1232,22 @@ impl Default for DrumFlashParams {
             // and UI clamp to the current kind's algo count. A shared max also
             // avoids the IntRange { min: 0, max: 0 } division-by-zero crash in
             // nih-plug normalization (see bug [42]).
+            // Params for slots that hold a single-algo kind in the default layout
+            // are hidden from host automation so they don't clutter the DAW lanes.
             algo_kick: IntParam::new("Slot 1 Algo", 0, algo_range),
             algo_snare: IntParam::new("Slot 2 Algo", 0, algo_range),
-            algo_hihat: IntParam::new("Slot 3 Algo", 0, algo_range),
-            algo_open_hh: IntParam::new("Slot 4 Algo", 0, algo_range),
+            algo_hihat: IntParam::new("Slot 3 Algo", 0, algo_range).hide(),
+            algo_open_hh: IntParam::new("Slot 4 Algo", 0, algo_range).hide(),
             algo_tom1: IntParam::new("Slot 5 Algo", 0, algo_range),
             algo_tom2: IntParam::new("Slot 6 Algo", 0, algo_range),
             algo_tom3: IntParam::new("Slot 7 Algo", 0, algo_range),
             algo_clap: IntParam::new("Slot 8 Algo", 0, algo_range),
             algo_ride: IntParam::new("Slot 9 Algo", 0, algo_range),
-            algo_cymbal: IntParam::new("Slot 10 Algo", 0, algo_range),
-            algo_snare606: IntParam::new("Slot 11 Algo", 0, algo_range),
-            algo_bassdrum808: IntParam::new("Slot 12 Algo", 0, algo_range),
+            algo_cymbal: IntParam::new("Slot 10 Algo", 0, algo_range).hide(),
+            algo_snare606: IntParam::new("Slot 11 Algo", 0, algo_range).hide(),
+            algo_bassdrum808: IntParam::new("Slot 12 Algo", 0, algo_range).hide(),
             algo_perc1: IntParam::new("Slot 13 Algo", 0, algo_range),
-            algo_s13: IntParam::new("Slot 14 Algo", 0, algo_range),
+            algo_s13: IntParam::new("Slot 14 Algo", 0, algo_range).hide(),
 
             freq_mode_kick: BoolParam::new("Kick Freq in Notes", false),
             freq_mode_bassdrum808: BoolParam::new("808 Kick Freq in Notes", false),

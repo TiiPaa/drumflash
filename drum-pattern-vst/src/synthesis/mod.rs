@@ -98,6 +98,20 @@ impl DrumVoice {
     pub fn label(&self) -> &'static str {
         crate::instrument_registry::INSTRUMENTS[*self as usize].label
     }
+
+    /// Steepness of the filter envelope decay stage for voices that use a fixed
+    /// filter curve. `None` means the curve is dynamic (`decay_curve`).
+    pub fn filter_env_curve(self) -> Option<f32> {
+        match self {
+            DrumVoice::Kick => Some(KickVoice::FILTER_ENV_CURVE),
+            DrumVoice::Snare => Some(SnareVoice::FILTER_ENV_CURVE),
+            DrumVoice::HiHat => Some(HiHatVoice::FILTER_ENV_CURVE),
+            DrumVoice::Tom1 | DrumVoice::Tom2 | DrumVoice::Tom3 => Some(TomVoice::FILTER_ENV_CURVE),
+            DrumVoice::Snare606 => Some(Snare606Voice::FILTER_ENV_CURVE),
+            // Perc1 uses the amplitude decay_curve for its filter envelope.
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -157,7 +171,7 @@ impl Default for VoiceSettings {
             hold: 0.0,
             filter_env_amount: 0.0,
             filter_env_decay: 0.05,
-            analog: 1.0,
+            analog: 0.5,
             stereo: 0.0,
             algo: 0,
             special: [0.0; 32],
@@ -179,11 +193,11 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 1.0,
             filter_env_decay: 0.05,
-            analog: 0.3,
+            analog: 0.5,
             stereo: 0.0,
             algo: 0,
             special: [
-                0.5, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -202,7 +216,7 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 1.0,
             filter_env_decay: 0.03,
-            analog: 0.3,
+            analog: 0.5,
             stereo: 1.0,
             algo: 0,
             special: [
@@ -225,11 +239,11 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 1.0,
             filter_env_decay: 0.04,
-            analog: 1.0,
+            analog: 0.5,
             stereo: 1.0,
             algo: 0,
             special: [
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -248,11 +262,11 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 0.0,
             filter_env_decay: 0.05,
-            analog: 1.0,
+            analog: 0.5,
             stereo: 0.0,
             algo: 0,
             special: [
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -271,11 +285,11 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 1.0,
             filter_env_decay: 0.06,
-            analog: 0.3,
+            analog: 0.5,
             stereo: 0.0,
             algo: 0,
             special: [
-                0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.3, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -294,11 +308,11 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 1.0,
             filter_env_decay: 0.06,
-            analog: 0.3,
+            analog: 0.5,
             stereo: 0.0,
             algo: 0,
             special: [
-                0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.3, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -317,11 +331,11 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 1.0,
             filter_env_decay: 0.06,
-            analog: 0.3,
+            analog: 0.5,
             stereo: 0.0,
             algo: 0,
             special: [
-                0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.3, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -340,7 +354,7 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 0.0,
             filter_env_decay: 0.05,
-            analog: 1.0,
+            analog: 0.5,
             stereo: 1.0,
             algo: 0,
             special: [
@@ -363,7 +377,7 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 0.0,
             filter_env_decay: 0.05,
-            analog: 1.0,
+            analog: 0.5,
             stereo: 1.0,
             algo: 0,
             special: [
@@ -386,11 +400,11 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 0.0,
             filter_env_decay: 0.05,
-            analog: 0.3,
+            analog: 0.5,
             stereo: 1.0,
             algo: 0,
             special: [
-                15.0, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                15.0, 0.0, 0.15, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -409,14 +423,14 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 0.0,
             filter_env_decay: 0.05,
-            analog: 1.0,
+            analog: 0.5,
             stereo: 0.0,
             algo: 0,
             // special[0] = Resonance (Q)
             // special[1] = Tone (body vs wires balance)
             // special[2] = Snap (crispness of wires layer)
             special: [
-                4.5, 0.55, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                4.5, 0.55, 0.3, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }
@@ -435,7 +449,7 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 0.0,
             filter_env_decay: 0.05,
-            analog: 0.3,
+            analog: 0.5,
             stereo: 0.0,
             algo: 0,
             // special[0] = Accent (click level)
@@ -462,7 +476,7 @@ impl VoiceSettings {
             hold: 0.0,
             filter_env_amount: 0.7,
             filter_env_decay: 0.03,
-            analog: 0.3,
+            analog: 0.5,
             stereo: 1.0,
             algo: 0,
             // special[0] = Sweep amount (-1..1)
@@ -470,7 +484,7 @@ impl VoiceSettings {
             // special[2] = Bite (FM amount)
             // special[3] = Width (stereo + slap delay)
             special: [
-                0.5, 80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.5, 80.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
         }

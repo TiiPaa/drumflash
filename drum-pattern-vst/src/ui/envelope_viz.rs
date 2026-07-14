@@ -166,7 +166,7 @@ fn draw_curve(
 
 pub fn draw_filter_envelope(
     ui: &mut nih_plug_egui::egui::Ui,
-    decay_curve: f32,
+    curve: f32,
     filter_env_decay: f32,
 ) -> nih_plug_egui::egui::Response {
     let w = ui.available_width().max(120.0);
@@ -191,7 +191,7 @@ pub fn draw_filter_envelope(
     for i in 0..=POINTS {
         let t = total_time * (i as f32 / POINTS as f32);
         let x = graph.min.x + graph.width() * (i as f32 / POINTS as f32);
-        let mut filt = (-decay_curve * t / filter_env_decay.max(0.001)).exp();
+        let mut filt = (-curve * t / filter_env_decay.max(0.001)).exp();
         filt = filt.clamp(0.0, 1.0);
         let y = graph.max.y - graph.height() * filt;
         points.push(Pos2::new(x, y));
