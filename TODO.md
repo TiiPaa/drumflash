@@ -704,7 +704,7 @@
 #### Phase 5 — Polish & validation
 - [x] [100p] **ADSR visualization** — graphe inline réécrit (modèle 3 segments colorés A/D/R, cadre #0c0c11, espacé)
 - [ ] [100q] **Animations** — Hover transitions, step playback glow, toggle LED
-- [ ] [100r] **Tests** — Vérifier que tous les moteurs rendent correctement, pas de régression audio
+- [x] [100r] **Tests** — Vérifier que tous les moteurs rendent correctement, pas de régression audio (mode léger : tests `all_voices_render_finite_non_silent_output` + `all_voices_stay_finite_on_retrigger`, build 20260716-114252)
 - [x] [100s] **Build + install** — VST3 fonctionnel avec nouveau design
 
 ### Tâches découvertes pendant la reprise UI 2026-06-11
