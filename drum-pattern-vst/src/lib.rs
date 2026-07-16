@@ -9,6 +9,7 @@ use std::sync::{
     Arc, TryLockError,
 };
 
+mod config;
 mod generator;
 mod groove;
 mod instrument_registry;
@@ -228,6 +229,9 @@ pub struct DrumFlashVst {
     last_param_master_length: usize,
     /// Restart the sequencer at step 0 after a song-mode slot transition.
     pending_song_pattern_restart: bool,
+    /// Slot requested by an incoming MIDI pattern-switch note (0-7 for P1-P8).
+    /// Applied at the next musical loop boundary to avoid glitches.
+    pending_midi_pattern_slot: Option<usize>,
     /// Save/load requests retried when the pattern bank is temporarily locked by the UI.
     deferred_save_slot: Option<usize>,
     deferred_load_slot: Option<usize>,
@@ -280,6 +284,12 @@ pub struct DrumFlashParams {
     /// When false, the current pattern loops normally.
     #[id = "song_mode"]
     pub song_mode: BoolParam,
+
+    /// When true, incoming MIDI notes C3..G3 (60-67) switch the pattern bank
+    /// slot (P1..P8) in real-time while the internal sequencer is active and
+    /// Song mode is off.
+    #[id = "midi_pat_sw"]
+    pub midi_pattern_switch: BoolParam,
 
     // Per-track groove parameters (3 × 7 instruments)
     #[id = "hu_kick"]
@@ -726,11 +736,18 @@ impl Default for DrumFlashParams {
             max: crate::instrument_registry::max_algo_index(),
         };
 
+        let global_config = crate::config::GlobalConfig::load();
+        let track_layout = track::PersistentTrackLayout::new();
+        track_layout
+            .state
+            .global_channel
+            .store(global_config.global_midi_channel.clamp(1, 16), Ordering::Relaxed);
+
         Self {
             editor_state: EguiState::from_size(1480, 900),
             pattern_state,
             sound_settings: PersistentSoundSettings::new(&default_layout),
-            track_layout: track::PersistentTrackLayout::new(),
+            track_layout,
             plock_state: PersistentPlockState::new(),
             seq_plock_state: PersistentSequencerPlockState::new(),
             pattern_bank: pattern_bank::PersistentPatternBank::new(),
@@ -772,6 +789,7 @@ impl Default for DrumFlashParams {
 
             use_internal_sequencer: BoolParam::new("Internal Sequencer", true),
             song_mode: BoolParam::new("Song Mode", false),
+            midi_pattern_switch: BoolParam::new("MIDI Pattern Switch", false),
 
             // Humanize per track (0 = none, 1 = max)
             humanize_kick: FloatParam::new(
@@ -1867,6 +1885,7 @@ impl Default for DrumFlashVst {
             audio_master_length: 16,
             last_param_master_length: 16,
             pending_song_pattern_restart: false,
+            pending_midi_pattern_slot: None,
             deferred_save_slot: None,
             deferred_load_slot: None,
         };
@@ -2267,6 +2286,7 @@ impl Plugin for DrumFlashVst {
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         self.remember_current_pattern();
+        let global_config = crate::config::GlobalConfig::load();
         ui::create_editor(
             self.params.clone(),
             self.current_step.clone(),
@@ -2283,6 +2303,7 @@ impl Plugin for DrumFlashVst {
             self.pending_pattern_length.clone(),
             self.audio_last_loaded_slot.clone(),
             self.clear_plocks_request.clone(),
+            global_config,
         )
     }
 
@@ -2608,11 +2629,7 @@ impl Plugin for DrumFlashVst {
         let step_duration_samples = (sample_rate * 60.0 / (bpm * 4.0)).max(1.0);
 
         let use_internal_sequencer = self.params.use_internal_sequencer.value();
-        let mut next_event = if use_internal_sequencer {
-            None
-        } else {
-            context.next_event()
-        };
+        let mut next_event = context.next_event();
 
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Process pending delayed triggers (stutter or fusion pulses).
@@ -2647,6 +2664,28 @@ impl Plugin for DrumFlashVst {
             }
 
             if use_internal_sequencer {
+                // Process incoming MIDI pattern-switch notes in real-time.
+                // Notes C3..G3 (60-67) select pattern bank slots P1..P8.
+                // Only active when not in Song mode, so the two pattern-change
+                // mechanisms do not fight each other.
+                while let Some(event) = next_event {
+                    if event.timing() != sample_idx as u32 {
+                        break;
+                    }
+                    if let NoteEvent::NoteOn { note, .. } = event {
+                        const PATTERN_SWITCH_BASE: u8 = 60;
+                        if self.params.midi_pattern_switch.value()
+                            && !self.params.song_mode.value()
+                            && note >= PATTERN_SWITCH_BASE
+                            && note < PATTERN_SWITCH_BASE + 8
+                        {
+                            self.pending_midi_pattern_slot =
+                                Some((note - PATTERN_SWITCH_BASE) as usize);
+                        }
+                    }
+                    next_event = context.next_event();
+                }
+
                 let swing = self.params.swing.value();
                 let groove_type = self.params.groove_type.value();
                 let triggers = self
@@ -2723,13 +2762,20 @@ impl Plugin for DrumFlashVst {
                                     let t = k as f32 / (pulse_count - 1) as f32;
                                     for m in 0..trigger.morph_count as usize {
                                         let target = trigger.morph_targets[m];
-                                        let start_value = self.read_morph_value(
+                                        let lane_value = self.read_morph_value(
                                             &settings,
                                             target.field as usize,
                                             voice_idx,
                                         );
-                                        let morphed =
-                                            start_value + (target.end_value - start_value) * t;
+                                        let (start_value, end_value) = match target.direction {
+                                            crate::sequencer::pattern::MorphDirection::Target => {
+                                                (lane_value, target.end_value)
+                                            }
+                                            crate::sequencer::pattern::MorphDirection::Source => {
+                                                (target.end_value, lane_value)
+                                            }
+                                        };
+                                        let morphed = start_value + (end_value - start_value) * t;
                                         self.apply_morph_value(
                                             &mut settings,
                                             target.field as usize,
@@ -2912,6 +2958,27 @@ impl Plugin for DrumFlashVst {
                 );
             }
         }
+
+        // Apply a MIDI pattern-switch request received during the audio block.
+        // Only active when not in Song mode, so the two live-switch mechanisms
+        // do not compete. Pattern loads are retried if the bank is temporarily
+        // locked by the UI thread.
+        if self.params.midi_pattern_switch.value() && !self.params.song_mode.value() {
+            if let Some(slot) = self.pending_midi_pattern_slot.take() {
+                match self.load_pattern_from_slot(slot) {
+                    PatternBankActionResult::Loaded(_) | PatternBankActionResult::Applied => {
+                        self.pending_song_pattern_restart = true;
+                        self.audio_last_loaded_slot
+                            .store(slot as u32, Ordering::Relaxed);
+                    }
+                    PatternBankActionResult::Busy => {
+                        self.pending_midi_pattern_slot = Some(slot);
+                    }
+                    PatternBankActionResult::Skipped => {}
+                }
+            }
+        }
+
         // Song mode: advance to next pattern when current pattern wraps, respecting per-step repeats.
         if self.params.song_mode.value() && self.sequencer.is_playing() {
             // Detect song mode being enabled while the sequencer is already running:
@@ -3764,7 +3831,16 @@ mod tests {
         let vst = DrumFlashVst::default();
         let default_kick_note = crate::instrument_registry::INSTRUMENTS[0].midi_note;
 
-        // Default layout: slot 0 is Kick, global channel is 10 -> output channel 9.
+        // Default layout: slot 0 is Kick; force global channel to 10 for a
+        // deterministic assertion (otherwise the test depends on the user's
+        // saved config).
+        vst.params
+            .track_layout
+            .state
+            .global_channel
+            .store(10, Ordering::Relaxed);
+
+        // global channel is 10 -> output channel 9.
         let (note, channel) = vst.resolve_midi_output_for_slot(0);
         assert_eq!(note, default_kick_note);
         assert_eq!(channel, 9);

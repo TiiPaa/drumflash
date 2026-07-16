@@ -213,7 +213,17 @@ pub struct SoundSettingsState {
 }
 
 impl SoundSettingsState {
+    /// Create settings using the registry defaults for every slot.
     pub fn new(layout: &crate::track::TrackLayoutState) -> Arc<Self> {
+        Self::new_with_default_analog(layout, 0.5)
+    }
+
+    /// Create settings, overriding the registry's analog default with the user's
+    /// global preference.
+    pub fn new_with_default_analog(
+        layout: &crate::track::TrackLayoutState,
+        default_analog: f32,
+    ) -> Arc<Self> {
         let voice_for_slot = |i: usize| -> usize {
             if i < MAX_TRACKS && layout.slots[i].active {
                 layout.slots[i].kind.drum_voice_index()
@@ -225,9 +235,11 @@ impl SoundSettingsState {
         };
 
         let instruments: [InstrumentSettingsState; MAX_TRACKS] = std::array::from_fn(|i| {
-            let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] =
+            let [f, d, v, fl, at, r, dc, rc, h, fea, fed, _a, s] =
                 crate::instrument_registry::INSTRUMENTS[voice_for_slot(i)].sound_settings_default;
-            InstrumentSettingsState::new(f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s)
+            InstrumentSettingsState::new(
+                f, d, v, fl, at, r, dc, rc, h, fea, fed, default_analog, s,
+            )
         });
         for (i, inst) in instruments.iter().enumerate() {
             inst.reset_specials_for_voice(voice_for_slot(i));
@@ -240,13 +252,18 @@ impl SoundSettingsState {
         })
     }
 
-    pub fn reset_slot_to_defaults(&self, slot: usize, kind: crate::track::TrackInstrumentKind) {
+    pub fn reset_slot_to_defaults(
+        &self,
+        slot: usize,
+        kind: crate::track::TrackInstrumentKind,
+        default_analog: f32,
+    ) {
         if slot >= MAX_TRACKS {
             return;
         }
-        let [f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s] =
+        let [f, d, v, fl, at, r, dc, rc, h, fea, fed, _a, s] =
             kind.instrument_def().sound_settings_default;
-        self.instruments[slot].store(f, d, v, fl, at, r, dc, rc, h, fea, fed, a, s);
+        self.instruments[slot].store(f, d, v, fl, at, r, dc, rc, h, fea, fed, default_analog, s);
         self.instruments[slot].reset_specials_for_voice(kind.drum_voice_index());
         self.bump_version();
     }
@@ -468,8 +485,9 @@ pub struct PersistentSoundSettings {
 
 impl PersistentSoundSettings {
     pub fn new(layout: &crate::track::TrackLayoutState) -> Self {
+        let config = crate::config::GlobalConfig::load();
         Self {
-            state: SoundSettingsState::new(layout),
+            state: SoundSettingsState::new_with_default_analog(layout, config.default_analog),
         }
     }
 }
@@ -526,7 +544,7 @@ mod tests {
         let layout = TrackLayoutState::default_layout();
         let state = SoundSettingsState::new(&layout);
         state.instruments[5].set_special(0, 99.0);
-        state.reset_slot_to_defaults(5, TrackInstrumentKind::Kick);
+        state.reset_slot_to_defaults(5, TrackInstrumentKind::Kick, 0.5);
         for def in crate::instrument_registry::special_params(0) {
             assert_eq!(
                 state.instruments[5].special_value(def.special_index),

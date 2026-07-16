@@ -225,14 +225,16 @@
 - [x] [121] **Bouton droit sur le titre du lane → Clear lane ou aléatoire** — `Clear Lane` et `Randomize Lane` ajoutés dans le menu contextuel du nom de lane (build 20260714-193958).
 - [x] [123] **Bouton Follow off dans le panel song** — retiré (build 20260714-114115).
 - [x] [128] **Option supprimer un lane** — permettre de passer un slot en inactif (lié à [MG-7]) (build 20260714-194847).
-- [ ] **REPRENDRE ICI** [131] **Les cellules fusionnées ne changent pas de couleur quand elles ont un plock** — inclure la modulation (morph) comme indicateur visuel de plock.
+- [x] [131] **Les cellules fusionnées ne changent pas de couleur quand elles ont un plock** — inclure la modulation (morph) comme indicateur visuel de plock (build 20260715-085935).
 
 ### Features
-- [ ] [120] **Changer les patterns en MIDI temps réel en mode Seq Internal / Pattern** — permettre au séquenceur interne de recevoir des notes MIDI pour changer de pattern P1-P8 en cours de lecture (hors mode Song).
-- [ ] [122] **Drag cell long press 2s** — quand on laisse le bouton gauche appuyé ~2s sur une cellule, permettre de la déplacer (avec ses plocks) à gauche/droite avec la souris.
-- [ ] [125] **Morphing : choisir origine vs cible** — pouvoir décider si les paramètres de morphing d'une cellule fusionnée restent sur les valeurs d'origine ou atteignent les valeurs cibles.
-- [ ] [126] **Retirer le paramètre mix du sound editor, remplacer par main dans track editor** — déplacer le contrôle de routage Main du panneau Sound vers l'onglet Track.
-- [ ] [127] **Menu settings global** — ajouter un menu de paramètres globaux (dérives du paramètre analog, MIDI global, etc.).
+- [x] [120] **Changer les patterns en MIDI temps réel en mode Seq Internal / Pattern** — permettre au séquenceur interne de recevoir des notes MIDI pour changer de pattern P1-P8 en cours de lecture (hors mode Song) (build 20260715-093205).
+- [x] [122] **Drag cell long press 2s** — quand on laisse le bouton gauche appuyé ~2s sur une cellule, permettre de la déplacer (avec ses plocks) à gauche/droite avec la souris (build 20260715-163647).
+- [x] [125] **Morphing : choisir origine vs cible** — pouvoir décider si les paramètres de morphing d'une cellule fusionnée restent sur les valeurs d'origine ou atteignent les valeurs cibles (build 20260715-203803).
+- [x] [126] **Retirer le paramètre mix du sound editor, remplacer par main dans track editor** — déplacer le contrôle de routage Main du panneau Sound vers l'onglet Track (build 20260715-163647).
+- [x] [127] **Menu settings global** — ajouter un menu de paramètres globaux (dérives du paramètre analog, MIDI global, etc.).
+  - Valeur analog par défaut variabilisée via le menu Settings.
+  - Persistance dans `Documents/Flash Drum/config.json`.
 
 ---
 
@@ -571,7 +573,7 @@
     - [x] Fix UI build 20260712-103414: valider le champ `Steps` avec `Enter` applique la valeur 1..64 puis ferme l'edition inline de la fusion
     - [x] Fix UI build 20260712-104124: regression freeze Studio One apres `Enter` corrigee en relachant le focus clavier et en fermant l'edition a la frame suivante
     - [x] Fix UI build 20260712-110414: remplacement du `TextEdit` par un `DragValue` natif egui pour le champ `Steps`; validation `Enter` geree en interne sans freeze
-    - [ ] Persistance DAW (champ `fusion-v1`)
+    - [x] Persistance DAW (champ `fusion-v1`) — réalisée via `pattern-v5` + `pattern-bank-v1`
     - [x] Tests: filtrage invalides + suppression triggers internes + métadonnées pulses
 - [x] [34a] Corriger le click de retrigger kick (2 steps BD proches)
 - [x] [34b] Nettoyer le code mort dans `special_params.rs` (struct `SpecialParamDef`, tous les `*_SPECIALS`, helper `specials_for`, methodes trait `supported_algos`/`special_params`)
@@ -697,7 +699,7 @@
 #### Phase 4 — Panneaux bas (patterns + generator/song)
 - [x] [100m] **Pattern Bank** — Save/Load, slots P1-P8, Clear, Export MIDI, Drag MIDI
 - [x] [100n] **Generator/Song panel** — Segmented toggle Generator|Song, Generator = type + A/B + Mix/Dens/Var + Random + GENERATE
-- [ ] [100o] **Song arranger** — Chaîne de blocs pattern × répétitions, toggle Song Enabled
+- [x] [100o] **Song arranger** — Chaîne de blocs pattern × répétitions, toggle Song Enabled (réalisé via le Song Editor 16 blocs + Song Mode, build 20260708-164626)
 
 #### Phase 5 — Polish & validation
 - [x] [100p] **ADSR visualization** — graphe inline réécrit (modèle 3 segments colorés A/D/R, cadre #0c0c11, espacé)

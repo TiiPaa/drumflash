@@ -1,5 +1,377 @@
 # Changelog
 
+## 2026-07-16 — Retour au NoteOff même échantillon + test MIDI déterministe (build 20260716-101309)
+
+**Build:** `20260716-101309`
+**Validation:** `cargo test` OK (168 lib + 1 midi_drag_helper + 100 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Retour au NoteOn/NoteOff au même offset d'échantillon.**
+  - Le build 20260716-093036 retardait le `NoteOff` d'un échantillon pour éviter les notes de longueur nulle. Studio One ne reçoit toujours pas de MIDI, donc on revient au comportement précédent pour vérifier si le retard était la cause.
+  - `src/lib.rs` : `NoteOff` est à nouveau envoyé au même `timing` que `NoteOn` en mode séquenceur interne et en mode `Ext MIDI`. Suppression du paramètre `buffer_samples` de `fire_voice_trigger`.
+- **Correction du test `resolve_midi_output_uses_slot_note_and_global_channel`.**
+  - Le test utilisait le channel global chargé depuis `config.json` (non déterministe). Il force maintenant le channel à 10 avant les assertions.
+
+### À tester dans Studio One (build 20260716-101309)
+1. Insérer Flash Drum sur une piste instrument → lancer le séquenceur interne → vérifier si la sortie MIDI est reçue par un instrument cible (channel global, par défaut 10).
+2. Mode `Ext MIDI` : envoyer une note MIDI sur l'entrée du plugin → elle doit être retransmise sur la sortie MIDI (channel global).
+3. Vérifier que le mode `Internal` + `MIDI Pat` ON fonctionne toujours (chargement des patterns C3-G3).
+4. Régression : s'assurer qu'il n'y a pas de clic audio supplémentaire sur les déclenchements rapides (suite au retour au NoteOff même échantillon).
+
+---
+
+## 2026-07-16 — Contrôle du channel MIDI global (build 20260716-094626)
+
+**Build:** `20260716-094626`
+**Validation:** `cargo test` OK (168 lib + 1 midi_drag_helper + 100 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Le channel MIDI global est maintenant visible et modifiable.**
+  - `src/config.rs` : ajout de `global_midi_channel` (1-16, défaut 10) dans `GlobalConfig`.
+  - `src/lib.rs` : à la création d'une nouvelle instance, le channel global est initialisé depuis la config utilisateur.
+  - `src/ui.rs` : section `MIDI` dans l'onglet `Track` affichant `Channel` (global) + `Note` (par slot).
+  - `src/ui.rs` : le popup `Settings` contient un champ `Global MIDI Channel` (1-16) qui met à jour la config et le projet courant immédiatement.
+
+### À tester dans Studio One (build 20260716-094626)
+1. Ouvrir le plugin → dans l'onglet `Track` le champ `Channel` doit afficher `10`.
+2. Ouvrir `Settings` (header) → changer `Global MIDI Channel` à `11` → fermer.
+3. Dans l'onglet `Track` le champ `Channel` doit maintenant afficher `11`.
+4. Routage MIDI out vers un autre instrument réglé sur channel 11 → les déclenchements du séquenceur interne doivent être reçus.
+5. Sauvegarder/recharger le projet Studio One → le channel choisi dans `Settings` doit être restauré.
+6. Régression : le changement de `Note` par slot reste indépendant du channel global.
+
+---
+
+## 2026-07-16 — MIDI Pat géré + MIDI out real-time corrigé (build 20260716-093036)
+
+**Build:** `20260716-093036`
+**Validation:** `cargo test` OK (168 lib + 1 midi_drag_helper + 100 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Le switch `MIDI Pat` ne s'active / ne s'affiche actif que lorsque le séquenceur interne est sélectionné.**
+  - `src/ui/widgets.rs` : `ToggleLED` prend désormais un état `enabled` (grisé + non cliquable quand désactivé).
+  - `src/ui.rs` : quand on passe `Seq` de `Internal` à `Ext MIDI`, `MIDI Pat` est automatiquement coupé ; le bouton est grisé et inactif en mode `Ext MIDI`.
+- **Correction du MIDI out temps réel.**
+  - Le MIDI out était bien implémenté, mais `NoteOn` et `NoteOff` étaient envoyés au même offset d'échantillon. Certains hôtes/samplers ignorent ces notes de longueur nulle.
+  - `src/lib.rs` : `NoteOff` est maintenant envoyé un échantillon plus tard (dans la limite du buffer), en mode séquenceur interne comme en mode `Ext MIDI`.
+
+### À tester dans Studio One (build 20260716-093036)
+1. Mode `Internal` + `MIDI Pat` ON → envoyer une note C3..G3 (60-67) sur l'entrée MIDI du plugin → le pattern P1-P8 correspondant doit se charger.
+2. Passer `Seq` en `Ext MIDI` → `MIDI Pat` doit s'éteindre et devenir grisé/cliquable.
+3. Revenir en `Internal` → `MIDI Pat` redevient cliquable (il reste OFF, il faut le réactiver).
+4. Routage MIDI out : insérer Flash Drum sur une piste instrument, activer sa sortie MIDI vers une autre piste/instrument, et lancer le séquenceur interne → l'instrument cible doit recevoir les notes GM (Kick 36, Snare 38, etc.).
+5. Mode `Ext MIDI` : envoyer une note MIDI standard sur l'entrée du plugin → elle doit être retransmise sur la sortie MIDI (channel global, par défaut 10).
+6. Régression : les LEDs `Choke` et `Auto-Edit` doivent rester actives et fonctionnelles.
+
+---
+
+## 2026-07-16 — Menu Settings global + valeur analog par défaut (build 20260716-085356)
+
+**Build:** `20260716-085356`
+**Validation:** `cargo test` OK (168 lib + 1 midi_drag_helper + 100 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **[127] Menu Settings global.**
+  - `src/config.rs` : nouveau module `GlobalConfig` ; persistance JSON dans `%USERPROFILE%/Documents/Flash Drum/config.json`.
+  - `src/sound_settings.rs` : `SoundSettingsState::new_with_default_analog` et `reset_slot_to_defaults` prennent la valeur analog globale en paramètre ; `PersistentSoundSettings::new()` charge la config à l'initialisation.
+  - `src/lib.rs` : chargement de la config dans `editor()` et passage à l'UI.
+  - `src/ui.rs` : bouton `Settings` dans le header ; popup `draw_settings_popup_if_any` avec un slider `Default Analog` (0.0-1.0) ; sauvegarde automatique du fichier config à chaque mouvement du slider.
+- **La valeur par défaut de `Analog` est désormais variabilisée.**
+  - Nouvelle lane / changement d'instrument / preset de lanes utilisent la valeur configurée dans le menu Settings au lieu de 0.5 figé.
+  - Double-clic sur le slider remet à 0.5 (valeur historique).
+
+### À tester dans Studio One (build 20260716-085356)
+1. Ouvrir le plugin → vérifier qu'un fichier `Documents/Flash Drum/config.json` est créé avec `default_analog: 0.5`.
+2. Cliquer sur le bouton `Settings` dans le header → le popup s'ouvre en haut à droite.
+3. Déplacer le slider `Default Analog` à 1.0 → fermer le popup ; ajouter une nouvelle lane (ex. `+ Add Module`) → l'Analog du nouvel instrument doit être 1.0.
+4. Changer l'instrument d'une lane active (onglet Track → dropdown Instrument) → son Analog doit être réinitialisé à la valeur globale (1.0 si réglé à 1.0).
+5. Appliquer un preset `Clear All` ou `Preset 12 Lanes` → toutes les lanes actives doivent prendre l'Analog configuré globalement.
+6. Fermer/recharger le projet Studio One → la valeur `Default Analog` persiste (elle est relue depuis `config.json`).
+7. Régression : avec `default_analog: 0.5`, créer une nouvelle lane Kick → l'Analog doit rester à 0.5 comme avant.
+8. Régression : le bouton `Settings` ne doit pas décaler les autres éléments du header ni perturber les sliders Master/Swing.
+
+---
+
+## 2026-07-15 — Morphing origine vs cible (build 20260715-203803)
+
+**Build:** `20260715-203803`
+**Validation:** `cargo fmt` OK, `cargo test` OK (166 lib + 1 midi_drag_helper + 100 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **[125] Direction du morphing par cible dans une fusion.**
+  - `src/sequencer/pattern.rs` : ajout de `MorphDirection` (`Target` / `Source`) et stockage dans les bits 56-59 du 3e u64 de chaque groupe fusion.
+  - `src/lib.rs` : le moteur audio choisit le sens d'interpolation selon la direction.
+    - `Target` : morph de la valeur lane/plock vers la valeur saisie (comportement existant).
+    - `Source` : morph de la valeur saisie vers la valeur lane/plock.
+  - `src/ui.rs` : popup Morph élargie à 350 px ; chaque ligne de paramètre cible affiche un petit bouton `Target`/`Source` à côté du slider (ou des boutons +/- pour les notes). Le slider de valeur par défaut tient désormais compte du sound plock présent sur la cellule de départ de la fusion.
+- **Compatibilité ascendante :** les fusions sauvegardées avant cette build n'ont pas de bit de direction ; elles sont chargées en mode `Target` par défaut.
+
+### À tester dans Studio One (build 20260715-203803)
+1. Créer une Fusion sur une lane Kick/Snare de 2-4 steps → clic droit → Morph → ajouter un paramètre (ex. `Volume`).
+2. Par défaut le bouton affiche `Target` : le morph va de la valeur lane/plock vers la valeur saisie. Lire la fusion → on doit entendre le paramètre glisser du réglage lane/plock vers la valeur cible.
+3. Cliquer sur le bouton `Target` pour le passer en `Source` : le morph va maintenant de la valeur saisie vers la valeur lane/plock. Lire à nouveau → la direction doit être inversée.
+4. Vérifier que les autres lignes morphables (Freq, Decay, Analog, specials continus, checkbox Stereo) affichent aussi le bouton `Target`/`Source` quand elles sont cibles.
+5. Poser un sound plock sur la cellule de départ de la fusion, puis ouvrir le Morph : le slider de valeur par défaut doit refléter la valeur du plock, pas celle du lane global.
+6. Sauvegarder/recharger le projet Studio One → la direction choisie (`Target` ou `Source`) doit être conservée pour chaque cible.
+7. Sauvegarder/charger un pattern dans la Pattern Bank (slot P1-P8) → la direction doit être conservée.
+8. Régression : une fusion existante créée avant cette build doit se charger en mode `Target` et sonner comme avant.
+
+---
+
+## 2026-07-15 — Generator/Song : switch positionné explicitement (build 20260715-174349)
+
+**Build:** `20260715-174349`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Retour à une géométrie compacte d'origine pour le panel inférieur.**
+  - Header : 42 px.
+  - Séparation : 42 px.
+  - Contenu : 44 px.
+- **Le switch `Generator | Song` n'est plus placé par le layout automatique.**
+  - Position verticale calculée explicitement dans le header.
+  - Texte meta dessiné directement au painter, aligné au centre du switch.
+- **Le cadre du switch reste dessiné en dernier**, pour éviter que le segment actif masque son bord.
+
+### À tester dans Studio One (build 20260715-174349)
+1. Ouvrir le panel `Generator` / `Song` → le switch doit être à la même hauteur qu'avant les essais de déplacement.
+2. Le cadre du switch doit être complet, surtout en bas.
+3. Le contenu Generator/Song doit être à sa position compacte habituelle et non tronqué.
+4. Le texte meta doit rester aligné horizontalement avec le switch.
+
+---
+
+## 2026-07-15 — Generator/Song : cadre switch garanti visible (build 20260715-172822)
+
+**Build:** `20260715-172822`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Disposition du header Generator/Song revue avec des constantes explicites.**
+  - Header dédié : 54 px.
+  - Ligne de séparation : 58 px.
+  - Contenu : démarre à 64 px.
+- **Cadre du switch `Generator | Song` redessiné en dernier.**
+  - Avant, le remplissage actif/hover pouvait visuellement manger le bas du cadre.
+  - Le contour externe est maintenant rendu après les segments, donc il reste visible.
+
+### À tester dans Studio One (build 20260715-172822)
+1. Ouvrir le panel `Generator` / `Song` → le cadre complet du switch doit être visible, surtout le bord bas.
+2. Basculer `Generator` ↔ `Song` → le cadre doit rester complet sur les deux états.
+3. Vérifier que la ligne de séparation est clairement sous le switch, sans le couper.
+4. Vérifier que les contrôles du panel restent lisibles et fonctionnels.
+
+---
+
+## 2026-07-15 — Refonte disposition du panel Generator/Song (build 20260715-172302)
+
+**Build:** `20260715-172302`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Refonte complète de la disposition du panel inférieur Generator/Song.**
+  - Le header est maintenant plus haut (48 px au lieu de 42 px) pour laisser respirer le switch `Generator | Song` (26 px) et éviter que son cadre ne soit tronqué.
+  - La ligne de séparation descend de 42 px à 50 px, créant un espace clair entre le header et le contenu.
+  - Le contenu du panel (barre de contrôles + presets / song editor) commence plus bas (54 px) mais conserve le même espacement et le même rendu visuel.
+  - L'ensemble reste contenu dans la hauteur fixe du panel (210 px).
+
+### À tester dans Studio One (build 20260715-172302)
+1. Ouvrir le panel `Generator` / `Song`.
+2. Vérifier que le cadre du switch `Generator | Song` n'est plus tronqué en bas.
+3. Vérifier que le switch est bien centré verticalement dans le header.
+4. Vérifier que la ligne de séparation est plus basse et que le texte meta (`Euclidean · Rock -> Rock` ou `N blocks · N patterns`) reste aligné avec le switch.
+5. Vérifier que les contrôles du panel (combos, sliders, `GENERATE`, presets chips / song editor) restent lisibles et fonctionnels.
+
+---
+
+## 2026-07-15 — Baisse de la ligne de séparation Generator/Song sans toucher au contenu (build 20260715-170136)
+
+**Build:** `20260715-170136`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Correction : la ligne de séparation du panel inférieur est abaissée de 7 pixels sans déplacer le contenu.**
+  - La ligne passe de 42 px à 49 px depuis le haut du panel.
+  - Le header et le body conservent leurs positions d'origine (42 px et 44 px) ; seul le trait de séparation descend.
+  - Le switch `Generator | Song` a plus d'espace sans que les contrôles du panel soient tronqués.
+
+### À tester dans Studio One (build 20260715-170136)
+1. Ouvrir le panel `Generator` / `Song`.
+2. Vérifier que le switch `Generator | Song` n'est plus coupé.
+3. Vérifier que la ligne de séparation est plus basse que l'origine.
+4. Vérifier que les contrôles du panel (combos, sliders, bouton `GENERATE`, presets chips) restent à la même place et ne sont pas tronqués.
+
+---
+
+## 2026-07-15 — Baisse de la ligne de séparation du panel Generator/Song (build 20260715-165429)
+
+**Build:** `20260715-165429`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Correction de la ligne de séparation du panel inférieur Generator/Song.**
+  - Le premier ajustement (build 20260715-164724) a malencontreusement monté la ligne au lieu de la descendre. C'est corrigé : la ligne est maintenant abaissée de 7 pixels (header 42 px → 49 px, séparation à 49 px).
+  - Le switch `Generator | Song` dispose maintenant de plus d'espace et ne doit plus être coupé.
+
+### À tester dans Studio One (build 20260715-165429)
+1. Ouvrir le panel `Generator` / `Song`.
+2. Vérifier que le switch `Generator | Song` n'est plus coupé en haut.
+3. Vérifier que la ligne de séparation est bien plus basse que sur le build précédent.
+4. Régression : le contenu du panel reste lisible et fonctionnel.
+
+---
+
+## 2026-07-15 — Ajustement hauteur header du panel Generator/Song (build 20260715-164724)
+
+**Build:** `20260715-164724`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Hauteur du header du panel inférieur Generator/Song réduite de 42 px à 35 px.**
+  - La ligne de séparation descend de 7 pixels, ce qui laisse plus de place au switch `Generator | Song` et évite qu'il soit coupé.
+  - La zone de contenu du panel gagne 7 pixels de hauteur en conséquence.
+
+### À tester dans Studio One (build 20260715-164724)
+1. Ouvrir le panel inférieur `Generator` / `Song`.
+2. Vérifier que le switch `Generator | Song` n'est plus coupé en haut.
+3. Vérifier que la ligne de séparation est plus basse qu'avant (environ 7 pixels).
+4. Régression : le contenu du panel (contrôles generator ou song editor) reste lisible et fonctionnel.
+
+---
+
+## 2026-07-15 — Retrait du sélecteur Mix du Sound editor + drag uniquement sur step actif (build 20260715-163647)
+
+**Build:** `20260715-163647`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Le sélecteur `Mix` est retiré de la section `Output` du Sound editor.**
+  - L'assignation Main Mix est désormais gérée exclusivement dans l'onglet `Track` → section `Routing` → checkbox `Main`.
+  - La section `Output` du Sound editor continue d'afficher les autres paramètres (Stereo, etc.).
+- **Le drag long ne se déclenche plus sur une cellule vide.**
+  - Seuls les steps déjà actifs peuvent être déplacés ; cliquer sur une cellule vide toggle juste le step.
+  - Cela corrige les incohérences quand on essayait de créer un nouveau step et que le mode drag s'activait.
+
+### À tester dans Studio One (build 20260715-163647)
+1. Onglet `Sound` → section `Output` : le sélecteur `Mix` ne doit plus apparaître.
+2. Onglet `Track` → section `Routing` : la checkbox `Main` doit toujours activer/désactiver le routage Main Mix.
+3. Clic sur une cellule vide → le step s'active normalement (pas de drag, pas de clignotement).
+4. Appui long sur une cellule active → au bout de ~0,5 s elle clignote et peut être déplacée.
+5. Régression : appui long sur une cellule fusionnée ou en mode `Fusion` → aucun drag.
+
+---
+
+## 2026-07-15 — Drag cell long press : feedback clignotant plus visible (build 20260715-162108)
+
+**Build:** `20260715-162108`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Le feedback clignotant de la cellule source est maintenant dessiné par-dessus le hover.**
+  - Le trait bleu de hover masquait le bord blanc pulsant ; le clignotement est désormais rendu en overlay après `draw_step_cell_v2`.
+- **Alpha augmentée** : overlay blanc 50-100 + bord blanc 140-255 pulsant, bien visible sur toutes les couleurs de cellule.
+- Délai d’appui long reste à 0,5 s. Le déplacement copie toujours step, sound plock et sequencer plock.
+
+### À tester dans Studio One (build 20260715-162108)
+1. Appui long gauche sur une cellule active (pas fusionnée) → au bout de ~0,5 s, la cellule doit clignoter fortement (bord blanc pulsant + éclaircissement).
+2. Le clignotement doit rester visible même quand la souris est sur la cellule.
+3. Clic bref (< 0,5 s) → pas de clignotement, juste un toggle.
+4. Glisser puis relâcher → déplacement fonctionne toujours.
+5. Régression : cellule fusionnée → pas de clignotement ni drag.
+
+---
+
+## 2026-07-15 — Drag cell long press : délai raccourci et feedback clignotant (build 20260715-161640)
+
+**Build:** `20260715-161640`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Délai d’appui long réduit de 2 s à 0,5 s.**
+- **Feedback visuel quand la cellule est prête à être déplacée :** la cellule source clignote (bord blanc pulsant + overlay blanc subtil) une fois le seuil de 0,5 s atteint.
+- Le déplacement copie toujours le step actif/inactif, le sound plock (Link/Snapshot) et le sequencer plock (probabilité, stutter, condition, micro-timing) du pas source vers le pas cible, puis efface le pas source.
+- Garde-fous conservés : les cellules fusionnées ne déclenchent pas le drag et le mode `Fusion` désactive le drag.
+- Le clic court reste inchangé.
+
+### À tester dans Studio One (build 20260715-161640)
+1. Appui long gauche sur une cellule active → au bout de ~0,5 s la cellule doit clignoter (bord blanc pulsant) et le déplacement doit être prêt.
+2. Clic très bref (< 0,5 s) sur une cellule → le step doit juste toggle, sans drag.
+3. Glisser la cellule clignotante à droite/gauche et relâcher → le step + plocks doivent se déplacer.
+4. Régression : relâcher sans déplacer ne doit pas effacer le step d’origine.
+5. Cellule fusionnée : appui long → aucun clignotement ni drag.
+
+---
+
+## 2026-07-15 — Drag cell long press 2s (build 20260715-154453)
+
+**Build:** `20260715-154453`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Déplacement d'une cellule par appui long (2 s) dans la grille.**
+  - Maintenir le clic gauche sur une cellule non fusionnée pendant ~2 s active le mode déplacement.
+  - La cellule source est entourée d'un trait blanc ; la cible actuelle est surlignée en orange avec un overlay semi-transparent.
+  - Bouger la souris horizontalement déplace la cible d'un pas à gauche ou à droite (limité à la page courante, 16 pas).
+  - Relâcher applique le déplacement : le step actif/inactif, le sound plock (Link/Snapshot) et le sequencer plock (probabilité, stutter, condition, micro-timing) sont copiés du pas source vers le pas cible, puis le pas source est effacé.
+- **Garde-fous :** les cellules fusionnées ne déclenchent pas le drag (un clic long sur une fusion est ignoré), et le mode `Fusion` (Shift+clic) désactive aussi le drag pour ne pas entrer en conflit avec la sélection de fusion.
+- Le clic normal reste inchangé : un appui bref (< 2 s) continue de toggle le step ou de sélectionner une plage de fusion.
+
+### À tester dans Studio One (build 20260715-154453)
+1. Sur une lane active, cliquer brièvement sur une cellule vide → le step doit s'activer normalement (régression : clic normal cassé).
+2. Sur une lane active, ajouter un `Snapshot` ou `Link` plock sur une cellule active → maintenir le clic gauche sur cette cellule ~2 s → la cellule doit être entourée de blanc et pouvoir être glissée.
+3. Glisser la cellule de 2-3 pas à droite et relâcher → le step + plock doivent apparaître à la nouvelle position ; le pas d'origine doit être vide.
+4. Ajouter un sequencer plock (probabilité, stutter, condition ou micro-timing) sur une cellule active, puis déplacer cette cellule → le seq plock doit suivre à la nouvelle position.
+5. Créer une fusion (Shift+clic sur deux cellules adjacentes) et maintenir le clic gauche sur une cellule de fusion ~2 s → aucun drag ne doit démarrer (le mode fusion garde la priorité).
+6. Régression : un appui long suivi d'un relâchement sans déplacement ne doit pas effacer le step d'origine.
+
+---
+
+## 2026-07-15 — MIDI pattern switching en temps réel (build 20260715-093205)
+
+**Build:** `20260715-093205`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Nouveau paramètre `MIDI Pattern Switch` (toggle LED "MIDI Pat" dans le header).**
+  - Quand il est actif et que le séquenceur est en mode `Internal` (pas `Ext MIDI`) et hors `Song Mode`, les notes MIDI entrantes C3..G3 (60-67) chargent les slots Pattern Bank P1..P8 en temps réel.
+  - Le slot est mis en file d’attente pendant le bloc audio puis chargé via `load_pattern_from_slot` (déjà sécurisé pour le thread audio avec `try_lock`).
+  - Si la Pattern Bank est temporairement verrouillée par l’UI, le chargement est réessayé au bloc audio suivant.
+  - Le séquenceur redémarre à zéro après le chargement (`pending_song_pattern_restart`) pour commencer le nouveau pattern proprement.
+- **Lecture des événements MIDI en mode Internal** : le thread audio consomme désormais les `NoteOn` entrants même en mode `Internal Sequencer`, mais seuls les notes de changement de pattern agissent ; les autres notes sont ignorées (pas de déclenchement de voix, ce qui reste réservé au mode `Ext MIDI`).
+
+### À tester dans Studio One (build 20260715-093205)
+1. Préparer 2 patterns différents en P1 et P2 (Pattern Bank), vérifier que le slot actuel est P1.
+2. Mettre le séquenceur sur `Internal` et activer le toggle `MIDI Pat`.
+3. Envoyer une note MIDI C3 (note 60) au plugin → le pattern P1 doit rester/jouer.
+4. Envoyer une note MIDI C#3 (note 61) → le pattern doit basculer sur P2 et le séquenceur redémarrer au début du nouveau pattern.
+5. Activer `Song Mode` → les notes MIDI ne doivent plus changer de pattern (Song mode garde la main).
+6. Passer en `Ext MIDI` → les notes MIDI doivent déclencher les voix comme avant et ne pas changer de pattern.
+7. Régression : désactiver `MIDI Pat` puis envoyer des notes C3-G3 → aucun changement de pattern.
+
+---
+
+## 2026-07-15 — Cellules fusionnées : couleur plock / morph visible (build 20260715-085935)
+
+**Build:** `20260715-085935`
+**Validation:** `cargo fmt` OK, `cargo test` OK (165 lib + 1 midi_drag_helper + 99 test_standalone), `build.ps1 -Install` OK (Studio One fermé)
+
+### Changements
+- **Les cellules de début de fusion affichent désormais la couleur plock quand elles en portent une.**
+  - Avant, une cellule fusionnée était toujours bleue, même si le pas de départ avait un `Link` / `Snapshot` plock.
+  - `step_colors_v2` calcule d’abord la couleur de plock, puis ne l’écrase par la couleur fusion que si le pas n’a pas de plock.
+- **La modulation (morph) est traitée comme un indicateur visuel de plock.**
+  - Un groupe de fusion avec au moins une cible de morphing (`morph_active()`) affiche la couleur plock (`PL_LINK`) sur la cellule de départ.
+  - Cela unifie le feedback visuel : plock sonore ET morph apparaissent tous deux comme une couleur spéciale sur le bloc fusion.
+- Seule la cellule de début d’un groupe est dessinée visuellement ; le traitement est donc appliqué à cette cellule pour tout le bloc.
+
+### À tester dans Studio One (build 20260715-085935)
+1. Créer une fusion sur une lane active (Shift+clic sur deux cellules) → le bloc doit rester bleu.
+2. Clic droit sur la cellule de début de la fusion → ajouter un `Link` ou `Snapshot` plock → le bloc entier doit prendre la couleur plock (orange/rose) au lieu de bleu.
+3. Clic droit sur la cellule de début de la fusion → menu `Morph` → ajouter un paramètre morphé → le bloc doit prendre la couleur plock (orange `PL_LINK`).
+4. Régression : une fusion sans plock ni morph doit rester bleue ; une cellule non fusionnée avec plock doit garder sa couleur habituelle.
+
+---
+
 ## 2026-07-14 — Option Delete Lane : désactiver un slot (build 20260714-194847)
 
 **Build:** `20260714-194847`
