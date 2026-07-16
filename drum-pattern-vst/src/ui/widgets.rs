@@ -2,6 +2,10 @@ use crate::ui::theme::*;
 use nih_plug_egui::egui::{self, Color32, Response, Sense, StrokeKind, Ui, Vec2, Widget};
 use std::hash::Hash;
 
+pub fn hover_t(ctx: &egui::Context, id: egui::Id, hovered: bool) -> f32 {
+    ctx.animate_value_with_time(id, if hovered { 1.0 } else { 0.0 }, 0.14)
+}
+
 // ============================================================
 // ToggleSwitch — 34×18 r10
 // ============================================================
@@ -94,9 +98,14 @@ impl Widget for ToggleLED {
         }
 
         let painter = ui.painter_at(rect);
+        let hover = hover_t(ui.ctx(), response.id, response.hovered());
         let bg = if on && enabled { blue_glow(64) } else { PANEL2 };
         painter.rect_filled(rect, 6.0, bg);
-        let stroke_color = if on && enabled { BLUE } else { LINE2 };
+        let stroke_color = if on && enabled {
+            BLUE
+        } else {
+            lerp_color(LINE2, BLUE, hover * 0.6)
+        };
         painter.rect_stroke(
             rect,
             6.0,
@@ -120,10 +129,10 @@ impl Widget for ToggleLED {
 
         let text_color = if !enabled {
             INK2
-        } else if on || response.hovered() {
+        } else if on {
             INK
         } else {
-            INK2
+            lerp_color(INK2, INK, hover)
         };
         painter.text(
             egui::pos2(rect.left() + 12.0 + 7.0 + 7.0, rect.center().y),
@@ -160,12 +169,13 @@ pub fn styled_select(
     }
 
     let hovered = response.hovered();
+    let hover = hover_t(ui.ctx(), response.id, hovered || popup_open);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 6.0, PANEL2);
     painter.rect_stroke(
         rect,
         6.0,
-        egui::Stroke::new(1.0, if hovered || popup_open { BLUE } else { LINE2 }),
+        egui::Stroke::new(1.0, lerp_color(LINE2, BLUE, hover)),
         StrokeKind::Inside,
     );
 
@@ -217,9 +227,13 @@ pub fn styled_select(
                         for (idx, option) in options.iter().enumerate() {
                             let (opt_rect, opt_response) =
                                 ui.allocate_exact_size(Vec2::new(width, 24.0), Sense::click());
-                            let opt_hovered = opt_response.hovered();
-                            if opt_hovered {
-                                ui.painter().rect_filled(opt_rect, 0.0, BLUE);
+                            let opt_hover = hover_t(ui.ctx(), opt_response.id, opt_response.hovered());
+                            if opt_hover > 0.01 {
+                                ui.painter().rect_filled(
+                                    opt_rect,
+                                    0.0,
+                                    lerp_color(Color32::TRANSPARENT, BLUE, opt_hover),
+                                );
                             } else if idx == selected {
                                 ui.painter().rect_filled(opt_rect, 0.0, PANEL2);
                             }
@@ -228,7 +242,7 @@ pub fn styled_select(
                                 egui::Align2::LEFT_CENTER,
                                 *option,
                                 f_sans_med(11.0),
-                                if opt_hovered { Color32::WHITE } else { INK2 },
+                                lerp_color(INK2, Color32::WHITE, opt_hover),
                             );
                             if opt_response.clicked() {
                                 picked = Some(idx);
@@ -306,7 +320,12 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
             painter.circle_filled(led_center, 5.0, blue_glow(90));
         }
         painter.circle_filled(led_center, 3.0, if is_on { BLUE } else { FAINT });
-        let txt_color = if is_on || resp.hovered() { INK } else { INK2 };
+        let seg_hover = hover_t(ui.ctx(), resp.id, resp.hovered());
+        let txt_color = if is_on {
+            INK
+        } else {
+            lerp_color(INK2, INK, seg_hover)
+        };
         painter.text(
             egui::pos2(seg.left() + 12.0 + 6.0 + 6.0, seg.center().y),
             egui::Align2::LEFT_CENTER,

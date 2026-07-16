@@ -1,5 +1,130 @@
 # Changelog
 
+## 2026-07-16 — TODO : [100v] marqué obsolète (docs)
+
+**Modifications :** aucune (mise à jour de documentation uniquement).
+
+### Changements
+- **Suppression de la tâche [100v] de la liste active.**
+  - `TODO.md` : `[100v]` marqué **OBSOLÈTE** car redondant avec l'architecture modulaire actuelle.
+  - `TODO.md` ligne `[100i]` : référence à `[100v]` retirée, référence à `[57]` conservée.
+  - Rationale : les 14 slots / types d'instruments par slot + sélecteur d'algorithme couvrent déjà le besoin V1 ; un "registre de moteurs" séparé n'apporte rien tant qu'on n'a pas de moteurs interchangeables (sampler, wavetable, etc.).
+
+---
+
+## 2026-07-16 — Mini sliders lanes : double-clic reset + poignée au hover (build 20260716-152038)
+
+**Build:** `20260716-152038`
+**Validation:** `cargo test` OK (173 lib + 1 midi_drag_helper + 102 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Mini sliders : double-clic reset + poignée au hover.**
+  - `src/ui.rs` (`draw_mini_value_slider`) : ajout d'un paramètre `default`, gestion du double-clic pour revenir à la valeur par défaut, et dessin d'une petite poignée ronde (Ø8) au hover/drag pour repérer la valeur.
+  - `src/ui.rs` (`draw_param_mini_slider_with_value`) : propagation du `default` via `param.default_plain_value()` ; suppression de la logique de double-clic redondante.
+  - `src/ui.rs` (lane volume) : slider de volume de lane raccourci passe `default = 1.0` (unity gain).
+  - Les mini sliders Humanize / Push-Pull héritent automatiquement de la poignée et du reset à leur valeur par défaut.
+
+### À tester dans Studio One (build 20260716-152038)
+1. Survoler un mini slider de lane (Volume, Humanize, Push/Pull) → une petite poignée blanche doit apparaître à la position courante.
+2. Double-cliquer sur le mini slider Volume d'une lane → retour à 1.0 (100%).
+3. Double-cliquer sur le mini slider Humanize d'une lane → retour à la valeur par défaut du paramètre.
+4. Double-cliquer sur le mini slider Push/Pull d'une lane → retour à la valeur par défaut du paramètre (0 ms).
+5. Vérifier que drag et click normal sur les mini sliders fonctionnent toujours.
+6. Régression : vérifier que la poignée ne masque pas la valeur affichée en tooltip au hover.
+
+---
+
+## 2026-07-16 — Double-clic reset sur tous les sliders (build 20260716-150443)
+
+**Build:** `20260716-150443`
+**Validation:** `cargo test` OK (173 lib + 1 midi_drag_helper + 102 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Double-clic reset étendu à tous les sliders de l'interface.**
+  - `src/lib.rs` : `master_volume` passe de `0.8` à `1.0` (0 dB par défaut).
+  - `src/ui.rs` (`header_param_slider`) : déjà présent, reset à `param.default_normalized_value()` pour les sliders d'en-tête (Master, BPM, Swing, Pattern Length).
+  - `src/ui.rs` (`draw_editor_slider_track` / `draw_editor_slider_row`) : ajout d'un paramètre `default` et gestion du double-clic dans le Sound Editor.
+  - `src/ui.rs` (`draw_editor_frequency_row`) : propagation du `default` pour le slider de fréquence (Hz) des bass drums.
+  - `src/ui.rs` : `reset_value` renseigné sur tous les `LocalParamSlider` :
+    - menus P-lock (volume, champs standard, params spéciaux) → valeur globale du slot ou `def.default` ;
+    - menus Morph / fusion → valeur globale du slot ou `def.default` ;
+    - menu Seq P-lock (probabilité = 1.0, stutter = 1.0) ;
+    - config Default Analog reste à 0.5.
+
+### À tester dans Studio One (build 20260716-150443)
+1. Double-cliquer sur le slider Master → doit afficher 0 dB (valeur 1.0, pas 0.8 / -1.9 dB).
+2. Double-cliquer sur les sliders d'en-tête (BPM, Swing, Pattern Length) → retour à la valeur par défaut du paramètre.
+3. Ouvrir le Sound Editor (sélectionner une lane) et double-cliquer sur Volume, Decay, Freq, Filter, etc. → retour à la valeur par défaut de l'instrument.
+4. Clic droit sur une step pour ouvrir le menu P-lock : double-clic sur les sliders → retour à la valeur globale du slot (ou valeur par défaut pour les spéciaux).
+5. Clic droit sur une step fusionnée pour ouvrir le menu Morph : double-clic sur les sliders → retour à la valeur globale du slot.
+6. Clic droit sur une step pour Seq P-lock : double-clic sur Probability → 100%, Stutter → 1x.
+7. Régression : drag et click normal sur tous ces sliders fonctionnent toujours.
+
+---
+
+## 2026-07-16 — Sliders : double-clic pour reset à la valeur par défaut (build 20260716-144917)
+
+**Build:** `20260716-144917`
+**Validation:** `cargo test` OK (173 lib + 1 midi_drag_helper + 102 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Double-clic sur les sliders d'en-tête pour revenir à la valeur par défaut.**
+  - `src/ui.rs` (`header_param_slider`) : gestion de `response.double_clicked()` pour définir le paramètre à `param.default_normalized_value()` via `setter.set_parameter_normalized()`.
+  - Le reset est encadré par `begin_set_parameter` / `end_set_parameter` pour que l'historique DAW (undo) et l'automation capturent le changement.
+
+### À tester dans Studio One (build 20260716-144917)
+1. Double-cliquer sur un slider d'en-tête (Master Volume, Swing, Pattern Length, etc.) → la valeur doit revenir à son défaut DAW.
+2. Vérifier que le déplacement visuel du slider suit immédiatement le retour à la valeur par défaut (pas de décalage d'un frame).
+3. Vérifier que le drag/click normal fonctionne toujours comme avant.
+4. Régression : vérifier que l'automation et l'undo du DAW capturent bien le changement de valeur (le paramètre doit apparaître comme modifié dans l'historique d'édition).
+
+---
+
+## 2026-07-16 — Pattern Bank : retrait indicateur [P:S] + alignement boutons (build 20260716-144332)
+
+**Build:** `20260716-144332`
+**Validation:** `cargo test` OK (173 lib + 1 midi_drag_helper + 102 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Suppression de l'indicateur de debug `[P:X S:X]` dans la barre Pattern Bank.**
+  - `src/ui.rs` (`draw_pattern_bank`) : retrait du comptage et de l'affichage des p-locks sound/séquenceur.
+- **Alignement vertical des boutons de la barre Pattern Bank.**
+  - `src/ui.rs` (`draw_pattern_bank`) : hauteurs uniformisées à 26 px pour `Save` (était 22 px) et les slots `P1-P8` (étaient 22 px), afin d'être alignés avec les chips `Export`/`Drag` et le bouton `Clr`.
+
+### À tester dans Studio One (build 20260716-144332)
+1. Ouvrir la barre Pattern Bank (en haut de l'interface) → vérifier que l'indicateur `[P:X S:X]` à côté du label *Patterns* a disparu.
+2. Vérifier que les boutons `Export`, `Drag`, `Save`, `P1-P8`, `Clr` sont tous alignés sur la même ligne de base (même hauteur), sans bouton décalé.
+3. Vérifier que les interactions (clic sur P1-P8 pour charger/sauvegarder, mode Save, mode Clear) fonctionnent toujours normalement.
+4. Régression : vérifier que le reste de l'interface (grille, Sound Editor, Song Editor) n'a pas été décalé.
+
+---
+
+## 2026-07-16 — Micro-animations UI : hover 0.14s + glow de playback (build 20260716-142342)
+
+**Build:** `20260716-142342`
+**Validation:** `cargo test` OK (173 lib + 1 midi_drag_helper + 102 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Implémentation de [100q] (points 1 et 2).**
+  - `src/ui/theme.rs` : ajout de `lerp_color()` pour interpoler les couleurs de manière fluide.
+  - `src/ui/widgets.rs` : ajout de `hover_t()` (animation de hover 0.14s via `ctx.animate_value_with_time`).
+  - `src/ui/widgets.rs` : animations de hover sur :
+    - `ToggleLED` (bordure + couleur du texte) ;
+    - `styled_select` (bordure du champ) ;
+    - options du dropdown de `styled_select` (fond + texte) ;
+    - LED segmented control (couleur du texte).
+  - `src/ui.rs` (`draw_step_cell_v2`) : les cellules de la grille lissent leur bordure bleue au hover au lieu de basculer instantanément.
+  - `src/ui.rs` (`draw_step_cell_v2`) : l'anneau blanc de la tête de lecture pulse doucement (alpha 120→200) pour marquer visuellement la colonne en cours de lecture.
+
+### À tester dans Studio One (build 20260716-142342)
+1. Passer la souris sur une cellule de la grille inactive → la bordure doit s'illuminer en bleu progressivement (~0.14s), pas instantanément.
+2. Passer la souris sur un bouton LED (`Solo`, `Mute`, `Link`, etc.) → le texte et la bordure doivent lisser leur intensité.
+3. Passer la souris sur un `styled_select` (choix de style, etc.) → la bordure doit s'activer en douceur ; ouvrir le dropdown et survoler les options → fond + texte lissent également.
+4. Lancer la lecture → l'anneau blanc autour de la cellule courante doit pulser (respiration subtile) ; la bordure ne doit pas baver sur les cellules voisines (pas de halo translucide expansif).
+5. Régression : vérifier que l'affichage des états actifs (cellules bleues, p-locks orange/rouge, fusion bleue) reste correct et lisible.
+
+---
+
 ## 2026-07-16 — Tests moteurs audio allégés (build 20260716-114252)
 
 **Build:** `20260716-114252`
