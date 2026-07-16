@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-07-16 — Tests moteurs audio allégés (build 20260716-114252)
+
+**Build:** `20260716-114252`
+**Validation:** `cargo test` OK (173 lib + 1 midi_drag_helper + 102 test_standalone)
+
+### Changements
+- **Implémentation d'un mode test allégé pour [100r].**
+  - `src/synthesis/mod.rs` : ajout de deux tests sur le `DrumSynthesizer` complet :
+    - `all_voices_render_finite_non_silent_output` — chaque voix (Kick, Snare, HiHat, OpenHH, Tom1/2/3, Clap, Ride, Cymbal, Snare606, B8, Perc1) est déclenchée avec ses réglages par défaut et rend ~4,5 ms ; on vérifie que le signal est fini et non silencieux.
+    - `all_voices_stay_finite_on_retrigger` — chaque voix est déclenchée deux fois de suite pour s'assurer qu'aucune valeur `NaN`/`Inf` n'apparaît sur retrigger.
+  - `src/pattern_bank.rs` : `SongSequence` devient `Copy + PartialEq` (requis pour les tests précédents et le contrôleur SPSC).
+  - Surcoût de `cargo test` négligeable (~quelques ms), pas d'impact sur `build.ps1 -Install`.
+
+### À tester dans Studio One (build 20260716-115XXX)
+1. Jouer un pattern avec plusieurs voix (BD, SD, HH, Tom, etc.) → vérifier que tout sonne.
+2. Déclencher des répétitions rapides sur une voix → pas de clic/disparition anormale.
+3. Charger un ancien projet → le son doit être identique à la build précédente.
+
+---
+
 ## 2026-07-16 — Song mode lock-free + SPSC UI→audio (build 20260716-111228)
 
 **Build:** `20260716-111228`
