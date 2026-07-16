@@ -62,13 +62,15 @@ impl Widget for ToggleSwitch {
 pub struct ToggleLED {
     label: String,
     on: bool,
+    enabled: bool,
 }
 
 impl ToggleLED {
-    pub fn new(label: &str, on: bool) -> Self {
+    pub fn new_enabled(label: &str, on: bool, enabled: bool) -> Self {
         Self {
             label: label.to_owned(),
             on,
+            enabled,
         }
     }
 }
@@ -76,6 +78,7 @@ impl ToggleLED {
 impl Widget for ToggleLED {
     fn ui(self, ui: &mut Ui) -> Response {
         let on = self.on;
+        let enabled = self.enabled;
         let font = f_sans_sb(11.0);
         let text_w = ui.fonts(|f| {
             f.layout_no_wrap(self.label.clone(), font.clone(), INK)
@@ -84,16 +87,16 @@ impl Widget for ToggleLED {
         });
         // padding 12 + LED 7 + gap 7 + text + padding 12
         let w = 12.0 + 7.0 + 7.0 + text_w + 12.0;
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), Sense::click());
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), if enabled { Sense::click() } else { Sense::hover() });
 
-        if response.clicked() {
+        if enabled && response.clicked() {
             ui.ctx().request_repaint();
         }
 
         let painter = ui.painter_at(rect);
-        let bg = if on { blue_glow(64) } else { PANEL2 };
+        let bg = if on && enabled { blue_glow(64) } else { PANEL2 };
         painter.rect_filled(rect, 6.0, bg);
-        let stroke_color = if on { BLUE } else { LINE2 };
+        let stroke_color = if on && enabled { BLUE } else { LINE2 };
         painter.rect_stroke(
             rect,
             6.0,
@@ -103,12 +106,25 @@ impl Widget for ToggleLED {
 
         // LED Ø7 (+ soft glow when on)
         let led_center = egui::pos2(rect.left() + 12.0 + 3.5, rect.center().y);
-        if on {
+        if on && enabled {
             painter.circle_filled(led_center, 5.5, blue_glow(90));
         }
-        painter.circle_filled(led_center, 3.5, if on { BLUE } else { FAINT });
+        let led_color = if on && enabled {
+            BLUE
+        } else if !enabled {
+            INK2
+        } else {
+            FAINT
+        };
+        painter.circle_filled(led_center, 3.5, led_color);
 
-        let text_color = if on || response.hovered() { INK } else { INK2 };
+        let text_color = if !enabled {
+            INK2
+        } else if on || response.hovered() {
+            INK
+        } else {
+            INK2
+        };
         painter.text(
             egui::pos2(rect.left() + 12.0 + 7.0 + 7.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
