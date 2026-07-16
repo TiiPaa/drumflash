@@ -74,7 +74,7 @@ fn default_repeats() -> [u8; 64] {
 pub const SONG_BLOCKS: usize = 16;
 
 /// A song sequence — an ordered chain of pattern slots.
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SongSequence {
     /// Steps reference pattern slots (0-7 = P1-P8, -1 = empty/end).
     #[serde(with = "serde_arrays")]

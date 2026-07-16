@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-16 — Song mode lock-free + SPSC UI→audio (build 20260716-111228)
+
+**Build:** `20260716-111228`
+**Validation:** `cargo test` OK (171 lib + 1 midi_drag_helper + 100 test_standalone), `build.ps1 -Install` OK (Studio One fermé par l'utilisateur)
+
+### Changements
+- **Implémentation d'un contrôleur lock-free pour le song mode (AUDIT-1 option).**
+  - `src/atomic_song.rs` : nouveau module `SongStateController` basé sur une file SPSC `crossbeam::queue::ArrayQueue<SongSequence>`.
+  - `Cargo.toml` : ajout de `crossbeam = "0.8"`.
+  - `DrumFlashParams` : champ `song_controller` (non persisté, runtime uniquement).
+  - `DrumFlashVst::initialize()` : synchronise le contrôleur avec `PatternBank.song` à l'init et après restauration d'état DAW.
+  - `src/ui.rs` (`draw_song_editor`) : publie un snapshot `SongSequence` à chaque modification UI, sans redondance grâce à `last_published_song`.
+  - `src/lib.rs` (`process`) : le thread audio consomme le dernier snapshot au début de chaque bloc ; le mode song n'utilise plus `try_lock` sur `PatternBank` pour lire la séquence.
+- **`SongSequence` devient `Copy + PartialEq`** pour permettre le passage par valeur dans la file SPSC et la détection de changement côté UI.
+
+### À tester dans Studio One (build 20260716-111228)
+1. Créer une song (onglet `Song`) avec plusieurs blocs P1-P8 et des répétitions différentes → lancer la lecture → vérifier que les patterns changent aux bons endroits.
+2. Modifier un bloc ou un repeat en cours de lecture → le changement doit s'appliquer au prochain cycle/transition.
+3. Sauvegarder/recharger le projet Studio One → la song est restaurée et le mode song continue de fonctionner.
+4. Vérifier que les opérations Save/Load de Pattern Bank (P1-P8) fonctionnent toujours.
+5. Régression : vérifier qu'il n'y a pas de goutte audio ou de retard de changement de pattern en mode song.
+
+---
+
 ## 2026-07-16 — Retour au NoteOff même échantillon + test MIDI déterministe (build 20260716-101309)
 
 **Build:** `20260716-101309`
