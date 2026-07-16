@@ -1384,6 +1384,12 @@ fn header_param_slider<P: Param>(
             setter.end_set_parameter(param);
         }
     }
+    if resp.double_clicked() {
+        frac = param.default_normalized_value();
+        setter.begin_set_parameter(param);
+        setter.set_parameter_normalized(param, frac);
+        setter.end_set_parameter(param);
+    }
 
     painter.rect_filled(track, 3.0, PANEL2);
     let fill_w = (track.width() * frac).max(0.0);
@@ -1531,28 +1537,8 @@ fn draw_pattern_bank(
     load_pattern_request: &Arc<AtomicU32>,
     clear_plocks_request: &Arc<AtomicBool>,
 ) {
-    // Count active plocks for debug display
-    let mut sound_plock_count = 0usize;
-    let mut seq_plock_count = 0usize;
-    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
-        for step in 0..64usize {
-            if params.plock_state.state.masks.is_active(inst, step) {
-                sound_plock_count += 1;
-            }
-            if params.seq_plock_state.state.is_active(inst, step) {
-                seq_plock_count += 1;
-            }
-        }
-    }
-
     ui.horizontal(|ui| {
         ui.label(RichText::new("Patterns").strong().size(12.0).color(INK));
-        ui.label(
-            RichText::new(format!("[P:{} S:{}]", sound_plock_count, seq_plock_count))
-                .size(9.0)
-                .monospace()
-                .color(FAINT),
-        );
         ui.add_space(8.0);
 
         // MIDI export chips (left side, always visible)
@@ -1631,7 +1617,7 @@ fn draw_pattern_bank(
             PANEL2
         };
         let save_btn = egui::Button::new(RichText::new("Save").size(10.0).strong().monospace())
-            .min_size(Vec2::new(44.0, 22.0))
+            .min_size(Vec2::new(44.0, 26.0))
             .fill(save_fill)
             .stroke(egui::Stroke::new(
                 1.5,
@@ -1694,7 +1680,7 @@ fn draw_pattern_bank(
                 format!("P{}", i + 1)
             };
 
-            let btn_size = Vec2::new(30.0, 22.0);
+            let btn_size = Vec2::new(30.0, 26.0);
             let fill = if is_loaded {
                 P_ACTIVE
             } else if occupied {
@@ -2746,7 +2732,7 @@ fn draw_legacy_slot_lane_v2(
         let inst_state = &sound_settings.instruments[slot_idx];
         let mut lane_vol = f32::from_bits(inst_state.volume.load(Ordering::Relaxed));
         let lane_vol_response =
-            draw_mini_value_slider(ui, &mut lane_vol, 0.0, 2.0, vol_w, BLUE, "Lane Volume");
+            draw_mini_value_slider(ui, &mut lane_vol, 0.0, 2.0, 1.0, vol_w, BLUE, "Lane Volume");
         if lane_vol_response.clicked() || lane_vol_response.dragged() {
             select_legacy_track(state, slot_idx);
         }
@@ -4336,8 +4322,9 @@ fn draw_step_cell_v2(
         rect
     };
 
-    let stroke = if response.hovered() && enabled && !is_fusion_mid {
-        egui::Stroke::new(1.0, BLUE)
+    let hover = hover_t(ui.ctx(), response.id, response.hovered() && enabled && !is_fusion_mid);
+    let stroke = if hover > 0.01 {
+        egui::Stroke::new(1.0, lerp_color(stroke.color, BLUE, hover))
     } else {
         stroke
     };
@@ -4354,12 +4341,16 @@ fn draw_step_cell_v2(
         }
     }
 
-    // Playhead: an inset white ring drawn ON TOP of the state border.
+    // Playhead: an inset white ring drawn ON TOP of the state border, with a
+    // subtle pulse so the playing column reads at a glance.
     if playhead {
+        let time = ui.ctx().input(|i| i.time) as f32;
+        let pulse = ((time * 2.5).sin() + 1.0) * 0.5;
+        let alpha = 120 + (pulse * 80.0) as u8;
         ui.painter().rect_stroke(
             rect.shrink(1.0),
             4.0,
-            egui::Stroke::new(1.5, white_a(153)),
+            egui::Stroke::new(1.5, white_a(alpha)),
             egui::StrokeKind::Inside,
         );
     }
@@ -4514,6 +4505,7 @@ fn draw_mini_value_slider(
     value: &mut f32,
     min: f32,
     max: f32,
+    default: f32,
     width: f32,
     fill: Color32,
     tooltip: &str,
@@ -4527,12 +4519,27 @@ fn draw_mini_value_slider(
             response.mark_changed();
         }
     }
+    if response.double_clicked() {
+        *value = default.clamp(min, max);
+        response.mark_changed();
+    }
     let track = egui::Rect::from_center_size(rect.center(), Vec2::new(width, 6.0));
     ui.painter().rect_filled(track, 5.0, PANEL2);
     let t = ((*value - min) / (max - min)).clamp(0.0, 1.0);
     let mut fill_rect = track;
     fill_rect.set_right(track.left() + track.width() * t);
     ui.painter().rect_filled(fill_rect, 5.0, fill);
+
+    // Small handle on hover/drag so the slider is easier to grab.
+    if response.hovered() || response.dragged() {
+        let handle_x = track.left() + track.width() * t;
+        ui.painter().circle_filled(
+            egui::pos2(handle_x, track.center().y),
+            4.0,
+            Color32::from_rgb(238, 242, 248),
+        );
+    }
+
     if tooltip.is_empty() {
         response
     } else {
@@ -4552,11 +4559,17 @@ fn draw_param_mini_slider_with_value(
     format: impl Fn(f32) -> String,
 ) -> egui::Response {
     let mut value = param.value();
-    let response = draw_mini_value_slider(ui, &mut value, min, max, width, fill, "");
-    if response.double_clicked() {
-        value = param.default_plain_value().clamp(min, max);
-        setter.set_parameter(param, value);
-    } else if response.changed() {
+    let response = draw_mini_value_slider(
+        ui,
+        &mut value,
+        min,
+        max,
+        param.default_plain_value(),
+        width,
+        fill,
+        "",
+    );
+    if response.changed() {
         setter.set_parameter(param, value.clamp(min, max));
     }
     if response.hovered() || response.dragged() {
@@ -4807,6 +4820,7 @@ fn draw_editor_slider_track(
     value: &mut f32,
     min: f32,
     max: f32,
+    default: f32,
     logarithmic: bool,
     track_w: f32,
 ) -> egui::Response {
@@ -4820,6 +4834,10 @@ fn draw_editor_slider_track(
             *value = denormalize_slider_value(norm, min, max, logarithmic).clamp(min, max);
             response.mark_changed();
         }
+    }
+    if response.double_clicked() {
+        *value = default.clamp(min, max);
+        response.mark_changed();
     }
 
     let track = egui::Rect::from_center_size(rect.center(), Vec2::new(rect.width(), 6.0));
@@ -4934,6 +4952,7 @@ fn draw_editor_frequency_row(
     value: &mut f32,
     min: f32,
     max: f32,
+    default: f32,
     logarithmic: bool,
     ratio: f32,
     notes_active: bool,
@@ -4973,7 +4992,7 @@ fn draw_editor_frequency_row(
             ui.add_space((ui.available_width() - mode_w - 8.0 - used_w).max(0.0));
         } else {
             let track_w = (ui.available_width() - EDITOR_VALUE_W - 8.0 - mode_w - 8.0).max(60.0);
-            row_response = draw_editor_slider_track(ui, value, min, max, logarithmic, track_w);
+            row_response = draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w);
             value_changed = row_response.changed();
             ui.allocate_ui_with_layout(
                 Vec2::new(EDITOR_VALUE_W, 22.0),
@@ -5004,6 +5023,7 @@ fn draw_editor_slider_row(
     value: &mut f32,
     min: f32,
     max: f32,
+    default: f32,
     logarithmic: bool,
     suffix: Option<&str>,
 ) -> egui::Response {
@@ -5013,7 +5033,7 @@ fn draw_editor_slider_row(
 
         // Track flexes to fill the fixed-width params column.
         let track_w = (ui.available_width() - EDITOR_VALUE_W - 8.0).max(60.0);
-        let response = draw_editor_slider_track(ui, value, min, max, logarithmic, track_w);
+        let response = draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
@@ -5640,7 +5660,16 @@ fn draw_sound_panel(
             let vol_changed = ui
                 .scope(|ui| {
                     ui.set_max_width(EDITOR_PARAMS_W);
-                    draw_editor_slider_row(ui, "Volume", &mut vol, 0.0, 2.0, false, Some(""))
+                    draw_editor_slider_row(
+                        ui,
+                        "Volume",
+                        &mut vol,
+                        0.0,
+                        2.0,
+                        VoiceSettings::default().volume,
+                        false,
+                        Some(""),
+                    )
                         .changed()
                 })
                 .inner;
@@ -5729,6 +5758,7 @@ fn draw_sound_panel(
                                             &mut freq,
                                             *min,
                                             *max,
+                                            VoiceSettings::default().frequency,
                                             *logarithmic,
                                             ratio,
                                             freq_in_notes,
@@ -5763,12 +5793,28 @@ fn draw_sound_panel(
                                             crate::instrument_registry::StandardField::Analog => &mut analog,
                                             crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                         };
+                                        let default_value = match field {
+                                            crate::instrument_registry::StandardField::Freq => VoiceSettings::default().frequency,
+                                            crate::instrument_registry::StandardField::Decay => VoiceSettings::default().decay,
+                                            crate::instrument_registry::StandardField::Volume => VoiceSettings::default().volume,
+                                            crate::instrument_registry::StandardField::FilterFreq => VoiceSettings::default().filter_freq,
+                                            crate::instrument_registry::StandardField::Attack => VoiceSettings::default().attack,
+                                            crate::instrument_registry::StandardField::Release => VoiceSettings::default().release,
+                                            crate::instrument_registry::StandardField::DecayCurve => VoiceSettings::default().decay_curve,
+                                            crate::instrument_registry::StandardField::ReleaseCurve => VoiceSettings::default().release_curve,
+                                            crate::instrument_registry::StandardField::Hold => VoiceSettings::default().hold,
+                                            crate::instrument_registry::StandardField::FilterEnvAmount => VoiceSettings::default().filter_env_amount,
+                                            crate::instrument_registry::StandardField::FilterEnvDecay => VoiceSettings::default().filter_env_decay,
+                                            crate::instrument_registry::StandardField::Analog => VoiceSettings::default().analog,
+                                            crate::instrument_registry::StandardField::Stereo => VoiceSettings::default().stereo,
+                                        };
                                         if draw_editor_slider_row(
                                             ui,
                                             &label_text,
                                             value,
                                             *min,
                                             *max,
+                                            default_value,
                                             *logarithmic,
                                             *suffix,
                                         )
@@ -5829,7 +5875,7 @@ fn draw_sound_panel(
                                 if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
                                     new_value = Some(idx as f32);
                                 }
-                            } else {
+                                } else {
                                 let mut value = current;
                                 let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
                                 if draw_editor_slider_row(
@@ -5838,6 +5884,7 @@ fn draw_sound_panel(
                                     &mut value,
                                     def.min,
                                     def.max,
+                                    def.default,
                                     logarithmic,
                                     None,
                                 )
@@ -7022,7 +7069,8 @@ fn draw_plock_menu(
                     ui.add(
                         LocalParamSlider::new(&mut vol_value, 0.0..=2.0)
                             .with_width(120.0)
-                            .without_value(),
+                            .without_value()
+                            .reset_value(global.2),
                     )
                 },
             );
@@ -7125,7 +7173,8 @@ fn draw_plock_menu(
                                 LocalParamSlider::new(&mut value, *min..=*max)
                                     .logarithmic(*logarithmic)
                                     .with_width(120.0)
-                                    .without_value(),
+                                    .without_value()
+                                    .reset_value(get_global_value(def.field)),
                             )
                         },
                     );
@@ -7264,7 +7313,8 @@ fn draw_plock_menu(
                             LocalParamSlider::new(&mut value, def.min..=def.max)
                                 .logarithmic(log)
                                 .with_width(120.0)
-                                .without_value(),
+                                .without_value()
+                                .reset_value(def.default),
                         )
                     });
                 if response.changed() {
@@ -7380,6 +7430,7 @@ fn draw_fusion_morph_menu(
     let voice_idx = schema_voice_idx(params, instrument);
     let inst_def = &crate::instrument_registry::INSTRUMENTS[voice_idx];
     let title = format!("Morph {}", inst_def.label);
+    let global = sound_settings.instruments[instrument].load();
 
     let mut new_fusions = pattern.load_fusions(instrument);
     if new_fusions.get(fusion_index).is_none() {
@@ -7448,7 +7499,8 @@ fn draw_fusion_morph_menu(
                     let slider = ui.add(
                         LocalParamSlider::new(&mut vol_value, 0.0..=2.0)
                             .with_width(76.0)
-                            .without_value(),
+                            .without_value()
+                            .reset_value(global.2),
                     );
                     if is_target {
                         draw_morph_target_action_buttons(
@@ -7556,7 +7608,22 @@ fn draw_fusion_morph_menu(
                                 LocalParamSlider::new(&mut value, *min..=*max)
                                     .logarithmic(*logarithmic)
                                     .with_width(76.0)
-                                    .without_value(),
+                                    .without_value()
+                                    .reset_value(match def.field {
+                                        crate::instrument_registry::StandardField::Freq => global.0,
+                                        crate::instrument_registry::StandardField::Decay => global.1,
+                                        crate::instrument_registry::StandardField::Volume => global.2,
+                                        crate::instrument_registry::StandardField::FilterFreq => global.3,
+                                        crate::instrument_registry::StandardField::Attack => global.4,
+                                        crate::instrument_registry::StandardField::Release => global.5,
+                                        crate::instrument_registry::StandardField::DecayCurve => global.6,
+                                        crate::instrument_registry::StandardField::ReleaseCurve => global.7,
+                                        crate::instrument_registry::StandardField::Hold => global.8,
+                                        crate::instrument_registry::StandardField::FilterEnvAmount => global.9,
+                                        crate::instrument_registry::StandardField::FilterEnvDecay => global.10,
+                                        crate::instrument_registry::StandardField::Analog => global.11,
+                                        crate::instrument_registry::StandardField::Stereo => global.12,
+                                    }),
                             );
                             if is_target {
                                 draw_morph_target_action_buttons(
@@ -7642,7 +7709,8 @@ fn draw_fusion_morph_menu(
                         LocalParamSlider::new(&mut value, def.min..=def.max)
                             .logarithmic(log)
                             .with_width(76.0)
-                            .without_value(),
+                            .without_value()
+                            .reset_value(def.default),
                     );
                     if is_target {
                         draw_morph_target_action_buttons(
@@ -7895,7 +7963,8 @@ fn draw_sequencer_plock_menu(
                     ui.add(
                         LocalParamSlider::new(&mut prob, 0.0..=1.0)
                             .with_width(86.0)
-                            .without_value(),
+                            .without_value()
+                            .reset_value(1.0),
                     )
                 },
             );
@@ -7933,7 +8002,8 @@ fn draw_sequencer_plock_menu(
                     ui.add(
                         LocalParamSlider::new(&mut stutter, 1.0..=16.0)
                             .with_width(86.0)
-                            .without_value(),
+                            .without_value()
+                            .reset_value(1.0),
                     )
                 },
             );
