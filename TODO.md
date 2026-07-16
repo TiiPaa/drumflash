@@ -59,7 +59,7 @@
 ### [AUDIT-1] P0 — Eliminer les verrous Mutex bloquants sur le thread audio
 - [x] Remplacer `PatternBank::lock()` par `try_lock()` dans `process()` (lib.rs:2750, 1954, 1981)
 - [x] Si contention, reporter save/load/song au bloc suivant
-- [ ] Option : double-buffer atomique + file SPSC UI→audio pour le song mode
+- [x] Option : double-buffer atomique + file SPSC UI→audio pour le song mode — **Fait (build 20260716-111228)** : `SongStateController` (SPSC `ArrayQueue<SongSequence>`) dans `src/atomic_song.rs`, publié par l'UI et consommé par le thread audio, plus de `try_lock` sur `PatternBank` en lecture du song.
 
 ### [AUDIT-2] P0 — Supprimer les allocations sur le thread audio
 - [x] `Box::new` dans `reinitialize_slot()` (synthesis/mod.rs:846) → réutilise la `Box` existante du slot au lieu d'allouer/désallouer sur changement de kind
