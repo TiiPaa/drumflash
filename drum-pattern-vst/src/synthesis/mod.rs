@@ -1300,4 +1300,108 @@ mod tests {
             max_delta
         );
     }
+
+    /// Lightweight sanity check: every engine voice renders finite, non-silent audio
+    /// with its default settings. This catches global regressions (silence, NaN, stereo
+    /// collapse) after refactors like per-slot instances or special-param changes.
+    #[test]
+    fn all_voices_render_finite_non_silent_output() {
+        const SAMPLES: usize = 200; // ~4.5 ms @ 44100 Hz — enough to catch silence/NaN
+        const MIN_PEAK: f32 = 1e-4;
+
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let default_settings: [(DrumVoice, fn() -> VoiceSettings); 13] = [
+            (DrumVoice::Kick, VoiceSettings::kick),
+            (DrumVoice::Snare, VoiceSettings::snare),
+            (DrumVoice::HiHat, VoiceSettings::hihat),
+            (DrumVoice::OpenHiHat, VoiceSettings::open_hihat),
+            (DrumVoice::Tom1, VoiceSettings::tom1),
+            (DrumVoice::Tom2, VoiceSettings::tom2),
+            (DrumVoice::Tom3, VoiceSettings::tom3),
+            (DrumVoice::Clap, VoiceSettings::clap),
+            (DrumVoice::Ride, VoiceSettings::ride),
+            (DrumVoice::Cymbal, VoiceSettings::cymbal),
+            (DrumVoice::Snare606, VoiceSettings::snare606),
+            (DrumVoice::BassDrum808, VoiceSettings::kick808),
+            (DrumVoice::Perc1, VoiceSettings::perc1),
+        ];
+
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
+        for (voice, settings_fn) in default_settings.iter() {
+            let voice_idx = *voice as usize;
+            synth.set_voice_settings(voice_idx, settings_fn());
+            synth.trigger(voice_idx, 1.0);
+
+            let mut peak = 0.0f32;
+            for _ in 0..SAMPLES {
+                synth.process_voice_samples_stereo(&mut outputs);
+                let left = outputs[voice_idx][0];
+                let right = outputs[voice_idx][1];
+                assert!(
+                    left.is_finite() && right.is_finite(),
+                    "{:?} produced non-finite samples (NaN/Inf) with default settings",
+                    voice
+                );
+                peak = peak.max(left.abs()).max(right.abs());
+            }
+
+            assert!(
+                peak >= MIN_PEAK,
+                "{:?} is silent with default settings (peak = {})",
+                voice,
+                peak
+            );
+        }
+    }
+
+    /// Regression guard: retriggering any voice twice in quick succession must stay
+    /// finite. Some bugs only appear on the second trigger (phase/envelope state).
+    #[test]
+    fn all_voices_stay_finite_on_retrigger() {
+        const SAMPLES: usize = 100;
+
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        let voices = [
+            DrumVoice::Kick,
+            DrumVoice::Snare,
+            DrumVoice::HiHat,
+            DrumVoice::OpenHiHat,
+            DrumVoice::Tom1,
+            DrumVoice::Tom2,
+            DrumVoice::Tom3,
+            DrumVoice::Clap,
+            DrumVoice::Ride,
+            DrumVoice::Cymbal,
+            DrumVoice::Snare606,
+            DrumVoice::BassDrum808,
+            DrumVoice::Perc1,
+        ];
+
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
+        for voice in voices.iter() {
+            let voice_idx = *voice as usize;
+            synth.trigger(voice_idx, 1.0);
+            // First trigger
+            for _ in 0..SAMPLES {
+                synth.process_voice_samples_stereo(&mut outputs);
+            }
+            // Immediate retrigger while tail may be ringing
+            synth.trigger(voice_idx, 1.0);
+            for _ in 0..SAMPLES {
+                synth.process_voice_samples_stereo(&mut outputs);
+                let left = outputs[voice_idx][0];
+                let right = outputs[voice_idx][1];
+                assert!(
+                    left.is_finite() && right.is_finite(),
+                    "{:?} produced non-finite sample on retrigger",
+                    voice
+                );
+            }
+        }
+    }
 }
+
