@@ -599,6 +599,10 @@ struct EditorUIState {
     /// True when the user clicked "Clear All" and must confirm.
     #[serde(default)]
     song_clear_confirm: bool,
+    /// Last song sequence published to the audio-thread controller, used to avoid
+    /// pushing redundant snapshots every frame.
+    #[serde(skip)]
+    last_published_song: Option<crate::pattern_bank::SongSequence>,
     /// Clipboard for lane copy/paste (instrument + settings + sequence).
     #[serde(skip)]
     lane_clipboard: Option<LaneClipboardData>,
@@ -2339,6 +2343,13 @@ fn draw_song_editor(
             });
         }
     });
+
+    // Publish any song change to the audio-thread lock-free controller.
+    let current_song = bank.song;
+    if state.last_published_song != Some(current_song) {
+        params.song_controller.publish(current_song);
+        state.last_published_song = Some(current_song);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
