@@ -13,11 +13,24 @@ pub const MAX_FUSIONS: usize = 16;
 /// Number of AtomicU64 slots used per fused group in SharedPattern.
 pub(crate) const FUSION_SLOT_COUNT: usize = 3;
 
+/// Direction of a morph target within a fused group.
+/// - `Target`: the stored `end_value` is the target; the morph goes from the
+///   current lane/plock value to the stored value (default, original behavior).
+/// - `Source`: the stored `end_value` is the source; the morph goes from the
+///   stored value to the current lane/plock value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum MorphDirection {
+    #[default]
+    Target,
+    Source,
+}
+
 /// A single morphing target inside a fused group.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MorphTarget {
     pub field: u8,
     pub end_value: f32,
+    pub direction: MorphDirection,
 }
 
 impl Default for MorphTarget {
@@ -25,19 +38,21 @@ impl Default for MorphTarget {
         Self {
             field: 255,
             end_value: 0.0,
+            direction: MorphDirection::Target,
         }
     }
 }
 
 /// Pack a FusedGroup into 3 u64s for atomic storage.
 ///
-/// New layout (bit 18 = valid, bit 24 = 0 to distinguish from old format):
+/// Layout:
 /// Slot 0: bits 0-5 start_cell, 6-11 end_cell, 12-17 step_count-1, 18 valid,
 ///         19-21 morph_count, 22-29 target[0].field, 30-61 target[0].end_value.
 /// Slot 1: bits 0-7 target[1].field, 8-39 target[1].end_value,
 ///         40-47 target[2].field, 48-63 target[2].end_value upper 16 bits.
 /// Slot 2: bits 0-15 target[2].end_value lower 16 bits,
-///         16-23 target[3].field, 24-55 target[3].end_value.
+///         16-23 target[3].field, 24-55 target[3].end_value,
+///         56-59 target[0..3].direction (0=Target, 1=Source).
 pub(crate) fn pack_fusion(group: &FusedGroup) -> [u64; FUSION_SLOT_COUNT] {
     let target =
         |i: usize| -> MorphTarget { group.morph_targets.get(i).copied().unwrap_or_default() };
@@ -61,9 +76,20 @@ pub(crate) fn pack_fusion(group: &FusedGroup) -> [u64; FUSION_SLOT_COUNT] {
         | ((t2_bits & 0xFFFF_0000) << 32); // upper 16 bits at 48-63
 
     let t3 = target(3);
-    let slot2 = ((t2_bits & 0xFFFF) << 0)
+    let mut slot2 = ((t2_bits & 0xFFFF) << 0)
         | ((t3.field as u64) << 16)
         | ((t3.end_value.to_bits() as u64) << 24);
+    for i in 0..4usize {
+        if group
+            .morph_targets
+            .get(i)
+            .map(|t| t.direction)
+            .unwrap_or_default()
+            == MorphDirection::Source
+        {
+            slot2 |= 1u64 << (56 + i);
+        }
+    }
 
     [slot0, slot1, slot2]
 }
@@ -77,12 +103,18 @@ pub(crate) fn unpack_fusion(slots: [u64; FUSION_SLOT_COUNT]) -> Option<FusedGrou
         return None;
     }
 
+    let s2 = slots[2];
     let mut targets = [MorphTarget::default(); 4];
     let count = ((slot0 >> 19) & 0x7) as usize;
     if count > 0 {
         targets[0] = MorphTarget {
             field: ((slot0 >> 22) & 0xFF) as u8,
             end_value: f32::from_bits(((slot0 >> 30) & 0xFFFFFFFF) as u32),
+            direction: if (s2 >> 56) & 1 == 1 {
+                MorphDirection::Source
+            } else {
+                MorphDirection::Target
+            },
         };
     }
     if count > 1 {
@@ -90,24 +122,37 @@ pub(crate) fn unpack_fusion(slots: [u64; FUSION_SLOT_COUNT]) -> Option<FusedGrou
         targets[1] = MorphTarget {
             field: (s1 & 0xFF) as u8,
             end_value: f32::from_bits(((s1 >> 8) & 0xFFFFFFFF) as u32),
+            direction: if (s2 >> 57) & 1 == 1 {
+                MorphDirection::Source
+            } else {
+                MorphDirection::Target
+            },
         };
     }
     if count > 2 {
         let s1 = slots[1];
-        let s2 = slots[2];
         let field = ((s1 >> 40) & 0xFF) as u8;
         let value_upper = ((s1 >> 48) & 0xFFFF) as u32;
         let value_lower = (s2 & 0xFFFF) as u32;
         targets[2] = MorphTarget {
             field,
             end_value: f32::from_bits((value_upper << 16) | value_lower),
+            direction: if (s2 >> 58) & 1 == 1 {
+                MorphDirection::Source
+            } else {
+                MorphDirection::Target
+            },
         };
     }
     if count > 3 {
-        let s2 = slots[2];
         targets[3] = MorphTarget {
             field: ((s2 >> 16) & 0xFF) as u8,
             end_value: f32::from_bits(((s2 >> 24) & 0xFFFFFFFF) as u32),
+            direction: if (s2 >> 59) & 1 == 1 {
+                MorphDirection::Source
+            } else {
+                MorphDirection::Target
+            },
         };
     }
 
@@ -151,6 +196,7 @@ pub(crate) fn unpack_fusion_legacy(packed: u64) -> Option<FusedGroup> {
         targets[0] = MorphTarget {
             field: morph_field,
             end_value: morph_end_value,
+            direction: MorphDirection::Target,
         };
         count = 1;
     }
@@ -313,6 +359,7 @@ impl FusedGroup {
     }
 
     /// Add or update a morph target, preserving order and capping at 4.
+    /// New targets default to `MorphDirection::Cible`.
     pub fn set_morph_target(&mut self, field: usize, end_value: f32) {
         let field = field as u8;
         if let Some(existing) = self.morph_targets[..self.morph_count as usize]
@@ -323,9 +370,34 @@ impl FusedGroup {
             return;
         }
         if self.morph_count < 4 {
-            self.morph_targets[self.morph_count as usize] = MorphTarget { field, end_value };
+            self.morph_targets[self.morph_count as usize] = MorphTarget {
+                field,
+                end_value,
+                direction: MorphDirection::Target,
+            };
             self.morph_count += 1;
         }
+    }
+
+    /// Change the direction of an existing morph target without touching its value.
+    pub fn set_morph_target_direction(&mut self, field: usize, direction: MorphDirection) {
+        let field = field as u8;
+        if let Some(existing) = self.morph_targets[..self.morph_count as usize]
+            .iter_mut()
+            .find(|t| t.field == field)
+        {
+            existing.direction = direction;
+        }
+    }
+
+    /// Returns the direction of an existing morph target, or `Cible` if absent.
+    pub fn morph_target_direction(&self, field: usize) -> MorphDirection {
+        let field = field as u8;
+        self.morph_targets[..self.morph_count as usize]
+            .iter()
+            .find(|t| t.field == field)
+            .map(|t| t.direction)
+            .unwrap_or_default()
     }
 
     /// Remove a morph target if it exists.
@@ -737,6 +809,7 @@ mod tests {
             group.morph_targets[i] = MorphTarget {
                 field: field as u8,
                 end_value: value,
+                direction: MorphDirection::Target,
             };
         }
         group
@@ -765,6 +838,42 @@ mod tests {
         let unpacked = unpack_fusion(packed).unwrap();
         assert_eq!(unpacked.morph_targets[0].end_value, 300.0);
         assert!((unpacked.morph_targets[0].end_value - 300.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn pack_unpack_preserves_morph_direction() {
+        let mut group = FusedGroup {
+            start_cell: 2,
+            end_cell: 6,
+            step_count: 4,
+            morph_count: 2,
+            morph_targets: [
+                MorphTarget {
+                    field: 0,
+                    end_value: 300.0,
+                    direction: MorphDirection::Source,
+                },
+                MorphTarget {
+                    field: 1,
+                    end_value: 1.2,
+                    direction: MorphDirection::Target,
+                },
+                MorphTarget::default(),
+                MorphTarget::default(),
+            ],
+        };
+        let packed = pack_fusion(&group);
+        let unpacked = unpack_fusion(packed).unwrap();
+        assert_eq!(unpacked.morph_targets[0].direction, MorphDirection::Source);
+        assert_eq!(unpacked.morph_targets[1].direction, MorphDirection::Target);
+
+        // Toggle and round-trip again.
+        group.morph_targets[0].direction = MorphDirection::Target;
+        group.morph_targets[1].direction = MorphDirection::Source;
+        let packed2 = pack_fusion(&group);
+        let unpacked2 = unpack_fusion(packed2).unwrap();
+        assert_eq!(unpacked2.morph_targets[0].direction, MorphDirection::Target);
+        assert_eq!(unpacked2.morph_targets[1].direction, MorphDirection::Source);
     }
 
     #[test]
@@ -807,6 +916,7 @@ mod tests {
                 MorphTarget {
                     field: 0,
                     end_value: 300.0,
+                    direction: MorphDirection::Target,
                 },
                 MorphTarget::default(),
                 MorphTarget::default(),
