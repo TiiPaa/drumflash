@@ -765,7 +765,7 @@ impl Default for DrumFlashParams {
 
             master_volume: FloatParam::new(
                 "Master Volume",
-                0.8,
+                1.0,
                 FloatRange::Linear { min: 0.0, max: 2.0 },
             )
             // The slider can reach 0.0 (-inf dB), so logarithmic smoothing is unsafe here.

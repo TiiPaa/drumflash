@@ -691,7 +691,7 @@
 - [x] [100h] **Sound Editor** — En-tête dynamique (nom + Engine selector) + onglets instruments (14) + zone scroll avec sections
 
 #### Phase 3 — Séquenceur (grille + lanes)
-- [x] [100i] **Lane modulaire** — Poignée drag, nom cliquable, menu clic-droit (rename, assign engine, remove), tag M/S/T — rename fait dans l'onglet Track (build 20260713-143422) ; assign engine / remove font partie de la phase modulaire B (reporté, cf. [100v] et [57])
+- [x] [100i] **Lane modulaire** — Poignée drag, nom cliquable, menu clic-droit (rename, assign engine, remove), tag M/S/T — rename fait dans l'onglet Track (build 20260713-143422) ; assign engine / remove font partie de la phase modulaire B (reporté, cf. [57])
 - [x] [100j] **Grille de steps** — 16 colonnes visibles, états p-lock (Sound/Sequencer exclusifs), playhead, fusion
 - [x] [100k] **Page/Length bar** — Pages 1-4, Follow ON/OFF, Len slider 1-64, presets 16/32/48/64, ×2
 - [x] [100l] **P-lock modes** — Toggle segmented Sound/Sequencer, menus contextuels (Volume en premier, undo ↺)
@@ -703,14 +703,17 @@
 
 #### Phase 5 — Polish & validation
 - [x] [100p] **ADSR visualization** — graphe inline réécrit (modèle 3 segments colorés A/D/R, cadre #0c0c11, espacé)
-- [ ] [100q] **Animations** — Hover transitions, step playback glow, toggle LED
+- [ ] **[REPRENDRE ICI]** [100q] **Animations** — Hover transitions 0.14s (done build 20260716-142342), step playback glow (done build 20260716-142342), **toggle LED state transitions (à faire)**.
+- [x] **Polish Pattern Bank** — Suppression de l'indicateur de debug `[P:X S:X]` et alignement des hauteurs des boutons (Export/Drag/Save/P1-P8/Clr) à 26 px (build 20260716-144332).
+- [x] **Double-clic reset sur tous les sliders** — Sliders d'en-tête (`header_param_slider`), Sound Editor, menus P-lock/Morph/Seq P-lock, et config Default Analog : double-clic retourne à la valeur par défaut (build 20260716-150443). `master_volume` repasse à `1.0` (0 dB).
+- [x] **Mini sliders de lane : poignée + reset** — Ajout d'une petite poignée blanche au hover/drag et double-clic reset sur Volume (→1.0), Humanize et Push/Pull (build 20260716-152038).
 - [x] [100r] **Tests** — Vérifier que tous les moteurs rendent correctement, pas de régression audio (mode léger : tests `all_voices_render_finite_non_silent_output` + `all_voices_stay_finite_on_retrigger`, build 20260716-114252)
 - [x] [100s] **Build + install** — VST3 fonctionnel avec nouveau design
 
 ### Tâches découvertes pendant la reprise UI 2026-06-11
 - [x] [100t] Nettoyer le code UI legacy (~1300 lignes : `draw_grid` & helpers morts + modules `schema.rs` et `engine_registry.rs` supprimés). Restent des warnings de scaffolding (`design_system.rs`, `StyledButton`) — cf. `docs/design/UI-REDESIGN-HANDOFF.md` §4.
 - [x] [100u] Polish pixel : Sound Editor (sliders/labels/sections/ADSR), combos → Select stylé, page-bar, bloc Generator réorganisé en 2 rangées + knob non tronqué (jusqu'au build 20260614-205742).
-- [ ] [100v] **(Phase B / modulaire)** Engine selector fonctionnel + registre de moteurs — **reporté** ; le selector inerte a été retiré du Sound Editor.
+- [x] [100v] **OBSOLÈTE** — Engine selector fonctionnel + registre de moteurs : redondant avec l'architecture modulaire actuelle (types d'instruments fixes par slot + algorithme par type). Le selector inerte a été retiré du Sound Editor.
 - [x] [100w] Bouton GENERATE invisible après refonte en 2 lignes — corrigé en revenant à une seule ligne horizontale avec le bouton poussé à droite (build 20260614-092628).
 
 #### Reste à faire (worklist détaillée : `docs/design/UI-REDESIGN-HANDOFF.md` §4)
