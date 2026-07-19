@@ -739,6 +739,10 @@ pub struct DrumSynthesizer {
     /// One-pole smoothers on each voice's velocity, absorbing gain jumps when
     /// retriggering a voice while its tail is still ringing.
     velocity_smoothers: [dsp::OnePoleSmoother; crate::track::MAX_TRACKS],
+    /// Per-slot active flag. All voices are preallocated in `initialize_with_layout`
+    /// so that the audio thread never allocates, but only active slots are
+    /// triggered and processed.
+    active: [bool; crate::track::MAX_TRACKS],
 }
 
 const VELOCITY_SMOOTH_MS: f32 = 1.5;
@@ -752,6 +756,7 @@ impl DrumSynthesizer {
             velocity_smoothers: std::array::from_fn(|_| {
                 dsp::OnePoleSmoother::new(44100.0, VELOCITY_SMOOTH_MS, 1.0)
             }),
+            active: [false; crate::track::MAX_TRACKS],
         }
     }
 
@@ -771,15 +776,21 @@ impl DrumSynthesizer {
             *smoother = dsp::OnePoleSmoother::new(sample_rate, VELOCITY_SMOOTH_MS, 1.0);
         }
 
+        // Preallocate a voice for every slot so the audio thread never has to
+        // allocate when a slot is activated or its instrument changes. Inactive
+        // slots keep a placeholder voice and are gated out by `active`.
         for (i, slot) in layout.slots.iter().enumerate() {
-            self.voices[i] = if slot.active {
-                Some(Box::new(create_voice_for_kind(slot.kind, sample_rate)))
-            } else {
-                None
-            };
+            let placeholder_kind = crate::track::TrackInstrumentKind::from_drum_voice_index(i)
+                .unwrap_or(crate::track::TrackInstrumentKind::Perc1);
+            let kind = if slot.active { slot.kind } else { placeholder_kind };
+            self.voices[i] = Some(Box::new(create_voice_for_kind(kind, sample_rate)));
+            self.active[i] = slot.active;
         }
     }
     pub fn trigger(&mut self, slot_idx: usize, velocity: f32) {
+        if !self.active.get(slot_idx).copied().unwrap_or(false) {
+            return;
+        }
         if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
             voice.trigger();
             self.velocities[slot_idx] = velocity;
@@ -787,6 +798,9 @@ impl DrumSynthesizer {
     }
 
     pub fn trigger_hard(&mut self, slot_idx: usize, velocity: f32) {
+        if !self.active.get(slot_idx).copied().unwrap_or(false) {
+            return;
+        }
         if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
             voice.trigger_hard();
             self.velocities[slot_idx] = velocity;
@@ -796,8 +810,12 @@ impl DrumSynthesizer {
     #[allow(dead_code)]
     pub fn process_sample(&mut self, output: &mut f32) {
         let mut mixed = 0.0f32;
-        for voice in self.voices.iter_mut().flatten() {
-            mixed += voice.process_sample();
+        for (i, voice) in self.voices.iter_mut().enumerate() {
+            if self.active[i] {
+                if let Some(voice) = voice {
+                    mixed += voice.process_sample();
+                }
+            }
         }
         *output = mixed;
     }
@@ -805,6 +823,10 @@ impl DrumSynthesizer {
     #[allow(dead_code)]
     pub fn process_voice_samples(&mut self, outputs: &mut [f32; crate::track::MAX_TRACKS]) {
         for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
+            if !self.active[i] {
+                *output = 0.0;
+                continue;
+            }
             if let Some(voice) = voice {
                 let vel = self.velocity_smoothers[i].process(self.velocities[i]);
                 *output = voice.process_sample() * vel;
@@ -819,6 +841,11 @@ impl DrumSynthesizer {
         outputs: &mut [[f32; 2]; crate::track::MAX_TRACKS],
     ) {
         for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
+            if !self.active[i] {
+                output[0] = 0.0;
+                output[1] = 0.0;
+                continue;
+            }
             if let Some(voice) = voice {
                 let vel = self.velocity_smoothers[i].process(self.velocities[i]);
                 let (l, r) = voice.process_sample_stereo();
@@ -839,20 +866,35 @@ impl DrumSynthesizer {
 
     #[allow(dead_code)]
     pub fn set_voice_settings(&mut self, slot_idx: usize, settings: VoiceSettings) {
+        if !self.active.get(slot_idx).copied().unwrap_or(false) {
+            return;
+        }
         if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
             voice.set_settings(settings);
         }
     }
 
     pub fn set_algo(&mut self, slot_idx: usize, algo: u8) {
+        if !self.active.get(slot_idx).copied().unwrap_or(false) {
+            return;
+        }
         if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
             voice.set_algo(algo);
         }
     }
 
     pub fn reset_voice(&mut self, slot_idx: usize) {
+        if !self.active.get(slot_idx).copied().unwrap_or(false) {
+            return;
+        }
         if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
             voice.reset();
+        }
+    }
+
+    pub fn set_slot_active(&mut self, slot_idx: usize, active: bool) {
+        if slot_idx < crate::track::MAX_TRACKS {
+            self.active[slot_idx] = active;
         }
     }
 
@@ -863,8 +905,10 @@ impl DrumSynthesizer {
         let new_voice = create_voice_for_kind(kind, self.sample_rate);
         if let Some(existing) = self.voices[slot_idx].as_mut() {
             **existing = new_voice;
+            self.active[slot_idx] = true;
         } else {
-            self.voices[slot_idx] = Some(Box::new(new_voice));
+            // All slots should be preallocated in `initialize_with_layout`. Do
+            // not allocate on the audio thread.
         }
         self.velocity_smoothers[slot_idx] =
             dsp::OnePoleSmoother::new(self.sample_rate, VELOCITY_SMOOTH_MS, 1.0);
@@ -907,7 +951,7 @@ mod tests {
         let mut cymbal_settings = VoiceSettings::cymbal();
         cymbal_settings.decay = 1.0;
         cymbal_settings.volume = 0.5;
-        synth.set_voice_settings(DrumVoice::Cymbal as usize, cymbal_settings);
+        synth.set_voice_settings(cy_idx, cymbal_settings);
 
         // 3. Trigger B8 again and verify it STILL produces sound
         synth.trigger(b8_idx, 1.0);
@@ -1402,6 +1446,57 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Regression guard for [AUDIT-RT1]: activating an inactive slot must not
+    /// allocate on the audio thread. All slots are preallocated at init, so
+    /// reinitializing an inactive slot only replaces the existing enum variant.
+    #[test]
+    fn reinitialize_inactive_slot_reuses_preallocated_voice() {
+        use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot};
+
+        let mut synth = DrumSynthesizer::new();
+        let mut layout = TrackLayoutState::default_layout();
+        // Ensure slot 13 is inactive and has no dedicated legacy voice.
+        layout.slots[13] = TrackSlot::inactive();
+        synth.initialize_with_layout(44100.0, &layout);
+        assert!(
+            !synth.active[13],
+            "slot 13 should be inactive after init with default layout"
+        );
+        assert!(
+            synth.voices[13].is_some(),
+            "slot 13 should still have a preallocated placeholder voice"
+        );
+
+        // Activate slot 13 with a Kick — this must not allocate a new Box.
+        synth.reinitialize_slot(13, TrackInstrumentKind::Kick);
+        assert!(synth.active[13]);
+        assert!(
+            matches!(synth.voices[13].as_deref(), Some(DrumVoiceKind::Kick(_))),
+            "slot 13 should now hold a Kick voice"
+        );
+
+        synth.trigger(13, 1.0);
+        let out = sum_voice_output(&mut synth, 13, 100);
+        assert!(out > 0.0, "reinitialized slot 13 should produce sound");
+    }
+
+    /// Ensure that deactivating a slot via `set_slot_active` prevents triggers.
+    #[test]
+    fn set_slot_active_gates_trigger_and_output() {
+        let mut synth = DrumSynthesizer::new();
+        synth.initialize(44100.0);
+
+        synth.set_slot_active(0, false);
+        synth.trigger(0, 1.0);
+        let out = sum_voice_output(&mut synth, 0, 100);
+        assert_eq!(out, 0.0, "deactivated slot should remain silent");
+
+        synth.set_slot_active(0, true);
+        synth.trigger(0, 1.0);
+        let out = sum_voice_output(&mut synth, 0, 100);
+        assert!(out > 0.0, "reactivated slot should play again");
     }
 }
 

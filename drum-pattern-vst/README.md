@@ -1,12 +1,12 @@
 # Flash Drum VST3
 
-Plugin VST3 de séquenceur de batterie 16 pas en Rust.
+Plugin VST3 de séquenceur de batterie 64 pas (4 pages × 16) en Rust.
 
 ## État réel du plugin
 
-- 13 instruments : Kick, Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, 808 Kick, Zap
-- 13 sorties stéréo aux + Main Mix
-- Séquenceur 16 pas éditable en temps réel
+- 13 instruments dans 14 slots modulaires : Kick, Snare, HiHat, OpenHH, Tom1-3, Clap, Ride, Cymbal, Snare606, 808 Kick, Perc1
+- 14 sorties stéréo aux + Main Mix
+- Séquenceur 64 pas éditable en temps réel
 - Sync DAW : play, stop, tempo, repositionnement
 - Parameter locks (plocks) par step
 - Presets Rock, Funk, Disco

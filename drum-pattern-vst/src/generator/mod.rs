@@ -67,7 +67,12 @@ fn generate_bar(params: &GeneratorParams, rng: &mut impl FnMut() -> f32) -> Patt
         GeneratorType::Classic => {
             classic::generate(params.style_primary, params.density, params.variation, rng)
         }
-        _ => unreachable!(),
+        GeneratorType::Euclidean => {
+            // Euclidean generates the full 64-step pattern in one pass, so it is
+            // handled directly in `generate()`. Return an empty bar as a safe
+            // fallback to keep this function total.
+            Pattern::empty()
+        }
     }
 }
 

@@ -32,29 +32,31 @@ impl Widget for ToggleSwitch {
         let painter = ui.painter_at(rect);
         let r = rect.shrink(1.0);
 
+        // Animated on/off state (0.14s) — knob slides, colors fade.
+        let on_t = ui.ctx().animate_value_with_time(
+            response.id.with("state"),
+            if on { 1.0 } else { 0.0 },
+            0.14,
+        );
+
         // Fond
-        let bg = if on { blue_glow(64) } else { PANEL2 };
-        painter.rect_filled(r, 10.0, bg);
+        painter.rect_filled(r, 10.0, lerp_color(PANEL2, blue_glow(64), on_t));
 
         // Bordure
-        let stroke_color = if on { BLUE } else { LINE2 };
         painter.rect_stroke(
             r,
             10.0,
-            egui::Stroke::new(1.0, stroke_color),
+            egui::Stroke::new(1.0, lerp_color(LINE2, BLUE, on_t)),
             StrokeKind::Inside,
         );
 
         // Pastille
         let knob_radius = 6.0;
-        let knob_x = if on {
-            r.right() - 5.0 - knob_radius
-        } else {
-            r.left() + 5.0 + knob_radius
-        };
+        let knob_off_x = r.left() + 5.0 + knob_radius;
+        let knob_on_x = r.right() - 5.0 - knob_radius;
+        let knob_x = knob_off_x + (knob_on_x - knob_off_x) * on_t;
         let knob_center = egui::Pos2::new(knob_x, r.center().y);
-        let knob_color = if on { BLUE } else { INK3 };
-        painter.circle_filled(knob_center, knob_radius, knob_color);
+        painter.circle_filled(knob_center, knob_radius, lerp_color(INK3, BLUE, on_t));
 
         response
     }
@@ -99,13 +101,17 @@ impl Widget for ToggleLED {
 
         let painter = ui.painter_at(rect);
         let hover = hover_t(ui.ctx(), response.id, response.hovered());
-        let bg = if on && enabled { blue_glow(64) } else { PANEL2 };
+        // Animated on/off state (0.14s) — LED color, halo, bg glow and border all
+        // lerp from the off values toward the on values.
+        let on_t = ui.ctx().animate_value_with_time(
+            response.id.with("state"),
+            if on && enabled { 1.0 } else { 0.0 },
+            0.14,
+        );
+        let bg = lerp_color(PANEL2, blue_glow(64), on_t);
         painter.rect_filled(rect, 6.0, bg);
-        let stroke_color = if on && enabled {
-            BLUE
-        } else {
-            lerp_color(LINE2, BLUE, hover * 0.6)
-        };
+        let off_border = lerp_color(LINE2, BLUE, hover * 0.6);
+        let stroke_color = lerp_color(off_border, BLUE, on_t);
         painter.rect_stroke(
             rect,
             6.0,
@@ -115,15 +121,13 @@ impl Widget for ToggleLED {
 
         // LED Ø7 (+ soft glow when on)
         let led_center = egui::pos2(rect.left() + 12.0 + 3.5, rect.center().y);
-        if on && enabled {
-            painter.circle_filled(led_center, 5.5, blue_glow(90));
+        if on_t > 0.01 {
+            painter.circle_filled(led_center, 5.5, blue_glow((90.0 * on_t) as u8));
         }
-        let led_color = if on && enabled {
-            BLUE
-        } else if !enabled {
+        let led_color = if !enabled {
             INK2
         } else {
-            FAINT
+            lerp_color(FAINT, BLUE, on_t)
         };
         painter.circle_filled(led_center, 3.5, led_color);
 
@@ -303,8 +307,14 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
             Sense::click(),
         );
 
-        if is_on {
-            painter.rect_filled(seg.shrink(1.0), 0.0, blue_glow(64));
+        let on_t = ui.ctx().animate_value_with_time(
+            resp.id.with("state"),
+            if is_on { 1.0 } else { 0.0 },
+            0.14,
+        );
+
+        if on_t > 0.01 {
+            painter.rect_filled(seg.shrink(1.0), 0.0, blue_glow((64.0 * on_t) as u8));
         }
         if i > 0 {
             painter.line_segment(
@@ -316,10 +326,10 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
             );
         }
         let led_center = egui::pos2(seg.left() + 12.0 + 3.0, seg.center().y);
-        if is_on {
-            painter.circle_filled(led_center, 5.0, blue_glow(90));
+        if on_t > 0.01 {
+            painter.circle_filled(led_center, 5.0, blue_glow((90.0 * on_t) as u8));
         }
-        painter.circle_filled(led_center, 3.0, if is_on { BLUE } else { FAINT });
+        painter.circle_filled(led_center, 3.0, lerp_color(FAINT, BLUE, on_t));
         let seg_hover = hover_t(ui.ctx(), resp.id, resp.hovered());
         let txt_color = if is_on {
             INK
