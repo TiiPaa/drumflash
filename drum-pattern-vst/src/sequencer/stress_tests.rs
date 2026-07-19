@@ -76,7 +76,7 @@ pub mod stress_tests {
                     Pattern::empty()
                 };
                 // Pour les tests, on crée un nouveau SharedPattern car Arc ne supporte pas copy_from
-                let new_shared = SharedPattern::new(&new_pattern);
+                let _new_shared = SharedPattern::new(&new_pattern);
                 // En pratique, il faudrait utiliser Arc::get_mut ou une autre approche
                 // Pour ce test, on simule simplement le changement
                 pattern_changes += 1;
