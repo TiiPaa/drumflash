@@ -1,6 +1,6 @@
 # Flash Drum
 
-Plugin VST3 de séquenceur de batterie 64 pas (4 pages × 16) avec 13 voix de synthèse modulaire, écrit en Rust avec le framework `nih-plug`.
+Plugin VST3 de séquenceur de batterie 64 pas (4 pages × 16) avec 13 voix de synthèse dans 14 slots modulaires, écrit en Rust avec le framework `nih-plug`.
 
 ## Structure du projet
 

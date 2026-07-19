@@ -1,5 +1,195 @@
 # Changelog
 
+## 2026-07-19 — Fix p-lock creation preserving active step (build 20260719-112838)
+
+**Build:** `20260719-112838`
+**Validation:** `cargo test` OK (175 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK (0 warning), `build.ps1 -Install` OK
+
+### Changements
+- **`src/ui.rs`** :
+  - `PlockPopup` mémorise maintenant `step_was_active` au moment du clic droit.
+  - `draw_plock_menu` appelle `preserve_step_active_from_plock_popup()` : si le clic sur `Link to Global` ou `Snapshot Current Settings` a éteint la step sous-jacente, le trigger est restauré immédiatement.
+  - `draw_sequencer_plock_menu` applique le même garde-fou : créer/modifier/clear un sequencer p-lock ne peut plus désactiver la step active.
+  - `step_colors_v2` : rendu plein restauré pour les p-locks actifs : sound p-lock = cellule pleine orange, seq p-lock = cellule pleine violette.
+  - **`src/ui/theme.rs`** : suppression de `PL_SNAP`, devenu inutilisé après retour au rendu plein orange pour les sound p-locks.
+  - `draw_legacy_slot_lane_v2` : le toggle d'une step cellule est désactivé tant que le popup p-lock est ouvert (`suppress_click` inclut `state.plock_popup.is_some()`). Quand le popup est affiché, tous les clics gauche de la grille sont ignorés pour laisser le popup traiter l'interaction.
+  - `draw_grid_v2` : quand le popup p-lock est ouvert en début de frame et qu'un clic gauche arrive, on positionne `state.suppress_step_cell_click` en renfort.
+  - Le toggle d'une step cellule ne réagit plus qu'au clic principal (`PointerButton::Primary`), aussi bien en mode normal qu'en mode fusion.
+  - Le popup de p-lock passe de `Sense::hover()` à `Sense::click()` : les clics dans la bordure/marge du popup sont consommés au lieu de passer à la cellule sous-jacente.
+  - Fermeture du popup lors d'un clic dans sa bordure, et maintien de la fermeture au clic extérieur (`clicked_elsewhere`).
+
+### À tester dans Studio One (build 20260719-112838)
+1. Activer une step dans la grille (clic gauche) → la cellule s'allume normalement.
+2. Faire un clic droit sur une cellule active → le menu sound p-lock s'ouvre et la cellule reste active.
+3. Sélectionner `Link to Global` ou `Snapshot Current Settings` → la cellule reste active et devient full orange.
+4. Passer en mode sequencer p-lock, créer/modifier/clear un seq-p-lock sur la même step → la cellule reste active et devient full violette tant que le seq-p-lock existe.
+5. Régression : génération de pattern, mute/solo, export MIDI et sauvegarde/rechargement projet fonctionnent normalement.
+
+---
+
+## 2026-07-18 — [AUDIT-QW2] Corrections docs & script de vérification (build 20260718-125431)
+
+**Build:** `20260718-125431`
+**Validation:** `cargo test` OK (175 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK (0 warning), `build.ps1 -Install` OK
+
+### Changements
+- Suppression du fichier obsolète `drum-pattern-vst/fix_roles.pdb`.
+- **`README.md`** : description à jour (64 pas, 13 voix de synthèse dans 14 slots modulaires, Perc1).
+- **`drum-pattern-vst/README.md`** : même mise à jour (13 voix dans 14 slots, Perc1, 14 sorties aux + Main Mix).
+- **`docs/infrastructure.md`** :
+  - 13 instruments → 13 voix de synthèse dans 14 slots modulaires.
+  - `beat_position` décrit correctement (0.0 .. master_length × 0.25 beat, défaut 16, max 64).
+  - `sound-settings-v1` → `sound-settings-v2` (46 floats/slot).
+  - Suppression du champ `global-v1` inexistant ; ajout de `seq-plock-v1` et mention des paramètres nih-plug persistés par le DAW.
+  - Nombre de tests unitaires : 76 → 175.
+  - Version d'exemple : `0.1.0` → `0.2.0`.
+- **`docs/user-guide.md`** : 13 instruments → 13 voix/14 slots, Zap → Perc1, 13 sorties → 14 sorties aux, réglages par instrument → par slot.
+- **`docs/analog-mode.md`** : Zap → Perc1.
+- **`AGENTS.md`** : chemin du PoC web corrigé (`index.html`/`index.js` → `archive/web-poc/index.html`/`archive/web-poc/index.js`).
+- **`test-verification.ps1`** : suppression du build ID figé obsolète ; comparaison SHA-256 entre le bundle local et le binaire installé.
+
+### À tester dans Studio One (build 20260718-125431)
+1. Ouvrir le plugin → le header affiche `v0.2.0 · 20260718-125431`.
+2. Lecture du séquenceur et déclenchement de chaque slot (1 à 14) → pas de crash, audio OK.
+3. Régression : sauvegarde/rechargement d'un projet, plocks, mutes/solos, export MIDI fonctionnent normalement.
+
+---
+
+## 2026-07-18 — [AUDIT-QW1] Nettoyage `println!` + warnings (build 20260718-114531)
+
+**Build:** `20260718-114531`
+**Validation:** `cargo test` OK (175 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK (0 warning), `build.ps1 -Install` OK
+
+### Changements
+- **`src/lib.rs`** : suppression du `println!` debug dans `fire_voice_trigger`.
+- **`src/ui.rs`** : suppression du paramètre `clear_plocks_request` mort dans `create_editor` / `draw_pattern_bank` et de la fonction `led_toggle` inutilisée.
+- **`src/sequencer/pattern.rs`** : suppression de `PatternStateV3::expand` (jamais utilisé).
+- **`src/synthesis/dsp.rs`** : `#[allow(dead_code)]` sur les méthodes `reseed` de `PinkNoise`/`BrownNoise`/`BlueNoise`.
+- **`src/ui/local_param_slider.rs`** : `#[allow(dead_code)]` sur le builder `suffix`.
+- **`src/ui/theme.rs`** : suppression des constantes theme inutilisées (`DIVIDER`, `BLUE_D`, `BLUE_DIM`, `BLUE_GLOW`, `RADIUS_PILL`, `STROKE_HAIR`, `STROKE_CURVE`, `GAP_SM`, `GAP_MD`, `GAP_LG`).
+- **`src/sequencer/stress_tests.rs`** : `_new_shared` pour la variable inutilisée.
+- **`src/synthesis/mod.rs`** : utilisation de `cy_idx` dans le test.
+
+### À tester dans Studio One (build 20260718-114531)
+1. Ouvrir le plugin → le header affiche `v0.2.0 · <build ID>` sans changement visuel.
+2. Tester une génération de pattern (chaque type) → pas de crash.
+3. Ouvrir le menu P-lock sur un instrument multi-algo → le sélecteur Algo fonctionne.
+4. Régression : lecture, plocks, mute/solo, song, export MIDI fonctionnent normalement.
+
+---
+
+## 2026-07-18 — [AUDIT-INF1] CI GitHub Actions Windows (build 20260718-112910)
+
+**Build:** `20260718-112910`
+**Validation:** `cargo test` OK (175 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- Ajout de `.github/workflows/ci.yml`.
+- Workflow Windows (`windows-latest`) : checkout, Rust stable, cache cargo, `cargo check`, `cargo test`, `cargo build --release`, `build.ps1` (bundle VST3), upload artifact `drum-pattern-vst-windows`.
+
+### À tester dans Studio One (build 20260718-112910)
+1. Pas de test fonctionnel spécifique (changement d'infrastructure uniquement).
+2. Vérifier que le plugin local reste fonctionnel : version `v0.2.0`, build ID, lecture audio.
+3. Régression : aucune autre fonctionnalité affectée.
+
+---
+
+## 2026-07-18 — [AUDIT-INF2] Version 0.2.0 affichée dans l'UI (build 20260718-112253)
+
+**Build:** `20260718-112253`
+**Validation:** `cargo test` OK (175 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **`Cargo.toml`** : version passée de `0.1.0` à `0.2.0`.
+- L'UI affichait déjà `env!("CARGO_PKG_VERSION")` à côté du build ID dans le header (`src/ui.rs:1464`) ; elle affiche donc maintenant `v0.2.0`.
+
+### À tester dans Studio One (build 20260718-112253)
+1. Ouvrir le plugin → dans le header, à côté de "FLASH DRUM", lire la version affichée `v0.2.0 · <build ID>`.
+2. Vérifier que le build ID est toujours présent.
+3. Régression : aucune autre fonctionnalité affectée.
+
+---
+
+## 2026-07-18 — [AUDIT-RT3] Zéro panic UI/audio (build 20260718-110145)
+
+**Build:** `20260718-110145`
+**Validation:** `cargo test` OK (175 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **`src/ui.rs` (`draw_plock_menu`)** : remplacement de `expect("valid voice index")` par un `if let Some(voice) = ...` défensif ; le menu Algo est simplement ignoré si l'index est invalide.
+- **`src/generator/mod.rs` (`generate_bar`)** : suppression du `unreachable!()` catch-all ; le match est maintenant exhaustif avec `GeneratorType::Euclidean => Pattern::empty()` comme fallback sûr.
+- **`src/lib.rs` (`Default for DrumFlashVst`)** : remplacement de `lock().unwrap()` sur `pattern_bank.bank` par `try_lock()` + fallback `SongSequence::default()`.
+
+### À tester dans Studio One (build 20260718-110145)
+1. Ouvrir le menu P-lock (clic droit sur une step) pour un instrument avec plusieurs algos → le sélecteur Algo doit s'afficher et fonctionner normalement.
+2. Générer un pattern avec chaque type de générateur (Probabilistic, Markov, Classic, Euclidean) → aucun crash, résultat conforme.
+3. Ouvrir le plugin dans un projet neuf ou recharger un projet → chargement sans panic.
+4. Régression : le mode Song, les plocks, le générateur et les algos fonctionnent toujours.
+
+---
+
+## 2026-07-18 — [AUDIT-RT2] `try_lock` dans `initialize()` pour éviter le blocage audio (build 20260718-105213)
+
+**Build:** `20260718-105213`
+**Validation:** `cargo test` OK (175 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **`src/lib.rs` (`initialize()`)** : remplacement du `lock().unwrap()` sur `pattern_bank.bank` par `try_lock()` + fallback sur `SongSequence::default()`.
+- Si le bank est verrouillé par l'UI pendant l'init, le thread audio ne bloque pas ; la song est rechargée via le snapshot publié par l'UI et consommé dans `process()`.
+
+### À tester dans Studio One (build 20260718-105213)
+1. Ouvrir le plugin dans un projet neuf → chargement sans freeze/timeout.
+2. Recharger un projet sauvegardé avec une song (mode Song actif, blocks P1-P8) → la song doit être restaurée et jouer normalement.
+3. Basculer rapidement entre morceaux/états du plugin → pas de blocage au chargement.
+4. Régression : le mode Song fonctionne toujours (lecture, changement de pattern, repeats).
+
+---
+
+## 2026-07-18 — [AUDIT-RT1] Pré-allocation des voix pour supprimer l'alloc heap en RT (build 20260718-095728)
+
+**Build:** `20260718-095728`
+**Validation:** `cargo test` OK (173 lib + 1 midi_drag_helper + 102 test_standalone), `cargo check` OK, `build.ps1 -Install` OK
+
+### Changements
+- **`src/synthesis/mod.rs`**: toutes les voix sont pré-allouées dans `initialize_with_layout`, même les slots inactifs.
+  - Nouveau champ `active: [bool; MAX_TRACKS]` pour gérer l'activation sans libérer/allouer de `Box` sur le thread audio.
+  - `reinitialize_slot` ne fait plus que remplacer l'enum `DrumVoiceKind` dans la `Box` existante ; la branche `Box::new` est supprimée du chemin RT.
+  - `trigger`, `trigger_hard`, `set_voice_settings`, `set_algo`, `reset_voice` et les boucles `process_*` ignorent les slots inactifs.
+- **`src/lib.rs`**: appel `set_slot_active(slot, false)` quand un slot devient inactif.
+
+### Tests
+- `reinitialize_inactive_slot_reuses_preallocated_voice` : vérifie qu'un slot inactif peut être activé sans nouvelle allocation.
+- `set_slot_active_gates_trigger_and_output` : vérifie que `set_slot_active(false)` coupe le son et `true` le réactive.
+
+### À tester dans Studio One (build 20260718-095728)
+1. Ajouter une nouvelle lane via la pastille `+N` (activer un slot inactif) pendant la lecture → le slot doit sonner immédiatement, sans dropout/click.
+2. Changer l'instrument d'une lane active (onglet Track → Instrument) → le son doit changer sans glitch/click.
+3. Supprimer une lane (passer le slot inactif) pendant la lecture → plus de son sur ce slot, pas de rupture audio.
+4. Sauvegarder/recharger le projet → le layout et les slots restent audibles.
+5. Régression : toutes les lanes actives (jusqu'à 14) produisent du son, mutes/solos fonctionnent.
+
+---
+
+## 2026-07-18 — [100q] complet : transitions d'état on/off des toggles LED (build 20260718-083031)
+
+**Build:** `20260718-083031`
+**Validation:** `cargo test` OK (173 lib + 1 midi_drag_helper + 102 test_standalone), `build.ps1 -Install` OK
+
+### Changements
+- **Transitions d'état 0.14s sur les toggles (fin de [100q]).**
+  - `src/ui/widgets.rs` (`ToggleLED`) : LED `FAINT→BLUE`, halo `blue_glow(0→90)`, fond `PANEL2→blue_glow(64)` et bordure `LINE2→BLUE` lissent à l'activation/désactivation via `animate_value_with_time` sur `response.id.with("state")` (ID distinct de celui du hover pour ne pas mélanger les deux animations).
+  - `src/ui/widgets.rs` (`ToggleSwitch`) : la pastille **glisse** gauche↔droite (interpolation de `knob_x`) et fond/couleur/bordure fondent en douceur.
+  - `src/ui/widgets.rs` (`led_segmented`) : cross-fade entre segments — l'ancien segment s'éteint en fondu pendant que le nouveau s'allume (bg glow, halo LED, couleur LED).
+
+### À tester dans Studio One (build 20260718-083031)
+1. Cliquer un bouton LED (Solo/Mute/Link, tags M/S/T…) → la LED, son halo, le fond et la bordure doivent **fondre** en ~0.14s au lieu de basculer instantanément ; re-cliquer → extinction en fondu.
+2. Cliquer un `ToggleSwitch` (Sound Editor, ex. pré-filtre / stéréo) → la pastille doit **glisser** de gauche à droite (pas téléporter) avec fade de couleur.
+3. Basculer un segmented control (Sound/Sequencer, Generator|Song, Hz/Notes…) → cross-fade entre l'ancien et le nouveau segment.
+4. Cliquer rapidement plusieurs fois de suite → l'animation ne doit pas sauter (elle repart de sa valeur courante).
+5. Régression : hover animé 0.14s, glow de playhead, double-clic reset et poignées mini sliders fonctionnent toujours ; aucune animation ne tourne en boucle (pas de repaint permanent quand l'UI est au repos).
+
+---
+
 ## 2026-07-16 — TODO : [100v] marqué obsolète (docs)
 
 **Modifications :** aucune (mise à jour de documentation uniquement).

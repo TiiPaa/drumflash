@@ -1859,8 +1859,11 @@ impl Default for DrumFlashVst {
         let external_midi_triggers = Arc::new(std::array::from_fn(|_| AtomicBool::new(false)));
         let sound_settings_state = params.sound_settings.state.clone();
         let song_state = {
-            let bank = params.pattern_bank.bank.lock().unwrap();
-            bank.song.clone()
+            if let Ok(bank) = params.pattern_bank.bank.try_lock() {
+                bank.song.clone()
+            } else {
+                pattern_bank::SongSequence::default()
+            }
         };
         let mut plugin = Self {
             params,
@@ -2223,13 +2226,6 @@ impl DrumFlashVst {
         hard: bool,
         settings: synthesis::VoiceSettings,
     ) {
-        #[cfg(debug_assertions)]
-        {
-            println!(
-                "fire_voice_trigger(slot_idx={}, voice_idx={}, velocity={}, sample_idx={})",
-                slot_idx, voice_idx, velocity, sample_idx
-            );
-        }
         let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
             return;
         };
@@ -2317,7 +2313,6 @@ impl Plugin for DrumFlashVst {
             self.song_position.clone(),
             self.pending_pattern_length.clone(),
             self.audio_last_loaded_slot.clone(),
-            self.clear_plocks_request.clone(),
             global_config,
         )
     }
@@ -2344,8 +2339,15 @@ impl Plugin for DrumFlashVst {
         });
         self.last_sound_settings_version = u64::MAX; // force re-sync on next process()
         self.song_state = {
-            let bank = self.params.pattern_bank.bank.lock().unwrap();
-            bank.song.clone()
+            // Use try_lock to avoid blocking the audio thread if the UI happens
+            // to hold the bank lock during init. If the bank is unavailable, the
+            // default empty song will be replaced by the UI-published snapshot
+            // consumed in process().
+            if let Ok(bank) = self.params.pattern_bank.bank.try_lock() {
+                bank.song.clone()
+            } else {
+                pattern_bank::SongSequence::default()
+            }
         };
         self.params.song_controller.publish(self.song_state.clone());
         self.remember_current_pattern();
@@ -2553,6 +2555,8 @@ impl Plugin for DrumFlashVst {
             if current_kind != self.last_slot_kinds[slot] {
                 if let Some(kind) = current_kind {
                     self.synthesizer.reinitialize_slot(slot, kind);
+                } else {
+                    self.synthesizer.set_slot_active(slot, false);
                 }
                 self.last_slot_kinds[slot] = current_kind;
             }

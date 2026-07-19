@@ -1,0 +1,399 @@
+{
+  "contexte": {
+    "description": "Flash Drum est un plugin VST3 de séquenceur de batterie écrit en Rust (nih-plug + egui). Il embarque un séquenceur 64 pas, 14 slots modulaires adossés à 13 voix de synthèse DSP, des parameter-locks par step, une pattern bank, un mode song et un export/drag MIDI. Utilisateurs cibles : musiciens/producteurs sous Studio One (Windows).",
+    "langages": ["Rust", "PowerShell", "JavaScript (PoC legacy archivé)", "HTML/CSS (mockup de design)"],
+    "frameworks": ["nih-plug (vendoré)", "nih_plug_egui", "egui 0.31", "serde/serde_json", "crossbeam", "windows-sys", "hound (dev)"],
+    "type_projet": "Plugin audio VST3 desktop (Windows), produit unique, développement solo",
+    "patterns_detectes": [
+      "Audio thread temps réel strict (no-alloc, no-lock, no-panic)",
+      "Communication UI↔audio lock-free (atomics, SharedPattern, crossbeam ArrayQueue SPSC)",
+      "Parameter locks (plocks) avec masques de champs et rétro-compatibilité de persistance",
+      "Persistance versionnée par longueur de blob (sound-settings-v2/v3, pattern-v5)",
+      "Vendoring de dépendance patchée (nih-plug fork local)"
+    ]
+  },
+  "architecture": {
+    "resume": "Monolithe VST3 : lib.rs déclare les paramètres et orchestre process() ; le séquenceur (sequencer/) pilote 14 slots de synthèse (synthesis/) via une grille lock-free (SharedPattern) ; l'UI egui (ui.rs + ui/) édite l'état via atomiques et files SPSC. La pattern bank (Mutex, accédée en try_lock côté audio) et les plocks (100% atomiques) gèrent la persistance musicale. Un helper Win32 séparé (midi_drag_helper) gère le drag-and-drop de fichiers .mid hors du processus du DAW.",
+    "composants": [
+      "src/lib.rs (~152 KB) — entrée plugin, DrumFlashParams, process(), migration d'état pattern-v5",
+      "src/ui.rs (~308 KB, ~8000 lignes) — éditeur egui complet (grille, éditeurs, menus, song editor)",
+      "src/sequencer/ — moteur de séquence, SharedPattern lock-free, stress tests",
+      "src/synthesis/ — 13 voix DSP + primitives dsp.rs + réglages par défaut par voix",
+      "src/plock.rs — parameter locks sound/sequencer, masques de champs, persistance",
+      "src/pattern_bank.rs — slots P1-P8 + SongSequence (Copy) + capture vers buffers pré-alloués",
+      "src/atomic_song.rs — SongStateController SPSC (crossbeam ArrayQueue) UI→audio",
+      "src/generator/ — générateurs de patterns (euclidean, markov, probabilistic, classic)",
+      "src/sound_settings.rs — réglages par slot versionnés (atomiques)",
+      "src/midi_export.rs + src/bin/midi_drag_helper.rs + src/native_drag.rs — export et drag MIDI Win32",
+      "vendor/nih-plug — fork patché (multi-out Studio One, state IEditController, routing MIDI)"
+    ],
+    "patterns": [
+      "Producteur/consommateur SPSC lock-free (song state)",
+      "Copy-on-write par snapshot atomique (sound settings)",
+      "Migration de schéma de persistance avec rétro-compatibilité (pattern-v1..v5, st01..st16)",
+      "Plugin hébergé par un processus tiers (DAW) — pas de main, cycle de vie imposé par le host"
+    ],
+    "points_forts": [
+      "Boucle audio par échantillon sans allocation, sans verrou bloquant, sans panic — vérifiée statiquement",
+      "Séparation claire UI/audio avec invariants RT documentés (AGENTS.md) et respectés",
+      "Pattern bank en try_lock + buffers pré-alloués à capacité exacte (aucune réalloc RT)",
+      "Plocks et settings 100% atomiques ; SongSequence Copy traversant une ArrayQueue",
+      "276 tests automatisés (173 lib + 1 helper + 102 standalone) dont stress tests de timing/stabilité",
+      "Helper drag-and-drop MIDI isolé dans un processus séparé (unsafe Win32 hors du DAW)"
+    ],
+    "points_faibles": [
+      "ui.rs monolithique (~308 KB, ~8000 lignes) — navigation et revue difficiles, risque de régressions",
+      "Quatre implémentations de sliders distinctes (LocalParamSlider, draw_editor_slider_track, draw_mini_value_slider, header_param_slider) avec logique dupliquée",
+      "Une allocation heap subsiste dans process() lors de la réinitialisation d'une voix (ajout/changement de lane)",
+      "panic = \"abort\" en release : tout panic (même UI) tue le processus du DAW hôte",
+      "17 warnings cargo persistants (code mort, constantes inutilisées)"
+    ],
+    "diagramme_textuel": "DAW (Studio One)\n  └─ process() [audio thread]\n       ├─ Sequencer::process_sample ← SharedPattern (atomics) ← UI thread\n       ├─ SongStateController.consume_latest() ← ArrayQueue ← UI thread\n       ├─ DrumSynthesizer (14 slots) ← SoundSettingsState (atomics) ← UI thread\n       ├─ PatternBank (try_lock, Busy sinon) ← Mutex ← UI thread (lock)\n       └─ Main Mix + 14 sorties aux stéréo + NoteOn/Off canal 10\n  └─ editor() [UI thread]\n       └─ egui ui.rs ← params/atomics → fichiers (config.json, exports .mid, dumps)"
+  },
+  "documentation_divergences": [
+    {
+      "document": "drum-pattern-vst/README.md",
+      "constat": "Annonce « 13 sorties stéréo aux + Main Mix » et « Séquenceur 16 pas »",
+      "realite": "AUX_OUT_COUNT = 14 (lib.rs:40) et grille 64 pas (4 pages × 16) sur 14 slots",
+      "impact": "Utilisateur/développeur trompé sur le nombre de sorties et la longueur de pattern"
+    },
+    {
+      "document": "docs/infrastructure.md",
+      "constat": "Liste « sound-settings-v1 » dans la persistance et « Tests unitaires (76) »",
+      "realite": "Le champ persisté est sound-settings-v2 (layout v3, 46 floats/slot) et cargo test --lib rapporte 173 tests",
+      "impact": "Diagnostic de migration d'état basé sur un mauvais nom de champ ; couverture de test sous-estimée"
+    },
+    {
+      "document": "AGENTS.md (section Current Project Layout)",
+      "constat": "Indique « index.html » et « index.js » à la racine comme PoC de référence",
+      "realite": "Ces fichiers ont été déplacés sous archive/web-poc/ (absents de la racine)",
+      "impact": "Chemins de référence comportementale introuvables si l'agent suit AGENTS.md à la lettre"
+    },
+    {
+      "document": "test-verification.ps1",
+      "constat": "Vérifie un build ID attendu « 20260510-115905-s1route » codé en dur",
+      "realite": "Les builds actuels sont horodatés (ex. 20260718-083031)",
+      "impact": "Le script de vérification échoue ou valide un état obsolète — outil devenu inutilisable"
+    }
+  ],
+  "infrastructure": {
+    "resume": "Projet 100% local : plugin compilé sur le poste du développeur (Windows) via build.ps1, installé par copie dans C:\\Program Files\\Common Files\\VST3, validé manuellement dans Studio One. Aucune CI/CD, aucun serveur, aucune base de données, aucun service tiers à l'exécution. Le dépôt Git est hébergé sur GitHub (remote TiiPaa/drumflash). Les secrets sont absents par nature (pas d'API).",
+    "stack": [
+      "Rust 1.94 (cargo 1.94.0)",
+      "nih-plug vendoré (fork local patché)",
+      "egui 0.31.1 via egui-baseview (git pinné rev ec70c3f)",
+      "VST3 SDK (via nih-plug)",
+      "Windows 10/11, PowerShell 5.1",
+      "Studio One (DAW de validation)"
+    ],
+    "services_externes": [
+      "GitHub — hébergement du dépôt source uniquement",
+      "Aucun service à l'exécution (pas de réseau, pas de télémétrie, pas de licence en ligne)"
+    ],
+    "flux_donnees": [
+      "UI thread → atomics/ArrayQueue → audio thread (patterns, song, settings)",
+      "Audio thread → buffers Main + 14 aux → DAW",
+      "UI thread → fs (config.json dans Documents/Flash Drum, exports .mid, preset dumps JSON)",
+      "UI thread → processus midi_drag_helper.exe → drag-and-drop OS vers le DAW",
+      "DAW projet ↔ VST3 state (pattern-v5, sound-settings-v2, plock-v1, pattern-bank)"
+    ],
+    "deploiement": "Compilation manuelle : build.ps1 (cargo build --release) génère la DLL, reconstitue le bundle .vst3 et copie avec -Install dans le dossier système VST3. Scripts d'alias à la racine (install.ps1, install-to-vst3.ps1). Aucune pipeline CI/CD ; releases non versionnées (Cargo.toml figé à 0.1.0).",
+    "monitoring": "Logs via nih_log!/println! visibles dans le DAW ou la console en debug. Build ID horodaté affiché dans l'UI pour tracer la version installée. Aucun monitoring, métrique ou alerte automatisé ; la validation repose sur des checklists manuelles Studio One (CHANGELOG).",
+    "secrets_management": "Aucun secret dans le code ni dans la config (vérifié : pas de clé API, token ou mot de passe). config.json ne contient que des préférences (default_analog, canal MIDI).",
+    "resilience": "Pas de backup automatisé ; l'état musical est persisté dans le projet du DAW (pattern-v5 + migrations v1..v4). Le VST3_CLASS_ID figé protège la compatibilité ascendante. Point de défaillance unique : le poste de développement (build et validation manuels).",
+    "scalabilite": "Non applicable (plugin local mono-instance par piste DAW). Limite interne : 14 slots, 64 steps, CPU audio dépendant des voix actives — couvert par des stress tests."
+  },
+  "findings": [
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/src/synthesis/mod.rs",
+      "ligne": "867",
+      "probleme": "Allocation heap (Box::new) dans reinitialize_slot, appelée depuis process() au changement de kind d'une lane",
+      "pourquoi": "Unique allocation sur le thread audio : glitch/dropout possible si l'utilisateur ajoute ou change une lane pendant la lecture — contredit l'invariant no-alloc affiché par le projet",
+      "suggestion": "Pré-allouer les 14 voix dans initialize_with_layout (toujours Some) ou différer la création via un flag consommé hors du chemin RT ; alternative : pool de voix par kind",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "partielle",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/src/lib.rs",
+      "ligne": "2347",
+      "probleme": "pattern_bank.bank.lock().unwrap() bloquant dans initialize()",
+      "pourquoi": "initialize() peut s'exécuter sur un thread sensible de l'hôte (chargement, changement de sample-rate) : si l'UI tient le verrou, gel potentiel ; si le mutex est empoisonné, panic → crash du DAW",
+      "suggestion": "Aligner sur le pattern existant dans process() : try_lock() avec repli (conserver l'ancien song_state / sauter la synchro) et ne jamais unwrap",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "partielle",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst/Cargo.toml",
+      "ligne": "48",
+      "probleme": "panic = \"abort\" en release combiné à des expect()/unwrap() restants côté UI (ui.rs:7210 expect(\"valid voice index\"), ui.rs:1373 unwrap sous garde, lib.rs:1862 lock().unwrap())",
+      "pourquoi": "Le plugin vit dans le processus du DAW : tout panic, même dans un menu contextuel, avorte Studio One sans sauvegarde — perte de travail utilisateur et réputation du plugin",
+      "suggestion": "Éliminer les panics restants : ui.rs:7210 → let Some(voice) = from_index(voice_idx) else { return }; generator/mod.rs:70 unreachable!() → fallback défensif ; lib.rs:1862 → gestion gracieuse du mutex empoisonné",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "partielle",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/src/ui.rs",
+      "ligne": "1",
+      "probleme": "Fichier monolithique de ~308 KB (~8000 lignes) concentrant grille, éditeurs, menus contextuels, song editor, export MIDI et helpers",
+      "pourquoi": "Revues difficiles, conflits de merge fréquents, régressions faciles (déjà observées : variable clear_plocks_request inutilisée) ; le chargement complet du fichier est coûteux pour tout outillage",
+      "suggestion": "Extraire par domaine dans src/ui/ : pattern_bank_bar.rs, plock_menus.rs (déjà ~1500 lignes de menus), song_editor.rs, grid.rs, mini_sliders.rs — en commençant par les blocs sans couplage fort",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "theorique",
+        "mitigations": "aucune",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/src/ui.rs",
+      "ligne": "4503",
+      "probleme": "Quatre implémentations de sliders dupliquées : LocalParamSlider (ui/local_param_slider.rs), draw_editor_slider_track (ui.rs:4796), draw_mini_value_slider (ui.rs:4503), header_param_slider (ui.rs:1313)",
+      "pourquoi": "Chaque correction (ex. double-clic reset de cette session) a dû être appliquée à 3-4 endroits, avec risque d'oubli (le mini slider de lane avait été oublié avant correction)",
+      "suggestion": "Unifier derrière un widget SliderTrack commun paramétré (range, défaut, logarithmique, taille, tooltip) et faire des 4 call-sites de fines adaptations",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "theorique",
+        "mitigations": "aucune",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/src/ui.rs",
+      "ligne": "6901",
+      "probleme": "start_external_midi_drag résout l'exécutable helper via la variable d'environnement DRUM_FLASH_MIDI_DRAG_HELPER avant les chemins système",
+      "pourquoi": "Un processus capable de fixer l'environnement du DAW peut rediriger le spawn vers un binaire arbitraire exécuté avec les droits de l'utilisateur (élévation indirecte via le DAW)",
+      "suggestion": "Valider que le chemin de l'env var pointe dans le bundle du plugin (prefix check sur le dossier VST3) ou supprimer l'override env et n'utiliser que les chemins fixes",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "partielle",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/src/pattern_bank.rs",
+      "ligne": "716",
+      "probleme": "serde_json::to_vec(&*guard) exécuté pendant que le Mutex de la banque est tenu (PersistentField::get)",
+      "pourquoi": "La sauvegarde d'état sérialise toute la banque sous verrou : si l'hôte appelle getState pendant une édition UI longue, contention et jank UI ; sur certains hôtes le getState peut être proche du temps réel",
+      "suggestion": "Cloner/copier la structure nécessaire sous verrou court puis sérialiser hors verrou (la capture() montre déjà la voie avec des buffers pré-alloués)",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "partielle",
+        "donnees_impactees": "metier"
+      }
+    },
+    {
+      "categorie": "infrastructure",
+      "priorite": "important",
+      "fichier": "drum-pattern-vst",
+      "ligne": "",
+      "probleme": "Aucune CI/CD : ni build ni cargo test automatisés sur push ; release = copie manuelle locale",
+      "pourquoi": "Une régression cassant cargo test ou le build release peut être poussée sur main et découverte seulement au prochain test manuel Studio One ; pas de reproductibilité des builds entre machines",
+      "suggestion": "Ajouter une GitHub Action minimale (windows-latest) : cargo check + cargo test + cargo build --release, artefact du bundle .vst3 ; badge dans README",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "conditionnelle",
+        "mitigations": "aucune",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "infrastructure",
+      "priorite": "suggestion",
+      "fichier": "drum-pattern-vst/Cargo.toml",
+      "ligne": "3",
+      "probleme": "version = \"0.1.0\" jamais incrémentée alors que le CHANGELOG recense des dizaines de builds fonctionnels",
+      "pourquoi": "Impossible de corréler un rapport utilisateur à une version sémantique ; le seul traçage est le build ID horodaté affiché dans l'UI",
+      "suggestion": "Adopter un bump de version par palier (ex. 0.2.0 pour la V1 modulaire actuelle) et l'inclure à côté du build ID dans l'UI",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "theorique",
+        "mitigations": "partielle",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "hors_securite",
+      "fichier": "drum-pattern-vst/src/ui.rs",
+      "ligne": "1538",
+      "probleme": "17 warnings cargo persistants : variable clear_plocks_request inutilisée, fonction led_toggle morte, méthodes reseed/suffix/expand jamais appelées, 10 constantes de theme.rs inutilisées (DIVIDER, BLUE_D, BLUE_DIM, BLUE_GLOW, RADIUS_PILL, STROKE_HAIR, STROKE_CURVE, GAP_SM/MD/LG)",
+      "pourquoi": "Le bruit de warnings masque les vrais problèmes à la compilation et entretient du code mort qui prête à confusion (constantes du design system jamais câblées)",
+      "suggestion": "Préfixer d'un underscore ou supprimer : _clear_plocks_request, retirer led_toggle, #[allow(dead_code)] assumé ou suppression des constantes ; viser zero warning",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "theorique",
+        "mitigations": "aucune",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "hors_securite",
+      "fichier": "drum-pattern-vst/src/lib.rs",
+      "ligne": "2228",
+      "probleme": "println! par trigger dans fire_voice_trigger (gardé par #[cfg(debug_assertions)])",
+      "pourquoi": "En build debug chaque note jouée fait une allocation format! + I/O console sur le thread audio : mesures de timing faussées et risque de glitch pendant le debug",
+      "suggestion": "Supprimer le println! ou le remplacer par un compteur atomique échantillonné par l'UI",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "triviale",
+        "mitigations": "partielle",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "hors_securite",
+      "fichier": "drum-pattern-vst/src/native_drag.rs",
+      "ligne": "121",
+      "probleme": "Vtables COM IDropSource/IDataObject écrites à la main en unsafe (pointeurs sur objets stack, GlobalAlloc manuel)",
+      "pourquoi": "Code COM artisanal à haut risque d'UB si OLE rappelle après retour de DoDragDrop ; aujourd'hui isolé dans le processus helper, mais toute réintégration dans le plugin exposerait le DAW",
+      "suggestion": "Conserver l'isolement processus (documenté) ; si évolution, migrer vers le crate windows-rs qui fournit les traits COM typés",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "theorique",
+        "mitigations": "partielle",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "infrastructure",
+      "priorite": "hors_securite",
+      "fichier": "drum-pattern-vst/fix_roles.pdb",
+      "ligne": "",
+      "probleme": "Artefact de debug fix_roles.pdb oublié dans le working tree (non tracké, ignoré par .gitignore) et test-verification.ps1 avec build ID obsolète en dur",
+      "pourquoi": "Cruft qui encombre le projet et un script de vérification trompeur (valide un build de mai)",
+      "suggestion": "Supprimer fix_roles.pdb ; régénérer test-verification.ps1 pour lire le build ID courant (ou le supprimer si redondant avec la checklist manuelle)",
+      "confiance": "haute",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "triviale",
+        "mitigations": "aucune",
+        "donnees_impactees": "publiques"
+      }
+    },
+    {
+      "categorie": "code",
+      "priorite": "hors_securite",
+      "fichier": "drum-pattern-vst/Cargo.lock",
+      "ligne": "2103",
+      "probleme": "Trois versions de windows-sys coexistent (0.52, 0.59, 0.61.2) et egui-baseview est pinné sur un commit git",
+      "pourquoi": "Alourdit le build et signale des chaînes de dépendances non alignées ; un bump de egui-baseview peut casser sans filet (pas de semver)",
+      "suggestion": "À la prochaine montée de version d'egui/nih-plug, auditer cargo tree pour converger vers une seule version de windows-sys ; documenter la raison du pin baseview dans Cargo.toml",
+      "confiance": "moyenne",
+      "contexte_finding": {
+        "exposition": "interne",
+        "exploitabilite": "theorique",
+        "mitigations": "partielle",
+        "donnees_impactees": "publiques"
+      }
+    }
+  ],
+  "points_positifs": [
+    "Discipline temps réel exemplaire : la boucle audio par échantillon ne contient ni allocation, ni verrou bloquant, ni panic — vérifié par lecture complète du chemin process()/process_sample/synthesis",
+    "Architecture lock-free cohérente : SharedPattern, plocks et sound settings 100% atomiques, song state via SPSC ArrayQueue (AUDIT-1 résolu), pattern bank en try_lock avec repli Busy propre",
+    "Persistance robuste et rétro-compatible : migrations pattern-v1..v5 + st01..st16, sound-settings versionnées par longueur de blob, VST3_CLASS_ID figé pour les projets DAW existants",
+    "Couverture de tests sérieuse pour un plugin audio : 276 tests (unitaires, intégration, stress de timing, stabilité longue session, rendu fini/non-silencieux des 13 voix)",
+    "Isolation de l'unsafe : tout le code COM/Win32 dangereux vit dans un processus helper séparé, jamais dans le processus du DAW",
+    "Documentation d'invariants (AGENTS.md) précise et réellement suivie par le code (anti-click, per-slot indexing, anti-patterns UI)"
+  ],
+  "scores": {
+    "securite": 8,
+    "performance": 8,
+    "architecture": 8,
+    "qualite_code": 7,
+    "bugs_potentiels": 7,
+    "dependances": 7,
+    "tests": 8,
+    "infrastructure": 5,
+    "global": 7
+  },
+  "resume": {
+    "verdict": "A retravailler",
+    "top_3_actions": [
+      "Éliminer l'allocation heap RT de reinitialize_slot (synthesis/mod.rs:867) : pré-allocation des 14 voix ou création différée hors thread audio",
+      "Supprimer les panics restants (initialize() lock().unwrap, expect/unwrap UI) car panic=abort tue le DAW hôte en release",
+      "Mettre en place une CI minimale (cargo check + test + build release sur Windows) et versionner le plugin au-delà de 0.1.0"
+    ],
+    "quick_wins": [
+      "ui.rs:7210 — remplacer expect(\"valid voice index\") par let Some(voice) = ... else { return }",
+      "lib.rs:2228 — supprimer le println! debug du chemin audio",
+      "Préfixer clear_plocks_request par un underscore et supprimer led_toggle mort pour réduire les warnings",
+      "Corriger drum-pattern-vst/README.md : 14 sorties aux (pas 13), séquenceur 64 pas (pas 16)",
+      "Corriger docs/infrastructure.md : sound-settings-v2 (pas v1) et 173 tests lib (pas 76)",
+      "Supprimer fix_roles.pdb du working tree et le build ID obsolète de test-verification.ps1"
+    ],
+    "risk_matrix": [
+      {
+        "finding": "Allocation heap RT au changement de lane (synthesis/mod.rs:867)",
+        "impact": "Moyen",
+        "probabilite": "Moyenne"
+      },
+      {
+        "finding": "Panic (expect/unwrap/lock) avec panic=abort → crash du DAW",
+        "impact": "Eleve",
+        "probabilite": "Faible"
+      },
+      {
+        "finding": "lock().unwrap() bloquant dans initialize()",
+        "impact": "Moyen",
+        "probabilite": "Faible"
+      },
+      {
+        "finding": "Régression poussée sur main sans CI (tests/build non vérifiés)",
+        "impact": "Moyen",
+        "probabilite": "Elevee"
+      },
+      {
+        "finding": "Override DRUM_FLASH_MIDI_DRAG_HELPER vers binaire arbitraire",
+        "impact": "Moyen",
+        "probabilite": "Faible"
+      },
+      {
+        "finding": "Sérialisation JSON de la banque sous verrou (jank UI au getState)",
+        "impact": "Faible",
+        "probabilite": "Moyenne"
+      }
+    ]
+  }
+}

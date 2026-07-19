@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: drum-pattern-vst
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            drum-pattern-vst -> target
+
+      - name: Check
+        run: cargo check
+        env:
+          DRUM_PATTERN_BUILD_ID: ci-${{ github.run_number }}
+
+      - name: Test
+        run: cargo test
+        env:
+          DRUM_PATTERN_BUILD_ID: ci-${{ github.run_number }}
+
+      - name: Build release bundle
+        shell: pwsh
+        run: .\build.ps1
+
+      - name: Upload VST3 bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: drum-pattern-vst-windows
+          path: drum-pattern-vst/build/drum-pattern-vst.vst3
+          if-no-files-found: error

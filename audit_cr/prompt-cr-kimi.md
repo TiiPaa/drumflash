@@ -2,13 +2,14 @@
 
 **IMPORTANT — Environnement Windows**
 Tu es sur Windows. Les commandes Unix suivantes NE FONCTIONNENT PAS :
+
 - grep, find, cat, head, tail, sed, awk, wc, xargs, chmod, ls
-Utilise a la place :
+  Utilise a la place :
 - Pour lire un fichier : ouvre-le directement avec tes outils integres (read file, etc.)
 - Pour chercher dans le code : utilise tes outils de recherche integres (search, grep tool, etc.)
 - Pour lister des fichiers : utilise tes outils de navigation (list directory, etc.)
 - Si tu dois absolument lancer une commande shell : PowerShell (Get-Content, Select-String, Get-ChildItem)
-NE TENTE PAS de commandes Unix. Elles echoueront silencieusement ou avec une erreur.
+  NE TENTE PAS de commandes Unix. Elles echoueront silencieusement ou avec une erreur.
 
 Effectue un audit complet de ce projet : code, architecture ET infrastructure.
 Explore tous les fichiers du projet, comprends l'architecture, et produis un rapport exhaustif.
@@ -29,6 +30,7 @@ Tu es libre d'utiliser tous les outils, skills, agents, commandes, ressources et
 ### Checklist obligatoire
 
 **Securite :**
+
 - Validation et sanitisation des entrees utilisateur
 - Pas de secrets hardcodes (cles API, mots de passe)
 - Gestion securisee des erreurs (pas de stack trace exposee)
@@ -37,21 +39,23 @@ Tu es libre d'utiliser tous les outils, skills, agents, commandes, ressources et
 - Controle d'acces sur les actions sensibles
 
 **Auth / OAuth / Impersonation (OBLIGATOIRE si SSO ou API tierce detectes) :**
+
 - Identifier les fournisseurs d'identite utilises (Google, Microsoft, Okta, Auth0, GitHub...)
 - Lister les scopes OAuth demandes : sont-ils minimaux pour la finalite annoncee ?
   Tout scope au-dela de `openid email profile` doit etre justifie par un usage explicite.
 - Detection delegation domain-wide / service account avec subject (impersonation a l'echelle de l'organisation)
 - Si l'application realise des actions "en tant que" l'utilisateur via une API tierce :
-  * Qui peut declencher quelles actions (controles d'autorisation cote serveur) ?
-  * Y a-t-il un audit log de ces actions (qui, quand, quoi, sur quel compte cible) ?
-  * Le consentement utilisateur est-il explicite et granulaire (pas de scope cache) ?
-  * Possibilite de revocation des tokens / refresh tokens stockes ?
+  - Qui peut declencher quelles actions (controles d'autorisation cote serveur) ?
+  - Y a-t-il un audit log de ces actions (qui, quand, quoi, sur quel compte cible) ?
+  - Le consentement utilisateur est-il explicite et granulaire (pas de scope cache) ?
+  - Possibilite de revocation des tokens / refresh tokens stockes ?
 - Stockage des tokens : en clair en base ? chiffres ? scope minimum ?
 - Gestion des sessions : duree de vie raisonnable, revocation possible ?
 - Detection automation / bot : un compte de service est-il utilise pour faire des actions
   qui devraient etre tracees a un humain ?
 
 **Performance :**
+
 - Pas de requetes N+1
 - Pas de boucles O(n^2) evitables
 - Ressources liberees correctement (connexions, fichiers, memoire)
@@ -59,6 +63,7 @@ Tu es libre d'utiliser tous les outils, skills, agents, commandes, ressources et
 - Pas d'await sequentiels evitables dans les boucles
 
 **Maintenabilite :**
+
 - Responsabilite unique par fonction/methode
 - Nommage clair et explicite
 - Pas de magic numbers/strings
@@ -67,11 +72,13 @@ Tu es libre d'utiliser tous les outils, skills, agents, commandes, ressources et
 - Contrats API/UI coherents
 
 **Tests :**
+
 - Cas nominaux couverts
 - Edge cases testes (null, vide, limites)
 - Pour chaque finding important, identifier le test a ajouter
 
 **Infrastructure (OBLIGATOIRE — section distincte) :**
+
 - Identifier tous les services externes utilises (APIs, BDD, stockage, auth, email, CDN...)
 - Decrire la stack technique (hosting, runtime, OS, conteneurs...)
 - Documenter les flux de donnees (qui appelle quoi, dans quel sens)
@@ -82,6 +89,7 @@ Tu es libre d'utiliser tous les outils, skills, agents, commandes, ressources et
 - Analyser la scalabilite (bottlenecks, limites connues)
 
 **Hors securite (obligatoire meme si pas de faille) :**
+
 - Code mort et imports inutilises
 - Redondances et duplications
 - Optimisations pertinentes
@@ -90,6 +98,7 @@ Tu es libre d'utiliser tous les outils, skills, agents, commandes, ressources et
 ### Format de chaque finding
 
 Chaque finding doit etre precis et actionnable :
+
 - **categorie** : code|infrastructure (pour distinguer les findings)
 - **fichier** : chemin relatif exact du fichier concerne
 - **ligne** : numero de ligne si possible
@@ -134,7 +143,7 @@ Pour CHAQUE finding, evalue ces 4 facteurs a partir de ce que tu vois reellement
 
 ## SORTIE OBLIGATOIRE — NE PAS IGNORER
 
-**OBLIGATION ABSOLUE** : Tu DOIS ecrire le fichier **audit_cr/claude-code.json** sur le disque.
+**OBLIGATION ABSOLUE** : Tu DOIS ecrire le fichier **audit_cr/kimi-code.json** sur le disque.
 C'est la finalite de cette tache. Sans ce fichier, l'audit est considere comme echoue.
 
 Cree le dossier audit_cr/ s'il n'existe pas.
@@ -155,7 +164,9 @@ Le fichier doit contenir UNIQUEMENT un objet JSON valide (pas de texte avant/apr
   "architecture": {
     "resume": "Description synthetique de l'architecture globale du projet (3-5 phrases)",
     "composants": ["Liste des composants principaux et leur role"],
-    "patterns": ["Patterns architecturaux detectes (MVC, microservices, monolithe, event-driven...)"],
+    "patterns": [
+      "Patterns architecturaux detectes (MVC, microservices, monolithe, event-driven...)"
+    ],
     "points_forts": ["Ce qui est bien concu"],
     "points_faibles": ["Ce qui pose probleme ou manque"],
     "diagramme_textuel": "Representation ASCII/textuelle des relations entre composants (optionnel)"
@@ -197,10 +208,7 @@ Le fichier doit contenir UNIQUEMENT un objet JSON valide (pas de texte avant/apr
       }
     }
   ],
-  "points_positifs": [
-    "Point positif 1",
-    "Point positif 2"
-  ],
+  "points_positifs": ["Point positif 1", "Point positif 2"],
   "scores": {
     "securite": 0,
     "performance": 0,
@@ -219,11 +227,13 @@ Le fichier doit contenir UNIQUEMENT un objet JSON valide (pas de texte avant/apr
       "Action prioritaire 2",
       "Action prioritaire 3"
     ],
-    "quick_wins": [
-      "Quick win faisable en <30min"
-    ],
+    "quick_wins": ["Quick win faisable en <30min"],
     "risk_matrix": [
-      {"finding": "Description", "impact": "Eleve|Moyen|Faible", "probabilite": "Elevee|Moyenne|Faible"}
+      {
+        "finding": "Description",
+        "impact": "Eleve|Moyen|Faible",
+        "probabilite": "Elevee|Moyenne|Faible"
+      }
     ]
   }
 }

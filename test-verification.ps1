@@ -6,7 +6,6 @@ $bundlePath = Join-Path $PSScriptRoot "drum-pattern-vst\build\drum-pattern-vst.v
 $bundleBinary = Join-Path $bundlePath "Contents\x86_64-win\drum-pattern-vst.vst3"
 $installedBinary = "C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3\Contents\x86_64-win\drum-pattern-vst.vst3"
 $sourceLib = Join-Path $PSScriptRoot "drum-pattern-vst\src\lib.rs"
-$expectedBuild = "20260510-115905-s1route"
 $expectedClass = "DrumFlashPlugin1"
 
 Write-Host "=========================================" -ForegroundColor Cyan
@@ -35,12 +34,15 @@ if (Test-Path $installedBinary) {
     Write-Host "Binaire installe: $($info.LastWriteTime)" -ForegroundColor Gray
     Write-Host "SHA-256: $($hash.Hash)" -ForegroundColor Gray
 
-    $bytes = [System.IO.File]::ReadAllBytes($installedBinary)
-    $text = [System.Text.Encoding]::ASCII.GetString($bytes)
-    if ($text.Contains($expectedBuild)) {
-        Write-Host "OK: build attendu present ($expectedBuild)" -ForegroundColor Green
+    if (Test-Path $bundleBinary) {
+        $bundleHash = Get-FileHash $bundleBinary
+        if ($hash.Hash -eq $bundleHash.Hash) {
+            Write-Host "OK: binaire installe identique au bundle local" -ForegroundColor Green
+        } else {
+            Write-Host "ATTENTION: le bundle local et le binaire installe different. Relance build.ps1 -Install." -ForegroundColor Yellow
+        }
     } else {
-        Write-Host "ATTENTION: build attendu non trouve ($expectedBuild). Verifie l'UI dans le DAW." -ForegroundColor Yellow
+        Write-Host "INFO: bundle local introuvable, comparaison impossible." -ForegroundColor Gray
     }
 }
 

@@ -61,6 +61,7 @@ impl PinkNoise {
         sum * 0.25
     }
 
+    #[allow(dead_code)]
     pub fn reseed(&mut self, seed: u32) {
         self.white.reseed(seed);
         for r in self.rows.iter_mut() {
@@ -95,6 +96,7 @@ impl BrownNoise {
         self.integrator
     }
 
+    #[allow(dead_code)]
     pub fn reseed(&mut self, seed: u32) {
         self.white.reseed(seed);
         self.integrator = 0.0;
@@ -125,6 +127,7 @@ impl BlueNoise {
         diff * 0.8
     }
 
+    #[allow(dead_code)]
     pub fn reseed(&mut self, seed: u32) {
         self.white.reseed(seed);
         self.prev = self.white.next();

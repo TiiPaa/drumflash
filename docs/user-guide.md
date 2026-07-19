@@ -23,7 +23,7 @@
 ### Grille de séquence (64 steps)
 
 - **4 pages** de 16 steps (boutons 1-2-3-4)
-- **13 instruments** (Kick, Snare, HiHat, OpenHiHat, Tom1-3, Clap, Ride, Cymbal, Snare606, B8, Zap)
+- **13 voix de synthèse** dans **14 slots modulaires** (Kick, Snare, HiHat, OpenHiHat, Tom1-3, Clap, Ride, Cymbal, Snare606, 808 Kick, Perc1)
 - **Navigation** : cliquez sur les boutons de page ou activez **Follow** pour suivre la lecture
 - **Longueur** : ajustable de 1 à 64 steps (slider Len + boutons rapides 16/32/48/64)
 - **x2** : Double la longueur du pattern en copiant les steps existants
@@ -77,7 +77,7 @@ Déclenche le son de l'instrument isolé pour pré-écouter les réglages.
 
 ## Multi-sorties
 
-Flash Drum propose **13 sorties stéréo** (une par instrument) + le Main Mix.
+Flash Drum propose **14 sorties stéréo aux** (`Out 1`..`Out 14`) + le Main Mix.
 
 ### Configuration dans Studio One
 
@@ -112,7 +112,7 @@ Voir `docs/analog-mode.md` pour les détails complets.
 L'état complet du plugin est sauvegardé **automatiquement** dans le projet du DAW :
 - Grille 64 steps
 - Plocks (parameter locks)
-- Réglages de synthèse par instrument
+- Réglages de synthèse par slot
 - Paramètres globaux (BPM, swing, etc.)
 
 **Pas besoin de sauvegarde manuelle** — rouvrez votre projet et tout est restauré.
