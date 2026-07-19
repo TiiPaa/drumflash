@@ -579,6 +579,10 @@ struct EditorUIState {
     fusion_edit_steps: u8,
     // Right-click plock popup state (replaces egui context_menu to control frame chrome).
     plock_popup: Option<PlockPopup>,
+    /// When true, a click occurred while the p-lock popup was open; suppress step-cell
+    /// toggles this frame so the popup (not the cell underneath) handles the click.
+    #[serde(skip)]
+    suppress_step_cell_click: bool,
     // Right-click page popup state (Copy/Paste/Clear page).
     page_popup: Option<PagePopup>,
     /// Instrument picker for an empty lane (opened by the +N chip).
@@ -668,6 +672,10 @@ fn effective_lane_length_for_ui(
 struct PlockPopup {
     instrument: usize,
     step: usize,
+    /// Trigger state at the moment the popup was opened. P-lock menu clicks must
+    /// never toggle the underlying sequencer step.
+    #[serde(default)]
+    step_was_active: bool,
     #[serde(with = "serde_pos2")]
     screen_pos: egui::Pos2,
     /// When right-clicking a fused cell, true shows the morph-target submenu.
@@ -1093,7 +1101,6 @@ pub fn create_editor(
     song_position: Arc<AtomicU32>,
     pending_pattern_length: Arc<AtomicI32>,
     audio_last_loaded_slot: Arc<AtomicU32>,
-    clear_plocks_request: Arc<AtomicBool>,
     global_config: GlobalConfig,
 ) -> Option<Box<dyn Editor>> {
     let params_for_ui = params.clone();
@@ -1107,10 +1114,9 @@ pub fn create_editor(
     let song_mode_for_ui = song_mode.clone();
     let song_position_for_ui = song_position.clone();
     let pending_pattern_length_for_ui = pending_pattern_length.clone();
-    let audio_last_loaded_slot_for_ui = audio_last_loaded_slot.clone();
-    let clear_plocks_request_for_ui = clear_plocks_request.clone();
+        let audio_last_loaded_slot_for_ui = audio_last_loaded_slot.clone();
 
-    create_egui_editor(
+        create_egui_editor(
         params.editor_state.clone(),
         {
             let mut initial_state = EditorUIState::default();
@@ -1241,7 +1247,6 @@ pub fn create_editor(
                                 &pattern_for_ui,
                                 &save_pattern_request,
                                 &load_pattern_request,
-                                &clear_plocks_request_for_ui,
                             );
                             draw_bottom_panel(
                                 ui,
@@ -1535,7 +1540,6 @@ fn draw_pattern_bank(
     pattern: &SharedPattern,
     save_pattern_request: &Arc<AtomicU32>,
     load_pattern_request: &Arc<AtomicU32>,
-    clear_plocks_request: &Arc<AtomicBool>,
 ) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Patterns").strong().size(12.0).color(INK));
@@ -2354,6 +2358,17 @@ fn draw_grid_v2(
     plock: &PlockState,
     state: &mut EditorUIState,
 ) {
+    // When the p-lock popup is open, any primary click this frame (menu item,
+    // popup border, or outside) should be handled by the popup, not by the step
+    // cell underneath it. Suppress step-cell toggles for this frame.
+    state.suppress_step_cell_click = false;
+    if state.plock_popup.is_some()
+        && ui
+            .input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
+    {
+        state.suppress_step_cell_click = true;
+    }
+
     let master_length = params.pattern_length.value().clamp(1, 64) as usize;
     let play_step = current_step.load(Ordering::Relaxed) as usize;
     let play_page = play_step / 16;
@@ -2947,7 +2962,7 @@ fn draw_legacy_slot_lane_v2(
                 }
 
                 let drag_active = state.step_drag.as_ref().map_or(false, |d| d.active);
-                let suppress_click = drag_active || drag_just_completed;
+                let suppress_click = drag_active || drag_just_completed || state.suppress_step_cell_click || state.plock_popup.is_some();
 
                 if is_drag_target {
                     ui.painter().rect_filled(
@@ -2982,7 +2997,7 @@ fn draw_legacy_slot_lane_v2(
                         state.fusion_edit_steps = fusion_group.map(|g| g.step_count).unwrap_or(1);
                         *fusion_editing_started_this_frame = true;
                     }
-                } else if !beyond_len && !suppress_click && response.clicked() && fusion_mode_active {
+                } else if !beyond_len && !suppress_click && response.clicked_by(egui::PointerButton::Primary) && fusion_mode_active {
                     select_legacy_track(state, slot_idx);
                     handle_fusion_shift_click(
                         pattern,
@@ -2994,7 +3009,7 @@ fn draw_legacy_slot_lane_v2(
                         fusions,
                         &mut state.fusion_selection_start[slot_idx],
                     );
-                } else if !beyond_len && !suppress_click && response.clicked() {
+                } else if !beyond_len && !suppress_click && response.clicked_by(egui::PointerButton::Primary) {
                     // Clicking outside the currently edited fusion exits edit mode.
                     if let Some((edit_inst, edit_idx)) = state.fusion_editing {
                         let editing_this_group = fusion_info
@@ -3027,6 +3042,7 @@ fn draw_legacy_slot_lane_v2(
                             state.plock_popup = Some(PlockPopup {
                                 instrument: slot_idx,
                                 step: source_step,
+                                step_was_active: active,
                                 screen_pos: pos,
                                 morph_menu: false,
                             });
@@ -4447,11 +4463,7 @@ fn step_colors_v2(
             (empty, LINE)
         }
     } else if active && has_sound_plock {
-        if is_snapshot {
-            (PL_SNAP, PL_SNAP)
-        } else {
-            (PL_LINK, PL_LINK)
-        }
+        (PL_LINK, PL_LINK)
     } else if active {
         (BLUE, BLUE)
     } else if has_sound_plock {
@@ -4707,68 +4719,6 @@ fn text_segmented(
     );
 
     result
-}
-
-fn led_toggle(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
-    let font = f_sans_sb(11.0);
-    let led_r = 3.5;
-    let padding_x = 12.0;
-    let gap = 7.0;
-    let label_w = ui.fonts(|f| {
-        f.layout_no_wrap(label.to_string(), font.clone(), INK)
-            .size()
-            .x
-    });
-    let total_w = padding_x + led_r * 2.0 + gap + label_w + padding_x;
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(total_w, CTL_HEIGHT), egui::Sense::click());
-    let hovered = response.hovered();
-    let painter = ui.painter_at(rect);
-
-    let fill = if active { BLUE_GLOW } else { PANEL2 };
-    let stroke_color = if active {
-        BLUE
-    } else if hovered {
-        BLUE
-    } else {
-        LINE2
-    };
-    let text_color = if active {
-        Color32::WHITE
-    } else if hovered {
-        INK
-    } else {
-        INK2
-    };
-
-    painter.rect_filled(rect, 6.0, fill);
-    painter.rect_stroke(
-        rect,
-        6.0,
-        egui::Stroke::new(1.0, stroke_color),
-        egui::StrokeKind::Inside,
-    );
-
-    let led_center = egui::pos2(rect.left() + padding_x + led_r, rect.center().y);
-    let led_color = if active { BLUE } else { FAINT };
-    painter.circle_filled(led_center, led_r, led_color);
-    if active {
-        painter.circle_filled(
-            led_center,
-            led_r + 2.0,
-            Color32::from_rgba_premultiplied(BLUE.r(), BLUE.g(), BLUE.b(), 45),
-        );
-    }
-
-    painter.text(
-        egui::pos2(led_center.x + led_r + gap, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        label,
-        font,
-        text_color,
-    );
-
-    response
 }
 
 fn normalize_slider_value(value: f32, min: f32, max: f32, logarithmic: bool) -> f32 {
@@ -6029,6 +5979,19 @@ fn set_step_active_for_ui(
     pattern_for_ui.set_step_mask(step, next_mask);
 }
 
+fn preserve_step_active_from_plock_popup(
+    pattern_for_ui: &SharedPattern,
+    state: &mut EditorUIState,
+    instrument: usize,
+    step: usize,
+    step_was_active: bool,
+) {
+    if step_was_active && !pattern_for_ui.is_active(step, instrument) {
+        set_step_active_for_ui(pattern_for_ui, step, instrument, true);
+        state.mark_pattern_dirty();
+    }
+}
+
 /// Move a single step (with its sound and sequencer plocks) from `source` to
 /// `target` within the same slot. Fused cells are left untouched.
 fn move_step_with_plocks(
@@ -6948,12 +6911,14 @@ fn start_external_midi_drag(_path: &std::path::Path) -> Result<(), Box<dyn std::
 // ---------------------------------------------------------------------------------------------------------------
 fn draw_plock_menu(
     ui: &mut egui::Ui,
+    pattern: &SharedPattern,
     plock: &PlockState,
     sound_settings: &SoundSettingsState,
     params: &DrumFlashParams,
     _setter: &ParamSetter,
     instrument: usize,
     step: usize,
+    step_was_active: bool,
     state: &mut EditorUIState,
 ) {
     use crate::plock::{FIELD_COUNT, SPECIAL_FIELD_START};
@@ -6964,6 +6929,8 @@ fn draw_plock_menu(
     let voice_idx = schema_voice_idx(params, instrument);
     let inst_def = &crate::instrument_registry::INSTRUMENTS[voice_idx];
     let title = format!("Plock {}", inst_def.label);
+
+    preserve_step_active_from_plock_popup(pattern, state, instrument, step, step_was_active);
 
     plock_menu_frame(ui, ACCENT, |ui| {
         if plock_menu_header(ui, &title, step, ACCENT) {
@@ -7207,43 +7174,44 @@ fn draw_plock_menu(
         {
             let algo_count = crate::instrument_registry::algo_count(voice_idx);
             if algo_count > 1 {
-                let voice = DrumVoice::from_index(voice_idx).expect("valid voice index");
-                let algos = synthesis::algos_for(voice);
-                let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
+                if let Some(voice) = DrumVoice::from_index(voice_idx) {
+                    let algos = synthesis::algos_for(voice);
+                    let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
 
-                let mut algo_val = if plock.field_masks.is_set(instrument, step, 13) {
-                    plock.values.get(instrument, step, 13) as u8
-                } else {
-                    params.algos()[instrument].value() as u8
-                };
-                let algo_overridden = plock.field_masks.is_set(instrument, step, 13);
+                    let mut algo_val = if plock.field_masks.is_set(instrument, step, 13) {
+                        plock.values.get(instrument, step, 13) as u8
+                    } else {
+                        params.algos()[instrument].value() as u8
+                    };
+                    let algo_overridden = plock.field_masks.is_set(instrument, step, 13);
 
-                let max_algo = (algo_count - 1) as u8;
-                if algo_val > max_algo {
-                    algo_val = max_algo;
-                }
+                    let max_algo = (algo_count - 1) as u8;
+                    if algo_val > max_algo {
+                        algo_val = max_algo;
+                    }
 
-                let mut selected = algo_val as usize;
-                let current_name = algo_names.get(selected).copied().unwrap_or("?");
-                let _algo_response = plock_menu_row(
-                    ui,
-                    "Algo",
-                    ACCENT,
-                    algo_overridden,
-                    Some(current_name),
-                    |ui| {
-                        let (response, picked) =
-                            styled_select(ui, "plock_algo", selected, &algo_names, 120.0);
-                        if let Some(picked) = picked {
-                            selected = picked;
-                        }
-                        response
-                    },
-                );
-                if selected != algo_val as usize {
-                    plock.masks.set_active(instrument, step, true);
-                    plock.field_masks.set(instrument, step, 13);
-                    plock.set_field(instrument, step, 13, selected as f32);
+                    let mut selected = algo_val as usize;
+                    let current_name = algo_names.get(selected).copied().unwrap_or("?");
+                    let _algo_response = plock_menu_row(
+                        ui,
+                        "Algo",
+                        ACCENT,
+                        algo_overridden,
+                        Some(current_name),
+                        |ui| {
+                            let (response, picked) =
+                                styled_select(ui, "plock_algo", selected, &algo_names, 120.0);
+                            if let Some(picked) = picked {
+                                selected = picked;
+                            }
+                            response
+                        },
+                    );
+                    if selected != algo_val as usize {
+                        plock.masks.set_active(instrument, step, true);
+                        plock.field_masks.set(instrument, step, 13);
+                        plock.set_field(instrument, step, 13, selected as f32);
+                    }
                 }
             }
         }
@@ -7753,7 +7721,7 @@ fn draw_plock_popup(
         .kind(egui::UiKind::Menu)
         .order(egui::Order::Foreground)
         .fixed_pos(popup.screen_pos)
-        .sense(egui::Sense::hover())
+        .sense(egui::Sense::click())
         .show(ctx, |ui| {
             // Outer border: draw a slightly larger rounded rect behind the panel.
             let content_response = egui::Frame::NONE
@@ -7779,10 +7747,12 @@ fn draw_plock_popup(
                     if state.sequencer_mode {
                         draw_sequencer_plock_menu(
                             ui,
+                            pattern,
                             params,
                             setter,
                             inst,
                             step,
+                            popup.step_was_active,
                             state,
                             fusion_group.is_some(),
                         );
@@ -7867,24 +7837,28 @@ fn draw_plock_popup(
                                 // Also show the source-step plock menu below.
                                 draw_plock_menu(
                                     ui,
+                                    pattern,
                                     plock,
                                     sound_settings,
                                     params,
                                     setter,
                                     inst,
                                     step,
+                                    popup.step_was_active,
                                     state,
                                 );
                             }
                         } else {
                             draw_plock_menu(
                                 ui,
+                                pattern,
                                 plock,
                                 sound_settings,
                                 params,
                                 setter,
                                 inst,
                                 step,
+                                popup.step_was_active,
                                 state,
                             );
                         }
@@ -7907,14 +7881,22 @@ fn draw_plock_popup(
     if response.clicked_elsewhere() {
         state.plock_popup = None;
     }
+
+    // Close popup on click in the popup border/padding (consume the click so it
+    // does not pass through to the step cell underneath).
+    if state.plock_popup.is_some() && response.clicked() {
+        state.plock_popup = None;
+    }
 }
 
 fn draw_sequencer_plock_menu(
     ui: &mut egui::Ui,
+    pattern: &SharedPattern,
     params: &DrumFlashParams,
     _setter: &ParamSetter,
     instrument: usize,
     step: usize,
+    step_was_active: bool,
     state: &mut EditorUIState,
     stutter_disabled: bool,
 ) {
@@ -7924,6 +7906,8 @@ fn draw_sequencer_plock_menu(
     // `instrument` is a SLOT index; the label comes from the slot's voice schema.
     let inst_def = &crate::instrument_registry::INSTRUMENTS[schema_voice_idx(params, instrument)];
     let title = format!("Seq Plock {}", inst_def.label);
+
+    preserve_step_active_from_plock_popup(pattern, state, instrument, step, step_was_active);
 
     plock_menu_frame(ui, ACCENT, |ui| {
         if plock_menu_header(ui, &title, step, ACCENT) {

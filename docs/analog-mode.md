@@ -38,7 +38,7 @@ Le slider **Analog** contrôle le comportement de l'oscillateur et de l'envelopp
 | Clap | **1.0** | Analog fixé | Non (continuité requise) |
 | Ride | **1.0** | Analog fixé | Non (continuité requise) |
 | Snare606 | **1.0** | Analog fixé | Non (continuité requise) |
-| Zap | **1.0** | Analog fixé | Non (continuité requise) |
+| Perc1 | **1.0** | Analog fixé | Non (continuité requise) |
 
 ### Pourquoi 0.3 par défaut sur certains instruments ?
 
@@ -66,7 +66,7 @@ Le drift analogique n'est **pas uniforme** d'un instrument à l'autre :
 > Sur ces instruments, le drift est audible en A/B mais discret dans un mix. Il ajoute de la vie sans déstabiliser la groove.
 
 ### Aucun drift (analog fixé)
-- **HiHat / OpenHiHat / Ride / Clap / Snare606 / Zap**
+- **HiHat / OpenHiHat / Ride / Clap / Snare606 / Perc1**
   - Le slider Analog contrôle uniquement la continuité de phase (pas de réinitialisation)
   - Aucune variation aléatoire de pitch ou niveau
   - Passer de 0.3 à 1.0 ne change pas le caractère sonore, seulement la réponse au retrigger

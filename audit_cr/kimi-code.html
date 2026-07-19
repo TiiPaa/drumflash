@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit Flash Drum — Rapport code &amp; infrastructure</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --panel2: #1e2230;
+    --line: #2a2f42;
+    --ink: #e8eaf2;
+    --ink2: #a8adc4;
+    --ink3: #6b7191;
+    --blue: #4a9eff;
+    --green: #4ade80;
+    --orange: #fbbf24;
+    --red: #f87171;
+    --gray: #9ca3af;
+    --violet: #a855f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    padding: 32px 20px 80px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header.page {
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  header.page h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; }
+  header.page .sub { color: var(--ink2); margin-top: 6px; font-size: 0.95rem; }
+  header.page .meta { color: var(--ink3); font-size: 0.82rem; margin-top: 10px; font-family: Consolas, monospace; }
+
+  /* ---------- Verdict banner ---------- */
+  .verdict {
+    display: flex; align-items: center; gap: 18px;
+    background: linear-gradient(135deg, rgba(251,191,36,0.10), rgba(251,191,36,0.03));
+    border: 1px solid rgba(251,191,36,0.35);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 36px;
+  }
+  .verdict .score-big {
+    font-size: 2.6rem; font-weight: 800; color: var(--orange);
+    line-height: 1; min-width: 110px; text-align: center;
+  }
+  .verdict .score-big small { display: block; font-size: 0.75rem; color: var(--ink3); font-weight: 500; margin-top: 4px; }
+  .verdict .vt { flex: 1; }
+  .verdict .vt .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink3); }
+  .verdict .vt .value { font-size: 1.35rem; font-weight: 700; color: var(--orange); }
+  .verdict .vt p { color: var(--ink2); font-size: 0.92rem; margin-top: 6px; }
+
+  /* ---------- Manager summary ---------- */
+  .manager {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 36px;
+  }
+  .manager h2, section h2 {
+    font-size: 1.1rem; font-weight: 700; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .manager h2::before, section h2::before {
+    content: ""; width: 4px; height: 18px; background: var(--blue); border-radius: 2px;
+  }
+  .manager p { color: var(--ink2); font-size: 0.95rem; margin-bottom: 10px; }
+  .manager p strong { color: var(--ink); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .chip {
+    font-size: 0.78rem; padding: 4px 12px; border-radius: 20px;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--ink2);
+    font-family: Consolas, monospace;
+  }
+
+  /* ---------- Score grid ---------- */
+  .scores { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 36px; }
+  .score-card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+  }
+  .score-card .name { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink3); }
+  .score-card .row { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 8px; }
+  .score-card .val { font-size: 1.4rem; font-weight: 700; }
+  .score-card .val.good { color: var(--green); }
+  .score-card .val.mid { color: var(--orange); }
+  .score-card .val.bad { color: var(--red); }
+  .score-card .val small { font-size: 0.8rem; color: var(--ink3); font-weight: 400; }
+  .bar { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 3px; }
+  .bar > div.good { background: var(--green); }
+  .bar > div.mid { background: var(--orange); }
+  .bar > div.bad { background: var(--red); }
+
+  /* ---------- Top actions ---------- */
+  .actions { counter-reset: act; margin-bottom: 36px; }
+  .action {
+    display: flex; gap: 16px; align-items: flex-start;
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--red);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 10px;
+  }
+  .action::before {
+    counter-increment: act; content: counter(act);
+    font-size: 1.3rem; font-weight: 800; color: var(--red); line-height: 1.2; min-width: 24px;
+  }
+  .action .t { font-size: 0.95rem; }
+  .action .t strong { display: block; margin-bottom: 2px; }
+  .action .t span { color: var(--ink2); font-size: 0.88rem; }
+
+  /* ---------- Sections ---------- */
+  section { margin-bottom: 40px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px;
+  }
+  .panel + .panel { margin-top: 12px; }
+  .panel h3 { font-size: 0.95rem; margin-bottom: 8px; }
+  .panel p, .panel li { color: var(--ink2); font-size: 0.9rem; }
+  .panel ul { padding-left: 20px; }
+  .panel li { margin-bottom: 5px; }
+  .panel li strong, .panel p strong { color: var(--ink); }
+  code, .mono {
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 0.85em;
+    background: var(--panel2); padding: 1px 6px; border-radius: 4px; color: #c8d4f0;
+  }
+
+  /* ---------- Divergences table ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th {
+    text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink3); padding: 10px 12px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink2); }
+  td:first-child { font-family: Consolas, monospace; font-size: 0.8rem; color: var(--ink); white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+
+  /* ---------- Findings ---------- */
+  .finding {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 12px; border-left: 4px solid var(--gray);
+  }
+  .finding.critique { border-left-color: var(--red); }
+  .finding.important { border-left-color: var(--orange); }
+  .finding.suggestion { border-left-color: var(--blue); }
+  .finding.hors_securite { border-left-color: var(--gray); }
+  .finding .head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .badge {
+    font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 3px 10px; border-radius: 4px;
+  }
+  .badge.critique { background: rgba(248,113,113,0.15); color: var(--red); }
+  .badge.important { background: rgba(251,191,36,0.15); color: var(--orange); }
+  .badge.suggestion { background: rgba(74,158,255,0.15); color: var(--blue); }
+  .badge.hors_securite { background: rgba(156,163,175,0.15); color: var(--gray); }
+  .badge.cat { background: var(--panel2); color: var(--ink3); }
+  .badge.conf { background: rgba(74,222,128,0.12); color: var(--green); }
+  .badge.conf.moyenne { background: rgba(251,191,36,0.12); color: var(--orange); }
+  .finding .loc { font-family: Consolas, monospace; font-size: 0.8rem; color: var(--ink3); margin-left: auto; }
+  .finding .prob { font-size: 0.95rem; font-weight: 600; margin-bottom: 8px; }
+  .finding .why { font-size: 0.88rem; color: var(--ink2); margin-bottom: 10px; }
+  .finding .why strong { color: var(--ink); }
+  .finding .fix {
+    font-size: 0.86rem; color: var(--ink2);
+    background: var(--panel2); border-radius: 8px; padding: 10px 14px;
+  }
+  .finding .fix strong { color: var(--green); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; display: block; margin-bottom: 4px; }
+  .ctx { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .ctx span { font-size: 0.72rem; color: var(--ink3); background: var(--bg); border: 1px solid var(--line); padding: 2px 8px; border-radius: 10px; }
+  .ctx span b { color: var(--ink2); font-weight: 600; }
+
+  /* ---------- Positifs ---------- */
+  .positifs li { margin-bottom: 10px; }
+  .positifs li::marker { content: "✓  "; color: var(--green); font-weight: 700; }
+  .positifs li { list-style: none; position: relative; padding-left: 26px; }
+  .positifs li::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+
+  /* ---------- Quick wins ---------- */
+  .qw li { list-style: none; position: relative; padding-left: 26px; margin-bottom: 8px; }
+  .qw li::before { content: "⚡"; position: absolute; left: 0; }
+
+  /* ---------- Risk matrix ---------- */
+  .risk-e { color: var(--red); font-weight: 700; }
+  .risk-m { color: var(--orange); font-weight: 600; }
+  .risk-f { color: var(--green); font-weight: 600; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+
+  footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink3); font-size: 0.8rem; text-align: center; }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .panel, .finding, .score-card, .action, .manager, .verdict { border: 1px solid #ccc; background: #fff; }
+    .panel p, .panel li, .finding .why, td, .manager p { color: #333; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <h1>Audit Flash Drum — Code &amp; Infrastructure</h1>
+  <div class="sub">Plugin VST3 de séquenceur de batterie en Rust (nih-plug + egui) — analyse complète du code, de l'architecture et de l'infrastructure.</div>
+  <div class="meta">Rapport généré le 18/07/2026 · Source : audit_cr/kimi-code.json · Build de référence : 20260718-083031</div>
+</header>
+
+<!-- ================= VERDICT ================= -->
+<div class="verdict">
+  <div class="score-big">7<small>/ 10</small></div>
+  <div class="vt">
+    <div class="label">Verdict global</div>
+    <div class="value">À retravailler</div>
+    <p>Base de code saine et disciplinée sur le temps réel, mais trois chantiers structurels doivent être adressés avant de considérer le plugin comme finalisé : une allocation mémoire subsiste sur le thread audio, des panics peuvent faire planter le DAW hôte, et aucune intégration continue ne sécurise les livraisons.</p>
+  </div>
+</div>
+
+<!-- ================= MANAGER SUMMARY ================= -->
+<div class="manager">
+  <h2>Résumé pour décideur</h2>
+  <p><strong>Ce que c'est.</strong> Flash Drum est un instrument virtuel (plugin VST3) utilisé dans le logiciel de musique Studio One : un séquenceur de batterie de 64 pas avec 13 sons de synthèse, des réglages par pas et un export MIDI. Produit local, sans cloud, sans abonnement, sans données personnelles.</p>
+  <p><strong>État de santé.</strong> Le moteur audio est de très bonne facture : il respecte les contraintes strictes du temps réel (aucune coupure sonore liée à l'architecture) et il est couvert par <strong>276 tests automatisés</strong>. Aucune faille de sécurité exploitable à distance : le plugin ne communique avec aucun service externe.</p>
+  <p><strong>Risques principaux.</strong> (1) Un ajout de piste pendant la lecture peut provoquer un micro-glitch sonore ; (2) dans de rares cas, une erreur interne peut fermer Studio One sans sauvegarde ; (3) l'absence de pipeline automatique fait reposer la qualité sur des vérifications manuelles.</p>
+  <p><strong>Recommandation.</strong> Corriger les 3 actions prioritaires ci-dessous (estimé : quelques jours de développement), puis industrialiser le build. Les « gains rapides » sont faisables en moins de 30 minutes chacun.</p>
+  <div class="chips">
+    <span class="chip">Rust 1.94</span>
+    <span class="chip">VST3</span>
+    <span class="chip">nih-plug (fork interne)</span>
+    <span class="chip">egui 0.31</span>
+    <span class="chip">Windows</span>
+    <span class="chip">Studio One</span>
+    <span class="chip">276 tests</span>
+    <span class="chip">0 dépendance réseau</span>
+  </div>
+</div>
+
+<!-- ================= SCORES ================= -->
+<section>
+  <h2>Scores par dimension</h2>
+  <div class="scores">
+    <div class="score-card"><div class="name">Global</div><div class="row"><span class="val mid">7<small>/10</small></span></div><div class="bar"><div class="mid" style="width:70%"></div></div></div>
+    <div class="score-card"><div class="name">Sécurité</div><div class="row"><span class="val good">8<small>/10</small></span></div><div class="bar"><div class="good" style="width:80%"></div></div></div>
+    <div class="score-card"><div class="name">Performance</div><div class="row"><span class="val good">8<small>/10</small></span></div><div class="bar"><div class="good" style="width:80%"></div></div></div>
+    <div class="score-card"><div class="name">Architecture</div><div class="row"><span class="val good">8<small>/10</small></span></div><div class="bar"><div class="good" style="width:80%"></div></div></div>
+    <div class="score-card"><div class="name">Qualité de code</div><div class="row"><span class="val mid">7<small>/10</small></span></div><div class="bar"><div class="mid" style="width:70%"></div></div></div>
+    <div class="score-card"><div class="name">Bugs potentiels</div><div class="row"><span class="val mid">7<small>/10</small></span></div><div class="bar"><div class="mid" style="width:70%"></div></div></div>
+    <div class="score-card"><div class="name">Dépendances</div><div class="row"><span class="val mid">7<small>/10</small></span></div><div class="bar"><div class="mid" style="width:70%"></div></div></div>
+    <div class="score-card"><div class="name">Tests</div><div class="row"><span class="val good">8<small>/10</small></span></div><div class="bar"><div class="good" style="width:80%"></div></div></div>
+    <div class="score-card"><div class="name">Infrastructure</div><div class="row"><span class="val bad">5<small>/10</small></span></div><div class="bar"><div class="bad" style="width:50%"></div></div></div>
+  </div>
+</section>
+
+<!-- ================= TOP 3 ================= -->
+<section>
+  <h2>Top 3 des actions prioritaires</h2>
+  <div class="actions">
+    <div class="action"><div class="t"><strong>Éliminer la dernière allocation mémoire sur le thread audio</strong><span><code>synthesis/mod.rs:867</code> — ajouter ou changer une piste pendant la lecture peut provoquer un glitch sonore. Solution : pré-allouer les 14 voix ou différer la création hors du chemin temps réel.</span></div></div>
+    <div class="action"><div class="t"><strong>Supprimer les panics restants qui peuvent fermer le DAW</strong><span><code>lib.rs:2347</code>, <code>ui.rs:7210</code>, <code>Cargo.toml</code> (<code>panic = "abort"</code>) — en release, tout panic avorte Studio One sans sauvegarde. Solution : gestion d'erreur gracieuse partout (pas de <code>unwrap</code>/<code>expect</code>).</span></div></div>
+    <div class="action"><div class="t"><strong>Industrialiser le build (CI + versioning)</strong><span>Aucune vérification automatique à chaque modification ; version figée à <code>0.1.0</code>. Solution : GitHub Action Windows (<code>cargo check</code> + <code>test</code> + <code>build --release</code>) et incrément de version par palier.</span></div></div>
+  </div>
+</section>
+
+<!-- ================= QUICK WINS ================= -->
+<section>
+  <h2>Gains rapides (&lt; 30 min chacun)</h2>
+  <div class="panel">
+    <ul class="qw">
+      <li><code>ui.rs:7210</code> — remplacer <code>expect("valid voice index")</code> par un <code>let Some(voice) = … else { return }</code></li>
+      <li><code>lib.rs:2228</code> — supprimer le <code>println!</code> de debug du chemin audio</li>
+      <li>Préfixer <code>clear_plocks_request</code> par un underscore et supprimer la fonction morte <code>led_toggle</code> (réduit les 17 warnings)</li>
+      <li>Corriger <code>drum-pattern-vst/README.md</code> : 14 sorties aux (pas 13), séquenceur 64 pas (pas 16)</li>
+      <li>Corriger <code>docs/infrastructure.md</code> : <code>sound-settings-v2</code> (pas v1) et 173 tests lib (pas 76)</li>
+      <li>Supprimer <code>fix_roles.pdb</code> du working tree et l'ID de build obsolète dans <code>test-verification.ps1</code></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= POINTS POSITIFS ================= -->
+<section>
+  <h2>Points forts du projet</h2>
+  <div class="panel">
+    <ul class="positifs">
+      <li><strong>Discipline temps réel exemplaire</strong> — la boucle audio ne contient ni allocation, ni verrou bloquant, ni panic ; vérifié par lecture complète du chemin <code>process()</code>.</li>
+      <li><strong>Architecture lock-free cohérente</strong> — pattern partagé, réglages et locks par pas 100 % atomiques ; état song via file SPSC ; banque de patterns en <code>try_lock</code> avec repli propre.</li>
+      <li><strong>Persistance robuste et rétro-compatible</strong> — migrations automatiques des anciens formats (pattern-v1…v5), identifiant VST3 figé pour préserver les projets existants.</li>
+      <li><strong>Couverture de tests sérieuse pour un plugin audio</strong> — 276 tests : unitaires, intégration, stress de timing et de stabilité longue session.</li>
+      <li><strong>Isolation du code à risque</strong> — tout le code Windows à bas niveau (drag-and-drop OLE) vit dans un petit processus séparé, jamais dans le DAW.</li>
+      <li><strong>Documentation d'invariants réellement suivie</strong> — le guide d'architecture (AGENTS.md) décrit des règles que le code respecte effectivement.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= ARCHITECTURE ================= -->
+<section>
+  <h2>Architecture (vue expert)</h2>
+  <div class="two-col">
+    <div class="panel">
+      <h3>Composants principaux</h3>
+      <ul>
+        <li><code>lib.rs</code> (~150 KB) — entrée plugin, paramètres, <code>process()</code>, migration d'état</li>
+        <li><code>ui.rs</code> (~308 KB, ~8000 lignes) — éditeur egui complet</li>
+        <li><code>sequencer/</code> — moteur 64 pas, grille lock-free</li>
+        <li><code>synthesis/</code> — 13 voix DSP + primitives</li>
+        <li><code>plock.rs</code> — parameter locks par pas</li>
+        <li><code>pattern_bank.rs</code> — slots P1-P8 + song</li>
+        <li><code>atomic_song.rs</code> — file SPSC UI→audio</li>
+        <li><code>generator/</code> — 4 générateurs de patterns</li>
+        <li><code>vendor/nih-plug</code> — fork patché (multi-out, état)</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Flux de données</h3>
+      <ul>
+        <li><strong>UI → audio</strong> : atomiques + file SPSC (patterns, song, réglages)</li>
+        <li><strong>Audio → DAW</strong> : mix principal + 14 sorties auxiliaires stéréo + notes MIDI canal 10</li>
+        <li><strong>UI → disque</strong> : <code>config.json</code>, exports <code>.mid</code>, dumps de presets</li>
+        <li><strong>UI → OS</strong> : processus helper de drag-and-drop MIDI</li>
+        <li><strong>DAW ↔ plugin</strong> : état persisté (<code>pattern-v5</code>, <code>sound-settings-v2</code>, <code>plock-v1</code>)</li>
+      </ul>
+      <h3 style="margin-top:14px">Patterns détectés</h3>
+      <ul>
+        <li>Temps réel strict (no-alloc / no-lock / no-panic)</li>
+        <li>Producteur-consommateur SPSC lock-free</li>
+        <li>Persistance versionnée avec migrations</li>
+        <li>Vendoring de dépendance patchée</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DIVERGENCES ================= -->
+<section>
+  <h2>Divergences documentation ↔ code</h2>
+  <div class="panel" style="padding:0">
+    <table>
+      <thead><tr><th>Document</th><th>Ce que dit la doc</th><th>Réalité du code</th><th>Impact</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>drum-pattern-vst/README.md</td>
+          <td>« 13 sorties aux » · « Séquenceur 16 pas »</td>
+          <td>14 sorties (<code>AUX_OUT_COUNT = 14</code>) · 64 pas sur 14 slots</td>
+          <td>Utilisateur/développeur trompé sur les capacités</td>
+        </tr>
+        <tr>
+          <td>docs/infrastructure.md</td>
+          <td>Persistance <code>sound-settings-v1</code> · « Tests unitaires (76) »</td>
+          <td><code>sound-settings-v2</code> (layout v3) · 173 tests lib</td>
+          <td>Diagnostic de migration faussé ; couverture sous-estimée</td>
+        </tr>
+        <tr>
+          <td>AGENTS.md</td>
+          <td>PoC « index.html / index.js » à la racine</td>
+          <td>Fichiers déplacés sous <code>archive/web-poc/</code></td>
+          <td>Chemins de référence introuvables</td>
+        </tr>
+        <tr>
+          <td>test-verification.ps1</td>
+          <td>Attend le build « 20260510-115905-s1route »</td>
+          <td>Builds horodatés actuels (ex. 20260718-083031)</td>
+          <td>Script de vérification inutilisable</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= INFRA ================= -->
+<section>
+  <h2>Infrastructure</h2>
+  <div class="panel">
+    <p><strong>Modèle.</strong> Projet 100 % local : compilation sur le poste du développeur (Windows) via <code>build.ps1</code>, installation par copie dans le dossier système VST3, validation manuelle dans Studio One. <strong>Aucun serveur, aucune base de données, aucun service tiers à l'exécution, aucun secret à gérer.</strong> Le code source est hébergé sur GitHub.</p>
+    <ul>
+      <li><strong>Déploiement</strong> — manuel : <code>cargo build --release</code> → bundle <code>.vst3</code> → copie dans <code>C:\Program Files\Common Files\VST3</code>. Aucune CI/CD.</li>
+      <li><strong>Observabilité</strong> — logs dans le DAW (debug), build ID horodaté affiché dans l'UI, checklists de validation manuelle dans le CHANGELOG. Pas de métrique ni d'alerte.</li>
+      <li><strong>Résilience</strong> — l'état musical vit dans le projet du DAW (migrations assurées) ; pas de backup automatisé ; point de défaillance unique = le poste de développement.</li>
+      <li><strong>Scalabilité</strong> — non applicable (plugin local) ; limites internes (14 slots, 64 pas) couvertes par des stress tests.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= FINDINGS ================= -->
+<section>
+  <h2>Findings détaillés (14)</h2>
+
+  <div class="finding important">
+    <div class="head"><span class="badge important">Important</span><span class="badge cat">code</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/src/synthesis/mod.rs:867</span></div>
+    <div class="prob">Allocation mémoire (Box::new) sur le thread audio lors du changement d'instrument d'une piste</div>
+    <div class="why"><strong>Impact :</strong> unique allocation sur le thread temps réel — micro-glitch possible si l'utilisateur ajoute/change une piste pendant la lecture ; contredit l'invariant « no-alloc » du projet.</div>
+    <div class="fix"><strong>Solution</strong>Pré-allouer les 14 voix dès l'initialisation, ou différer la création via un flag consommé hors du chemin temps réel ; alternative : pool de voix par type.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>conditionnelle</b></span><span>mitigations <b>partielle</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding important">
+    <div class="head"><span class="badge important">Important</span><span class="badge cat">code</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/src/lib.rs:2347</span></div>
+    <div class="prob">Verrou bloquant <code>lock().unwrap()</code> sur la pattern bank dans <code>initialize()</code></div>
+    <div class="why"><strong>Impact :</strong> <code>initialize()</code> peut tourner sur un thread sensible de l'hôte : gel si l'UI tient le verrou ; crash du DAW si le mutex est empoisonné.</div>
+    <div class="fix"><strong>Solution</strong>Aligner sur le pattern déjà utilisé dans <code>process()</code> : <code>try_lock()</code> avec repli (conserver l'ancien état) et jamais <code>unwrap</code>.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>conditionnelle</b></span><span>mitigations <b>partielle</b></span><span>données <b>métier</b></span></div>
+  </div>
+
+  <div class="finding important">
+    <div class="head"><span class="badge important">Important</span><span class="badge cat">code</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/Cargo.toml:48</span></div>
+    <div class="prob"><code>panic = "abort"</code> en release combiné à des <code>expect()</code>/<code>unwrap()</code> restants (<code>ui.rs:7210</code>, <code>ui.rs:1373</code>, <code>lib.rs:1862</code>)</div>
+    <div class="why"><strong>Impact :</strong> le plugin vit dans le processus du DAW : tout panic, même dans un menu, avorte Studio One sans sauvegarde — perte de travail utilisateur.</div>
+    <div class="fix"><strong>Solution</strong>Éliminer les panics : <code>let Some(voice) = from_index(voice_idx) else { return }</code> ; <code>unreachable!()</code> → fallback défensif ; gestion gracieuse du mutex empoisonné.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>conditionnelle</b></span><span>mitigations <b>partielle</b></span><span>données <b>métier</b></span></div>
+  </div>
+
+  <div class="finding important">
+    <div class="head"><span class="badge important">Important</span><span class="badge cat">infrastructure</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst (global)</span></div>
+    <div class="prob">Aucune CI/CD : ni build ni <code>cargo test</code> automatisés sur push ; release = copie manuelle locale</div>
+    <div class="why"><strong>Impact :</strong> une régression cassant les tests ou le build peut être poussée sur <code>main</code> et découverte seulement au prochain test manuel Studio One ; pas de reproductibilité inter-machines.</div>
+    <div class="fix"><strong>Solution</strong>GitHub Action minimale (windows-latest) : <code>cargo check</code> + <code>cargo test</code> + <code>cargo build --release</code>, artefact du bundle <code>.vst3</code>.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>conditionnelle</b></span><span>mitigations <b>aucune</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding suggestion">
+    <div class="head"><span class="badge suggestion">Suggestion</span><span class="badge cat">code</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/src/ui.rs</span></div>
+    <div class="prob">Fichier monolithique de ~308 KB (~8000 lignes) concentrant grille, éditeurs, menus, song editor et export MIDI</div>
+    <div class="why"><strong>Impact :</strong> revues difficiles, conflits de merge fréquents, régressions faciles (ex. variable inutilisée introduite récemment).</div>
+    <div class="fix"><strong>Solution</strong>Extraire par domaine dans <code>src/ui/</code> : <code>pattern_bank_bar.rs</code>, <code>plock_menus.rs</code>, <code>song_editor.rs</code>, <code>grid.rs</code>, <code>mini_sliders.rs</code>.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>théorique</b></span><span>mitigations <b>aucune</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding suggestion">
+    <div class="head"><span class="badge suggestion">Suggestion</span><span class="badge cat">code</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/src/ui.rs:4503</span></div>
+    <div class="prob">Quatre implémentations de sliders dupliquées (<code>LocalParamSlider</code>, <code>draw_editor_slider_track</code>, <code>draw_mini_value_slider</code>, <code>header_param_slider</code>)</div>
+    <div class="why"><strong>Impact :</strong> chaque correction doit être appliquée 3-4 fois avec risque d'oubli (le mini slider de piste avait été oublié avant correction).</div>
+    <div class="fix"><strong>Solution</strong>Unifier derrière un widget <code>SliderTrack</code> commun (range, défaut, logarithmique, taille) et de fines adaptations par contexte.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>théorique</b></span><span>mitigations <b>aucune</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding suggestion">
+    <div class="head"><span class="badge suggestion">Suggestion</span><span class="badge cat">code</span><span class="badge conf moyenne">confiance moyenne</span><span class="loc">drum-pattern-vst/src/ui.rs:6901</span></div>
+    <div class="prob">L'exécutable de drag MIDI est résolu via la variable d'environnement <code>DRUM_FLASH_MIDI_DRAG_HELPER</code> avant les chemins système</div>
+    <div class="why"><strong>Impact :</strong> un processus contrôlant l'environnement du DAW peut rediriger vers un binaire arbitraire exécuté avec les droits utilisateur.</div>
+    <div class="fix"><strong>Solution</strong>Valider que le chemin pointe dans le bundle du plugin (prefix check) ou supprimer l'override et n'utiliser que les chemins fixes.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>conditionnelle</b></span><span>mitigations <b>partielle</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding suggestion">
+    <div class="head"><span class="badge suggestion">Suggestion</span><span class="badge cat">code</span><span class="badge conf moyenne">confiance moyenne</span><span class="loc">drum-pattern-vst/src/pattern_bank.rs:716</span></div>
+    <div class="prob">Sérialisation JSON de toute la banque <code>serde_json::to_vec(&*guard)</code> pendant que le Mutex est tenu</div>
+    <div class="why"><strong>Impact :</strong> contention et jank UI si l'hôte appelle <code>getState</code> pendant une édition longue.</div>
+    <div class="fix"><strong>Solution</strong>Copier la structure sous verrou court puis sérialiser hors verrou (la fonction <code>capture()</code> montre déjà la voie).</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>conditionnelle</b></span><span>mitigations <b>partielle</b></span><span>données <b>métier</b></span></div>
+  </div>
+
+  <div class="finding suggestion">
+    <div class="head"><span class="badge suggestion">Suggestion</span><span class="badge cat">infrastructure</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/Cargo.toml:3</span></div>
+    <div class="prob"><code>version = "0.1.0"</code> jamais incrémentée malgré des dizaines de builds fonctionnels</div>
+    <div class="why"><strong>Impact :</strong> impossible de corréler un rapport utilisateur à une version sémantique ; seul traçage = le build ID horodaté.</div>
+    <div class="fix"><strong>Solution</strong>Bump de version par palier (ex. 0.2.0 pour la V1 modulaire) affiché à côté du build ID dans l'UI.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>théorique</b></span><span>mitigations <b>partielle</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding hors_securite">
+    <div class="head"><span class="badge hors_securite">Hors sécurité</span><span class="badge cat">code</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/src/ui.rs:1538</span></div>
+    <div class="prob">17 warnings cargo persistants : variable inutilisée, fonction morte (<code>led_toggle</code>), méthodes jamais appelées, 10 constantes de thème non câblées</div>
+    <div class="why"><strong>Impact :</strong> le bruit masque les vrais problèmes à la compilation et entretient du code mort confus.</div>
+    <div class="fix"><strong>Solution</strong>Préfixer d'un underscore ou supprimer ; viser zéro warning.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>théorique</b></span><span>mitigations <b>aucune</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding hors_securite">
+    <div class="head"><span class="badge hors_securite">Hors sécurité</span><span class="badge cat">code</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/src/lib.rs:2228</span></div>
+    <div class="prob"><code>println!</code> par note jouée dans <code>fire_voice_trigger</code> (builds debug uniquement)</div>
+    <div class="why"><strong>Impact :</strong> allocation + I/O console sur le thread audio en debug : mesures de timing faussées, glitches possibles pendant le débogage.</div>
+    <div class="fix"><strong>Solution</strong>Supprimer le <code>println!</code> ou le remplacer par un compteur atomique échantillonné par l'UI.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>triviale</b></span><span>mitigations <b>partielle</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding hors_securite">
+    <div class="head"><span class="badge hors_securite">Hors sécurité</span><span class="badge cat">code</span><span class="badge conf moyenne">confiance moyenne</span><span class="loc">drum-pattern-vst/src/native_drag.rs:121</span></div>
+    <div class="prob">Vtables COM (IDropSource/IDataObject) écrites à la main en <code>unsafe</code></div>
+    <div class="why"><strong>Impact :</strong> code bas niveau à risque d'UB si rappel après retour ; aujourd'hui isolé dans un processus helper séparé (risque maîtrisé).</div>
+    <div class="fix"><strong>Solution</strong>Conserver l'isolement processus ; si évolution, migrer vers le crate <code>windows-rs</code> (traits COM typés).</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>théorique</b></span><span>mitigations <b>partielle</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding hors_securite">
+    <div class="head"><span class="badge hors_securite">Hors sécurité</span><span class="badge cat">infrastructure</span><span class="badge conf">confiance haute</span><span class="loc">drum-pattern-vst/fix_roles.pdb</span></div>
+    <div class="prob">Artefact <code>fix_roles.pdb</code> oublié dans le working tree + build ID obsolète codé en dur dans <code>test-verification.ps1</code></div>
+    <div class="why"><strong>Impact :</strong> cruft projet + script de vérification qui valide un état de mai — outil trompeur.</div>
+    <div class="fix"><strong>Solution</strong>Supprimer le fichier PDB ; régénérer le script pour lire le build ID courant (ou le supprimer).</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>triviale</b></span><span>mitigations <b>aucune</b></span><span>données <b>publiques</b></span></div>
+  </div>
+
+  <div class="finding hors_securite">
+    <div class="head"><span class="badge hors_securite">Hors sécurité</span><span class="badge cat">code</span><span class="badge conf moyenne">confiance moyenne</span><span class="loc">drum-pattern-vst/Cargo.lock</span></div>
+    <div class="prob">Trois versions de <code>windows-sys</code> (0.52, 0.59, 0.61.2) et <code>egui-baseview</code> pinné sur un commit git</div>
+    <div class="why"><strong>Impact :</strong> build alourdi ; un bump de la dépendance git peut casser sans filet (pas de semver).</div>
+    <div class="fix"><strong>Solution</strong>À la prochaine montée d'egui/nih-plug, converger via <code>cargo tree</code> ; documenter la raison du pin dans Cargo.toml.</div>
+    <div class="ctx"><span>exposition <b>interne</b></span><span>exploitabilité <b>théorique</b></span><span>mitigations <b>partielle</b></span><span>données <b>publiques</b></span></div>
+  </div>
+</section>
+
+<!-- ================= RISK MATRIX ================= -->
+<section>
+  <h2>Matrice des risques</h2>
+  <div class="panel" style="padding:0">
+    <table>
+      <thead><tr><th>Risque</th><th>Impact</th><th>Probabilité</th></tr></thead>
+      <tbody>
+        <tr><td>Panic (expect/unwrap/lock) avec panic=abort → crash du DAW</td><td class="risk-e">Élevé</td><td class="risk-f">Faible</td></tr>
+        <tr><td>Allocation heap temps réel au changement de piste</td><td class="risk-m">Moyen</td><td class="risk-m">Moyenne</td></tr>
+        <tr><td>Verrou bloquant dans initialize()</td><td class="risk-m">Moyen</td><td class="risk-f">Faible</td></tr>
+        <tr><td>Régression poussée sur main sans CI</td><td class="risk-m">Moyen</td><td class="risk-e">Élevée</td></tr>
+        <tr><td>Override env DRUM_FLASH_MIDI_DRAG_HELPER vers binaire arbitraire</td><td class="risk-m">Moyen</td><td class="risk-f">Faible</td></tr>
+        <tr><td>Sérialisation JSON de la banque sous verrou (jank UI)</td><td class="risk-f">Faible</td><td class="risk-m">Moyenne</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  Rapport d'audit Flash Drum · Généré à partir de <code>audit_cr/kimi-code.json</code> · 14 findings · 6 points positifs · Verdict : À retravailler (7/10)
+</footer>
+
+</div>
+</body>
+</html>

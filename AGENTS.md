@@ -4,15 +4,15 @@
 
 Primary goal: build a VST3 drum sequencer plugin in Rust.
 
-The web app in `index.html` and `index.js` is a legacy PoC and functional reference. It is not the target product anymore.
+The web app in `archive/web-poc/index.html` and `archive/web-poc/index.js` is a legacy PoC and functional reference. It is not the target product anymore.
 
 Authoritative product docs: `TODO.md` (active priorities), `drum-pattern-vst/README.md` (real plugin state), `CHANGELOG.md` (build history). Older scope/backlog notes live under `docs/historique/` and are historical references, not the active source of truth.
 
 ## Current Project Layout
 
 - `drum-pattern-vst/` - primary implementation target
-- `index.html` - browser PoC used as behavioral reference
-- `index.js` - modular PoC variant, not the main product
+- `archive/web-poc/index.html` - browser PoC used as behavioral reference
+- `archive/web-poc/index.js` - modular PoC variant, not the main product
 - `TODO.md` - active priorities and known issues
 - `CHANGELOG.md` - build history and validation notes
 - `docs/historique/PROJECT_BRIEF.md` - historical V1 scope reference
@@ -181,6 +181,16 @@ Enforced by code review, not by tooling. In `process()` and everything it calls:
 - Keep docs aligned with the actual plugin state.
 - Treat older markdown files as potentially stale unless updated alongside code.
 - If build/test results differ from documentation, trust the actual command result and update the docs.
+
+## Portability Rule
+
+All Rust code must remain **compile- and run-ready on both Windows and macOS** (the two supported DAW platforms). When adding or modifying code:
+
+- Keep core DSP, sequencer, and UI logic platform-agnostic.
+- Gate Windows-specific features (MIDI drag-and-drop, Win32 paths/API calls) behind `#[cfg(target_os = "windows")]` with a safe fallback for macOS.
+- Do not introduce new Windows-only dependencies or Win32 API calls without an equivalent macOS path or a guarded no-op.
+- Avoid hardcoded paths like `USERPROFILE`; use `dirs` or `std::env::home_dir()` / `HOME` with OS-appropriate fallbacks.
+- `build.ps1` is Windows-only; macOS packaging/build scripts will be added later, but the plugin itself must always compile on both targets.
 
 ## Build Notes
 

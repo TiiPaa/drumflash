@@ -39,6 +39,7 @@ impl<'a> LocalParamSlider<'a> {
         self
     }
 
+    #[allow(dead_code)]
     /// Set a suffix to display after the value.
     pub fn suffix(mut self, suffix: &'a str) -> Self {
         self.suffix = Some(suffix);

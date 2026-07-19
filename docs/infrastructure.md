@@ -20,7 +20,7 @@ Flash Drum est un **plugin VST3** écrit en Rust avec le framework [`nih-plug`](
 │  │         │              │        │    │
 │  │         ▼              ▼        │    │
 │  │    Sequencer (64 steps)         │    │
-│  │    13 voices + Plocks           │    │
+│  │    14 slots + Plocks             │    │
 │  └─────────────────────────────────┘    │
 └─────────────────────────────────────────┘
 ```
@@ -30,7 +30,7 @@ Flash Drum est un **plugin VST3** écrit en Rust avec le framework [`nih-plug`](
 - **UI Thread** (`src/ui.rs`) — Interface graphique avec `egui`
 - **Audio Thread** (`src/lib.rs`) — Callback temps réel `process()`
 - **Sequencer** (`src/sequencer/`) — Moteur de séquence 64 pas
-- **Synthesis** (`src/synthesis/`) — 13 voix de synthèse modulaire
+- **Synthesis** (`src/synthesis/`) — 13 voix de synthèse réparties sur 14 slots modulaires
 - **Plock System** (`src/plock.rs`) — Parameter locks par step
 
 ---
@@ -87,12 +87,12 @@ Le callback `process()` est appelé par le DAW à chaque bloc d'échantillons. C
 
 ### Séquenceur
 
-- **Position maître** : `beat_position` (0.0 → 4.0 = 1 bar = 16 steps)
-- **Grid** : 64 steps (4 pages × 16), 13 instruments
+- **Position maître** : `beat_position` (0.0 .. `master_length` × 0.25 beat), 1 step = 0.25 beat — longueur par défaut 16 steps, maximum 64
+- **Grid** : 64 steps (4 pages × 16), 14 slots
 - **Plocks** : 46 champs plockables (14 standard + 32 special)
 - **Groove** : Swing, shuffle, MPC (appliqué sur la grille maître)
 
-### Voix de synthèse (13)
+### Voix de synthèse (13 dans 14 slots)
 
 | # | Instrument | Type | Analog |
 |---|-----------|------|--------|
@@ -108,7 +108,7 @@ Le callback `process()` est appelé par le DAW à chaque bloc d'échantillons. C
 | 9 | Cymbal | FM Noise + Shimmer | Drift opérationnel |
 | 10 | Snare606 | Resonator + Noise | Fixé (1.0) |
 | 11 | BassDrum808 | FM + Click | Drift opérationnel |
-| 12 | Zap | FM + Decay | Fixé (1.0) |
+| 12 | Perc1 | FM + Decay | Fixé (1.0) |
 
 ### Sorties audio
 
@@ -128,9 +128,10 @@ Le callback `process()` est appelé par le DAW à chaque bloc d'échantillons. C
 L'état du plugin est sauvegardé dans le projet du DAW via `VST3State` :
 
 - **`pattern-v5`** — Grid 64×14 slots (bitmasks + step data)
-- **`plock-v1`** — Parameter locks (masques + valeurs)
-- **`sound-settings-v1`** — Réglages de synthèse par instrument
-- **`global-v1`** — Paramètres globaux (BPM, swing, etc.)
+- **`plock-v1`** — Parameter locks (masques + valeurs + field masks)
+- **`seq-plock-v1`** — Parameter locks de séquenceur
+- **`sound-settings-v2`** — Réglages de synthèse par slot (46 floats/slot)
+- **Paramètres nih-plug** — BPM, swing, longueur pattern, etc. (persistés par le DAW via `DrumFlashParams`)
 
 Migration legacy : les anciens champs `pattern-v1`..`pattern-v4` et paramètres `st01`…`st16` sont convertis automatiquement vers `pattern-v5`.
 
@@ -155,7 +156,7 @@ Migration legacy : les anciens champs `pattern-v1`..`pattern-v4` et paramètres 
 
 ## Tests
 
-### Tests unitaires (76)
+### Tests unitaires (175)
 
 ```bash
 cargo test --lib
@@ -225,7 +226,7 @@ E:\Dev\Projets\Drum Flash\
 
 Modifier `Cargo.toml` :
 ```toml
-version = "0.1.0"
+version = "0.2.0"
 ```
 
 ### Ajout d'une voix de synthèse

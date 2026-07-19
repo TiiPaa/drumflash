@@ -703,7 +703,7 @@
 
 #### Phase 5 — Polish & validation
 - [x] [100p] **ADSR visualization** — graphe inline réécrit (modèle 3 segments colorés A/D/R, cadre #0c0c11, espacé)
-- [ ] **[REPRENDRE ICI]** [100q] **Animations** — Hover transitions 0.14s (done build 20260716-142342), step playback glow (done build 20260716-142342), **toggle LED state transitions (à faire)**.
+- [x] [100q] **Animations** — Hover transitions 0.14s (build 20260716-142342), step playback glow (build 20260716-142342), toggle LED state transitions (build 20260718-083031 : ToggleLED fades, ToggleSwitch slide, led_segmented cross-fade).
 - [x] **Polish Pattern Bank** — Suppression de l'indicateur de debug `[P:X S:X]` et alignement des hauteurs des boutons (Export/Drag/Save/P1-P8/Clr) à 26 px (build 20260716-144332).
 - [x] **Double-clic reset sur tous les sliders** — Sliders d'en-tête (`header_param_slider`), Sound Editor, menus P-lock/Morph/Seq P-lock, et config Default Analog : double-clic retourne à la valeur par défaut (build 20260716-150443). `master_volume` repasse à `1.0` (0 dB).
 - [x] **Mini sliders de lane : poignée + reset** — Ajout d'une petite poignée blanche au hover/drag et double-clic reset sur Volume (→1.0), Humanize et Push/Pull (build 20260716-152038).
@@ -937,6 +937,30 @@ Probl�me: "Je veux un m�lange des deux"
 
 **Exemples de r�glages par style** :
 - TR-808 style: Kick=1.0, Snare=1.0, Tom=1.0 (full analog)
+
+
+
+## Plan d'action — Audit code review 2026-07-18
+
+### [AUDIT-CR-1] P0 — Correctifs RT/stabilité
+- [x] **[AUDIT-RT1]** Éliminer l'alloc heap dans `reinitialize_slot` (`synthesis/mod.rs:867`) — pré-allouer les 14 voix ou différer la création hors thread audio.
+- [x] **[AUDIT-RT2]** `initialize()` : remplacer `lock().unwrap()` (`lib.rs:2347`) par `try_lock` + repli (pattern déjà utilisé dans `process()`).
+- [x] **[AUDIT-RT3]** Zéro panic UI/audio : `expect("valid voice index")` (`ui.rs:7210`) → `let-else`, `unreachable!()` (`generator/mod.rs:70`) → fallback, `lock().unwrap()` constructeur (`lib.rs:1862`) — critique car `panic = "abort"` tue Studio One.
+
+### [AUDIT-CR-2] P1 — Industrialisation
+- [x] **[AUDIT-INF1]** CI minimale GitHub Actions (Windows) : `cargo check` + `cargo test` + `cargo build --release` + artefact bundle.
+- [x] **[AUDIT-INF2]** Versioning : passer de `0.1.0` à `0.2.0` (V1 modulaire) et l'afficher dans l'UI à côté du build ID.
+
+### [AUDIT-CR-3] P2 — Quick wins docs/code mort (< 30 min chacun)
+- [x] **[AUDIT-QW1]** Supprimer `println!` debug du chemin audio (`lib.rs:2228`) + nettoyer les 17 warnings (`clear_plocks_request`, `led_toggle`, constantes theme non utilisées).
+- [x] **[AUDIT-QW2]** Corriger docs : README (`13 voix/aux` → `14 slots`, `pattern-v1` → `pattern-v5`) ; infrastructure.md (`sound-settings-v2`, 175 tests) ; AGENTS.md (PoC dans `archive/`) ; supprimer `fix_roles.pdb` et le build ID obsolète de `test-verification.ps1`. (build 20260718-125431)
+
+### [AUDIT-CR-4] P3 — Dette structurelle (à planifier)
+- [x] **[BUG-PLOCK-STEP]** Corriger la désactivation involontaire d'une step active lors de la création/édition/clear de sound p-locks et sequencer p-locks ; rendu p-lock actif restauré en full orange/violet. (build 20260719-112838)
+- [ ] **REPRENDRE ICI** **[AUDIT-Q3]** Sérialisation JSON de la Pattern Bank hors verrou (`pattern_bank.rs:716`).
+- [ ] **[AUDIT-Q4]** Unifier les 4 implémentations de sliders (LocalParamSlider / editor / mini / header).
+- [ ] **[AUDIT-Q5]** Valider le chemin de `DRUM_FLASH_MIDI_DRAG_HELPER` (prefix check bundle).
+- [ ] **[AUDIT-Q6]** Éclater `ui.rs` (~7 400 lignes) en modules thématiques — chantier structurant, planification séparée.
 - TR-909 style: Kick=0.8, Snare=0.7, Tom=0.9 (l�g�rement digital)
 - Modern Techno: Kick=0.2, Snare=0.3, Tom=0.4 (plus digital)
 - Acoustic simulation: Tous � 1.0 avec long decay
