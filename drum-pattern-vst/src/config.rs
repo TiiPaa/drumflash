@@ -11,6 +11,14 @@ pub struct GlobalConfig {
     pub default_analog: f32,
     /// Default global MIDI channel used for MIDI input/output (1-16).
     pub global_midi_channel: u8,
+    /// Active UI skin name (see `ui::theme::SKINS`).
+    #[serde(default = "default_skin")]
+    pub skin: String,
+}
+
+fn default_skin() -> String {
+    // Must match `ui::theme::DEFAULT_SKIN_NAME` ("Dark").
+    "Dark".to_string()
 }
 
 impl Default for GlobalConfig {
@@ -18,6 +26,7 @@ impl Default for GlobalConfig {
         Self {
             default_analog: 0.5,
             global_midi_channel: 10,
+            skin: default_skin(),
         }
     }
 }

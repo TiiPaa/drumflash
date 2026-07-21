@@ -40,13 +40,13 @@ impl Widget for ToggleSwitch {
         );
 
         // Fond
-        painter.rect_filled(r, 10.0, lerp_color(PANEL2, blue_glow(64), on_t));
+        painter.rect_filled(r, 10.0, lerp_color(PANEL2(), blue_glow(64), on_t));
 
         // Bordure
         painter.rect_stroke(
             r,
             10.0,
-            egui::Stroke::new(1.0, lerp_color(LINE2, BLUE, on_t)),
+            egui::Stroke::new(1.0, lerp_color(LINE2(), BLUE(), on_t)),
             StrokeKind::Inside,
         );
 
@@ -56,7 +56,7 @@ impl Widget for ToggleSwitch {
         let knob_on_x = r.right() - 5.0 - knob_radius;
         let knob_x = knob_off_x + (knob_on_x - knob_off_x) * on_t;
         let knob_center = egui::Pos2::new(knob_x, r.center().y);
-        painter.circle_filled(knob_center, knob_radius, lerp_color(INK3, BLUE, on_t));
+        painter.circle_filled(knob_center, knob_radius, lerp_color(INK3(), BLUE(), on_t));
 
         response
     }
@@ -87,7 +87,7 @@ impl Widget for ToggleLED {
         let enabled = self.enabled;
         let font = f_sans_sb(11.0);
         let text_w = ui.fonts(|f| {
-            f.layout_no_wrap(self.label.clone(), font.clone(), INK)
+            f.layout_no_wrap(self.label.clone(), font.clone(), INK())
                 .size()
                 .x
         });
@@ -108,10 +108,10 @@ impl Widget for ToggleLED {
             if on && enabled { 1.0 } else { 0.0 },
             0.14,
         );
-        let bg = lerp_color(PANEL2, blue_glow(64), on_t);
+        let bg = lerp_color(PANEL2(), blue_glow(64), on_t);
         painter.rect_filled(rect, 6.0, bg);
-        let off_border = lerp_color(LINE2, BLUE, hover * 0.6);
-        let stroke_color = lerp_color(off_border, BLUE, on_t);
+        let off_border = lerp_color(LINE2(), BLUE(), hover * 0.6);
+        let stroke_color = lerp_color(off_border, BLUE(), on_t);
         painter.rect_stroke(
             rect,
             6.0,
@@ -125,18 +125,18 @@ impl Widget for ToggleLED {
             painter.circle_filled(led_center, 5.5, blue_glow((90.0 * on_t) as u8));
         }
         let led_color = if !enabled {
-            INK2
+            INK2()
         } else {
-            lerp_color(FAINT, BLUE, on_t)
+            lerp_color(FAINT(), BLUE(), on_t)
         };
         painter.circle_filled(led_center, 3.5, led_color);
 
         let text_color = if !enabled {
-            INK2
+            INK2()
         } else if on {
-            INK
+            INK()
         } else {
-            lerp_color(INK2, INK, hover)
+            lerp_color(INK2(), INK(), hover)
         };
         painter.text(
             egui::pos2(rect.left() + 12.0 + 7.0 + 7.0, rect.center().y),
@@ -175,11 +175,11 @@ pub fn styled_select(
     let hovered = response.hovered();
     let hover = hover_t(ui.ctx(), response.id, hovered || popup_open);
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, PANEL2);
+    painter.rect_filled(rect, 6.0, PANEL2());
     painter.rect_stroke(
         rect,
         6.0,
-        egui::Stroke::new(1.0, lerp_color(LINE2, BLUE, hover)),
+        egui::Stroke::new(1.0, lerp_color(LINE2(), BLUE(), hover)),
         StrokeKind::Inside,
     );
 
@@ -188,7 +188,7 @@ pub fn styled_select(
         egui::Align2::LEFT_CENTER,
         current,
         f_mono_med(11.0),
-        INK,
+        INK(),
     );
     // Down-pointing triangle caret
     let caret_size = 5.0;
@@ -205,7 +205,7 @@ pub fn styled_select(
             ),
             egui::pos2(caret_center.x, caret_center.y + caret_size * 0.9),
         ],
-        INK3,
+        INK3(),
         egui::Stroke::NONE,
     ));
 
@@ -222,8 +222,8 @@ pub fn styled_select(
             .fixed_pos(pos)
             .show(ui.ctx(), |ui| {
                 egui::Frame::NONE
-                    .fill(P_ACTIVE)
-                    .stroke(egui::Stroke::new(1.0, LINE2))
+                    .fill(P_ACTIVE())
+                    .stroke(egui::Stroke::new(1.0, LINE2()))
                     .corner_radius(6.0)
                     .inner_margin(0.0)
                     .show(ui, |ui| {
@@ -236,17 +236,17 @@ pub fn styled_select(
                                 ui.painter().rect_filled(
                                     opt_rect,
                                     0.0,
-                                    lerp_color(Color32::TRANSPARENT, BLUE, opt_hover),
+                                    lerp_color(Color32::TRANSPARENT, BLUE(), opt_hover),
                                 );
                             } else if idx == selected {
-                                ui.painter().rect_filled(opt_rect, 0.0, PANEL2);
+                                ui.painter().rect_filled(opt_rect, 0.0, PANEL2());
                             }
                             ui.painter().text(
                                 egui::pos2(opt_rect.left() + 10.0, opt_rect.center().y),
                                 egui::Align2::LEFT_CENTER,
                                 *option,
                                 f_sans_med(11.0),
-                                lerp_color(INK2, Color32::WHITE, opt_hover),
+                                lerp_color(INK2(), Color32::WHITE, opt_hover),
                             );
                             if opt_response.clicked() {
                                 picked = Some(idx);
@@ -282,7 +282,7 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
         .iter()
         .map(|opt| {
             let tw = ui.fonts(|f| {
-                f.layout_no_wrap((*opt).to_string(), font.clone(), INK)
+                f.layout_no_wrap((*opt).to_string(), font.clone(), INK())
                     .size()
                     .x
             });
@@ -293,7 +293,7 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
     let total: f32 = seg_ws.iter().sum();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(total, h), Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, PANEL2);
+    painter.rect_filled(rect, 6.0, PANEL2());
 
     let mut result = selected;
     let mut x = rect.left();
@@ -322,19 +322,19 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
                     egui::pos2(seg.left(), rect.top() + 1.0),
                     egui::pos2(seg.left(), rect.bottom() - 1.0),
                 ],
-                egui::Stroke::new(1.0, LINE2),
+                egui::Stroke::new(1.0, LINE2()),
             );
         }
         let led_center = egui::pos2(seg.left() + 12.0 + 3.0, seg.center().y);
         if on_t > 0.01 {
             painter.circle_filled(led_center, 5.0, blue_glow((90.0 * on_t) as u8));
         }
-        painter.circle_filled(led_center, 3.0, lerp_color(FAINT, BLUE, on_t));
+        painter.circle_filled(led_center, 3.0, lerp_color(FAINT(), BLUE(), on_t));
         let seg_hover = hover_t(ui.ctx(), resp.id, resp.hovered());
         let txt_color = if is_on {
-            INK
+            INK()
         } else {
-            lerp_color(INK2, INK, seg_hover)
+            lerp_color(INK2(), INK(), seg_hover)
         };
         painter.text(
             egui::pos2(seg.left() + 12.0 + 6.0 + 6.0, seg.center().y),
@@ -348,6 +348,6 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
         }
         x += w;
     }
-    painter.rect_stroke(rect, 6.0, egui::Stroke::new(1.0, LINE2), StrokeKind::Inside);
+    painter.rect_stroke(rect, 6.0, egui::Stroke::new(1.0, LINE2()), StrokeKind::Inside);
     result
 }

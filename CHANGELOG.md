@@ -1,5 +1,88 @@
 # Changelog
 
+## 2026-07-21 — [AUDIT-Q5] Validation du chemin du MIDI drag helper (build 20260721-152237)
+
+**Build:** `20260721-152237`
+**Validation:** `cargo test` OK (188 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK (0 warning), `build.ps1 -Install` OK
+
+### Changements
+- **`src/ui.rs`** : `find_midi_drag_helper()` ne fait plus confiance aveuglément à `DRUM_FLASH_MIDI_DRAG_HELPER`. Nouvelle validation `is_valid_helper_candidate()` : le fichier doit exister, porter le nom exact `drum-pattern-midi-drag-helper.exe`, et vivre sous un prefix bundle connu (`%CommonProgramFiles%\VST3\drum-pattern-vst.vst3` ou le bundle local `build/`), vérifié sur chemins **canonisés** (impossible de sortir du prefix via `..`).
+- Tests ajoutés (Windows) : accepte helper dans le bundle, rejette mauvais nom de fichier, rejette fichier hors prefix, rejette traversée `..`, rejette fichier manquant.
+
+### À tester dans Studio One (build 20260721-152237)
+1. Bouton `Drag` (barre Patterns) → le helper de drag MIDI se lance et la fenêtre de drag apparaît comme avant.
+2. Bouton `Export` → le fichier `.mid` est bien créé dans `Documents/Flash Drum/exports`.
+3. (Optionnel) Positionner `DRUM_FLASH_MIDI_DRAG_HELPER` vers le helper du bundle installé → le drag fonctionne toujours.
+4. (Optionnel) Positionner `DRUM_FLASH_MIDI_DRAG_HELPER` vers un autre exécutable → le drag est refusé (le bouton affiche une erreur au lieu de lancer le programme).
+5. Régression : skins, plocks, song mode OK.
+
+---
+
+## 2026-07-21 — [SKIN-1] Système de skins UI (build 20260721-150308)
+
+**Build:** `20260721-150308`
+**Validation:** `cargo test` OK (183 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK (0 warning), `build.ps1 -Install` OK
+
+### Changements
+- **`src/ui/theme.rs`** réécrit : les couleurs passent de constantes compile-time à une struct `Theme` runtime (`static ACTIVE: RwLock<&'static Theme>`). Tokens accessibles via des fonctions du même nom (`BG()`, `BLUE()`, …). Nouveaux tokens sémantiques : cellules (`CELL_EMPTY_BEAT/OFF`, `CELL_CURRENT`, `CELL_DISABLED`, `FUSION_FILL`, `CELL_SEQPL_OFF`, `CELL_PL_SNAP/LINK_OFF`, `SONG_EMPTY`), feedback (`DANGER*`, `DRAG_TARGET`, `HANDLE`, `MUTE_FILL`, `SOLO_FILL`), graphes (`ENVELOPE_BG/CURVE`), surface `PANEL3`.
+- **3 skins intégrés** : `Dark` (palette actuelle, rendu identique), `Midnight` (bleu nuit), `Ember` (chaud/ambré). `theme::set_skin()`, `skin_name()`, `SKINS`.
+- **Migration** : ~34 couleurs hardcodées dans `ui.rs`, `slider.rs`, `envelope_viz.rs` remplacées par des tokens ; les animations Save/Clear dérivent désormais de `BLUE()`/`DANGER()` ; bordure noire des cellules désactivées en `Color32::BLACK`.
+- **Persistance** : `GlobalConfig.skin` (JSON `Documents/Flash Drum/config.json`), appliqué à l'ouverture de l'éditeur.
+- **Settings popup** : sélecteur `Skin` (Dark / Midnight / Ember), effet immédiat, sauvegardé.
+- Tests : switch de skin met à jour les tokens, skin inconnu ignoré, `blue_glow` suit l'accent actif (comparaison `to_opaque()` car `Color32` stocke du prémultiplié linéaire).
+
+### À tester dans Studio One (build 20260721-150308)
+1. Ouvrir le plugin → l'interface est **identique à avant** (skin Dark par défaut).
+2. Menu `⚙ Settings` → `Skin` → choisir `Midnight` : toute l'UI passe en bleu nuit, immédiatement.
+3. Choisir `Ember` : accents chauds/ambrés ; revenir à `Dark` : rendu d'origine.
+4. Fermer et rouvrir le plugin → le skin choisi est restauré (persistance config.json).
+5. Vérifier les zones tokenisées : steps de la grille (vides/playhead/plock orange/seq violet), boutons rouges (Clear Plock, Delete Fusion), enveloppes ADSR, boutons M/S.
+6. Régression : plocks, générateur, song mode, export MIDI OK.
+
+---
+
+## 2026-07-21 — [AUDIT-Q4] Unification des implémentations de sliders (build 20260721-142452)
+
+**Build:** `20260721-142452`
+**Validation:** `cargo test` OK (182 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK (0 warning), `build.ps1 -Install` OK
+
+### Changements
+- **Nouveau module `src/ui/slider.rs`** : logique partagée `normalize_value` / `denormalize_value` (linéaire + logarithmique avec fallback linéaire si domaine invalide) et track core `draw_track` avec style paramétrable (`TrackStyle::EDITOR` / `TrackStyle::MINI`). Tests unitaires : roundtrips lin/log, clamping, fallback, ancres endpoints.
+- **`src/ui.rs`** : `draw_editor_slider_track` et `draw_mini_value_slider` sont maintenant des wrappers fins sur `slider::draw_track` (rendu visuel identique) ; les helpers dupliqués `normalize_slider_value` / `denormalize_slider_value` sont supprimés.
+- **`src/ui/local_param_slider.rs`** : le mapping log/linéaire interne est remplacé par les helpers partagés (rendu et shift-drag granulaire inchangés).
+- **`header_param_slider`** : inchangé (param-bound, logique déjà simple).
+
+### À tester dans Studio One (build 20260721-142452)
+1. Sound Editor : draguer les sliders d'une section (Volume, Decay, Filter...) → valeurs et fill suivent le curseur comme avant.
+2. Double-clic sur un slider d'éditeur → reset à la valeur par défaut.
+3. Sliders Hum/Push dans les lanes de la grille → drag + tooltip de valeur fonctionnent.
+4. Menu p-lock (clic droit sur une step) : draguer un slider de paramètre (Volume, Freq log) → la valeur suit ; shift+drag = réglage fin granulaire.
+5. Header Master/Swing → drag + double-clic reset inchangés.
+6. Régression : plocks, générateur, song mode, export MIDI OK.
+
+---
+
+## 2026-07-20 — [AUDIT-Q3] Snapshot JSON de la Pattern Bank hors verrou (build 20260720-154200)
+
+**Build:** `20260720-154200`
+**Validation:** `cargo test` OK (177 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK (0 warning), `build.ps1 -Install` OK
+
+### Changements
+- **`src/pattern_bank.rs`** : `PersistentPatternBank` maintient maintenant un snapshot JSON atomique (`AtomicPtr<Vec<u8>>`). La sérialisation n'a plus lieu dans `map()` sous verrou : elle est faite dans `refresh_snapshot()` à partir d'une copie de la bank, puis publiée de façon atomique. `map()` lit ce snapshot sans toucher au `Mutex<PatternBank>`.
+- **`src/lib.rs`** : après `save_pattern_to_slot()`, le snapshot de persistance est rafraîchi une fois la mutation appliquée.
+- **`src/ui.rs`** : rafraîchissement du snapshot après save/paste de slot et après modification de la song chain.
+- Tests ajoutés :
+  - `persistent_bank_snapshot_tracks_explicit_refresh`
+  - `persistent_bank_map_uses_snapshot_even_when_bank_is_locked`
+
+### À tester dans Studio One (build 20260720-154200)
+1. Sauvegarder un pattern dans un slot `P1`…`P8` puis le recharger → grille, plocks, fusions et length doivent être restaurés normalement.
+2. Copier/coller un slot de pattern (clic droit sur slot occupé puis clic droit sur slot vide) → le slot collé doit être persisté correctement.
+3. Modifier la song chain (steps, repeats, clear, duplicate) → sauvegarder/recharger le projet : la chaine doit être restaurée telle quelle.
+4. Régression : lecture, song mode, pattern bank save/load en lecture continue ne doivent ni bloquer ni sauter de pattern.
+
+---
+
 ## 2026-07-19 — Fix p-lock creation preserving active step (build 20260719-112838)
 
 **Build:** `20260719-112838`

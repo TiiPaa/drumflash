@@ -27,8 +27,8 @@ pub fn draw_amp_envelope(
     let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 7.0, Color32::from_rgb(12, 12, 17));
-    painter.rect_stroke(rect, 7.0, Stroke::new(1.0, LINE), StrokeKind::Inside);
+    painter.rect_filled(rect, 7.0, ENVELOPE_BG());
+    painter.rect_stroke(rect, 7.0, Stroke::new(1.0, LINE()), StrokeKind::Inside);
 
     let pad_x = 12.0f32;
     let pad_y = 12.0f32;
@@ -68,14 +68,14 @@ pub fn draw_amp_envelope(
 
     painter.line_segment(
         [Pos2::new(x_start, base_y), Pos2::new(x_attack, top_y)],
-        Stroke::new(2.0, AMBER),
+        Stroke::new(2.0, AMBER()),
     );
     draw_curve(
         &painter,
         Pos2::new(x_attack, top_y),
         Pos2::new(x_decay, if has_release { sustain_y } else { base_y }),
         decay_curve,
-        BLUE,
+        BLUE(),
     );
     if has_release {
         draw_curve(
@@ -83,7 +83,7 @@ pub fn draw_amp_envelope(
             Pos2::new(x_decay, sustain_y),
             Pos2::new(x_end, base_y),
             release_curve,
-            SEQPL,
+            SEQPL(),
         );
     }
 
@@ -174,8 +174,8 @@ pub fn draw_filter_envelope(
     let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 7.0, Color32::from_rgb(12, 12, 17));
-    painter.rect_stroke(rect, 7.0, Stroke::new(1.0, LINE), StrokeKind::Inside);
+    painter.rect_filled(rect, 7.0, ENVELOPE_BG());
+    painter.rect_stroke(rect, 7.0, Stroke::new(1.0, LINE()), StrokeKind::Inside);
 
     let pad_x = 14.0f32;
     let pad_y = 10.0f32;
@@ -200,7 +200,7 @@ pub fn draw_filter_envelope(
     if !points.is_empty() {
         painter.add(Shape::line(
             points,
-            Stroke::new(2.5, Color32::from_rgb(255, 160, 60)),
+            Stroke::new(2.5, ENVELOPE_CURVE()),
         ));
     }
 

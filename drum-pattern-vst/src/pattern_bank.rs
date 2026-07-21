@@ -6,6 +6,8 @@
 use crate::sequencer::pattern::{
     FusedGroup, FUSION_SLOT_COUNT, INSTRUMENT_COUNT, MAX_FUSIONS, STEP_COUNT,
 };
+use std::sync::atomic::{AtomicPtr, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex};
 
 pub const SLOT_COUNT: usize = 8;
 
@@ -680,16 +682,40 @@ impl PatternBank {
 }
 
 /// Wrapper around PatternBank for nih-plug persistence.
-/// Uses Arc so the UI and audio thread can share the same bank.
+///
+/// The mutable bank stays behind a short-lived `Mutex`, but the JSON snapshot
+/// used by nih-plug persistence is refreshed outside that lock and published
+/// as an atomic pointer. `map()` therefore never serializes while holding the
+/// bank lock.
 #[derive(Clone)]
 pub struct PersistentPatternBank {
-    pub bank: std::sync::Arc<std::sync::Mutex<PatternBank>>,
+    pub bank: Arc<Mutex<PatternBank>>,
+    snapshot: Arc<AtomicPtr<Vec<u8>>>,
 }
 
 impl PersistentPatternBank {
     pub fn new() -> Self {
         Self {
-            bank: std::sync::Arc::new(std::sync::Mutex::new(PatternBank::new())),
+            bank: Arc::new(Mutex::new(PatternBank::new())),
+            snapshot: Arc::new(AtomicPtr::new(std::ptr::null_mut())),
+        }
+    }
+
+    /// Rebuild the persisted JSON snapshot outside the bank lock.
+    /// This may allocate and is therefore only called from UI/persistence code
+    /// paths, never from the audio callback.
+    pub fn refresh_snapshot(&self) {
+        let cloned = match self.bank.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return,
+        };
+        let bytes = serde_json::to_vec(&cloned).unwrap_or_default();
+        let new_ptr = Box::into_raw(Box::new(bytes));
+        let old_ptr = self.snapshot.swap(new_ptr, AtomicOrdering::AcqRel);
+        if !old_ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(old_ptr));
+            }
         }
     }
 }
@@ -700,12 +726,24 @@ impl Default for PersistentPatternBank {
     }
 }
 
+impl Drop for PersistentPatternBank {
+    fn drop(&mut self) {
+        let old_ptr = self.snapshot.swap(std::ptr::null_mut(), AtomicOrdering::AcqRel);
+        if !old_ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(old_ptr));
+            }
+        }
+    }
+}
+
 impl<'a> nih_plug::params::persist::PersistentField<'a, Vec<u8>> for PersistentPatternBank {
     fn set(&self, new_value: Vec<u8>) {
         if let Ok(bank) = serde_json::from_slice::<PatternBank>(&new_value) {
             if let Ok(mut guard) = self.bank.lock() {
                 *guard = bank;
             }
+            self.refresh_snapshot();
         }
     }
 
@@ -713,12 +751,17 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, Vec<u8>> for PersistentP
     where
         F: Fn(&Vec<u8>) -> R,
     {
-        let bytes = if let Ok(guard) = self.bank.lock() {
-            serde_json::to_vec(&*guard).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        f(&bytes)
+        let snapshot = self.snapshot.load(AtomicOrdering::Acquire);
+        if snapshot.is_null() {
+            self.refresh_snapshot();
+        }
+        let snapshot = self.snapshot.load(AtomicOrdering::Acquire);
+        if snapshot.is_null() {
+            let empty = Vec::new();
+            return f(&empty);
+        }
+        let bytes = unsafe { &*snapshot };
+        f(bytes)
     }
 }
 
@@ -928,5 +971,44 @@ mod tests {
             !target_seq_plock.is_active(0, 5),
             "Seq plock from pattern A leaked into pattern B!"
         );
+    }
+
+    #[test]
+    fn persistent_bank_snapshot_tracks_explicit_refresh() {
+        let persistent = PersistentPatternBank::new();
+        {
+            let mut guard = persistent.bank.lock().unwrap();
+            guard.song.length = 3;
+            guard.song.set_step(0, 2);
+        }
+        persistent.refresh_snapshot();
+
+        let bytes = persistent.map(|b| b.clone());
+        let restored = PersistentPatternBank::new();
+        restored.set(bytes);
+
+        let guard = restored.bank.lock().unwrap();
+        assert_eq!(guard.song.length, 3);
+        assert_eq!(guard.song.slot_at(0), Some(2));
+    }
+
+    #[test]
+    fn persistent_bank_map_uses_snapshot_even_when_bank_is_locked() {
+        let persistent = PersistentPatternBank::new();
+        {
+            let mut guard = persistent.bank.lock().unwrap();
+            guard.song.length = 2;
+            guard.song.set_step(0, 4);
+        }
+        persistent.refresh_snapshot();
+
+        let _guard = persistent.bank.lock().unwrap();
+        let bytes = persistent.map(|b| b.clone());
+        let restored = PersistentPatternBank::new();
+        restored.set(bytes);
+
+        let guard = restored.bank.lock().unwrap();
+        assert_eq!(guard.song.length, 2);
+        assert_eq!(guard.song.slot_at(0), Some(4));
     }
 }
