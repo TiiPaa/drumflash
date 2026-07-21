@@ -957,10 +957,11 @@ Probl�me: "Je veux un m�lange des deux"
 
 ### [AUDIT-CR-4] P3 — Dette structurelle (à planifier)
 - [x] **[BUG-PLOCK-STEP]** Corriger la désactivation involontaire d'une step active lors de la création/édition/clear de sound p-locks et sequencer p-locks ; rendu p-lock actif restauré en full orange/violet. (build 20260719-112838)
-- [ ] **REPRENDRE ICI** **[AUDIT-Q3]** Sérialisation JSON de la Pattern Bank hors verrou (`pattern_bank.rs:716`).
-- [ ] **[AUDIT-Q4]** Unifier les 4 implémentations de sliders (LocalParamSlider / editor / mini / header).
-- [ ] **[AUDIT-Q5]** Valider le chemin de `DRUM_FLASH_MIDI_DRAG_HELPER` (prefix check bundle).
-- [ ] **[AUDIT-Q6]** Éclater `ui.rs` (~7 400 lignes) en modules thématiques — chantier structurant, planification séparée.
+- [x] **[AUDIT-Q3]** Sérialisation JSON de la Pattern Bank hors verrou (`pattern_bank.rs:716`) : snapshot JSON atomique rafraîchi hors verrou, `map()` ne touche plus le `Mutex<PatternBank>`. (build 20260720-154200)
+- [x] **[AUDIT-Q4]** Unifier les 4 implémentations de sliders (LocalParamSlider / editor / mini / header) : module `src/ui/slider.rs` (logique + track core partagés), wrappers editor/mini, LocalParamSlider sur helpers communs. (build 20260721-142452)
+- [x] **[SKIN-1]** Système de skins : `Theme` runtime dans `theme.rs` (const → accessors), migration des couleurs hardcodées vers des tokens, skins intégrés (Dark/Midnight/Ember), sélecteur dans Settings, persistance `GlobalConfig`. (build 20260721-150308)
+- [x] **[AUDIT-Q5]** Valider le chemin de `DRUM_FLASH_MIDI_DRAG_HELPER` : nom exact + prefix bundle canonisé, 5 tests Windows. (build 20260721-152237)
+- [ ] **REPRENDRE ICI** **[AUDIT-Q6]** Éclater `ui.rs` (~7 400 lignes) en modules thématiques — chantier structurant, planification séparée.
 - TR-909 style: Kick=0.8, Snare=0.7, Tom=0.9 (l�g�rement digital)
 - Modern Techno: Kick=0.2, Snare=0.3, Tom=0.4 (plus digital)
 - Acoustic simulation: Tous � 1.0 avec long decay
