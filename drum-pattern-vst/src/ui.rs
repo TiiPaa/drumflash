@@ -76,6 +76,7 @@ struct LaneSeqPlocks {
 
 mod envelope_viz;
 mod local_param_slider;
+mod slider;
 mod theme;
 mod widgets;
 
@@ -163,7 +164,7 @@ fn plock_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mu
     ui.visuals_mut().widgets.noninteractive.corner_radius = egui::CornerRadius::same(0);
 
     let frame = egui::Frame::NONE
-        .fill(P_ACTIVE)
+        .fill(P_ACTIVE())
         .corner_radius(RADIUS_PANEL)
         .inner_margin(egui::Margin::same(12));
     frame.show(ui, |ui| {
@@ -186,7 +187,7 @@ fn page_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mut
     ui.visuals_mut().widgets.noninteractive.corner_radius = egui::CornerRadius::same(0);
 
     let frame = egui::Frame::NONE
-        .fill(P_ACTIVE)
+        .fill(P_ACTIVE())
         .corner_radius(RADIUS_PANEL)
         .inner_margin(egui::Margin::same(10));
     frame.show(ui, |ui| {
@@ -213,9 +214,9 @@ fn plock_menu_header(ui: &mut egui::Ui, title: &str, _step: usize, accent: Color
             let pressed = response.is_pointer_button_down_on();
 
             let (fill, text_color) = if pressed {
-                (accent, INK)
+                (accent, INK())
             } else {
-                (Color32::TRANSPARENT, INK3)
+                (Color32::TRANSPARENT, INK3())
             };
 
             if pressed {
@@ -253,7 +254,7 @@ fn plock_menu_row(
 ) -> egui::Response {
     ui.horizontal(|ui| {
         ui.set_height(22.0);
-        let label_color = if overridden { accent } else { INK3 };
+        let label_color = if overridden { accent } else { INK3() };
         ui.label(
             RichText::new(label)
                 .font(f_sans_med(10.5))
@@ -267,7 +268,7 @@ fn plock_menu_row(
                     Vec2::new(48.0, 22.0),
                     egui::Layout::right_to_left(egui::Align::Center),
                     |ui| {
-                        ui.label(RichText::new(text).font(f_mono_med(10.0)).color(INK2));
+                        ui.label(RichText::new(text).font(f_mono_med(10.0)).color(INK2()));
                     },
                 );
             }
@@ -282,8 +283,8 @@ fn plock_menu_action_row(ui: &mut egui::Ui, label: &str, accent: Color32) -> egu
     ui.add_sized(
         Vec2::new(ui.available_width(), 26.0),
         egui::Button::new(RichText::new(label).font(f_sans_med(10.5)).color(accent))
-            .fill(PANEL2)
-            .stroke(egui::Stroke::new(1.0, LINE2))
+            .fill(PANEL2())
+            .stroke(egui::Stroke::new(1.0, LINE2()))
             .corner_radius(6.0),
     )
 }
@@ -1062,6 +1063,8 @@ fn save_current_pattern_to_bank_slot(
         &params.seq_plock_state.state,
         pattern_length,
     );
+    drop(bank);
+    params.pattern_bank.refresh_snapshot();
 }
 
 /// Instrument picker for an empty lane (opened by the `+N` chip).
@@ -1116,6 +1119,8 @@ pub fn create_editor(
     let pending_pattern_length_for_ui = pending_pattern_length.clone();
         let audio_last_loaded_slot_for_ui = audio_last_loaded_slot.clone();
 
+        theme::set_skin(&global_config.skin);
+
         create_egui_editor(
         params.editor_state.clone(),
         {
@@ -1128,19 +1133,19 @@ pub fn create_editor(
 
             // Style global sombre
             let mut visuals = egui::Visuals::dark();
-            visuals.panel_fill = BG;
-            visuals.window_fill = BG;
-            visuals.extreme_bg_color = BG;
-            visuals.widgets.inactive.bg_fill = PANEL2;
-            visuals.widgets.hovered.bg_fill = P_HOVER;
-            visuals.widgets.active.bg_fill = P_ACTIVE;
-            visuals.selection.bg_fill = BLUE;
-            visuals.faint_bg_color = PANEL;
-            visuals.extreme_bg_color = BG;
+            visuals.panel_fill = BG();
+            visuals.window_fill = BG();
+            visuals.extreme_bg_color = BG();
+            visuals.widgets.inactive.bg_fill = PANEL2();
+            visuals.widgets.hovered.bg_fill = P_HOVER();
+            visuals.widgets.active.bg_fill = P_ACTIVE();
+            visuals.selection.bg_fill = BLUE();
+            visuals.faint_bg_color = PANEL();
+            visuals.extreme_bg_color = BG();
             visuals.window_stroke = egui::Stroke::NONE;
             visuals.popup_shadow = egui::epaint::Shadow::NONE;
             visuals.menu_corner_radius = egui::CornerRadius::same(RADIUS_PANEL as u8);
-            visuals.widgets.noninteractive.bg_fill = BG;
+            visuals.widgets.noninteractive.bg_fill = BG();
 
             // Chrome tokens: rounded corners, hairline strokes, no hover-expansion.
             let cr = egui::CornerRadius::same(6);
@@ -1152,12 +1157,12 @@ pub fn create_editor(
             visuals.widgets.inactive.expansion = 0.0;
             visuals.widgets.hovered.expansion = 0.0;
             visuals.widgets.active.expansion = 0.0;
-            visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, LINE);
-            visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, LINE2);
-            visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, BLUE);
-            visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, BLUE);
-            visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0, LINE2);
-            visuals.selection.stroke = egui::Stroke::new(1.0, BLUE);
+            visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, LINE());
+            visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, LINE2());
+            visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, BLUE());
+            visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, BLUE());
+            visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0, LINE2());
+            visuals.selection.stroke = egui::Stroke::new(1.0, BLUE());
             egui_ctx.set_visuals(visuals);
         },
         move |egui_ctx, setter, state| {
@@ -1200,7 +1205,7 @@ pub fn create_editor(
                     let body_w = ui.available_width();
                     let (body_rect, _) =
                         ui.allocate_exact_size(Vec2::new(body_w, body_h), egui::Sense::hover());
-                    ui.painter().rect_filled(body_rect, 0.0, BG);
+                    ui.painter().rect_filled(body_rect, 0.0, BG());
 
                     let right_w = 568.0;
                     let left_w = (body_rect.width() - right_w).max(0.0);
@@ -1214,9 +1219,9 @@ pub fn create_editor(
                     ui.painter().vline(
                         left_rect.right(),
                         body_rect.y_range(),
-                        egui::Stroke::new(1.0, LINE),
+                        egui::Stroke::new(1.0, LINE()),
                     );
-                    ui.painter().rect_filled(right_rect, 0.0, PANEL);
+                    ui.painter().rect_filled(right_rect, 0.0, PANEL());
 
                     ui.allocate_new_ui(
                         egui::UiBuilder::new()
@@ -1265,7 +1270,7 @@ pub fn create_editor(
                             .max_rect(right_rect)
                             .layout(egui::Layout::top_down(egui::Align::Min)),
                         |ui| {
-                            ui.painter().rect_filled(ui.max_rect(), 0.0, PANEL);
+                            ui.painter().rect_filled(ui.max_rect(), 0.0, PANEL());
                             ui.set_width(right_w);
                             ui.set_height(body_h);
                             draw_sound_panel(
@@ -1314,7 +1319,7 @@ pub fn create_editor(
 // Header bar: Brand + Play + BPM + Sliders + Toggles
 // ---------------------------------------------------------------------------------------------------------------
 /// Thin-pill header slider bound to a nih-plug parameter (Master / Swing).
-/// Layout: left word-label · flexible 6px track (BLUE fill, hover knob) · right mono value.
+/// Layout: left word-label · flexible 6px track (BLUE() fill, hover knob) · right mono value.
 fn header_param_slider<P: Param>(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
@@ -1336,7 +1341,7 @@ fn header_param_slider<P: Param>(
             egui::Align2::LEFT_CENTER,
             label,
             f_sans_med(11.5),
-            INK2,
+            INK2(),
         );
         label_rect.right().max(rect.left() + 34.0) + 8.0
     };
@@ -1347,7 +1352,7 @@ fn header_param_slider<P: Param>(
             egui::Align2::RIGHT_CENTER,
             &valstr,
             f_mono(11.0),
-            INK,
+            INK(),
         );
         (val_rect.left() - 8.0).max(track_left + 12.0)
     } else {
@@ -1396,20 +1401,20 @@ fn header_param_slider<P: Param>(
         setter.end_set_parameter(param);
     }
 
-    painter.rect_filled(track, 3.0, PANEL2);
+    painter.rect_filled(track, 3.0, PANEL2());
     let fill_w = (track.width() * frac).max(0.0);
     if fill_w > 0.5 {
         painter.rect_filled(
             egui::Rect::from_min_max(track.min, egui::pos2(track.left() + fill_w, track.max.y)),
             3.0,
-            BLUE,
+            BLUE(),
         );
     }
     if resp.hovered() || resp.dragged() {
         painter.circle_filled(
             egui::pos2(track.left() + fill_w, cy),
             5.5,
-            Color32::from_rgb(0xee, 0xf2, 0xf8),
+            HANDLE(),
         );
     }
 }
@@ -1418,7 +1423,7 @@ fn header_param_slider<P: Param>(
 fn header_vbar(ui: &mut egui::Ui) {
     ui.add_space(14.0);
     let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 22.0), egui::Sense::hover());
-    ui.painter().rect_filled(r, 0.0, LINE);
+    ui.painter().rect_filled(r, 0.0, LINE());
     ui.add_space(14.0);
 }
 
@@ -1439,12 +1444,12 @@ fn draw_header_bar(
         egui::Sense::hover(),
     );
 
-    // Fond PANEL + bordure basse LINE
+    // Fond PANEL() + bordure basse LINE()
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, PANEL);
+    painter.rect_filled(rect, 0.0, PANEL());
     painter.line_segment(
         [rect.left_bottom(), rect.right_bottom()],
-        egui::Stroke::new(1.0, LINE),
+        egui::Stroke::new(1.0, LINE()),
     );
 
     // Contenu avec padding horizontal
@@ -1468,7 +1473,7 @@ fn draw_header_bar(
                 ui.label(
                     RichText::new(format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID))
                         .font(f_mono(9.5))
-                        .color(INK3),
+                        .color(INK3()),
                 );
 
                 header_vbar(ui);
@@ -1483,7 +1488,7 @@ fn draw_header_bar(
                 header_vbar(ui);
 
                 // Sequencer source: Internal sequencer vs external MIDI from the host.
-                ui.label(RichText::new("Seq").font(f_sans_sb(10.5)).color(INK3));
+                ui.label(RichText::new("Seq").font(f_sans_sb(10.5)).color(INK3()));
                 ui.add_space(8.0);
                 let internal = params.use_internal_sequencer.value();
                 let sel =
@@ -1520,7 +1525,7 @@ fn draw_header_bar(
                 // Push the settings button to the right edge of the header.
                 ui.add_space((ui.available_width() - 60.0).max(0.0));
                 if ui
-                    .button(RichText::new("Settings").font(f_sans_med(10.5)).color(INK3))
+                    .button(RichText::new("Settings").font(f_sans_med(10.5)).color(INK3()))
                     .clicked()
                 {
                     state.settings_open = true;
@@ -1542,11 +1547,11 @@ fn draw_pattern_bank(
     load_pattern_request: &Arc<AtomicU32>,
 ) {
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Patterns").strong().size(12.0).color(INK));
+        ui.label(RichText::new("Patterns").strong().size(12.0).color(INK()));
         ui.add_space(8.0);
 
         // MIDI export chips (left side, always visible)
-        if chip_button(ui, "Export", false, BLUE, egui::Sense::click()).clicked() {
+        if chip_button(ui, "Export", false, BLUE(), egui::Sense::click()).clicked() {
             let bpm = params.bpm.value();
             let pattern_length = params.pattern_length.value() as usize;
             let swing = params.swing.value();
@@ -1571,7 +1576,7 @@ fn draw_pattern_bank(
                 }
             }
         }
-        let drag_response = chip_button(ui, "Drag", false, BLUE, egui::Sense::click())
+        let drag_response = chip_button(ui, "Drag", false, BLUE(), egui::Sense::click())
             .on_hover_text("Drag the current pattern into your DAW");
         if drag_response.clicked() {
             let bpm = params.bpm.value();
@@ -1612,20 +1617,22 @@ fn draw_pattern_bank(
             0.0
         };
         let save_fill = if is_save_mode {
+            let blue = BLUE();
+            let blink = blink as f32;
             Color32::from_rgb(
-                (74.0 + blink * 80.0) as u8,
-                (158.0 + blink * 40.0) as u8,
-                255,
+                (blue.r() as f32 + blink * 80.0) as u8,
+                (blue.g() as f32 + blink * 40.0) as u8,
+                blue.b(),
             )
         } else {
-            PANEL2
+            PANEL2()
         };
         let save_btn = egui::Button::new(RichText::new("Save").size(10.0).strong().monospace())
             .min_size(Vec2::new(44.0, 26.0))
             .fill(save_fill)
             .stroke(egui::Stroke::new(
                 1.5,
-                if is_save_mode { BLUE } else { LINE2 },
+                if is_save_mode { BLUE() } else { LINE2() },
             ))
             .corner_radius(5.0);
         let save_response = ui.add(save_btn);
@@ -1686,18 +1693,18 @@ fn draw_pattern_bank(
 
             let btn_size = Vec2::new(30.0, 26.0);
             let fill = if is_loaded {
-                P_ACTIVE
+                P_ACTIVE()
             } else if occupied {
-                PANEL2
+                PANEL2()
             } else {
-                BG // much darker for empty slot
+                BG() // much darker for empty slot
             };
             let stroke_color = if is_loaded {
-                GREEN // green ring for loaded
+                GREEN() // green ring for loaded
             } else if occupied {
-                LINE2
+                LINE2()
             } else {
-                LINE // dimmer border for empty slot
+                LINE() // dimmer border for empty slot
             };
 
             let response = ui
@@ -1718,7 +1725,7 @@ fn draw_pattern_bank(
                             egui::StrokeKind::Outside,
                         );
 
-                        let label_color = if is_loaded { GREEN } else { INK };
+                        let label_color = if is_loaded { GREEN() } else { INK() };
                         ui.painter().text(
                             rect.center(),
                             egui::Align2::CENTER_CENTER,
@@ -1770,6 +1777,8 @@ fn draw_pattern_bank(
                     // Paste clipboard into empty slot
                     if let Ok(mut bank_mut) = params.pattern_bank.bank.lock() {
                         bank_mut.slots[i] = clipboard.clone();
+                        drop(bank_mut);
+                        params.pattern_bank.refresh_snapshot();
                     }
                 }
             }
@@ -1785,13 +1794,15 @@ fn draw_pattern_bank(
             0.0
         };
         let clear_fill = if is_clear_confirm {
+            let d = DANGER();
+            let blink = clear_blink as f32;
             Color32::from_rgb(
-                (200.0 + clear_blink * 55.0) as u8,
-                (60.0 + clear_blink * 40.0) as u8,
-                (60.0 + clear_blink * 40.0) as u8,
+                (d.r() as f32 - 55.0 + blink * 55.0) as u8,
+                (d.g() as f32 - 20.0 + blink * 40.0) as u8,
+                (d.b() as f32 - 20.0 + blink * 40.0) as u8,
             )
         } else {
-            PANEL2
+            PANEL2()
         };
         let clear_btn = egui::Button::new(
             RichText::new(if is_clear_confirm { "Sure?" } else { "Clr" })
@@ -1804,9 +1815,9 @@ fn draw_pattern_bank(
         .stroke(egui::Stroke::new(
             1.5,
             if is_clear_confirm {
-                Color32::from_rgb(255, 120, 120)
+                DANGER_SOFT()
             } else {
-                LINE2
+                LINE2()
             },
         ))
         .corner_radius(5.0);
@@ -1850,7 +1861,7 @@ fn draw_pattern_bank(
             ui.label(
                 RichText::new("Export failed")
                     .size(10.0)
-                    .color(Color32::from_rgb(248, 113, 113)),
+                    .color(RED()),
             );
         }
     });
@@ -1872,11 +1883,11 @@ fn draw_bottom_panel(
     let panel_h = 210.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(panel_w, panel_h), egui::Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, RADIUS_PANEL, PANEL);
+    painter.rect_filled(rect, RADIUS_PANEL, PANEL());
     painter.rect_stroke(
         rect,
         RADIUS_PANEL,
-        egui::Stroke::new(1.0, LINE),
+        egui::Stroke::new(1.0, LINE()),
         egui::StrokeKind::Inside,
     );
     const BOTTOM_HEADER_H: f32 = 42.0;
@@ -1887,7 +1898,7 @@ fn draw_bottom_panel(
     painter.hline(
         rect.x_range(),
         rect.top() + BOTTOM_SEPARATOR_Y,
-        egui::Stroke::new(1.0, LINE),
+        egui::Stroke::new(1.0, LINE()),
     );
 
     let header_rect = egui::Rect::from_min_size(rect.min, Vec2::new(panel_w, BOTTOM_HEADER_H));
@@ -1936,7 +1947,7 @@ fn draw_bottom_panel(
         egui::Align2::LEFT_CENTER,
         meta,
         f_mono_med(10.5),
-        INK3,
+        INK3(),
     );
 
     let body_rect = egui::Rect::from_min_max(
@@ -2015,7 +2026,7 @@ fn draw_preset_bar(
             state.last_loaded_slot = None;
         }
         ui.add_space(8.0);
-        if chip_button(ui, "⟳ Random", true, PL_LINK, egui::Sense::click()).clicked() {
+        if chip_button(ui, "⟳ Random", true, PL_LINK(), egui::Sense::click()).clicked() {
             params.plock_state.state.clear_all();
             params.seq_plock_state.state.clear_all();
             clear_all_fusions(pattern);
@@ -2097,8 +2108,8 @@ fn draw_generator_bar(
                     .font(f_sans_sb(11.0))
                     .color(Color32::WHITE),
             )
-            .fill(BLUE)
-            .stroke(egui::Stroke::new(1.0, BLUE))
+            .fill(BLUE())
+            .stroke(egui::Stroke::new(1.0, BLUE()))
             .corner_radius(6.0),
         );
 
@@ -2161,8 +2172,8 @@ fn draw_song_editor(
         if state.song_clear_confirm {
             let btn = egui::Button::new(RichText::new("Confirm?").size(10.0).color(Color32::WHITE))
                 .min_size(Vec2::new(70.0, 20.0))
-                .fill(Color32::from_rgb(180, 60, 60))
-                .stroke(egui::Stroke::new(1.0, LINE2))
+                .fill(DANGER_DIM())
+                .stroke(egui::Stroke::new(1.0, LINE2()))
                 .corner_radius(5.0);
             if ui.add(btn).clicked() {
                 for step in 0..SONG_BLOCKS {
@@ -2174,8 +2185,8 @@ fn draw_song_editor(
         } else {
             let btn = egui::Button::new(RichText::new("Clear All").size(10.0))
                 .min_size(Vec2::new(70.0, 20.0))
-                .fill(PANEL2)
-                .stroke(egui::Stroke::new(1.0, LINE2))
+                .fill(PANEL2())
+                .stroke(egui::Stroke::new(1.0, LINE2()))
                 .corner_radius(5.0);
             if ui.add(btn).clicked() {
                 state.song_clear_confirm = true;
@@ -2202,18 +2213,18 @@ fn draw_song_editor(
                 slot >= 0 && (slot as usize) < SLOT_COUNT && bank.slots[slot as usize].occupied;
 
             let fill = if is_current {
-                BLUE
+                BLUE()
             } else if occupied {
-                PANEL2
+                PANEL2()
             } else {
-                Color32::from_rgb(18, 18, 24)
+                SONG_EMPTY()
             };
             let stroke_color = if is_selected {
-                BLUE
+                BLUE()
             } else if is_current {
-                BLUE
+                BLUE()
             } else {
-                LINE2
+                LINE2()
             };
 
             let (rect, response) =
@@ -2336,7 +2347,10 @@ fn draw_song_editor(
 
     // Publish any song change to the audio-thread lock-free controller.
     let current_song = bank.song;
-    if state.last_published_song != Some(current_song) {
+    let song_changed = state.last_published_song != Some(current_song);
+    drop(bank);
+    if song_changed {
+        params.pattern_bank.refresh_snapshot();
         params.song_controller.publish(current_song);
         state.last_published_song = Some(current_song);
     }
@@ -2400,8 +2414,8 @@ fn draw_grid_v2(
     let mut fusion_editing_started_this_frame = false;
 
     egui::Frame::new()
-        .fill(PANEL)
-        .stroke(egui::Stroke::new(1.0, LINE))
+        .fill(PANEL())
+        .stroke(egui::Stroke::new(1.0, LINE()))
         .corner_radius(RADIUS_PANEL)
         .inner_margin(11.0)
         .show(ui, |ui| {
@@ -2540,7 +2554,7 @@ fn draw_grid_v2(
         ui.label(
             RichText::new("P-Lock Mode")
                 .font(f_sans_sb(10.5))
-                .color(INK3),
+                .color(INK3()),
         );
         let selected = if state.sequencer_mode { 1 } else { 0 };
         let new_selected = p_lock_mode_segmented(ui, selected);
@@ -2550,7 +2564,7 @@ fn draw_grid_v2(
         ui.label(
             RichText::new("Right-click a step to edit its p-lock")
                 .size(10.5)
-                .color(INK3),
+                .color(INK3()),
         );
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -2692,7 +2706,7 @@ fn draw_legacy_slot_lane_v2(
                         "Clear Lane"
                     })
                     .font(f_sans_med(11.0))
-                    .color(RED),
+                    .color(RED()),
                 )
                 .on_hover_text(if confirm_clear_grid {
                     "Click again to clear this lane's steps, fusions and plocks"
@@ -2718,7 +2732,7 @@ fn draw_legacy_slot_lane_v2(
                         "Delete Lane"
                     })
                     .font(f_sans_med(11.0))
-                    .color(RED),
+                    .color(RED()),
                 )
                 .on_hover_text("Deactivate this lane; the slot becomes empty and can be reactivated later")
                 .clicked()
@@ -2747,7 +2761,7 @@ fn draw_legacy_slot_lane_v2(
         let inst_state = &sound_settings.instruments[slot_idx];
         let mut lane_vol = f32::from_bits(inst_state.volume.load(Ordering::Relaxed));
         let lane_vol_response =
-            draw_mini_value_slider(ui, &mut lane_vol, 0.0, 2.0, 1.0, vol_w, BLUE, "Lane Volume");
+            draw_mini_value_slider(ui, &mut lane_vol, 0.0, 2.0, 1.0, vol_w, BLUE(), "Lane Volume");
         if lane_vol_response.clicked() || lane_vol_response.dragged() {
             select_legacy_track(state, slot_idx);
         }
@@ -2765,8 +2779,8 @@ fn draw_legacy_slot_lane_v2(
                 setter,
                 row.mute,
                 "M",
-                AMBER,
-                Color32::from_rgb(26, 18, 6),
+                AMBER(),
+                MUTE_FILL(),
                 "Mute",
             )
             .clicked()
@@ -2779,8 +2793,8 @@ fn draw_legacy_slot_lane_v2(
                 setter,
                 row.solo,
                 "S",
-                GREEN,
-                Color32::from_rgb(6, 32, 15),
+                GREEN(),
+                SOLO_FILL(),
                 "Solo",
             )
             .clicked()
@@ -2793,7 +2807,7 @@ fn draw_legacy_slot_lane_v2(
                 state.slot_flash_until[slot_idx] = now + 0.10;
             }
             let is_flashing = now < state.slot_flash_until[slot_idx];
-            if draw_tag_button_v2(ui, "T", AMBER, Color32::BLACK, is_flashing, "Test").clicked() {
+            if draw_tag_button_v2(ui, "T", AMBER(), Color32::BLACK, is_flashing, "Test").clicked() {
                 voice_test_triggers[slot_idx].store(true, Ordering::Release);
                 if params.auto_edit.value() {
                     select_legacy_track(state, slot_idx);
@@ -2913,7 +2927,7 @@ fn draw_legacy_slot_lane_v2(
                     is_editing,
                 );
                 if is_drag_target {
-                    stroke = egui::Stroke::new(2.0, Color32::from_rgb(255, 200, 80));
+                    stroke = egui::Stroke::new(2.0, DRAG_TARGET());
                 }
                 let text = if is_fusion_start {
                     fusion_group
@@ -3059,7 +3073,7 @@ fn draw_legacy_slot_lane_v2(
             0.0,
             1.0,
             extra_w,
-            BLUE,
+            BLUE(),
             "Humanize",
             |value| format!("{:>3}%", (value * 100.0).round() as i32),
         );
@@ -3073,7 +3087,7 @@ fn draw_legacy_slot_lane_v2(
             -50.0,
             50.0,
             extra_w,
-            BLUE,
+            BLUE(),
             "Push/Pull",
             |value| format!("{:+.0} ms", value),
         );
@@ -3184,12 +3198,12 @@ fn draw_empty_slot_lane_v2(
 
 fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
-    let fill = if response.hovered() { P_HOVER } else { PANEL2 };
+    let fill = if response.hovered() { P_HOVER() } else { PANEL2() };
     ui.painter().rect_filled(rect, RADIUS_CTL, fill);
     ui.painter().rect_stroke(
         rect,
         RADIUS_CTL,
-        egui::Stroke::new(1.0, LINE2),
+        egui::Stroke::new(1.0, LINE2()),
         egui::StrokeKind::Inside,
     );
     ui.painter().text(
@@ -3197,18 +3211,18 @@ fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) ->
         egui::Align2::CENTER_CENTER,
         format!("+{}", slot_number),
         f_mono_sb(11.0),
-        FAINT,
+        FAINT(),
     );
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::hover());
-    ui.painter().rect_filled(rect, RADIUS_CTL, BG);
+    ui.painter().rect_filled(rect, RADIUS_CTL, BG());
     ui.painter().rect_stroke(
         rect,
         RADIUS_CTL,
-        egui::Stroke::new(1.0, LINE),
+        egui::Stroke::new(1.0, LINE()),
         egui::StrokeKind::Inside,
     );
     if !label.is_empty() {
@@ -3217,7 +3231,7 @@ fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::
             egui::Align2::CENTER_CENTER,
             label,
             f_sans_med(9.5),
-            FAINT,
+            FAINT(),
         );
     }
     response
@@ -3334,7 +3348,7 @@ fn draw_lane_reorder_indicator(
         .unwrap_or(0.0);
     ui.painter().line_segment(
         [egui::pos2(x_min, y), egui::pos2(x_max, y)],
-        egui::Stroke::new(2.0, BLUE),
+        egui::Stroke::new(2.0, BLUE()),
     );
 }
 
@@ -3635,13 +3649,13 @@ fn draw_add_module_popup_if_any(
         .order(egui::Order::Foreground)
         .fixed_pos(popup.screen_pos)
         .show(ui.ctx(), |ui| {
-            page_menu_frame(ui, BLUE, |ui| {
-                page_menu_header(ui, &format!("Slot {} - Add Module", popup.slot + 1), BLUE);
+            page_menu_frame(ui, BLUE(), |ui| {
+                page_menu_header(ui, &format!("Slot {} - Add Module", popup.slot + 1), BLUE());
                 for kind_idx in 0..TrackInstrumentKind::COUNT {
                     let Some(kind) = TrackInstrumentKind::from_index(kind_idx) else {
                         continue;
                     };
-                    if plock_menu_action_row(ui, kind.default_name(), BLUE).clicked() {
+                    if plock_menu_action_row(ui, kind.default_name(), BLUE()).clicked() {
                         activate_slot(params, sound_settings, state, popup.slot, kind);
                         state.add_module_popup = None;
                     }
@@ -3678,7 +3692,7 @@ fn draw_page_popup_if_any(
     let page = popup.page;
     let has_clipboard = state.page_clipboard.is_some();
     let confirm_action = popup.confirm_action;
-    let accent = BLUE;
+    let accent = BLUE();
 
     let area_id = ui.id().with("page_popup");
     let response = egui::Area::new(area_id)
@@ -3699,9 +3713,9 @@ fn draw_page_popup_if_any(
                     ui.label(
                         RichText::new("Overwrite page?")
                             .font(f_sans_med(10.0))
-                            .color(INK3),
+                            .color(INK3()),
                     );
-                    if plock_menu_action_row(ui, "Yes, overwrite", PL_LINK).clicked() {
+                    if plock_menu_action_row(ui, "Yes, overwrite", PL_LINK()).clicked() {
                         if let Some(ref clipboard) = state.page_clipboard {
                             paste_page_from_clipboard(pattern, plock, params, page, clipboard);
                             // Auto-extend pattern length so the pasted page is actually played.
@@ -3713,12 +3727,12 @@ fn draw_page_popup_if_any(
                         }
                         state.page_popup = None;
                     }
-                    if plock_menu_action_row(ui, "No, cancel", INK3).clicked() {
+                    if plock_menu_action_row(ui, "No, cancel", INK3()).clicked() {
                         state.page_popup = None;
                     }
                 } else {
                     let paste_enabled = has_clipboard;
-                    let paste_color = if paste_enabled { PL_LINK } else { INK3 };
+                    let paste_color = if paste_enabled { PL_LINK() } else { INK3() };
                     if plock_menu_action_row(ui, "Paste", paste_color).clicked() && paste_enabled {
                         popup.confirm_action = Some(PageMenuAction::Paste);
                         state.page_popup = Some(popup);
@@ -3729,17 +3743,17 @@ fn draw_page_popup_if_any(
                     ui.label(
                         RichText::new("Clear page?")
                             .font(f_sans_med(10.0))
-                            .color(INK3),
+                            .color(INK3()),
                     );
-                    if plock_menu_action_row(ui, "Yes, clear", RED).clicked() {
+                    if plock_menu_action_row(ui, "Yes, clear", RED()).clicked() {
                         clear_page_for_ui(pattern, plock, params, page);
                         state.page_popup = None;
                     }
-                    if plock_menu_action_row(ui, "No, cancel", INK3).clicked() {
+                    if plock_menu_action_row(ui, "No, cancel", INK3()).clicked() {
                         state.page_popup = None;
                     }
                 } else {
-                    if plock_menu_action_row(ui, "Clear", RED).clicked() {
+                    if plock_menu_action_row(ui, "Clear", RED()).clicked() {
                         popup.confirm_action = Some(PageMenuAction::Clear);
                         state.page_popup = Some(popup);
                     }
@@ -3779,19 +3793,19 @@ fn draw_settings_popup_if_any(
         .order(egui::Order::Foreground)
         .fixed_pos(anchor)
         .show(ui.ctx(), |ui| {
-            page_menu_frame(ui, BLUE, |ui| {
+            page_menu_frame(ui, BLUE(), |ui| {
                 ui.set_min_width(200.0);
                 ui.set_max_width(220.0);
 
                 // Header with close button
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Settings").font(f_sans_sb(11.0)).color(BLUE));
+                    ui.label(RichText::new("Settings").font(f_sans_sb(11.0)).color(BLUE()));
                     ui.add_space((ui.available_width() - 20.0).max(0.0));
                     if ui
                         .button(
                             RichText::new("x")
                                 .font(f_sans_med(10.5))
-                                .color(INK3),
+                                .color(INK3()),
                         )
                         .clicked()
                     {
@@ -3804,7 +3818,7 @@ fn draw_settings_popup_if_any(
                 ui.label(
                     RichText::new("Default Analog")
                         .font(f_sans_med(10.5))
-                        .color(INK3),
+                        .color(INK3()),
                 );
                 ui.add_space(4.0);
                 let mut value = state.global_config.default_analog;
@@ -3821,7 +3835,7 @@ fn draw_settings_popup_if_any(
                 ui.label(
                     RichText::new("Global MIDI Channel")
                         .font(f_sans_med(10.5))
-                        .color(INK3),
+                        .color(INK3()),
                 );
                 ui.add_space(4.0);
                 let mut channel = state.global_config.global_midi_channel as i32;
@@ -3837,6 +3851,31 @@ fn draw_settings_popup_if_any(
                     let mut layout = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
                     layout.global_midi_channel = channel;
                     PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
+                }
+
+                ui.add_space(12.0);
+
+                // Skin selector
+                ui.label(
+                    RichText::new("Skin")
+                        .font(f_sans_med(10.5))
+                        .color(INK3()),
+                );
+                ui.add_space(4.0);
+                let skin_names: Vec<&str> =
+                    theme::SKINS.iter().map(|(name, _)| *name).collect();
+                let current_idx = skin_names
+                    .iter()
+                    .position(|n| *n == theme::skin_name())
+                    .unwrap_or(0);
+                let (response, picked) =
+                    styled_select(ui, "settings_skin", current_idx, &skin_names, 120.0);
+                let _ = response;
+                if let Some(idx) = picked {
+                    let name = skin_names[idx.min(skin_names.len().saturating_sub(1))];
+                    theme::set_skin(name);
+                    state.global_config.skin = name.to_string();
+                    let _ = state.global_config.save();
                 }
             });
         })
@@ -3873,7 +3912,7 @@ fn draw_page_bar_v2(
             Vec2::new(50.0, CTL_HEIGHT),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
-                ui.label(RichText::new("Page").font(f_sans_sb(10.5)).color(INK3));
+                ui.label(RichText::new("Page").font(f_sans_sb(10.5)).color(INK3()));
             },
         );
         for page in 0..4 {
@@ -3887,8 +3926,8 @@ fn draw_page_bar_v2(
                         .size(10.5),
                 )
                 .min_size(Vec2::new(28.0, CTL_HEIGHT))
-                .fill(if active { BLUE } else { PANEL2 })
-                .stroke(egui::Stroke::new(1.0, if active { BLUE } else { LINE2 }))
+                .fill(if active { BLUE() } else { PANEL2() })
+                .stroke(egui::Stroke::new(1.0, if active { BLUE() } else { LINE2() }))
                 .corner_radius(6.0),
             );
             if play_page == page {
@@ -3898,7 +3937,7 @@ fn draw_page_bar_v2(
                     5.0,
                     Color32::from_rgba_unmultiplied(248, 113, 113, 45),
                 );
-                ui.painter().circle_filled(led, 2.5, RED);
+                ui.painter().circle_filled(led, 2.5, RED());
             }
             if response.clicked() {
                 state.current_page = page;
@@ -3924,14 +3963,14 @@ fn draw_page_bar_v2(
             .color(if state.follow_mode {
                 Color32::WHITE
             } else {
-                INK2
+                INK2()
             }),
         )
         .min_size(Vec2::new(78.0, CTL_HEIGHT))
-        .fill(if state.follow_mode { BLUE } else { PANEL2 })
+        .fill(if state.follow_mode { BLUE() } else { PANEL2() })
         .stroke(egui::Stroke::new(
             1.0,
-            if state.follow_mode { BLUE } else { LINE2 },
+            if state.follow_mode { BLUE() } else { LINE2() },
         ))
         .corner_radius(6.0);
         if ui.add(follow).clicked() {
@@ -3962,7 +4001,7 @@ fn draw_page_bar_v2(
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                ui.label(RichText::new("Len").font(f_sans_sb(10.5)).color(INK3));
+                ui.label(RichText::new("Len").font(f_sans_sb(10.5)).color(INK3()));
                 header_param_slider(ui, setter, &params.pattern_length, 132.0, "", false);
                 draw_len_value_fixed(ui, master_length, LEN_VALUE_W);
                 for &len in &[16, 32, 48, 64] {
@@ -3970,8 +4009,8 @@ fn draw_page_bar_v2(
                     let btn =
                         egui::Button::new(RichText::new(format!("{}", len)).monospace().size(10.5))
                             .min_size(Vec2::new(36.0, CTL_HEIGHT))
-                            .fill(if active { BLUE } else { PANEL2 })
-                            .stroke(egui::Stroke::new(1.0, if active { BLUE } else { LINE2 }))
+                            .fill(if active { BLUE() } else { PANEL2() })
+                            .stroke(egui::Stroke::new(1.0, if active { BLUE() } else { LINE2() }))
                             .corner_radius(6.0);
                     if ui.add(btn).clicked() {
                         setter.set_parameter(&params.pattern_length, len as i32);
@@ -3980,8 +4019,8 @@ fn draw_page_bar_v2(
                 let can_double = master_length <= 32;
                 let x2 = egui::Button::new(RichText::new("x2").monospace().size(10.5))
                     .min_size(Vec2::new(36.0, CTL_HEIGHT))
-                    .fill(PANEL2)
-                    .stroke(egui::Stroke::new(1.0, LINE2))
+                    .fill(PANEL2())
+                    .stroke(egui::Stroke::new(1.0, LINE2()))
                     .corner_radius(6.0);
                 if ui.add_enabled(can_double, x2).clicked() {
                     for i in 0..master_length {
@@ -4011,14 +4050,14 @@ fn draw_page_bar_v2(
 
 fn draw_lane_preset_dropdown(ui: &mut egui::Ui, state: &mut EditorUIState) {
     egui::ComboBox::from_id_salt("lane_preset_dropdown")
-        .selected_text(RichText::new("Preset").font(f_sans_sb(10.5)).color(INK2))
+        .selected_text(RichText::new("Preset").font(f_sans_sb(10.5)).color(INK2()))
         .width(94.0)
         .show_ui(ui, |ui| {
             ui.set_min_width(132.0);
             if ui
                 .selectable_label(
                     false,
-                    RichText::new("Clear All").font(f_sans_med(11.0)).color(RED),
+                    RichText::new("Clear All").font(f_sans_med(11.0)).color(RED()),
                 )
                 .clicked()
             {
@@ -4065,12 +4104,12 @@ fn draw_lane_preset_warning_if_any(
         .fixed_pos(pos)
         .show(ui.ctx(), |ui| {
             egui::Frame::NONE
-                .fill(P_ACTIVE)
+                .fill(P_ACTIVE())
                 .corner_radius(RADIUS_PANEL)
                 .inner_margin(egui::Margin::same(12))
                 .show(ui, |ui| {
                     ui.set_width(panel_w);
-                    ui.label(RichText::new("Warning").font(f_sans_sb(12.0)).color(RED));
+                    ui.label(RichText::new("Warning").font(f_sans_sb(12.0)).color(RED()));
                     ui.add_space(4.0);
                     ui.label(
                         RichText::new(format!(
@@ -4078,7 +4117,7 @@ fn draw_lane_preset_warning_if_any(
                             action.label()
                         ))
                         .font(f_sans_med(10.5))
-                        .color(INK2),
+                        .color(INK2()),
                     );
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
@@ -4088,8 +4127,8 @@ fn draw_lane_preset_warning_if_any(
                                 .color(Color32::WHITE),
                         )
                         .min_size(Vec2::new(128.0, CTL_HEIGHT))
-                        .fill(RED)
-                        .stroke(egui::Stroke::new(1.0, RED))
+                        .fill(RED())
+                        .stroke(egui::Stroke::new(1.0, RED()))
                         .corner_radius(6.0);
                         if ui.add(apply).clicked() {
                             apply_lane_preset_action(
@@ -4103,11 +4142,11 @@ fn draw_lane_preset_warning_if_any(
                         }
 
                         let cancel = egui::Button::new(
-                            RichText::new("Cancel").font(f_sans_sb(10.5)).color(INK2),
+                            RichText::new("Cancel").font(f_sans_sb(10.5)).color(INK2()),
                         )
                         .min_size(Vec2::new(82.0, CTL_HEIGHT))
-                        .fill(PANEL2)
-                        .stroke(egui::Stroke::new(1.0, LINE2))
+                        .fill(PANEL2())
+                        .stroke(egui::Stroke::new(1.0, LINE2()))
                         .corner_radius(6.0);
                         if ui.add(cancel).clicked() {
                             state.lane_preset_confirm = None;
@@ -4126,14 +4165,14 @@ fn draw_len_value_fixed(ui: &mut egui::Ui, master_length: usize, width: f32) {
         egui::Align2::LEFT_CENTER,
         number_text,
         f_mono(12.0),
-        INK,
+        INK(),
     );
     ui.painter().text(
         egui::pos2(rect.left() + 23.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         "steps",
         f_sans(9.5),
-        INK3,
+        INK3(),
     );
 }
 
@@ -4155,7 +4194,7 @@ fn draw_seq_header_v2(
         ui.add_sized(Vec2::new(name_w, 16.0), egui::Label::new(""));
         ui.add_sized(
             Vec2::new(vol_w, 16.0),
-            egui::Label::new(RichText::new("Vol").font(f_sans_sb(9.5)).color(INK3)),
+            egui::Label::new(RichText::new("Vol").font(f_sans_sb(9.5)).color(INK3())),
         );
         // M / S / T column headings (aligned with the lane tags below)
         ui.allocate_ui(Vec2::new(mst_w, 16.0), |ui| {
@@ -4164,7 +4203,7 @@ fn draw_seq_header_v2(
                 for t in ["M", "S", "T"] {
                     ui.add_sized(
                         Vec2::new(STEP_H, 16.0),
-                        egui::Label::new(RichText::new(t).font(f_mono(9.0)).color(INK3)),
+                        egui::Label::new(RichText::new(t).font(f_mono(9.0)).color(INK3())),
                     );
                 }
             });
@@ -4174,11 +4213,11 @@ fn draw_seq_header_v2(
             for local in 0..16 {
                 let step = page_offset + local;
                 let color = if play_step == step {
-                    BLUE
+                    BLUE()
                 } else if local % 4 == 0 {
-                    INK2
+                    INK2()
                 } else {
-                    FAINT
+                    FAINT()
                 };
                 ui.add_sized(
                     Vec2::new(cell_w, 16.0),
@@ -4193,7 +4232,7 @@ fn draw_seq_header_v2(
         for label in ["Hum", "Push", "Len"] {
             ui.add_sized(
                 Vec2::new(extra_w, 16.0),
-                egui::Label::new(RichText::new(label).font(f_sans_sb(9.5)).color(INK3)),
+                egui::Label::new(RichText::new(label).font(f_sans_sb(9.5)).color(INK3())),
             );
         }
     });
@@ -4204,9 +4243,9 @@ fn draw_seq_grip_v2(ui: &mut egui::Ui, width: f32, height: f32) -> egui::Respons
     // 2x3 dot matrix (drag-handle look; avoids relying on braille glyph coverage)
     let c = rect.center();
     let dot_color = if response.dragged() || response.hovered() {
-        INK2
+        INK2()
     } else {
-        FAINT
+        FAINT()
     };
     for col in 0..2 {
         for row in 0..3 {
@@ -4223,11 +4262,11 @@ fn draw_seq_grip_v2(ui: &mut egui::Ui, width: f32, height: f32) -> egui::Respons
 fn draw_lane_name_v2(ui: &mut egui::Ui, width: f32, selected: bool, label: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
     let fill = if selected {
-        BLUE
+        BLUE()
     } else if response.hovered() {
-        P_HOVER
+        P_HOVER()
     } else {
-        PANEL2
+        PANEL2()
     };
     ui.painter().rect_filled(rect, RADIUS_CTL, fill);
     // Borderless at rest; only the selected lane gets a blue outline.
@@ -4235,16 +4274,16 @@ fn draw_lane_name_v2(ui: &mut egui::Ui, width: f32, selected: bool, label: &str)
         ui.painter().rect_stroke(
             rect,
             RADIUS_CTL,
-            egui::Stroke::new(1.0, BLUE),
+            egui::Stroke::new(1.0, BLUE()),
             egui::StrokeKind::Inside,
         );
     }
     let text_color = if selected {
         Color32::WHITE
     } else if response.hovered() {
-        INK
+        INK()
     } else {
-        INK2
+        INK2()
     };
     ui.painter().text(
         rect.center(),
@@ -4265,13 +4304,13 @@ fn draw_tag_button_v2(
     tooltip: &str,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(TAG_SIZE), egui::Sense::click());
-    let fill = if active { color } else { PANEL2 };
-    let text = if active { text_on } else { FAINT };
+    let fill = if active { color } else { PANEL2() };
+    let text = if active { text_on } else { FAINT() };
     ui.painter().rect_filled(rect, 4.0, fill);
     ui.painter().rect_stroke(
         rect,
         4.0,
-        egui::Stroke::new(1.0, if active { color } else { LINE2 }),
+        egui::Stroke::new(1.0, if active { color } else { LINE2() }),
         egui::StrokeKind::Inside,
     );
     ui.painter().text(
@@ -4340,7 +4379,7 @@ fn draw_step_cell_v2(
 
     let hover = hover_t(ui.ctx(), response.id, response.hovered() && enabled && !is_fusion_mid);
     let stroke = if hover > 0.01 {
-        egui::Stroke::new(1.0, lerp_color(stroke.color, BLUE, hover))
+        egui::Stroke::new(1.0, lerp_color(stroke.color, BLUE(), hover))
     } else {
         stroke
     };
@@ -4435,56 +4474,56 @@ fn step_colors_v2(
 ) -> (Color32, egui::Stroke) {
     if disabled {
         return (
-            Color32::from_rgb(10, 10, 14),
-            egui::Stroke::new(1.0, Color32::from_rgb(0, 0, 0)),
+            CELL_DISABLED(),
+            egui::Stroke::new(1.0, Color32::BLACK),
         );
     }
     if selection_start {
-        return (Color32::from_rgb(20, 34, 58), egui::Stroke::new(1.5, BLUE));
+        return (FUSION_FILL(), egui::Stroke::new(1.5, BLUE()));
     }
 
     let empty = if local_step % 4 == 0 {
-        Color32::from_rgb(35, 35, 44)
+        CELL_EMPTY_BEAT()
     } else {
-        Color32::from_rgb(27, 27, 34)
+        CELL_EMPTY_OFF()
     };
 
     // Compute the base color as if the cell were not fused.
     let (fill, border) = if sequencer_mode {
         if active && has_seq_plock {
-            (SEQPL, SEQPL)
+            (SEQPL(), SEQPL())
         } else if has_seq_plock {
-            (Color32::from_rgb(28, 18, 48), SEQPL_DIM)
+            (CELL_SEQPL_OFF(), SEQPL_DIM())
         } else if active {
-            (BLUE, BLUE)
+            (BLUE(), BLUE())
         } else if is_current {
-            (Color32::from_rgb(48, 48, 60), LINE)
+            (CELL_CURRENT(), LINE())
         } else {
-            (empty, LINE)
+            (empty, LINE())
         }
     } else if active && has_sound_plock {
-        (PL_LINK, PL_LINK)
+        (PL_LINK(), PL_LINK())
     } else if active {
-        (BLUE, BLUE)
+        (BLUE(), BLUE())
     } else if has_sound_plock {
         if is_snapshot {
-            (Color32::from_rgb(36, 16, 16), PL_SNAP_DIM)
+            (CELL_PL_SNAP_OFF(), PL_SNAP_DIM())
         } else {
-            (Color32::from_rgb(36, 26, 8), PL_LINK_DIM)
+            (CELL_PL_LINK_OFF(), PL_LINK_DIM())
         }
     } else if is_current {
-        (Color32::from_rgb(48, 48, 60), LINE)
+        (CELL_CURRENT(), LINE())
     } else {
-        (empty, LINE)
+        (empty, LINE())
     };
 
     // Fusion overrides: keep the plock color if the fused cell carries a sound
     // plock or a morph (modulation), so fused cells are not visually muted.
     if is_fusion_start && !is_editing {
         if has_sound_plock || has_seq_plock {
-            return (fill, egui::Stroke::new(1.0, BLUE));
+            return (fill, egui::Stroke::new(1.0, BLUE()));
         }
-        return (Color32::from_rgb(20, 34, 58), egui::Stroke::new(1.0, BLUE));
+        return (FUSION_FILL(), egui::Stroke::new(1.0, BLUE()));
     }
     if is_fusion_mid && !is_editing {
         return (Color32::TRANSPARENT, egui::Stroke::NONE);
@@ -4496,17 +4535,17 @@ fn step_colors_v2(
         // When editing a fused group, pulse every cell of the group using the
         // same blue fusion base so the block flashes as one unit.
         let fusion_fill = if is_fusion_start || is_fusion_mid {
-            Color32::from_rgb(20, 34, 58)
+            FUSION_FILL()
         } else {
             fill
         };
         let edit_color = Color32::from_rgba_unmultiplied(
-            (BLUE.r() as f32 * pulse + fusion_fill.r() as f32 * (1.0 - pulse)) as u8,
-            (BLUE.g() as f32 * pulse + fusion_fill.g() as f32 * (1.0 - pulse)) as u8,
-            (BLUE.b() as f32 * pulse + fusion_fill.b() as f32 * (1.0 - pulse)) as u8,
+            (BLUE().r() as f32 * pulse + fusion_fill.r() as f32 * (1.0 - pulse)) as u8,
+            (BLUE().g() as f32 * pulse + fusion_fill.g() as f32 * (1.0 - pulse)) as u8,
+            (BLUE().b() as f32 * pulse + fusion_fill.b() as f32 * (1.0 - pulse)) as u8,
             255,
         );
-        return (edit_color, egui::Stroke::new(1.5, BLUE));
+        return (edit_color, egui::Stroke::new(1.5, BLUE()));
     }
 
     (fill, egui::Stroke::new(1.0, border))
@@ -4522,35 +4561,11 @@ fn draw_mini_value_slider(
     fill: Color32,
     tooltip: &str,
 ) -> egui::Response {
-    let (rect, mut response) =
-        ui.allocate_exact_size(Vec2::new(width, 17.0), egui::Sense::click_and_drag());
-    if let Some(pos) = response.interact_pointer_pos() {
-        if response.clicked() || response.dragged() {
-            let t = egui::emath::remap_clamp(pos.x, rect.x_range(), 0.0..=1.0);
-            *value = min + (max - min) * t;
-            response.mark_changed();
-        }
-    }
-    if response.double_clicked() {
-        *value = default.clamp(min, max);
-        response.mark_changed();
-    }
-    let track = egui::Rect::from_center_size(rect.center(), Vec2::new(width, 6.0));
-    ui.painter().rect_filled(track, 5.0, PANEL2);
-    let t = ((*value - min) / (max - min)).clamp(0.0, 1.0);
-    let mut fill_rect = track;
-    fill_rect.set_right(track.left() + track.width() * t);
-    ui.painter().rect_filled(fill_rect, 5.0, fill);
-
-    // Small handle on hover/drag so the slider is easier to grab.
-    if response.hovered() || response.dragged() {
-        let handle_x = track.left() + track.width() * t;
-        ui.painter().circle_filled(
-            egui::pos2(handle_x, track.center().y),
-            4.0,
-            Color32::from_rgb(238, 242, 248),
-        );
-    }
+    let style = slider::TrackStyle {
+        fill,
+        ..slider::TrackStyle::mini()
+    };
+    let response = slider::draw_track(ui, value, min, max, default, false, width, style);
 
     if tooltip.is_empty() {
         response
@@ -4602,8 +4617,8 @@ fn draw_mini_slider_value_tooltip(ui: &egui::Ui, response: &egui::Response, text
         .fixed_pos(pos)
         .show(ui.ctx(), |ui| {
             egui::Frame::NONE
-                .fill(P_ACTIVE)
-                .stroke(egui::Stroke::new(1.0, LINE2))
+                .fill(P_ACTIVE())
+                .stroke(egui::Stroke::new(1.0, LINE2()))
                 .corner_radius(6.0)
                 .inner_margin(egui::Margin {
                     left: 8,
@@ -4612,7 +4627,7 @@ fn draw_mini_slider_value_tooltip(ui: &egui::Ui, response: &egui::Response, text
                     bottom: 5,
                 })
                 .show(ui, |ui| {
-                    ui.label(RichText::new(text).font(f_mono_med(10.5)).color(INK));
+                    ui.label(RichText::new(text).font(f_mono_med(10.5)).color(INK()));
                 });
         });
 }
@@ -4621,7 +4636,7 @@ fn p_lock_mode_segmented(ui: &mut egui::Ui, selected: usize) -> usize {
     text_segmented(
         ui,
         "plock_mode",
-        &[("Sound", PL_LINK), ("Sequencer", SEQPL)],
+        &[("Sound", PL_LINK()), ("Sequencer", SEQPL())],
         selected,
     )
 }
@@ -4630,7 +4645,7 @@ fn generator_song_segmented(ui: &mut egui::Ui, selected: usize) -> usize {
     text_segmented(
         ui,
         "gen_song_mode",
-        &[("Generator", BLUE), ("Song", PL_LINK)],
+        &[("Generator", BLUE()), ("Song", PL_LINK())],
         selected,
     )
 }
@@ -4646,7 +4661,7 @@ fn text_segmented(
     let mut widths = Vec::with_capacity(options.len());
     for (label, _) in options {
         let tw = ui.fonts(|f| {
-            f.layout_no_wrap((*label).to_string(), font.clone(), INK)
+            f.layout_no_wrap((*label).to_string(), font.clone(), INK())
                 .size()
                 .x
         });
@@ -4655,7 +4670,7 @@ fn text_segmented(
     let total_w: f32 = widths.iter().sum();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(total_w, CTL_HEIGHT), egui::Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, PANEL2);
+    painter.rect_filled(rect, 6.0, PANEL2());
 
     let mut result = selected.min(options.len().saturating_sub(1));
     let mut x = rect.left();
@@ -4673,7 +4688,7 @@ fn text_segmented(
         if active {
             painter.rect_filled(seg.shrink(1.0), 5.0, *accent);
         } else if response.hovered() {
-            painter.rect_filled(seg.shrink(1.0), 5.0, P_HOVER);
+            painter.rect_filled(seg.shrink(1.0), 5.0, P_HOVER());
             painter.rect_stroke(
                 seg.shrink(1.0),
                 5.0,
@@ -4687,7 +4702,7 @@ fn text_segmented(
                     egui::pos2(seg.left(), rect.top() + 3.0),
                     egui::pos2(seg.left(), rect.bottom() - 3.0),
                 ],
-                egui::Stroke::new(1.0, LINE2),
+                egui::Stroke::new(1.0, LINE2()),
             );
         }
         painter.text(
@@ -4698,9 +4713,9 @@ fn text_segmented(
             if active {
                 Color32::WHITE
             } else if response.hovered() {
-                INK
+                INK()
             } else {
-                INK2
+                INK2()
             },
         );
         if response.clicked() {
@@ -4714,30 +4729,11 @@ fn text_segmented(
     painter.rect_stroke(
         rect,
         6.0,
-        egui::Stroke::new(1.0, LINE2),
+        egui::Stroke::new(1.0, LINE2()),
         egui::StrokeKind::Inside,
     );
 
     result
-}
-
-fn normalize_slider_value(value: f32, min: f32, max: f32, logarithmic: bool) -> f32 {
-    if logarithmic && min > 0.0 && max > min {
-        let min_log = min.ln();
-        let max_log = max.ln();
-        ((value.max(min).ln() - min_log) / (max_log - min_log)).clamp(0.0, 1.0)
-    } else {
-        ((value - min) / (max - min)).clamp(0.0, 1.0)
-    }
-}
-
-fn denormalize_slider_value(norm: f32, min: f32, max: f32, logarithmic: bool) -> f32 {
-    let norm = norm.clamp(0.0, 1.0);
-    if logarithmic && min > 0.0 && max > min {
-        (min.ln() + norm * (max.ln() - min.ln())).exp()
-    } else {
-        min + norm * (max - min)
-    }
 }
 
 fn format_editor_value(value: f32, suffix: Option<&str>) -> String {
@@ -4760,7 +4756,7 @@ fn editor_label(ui: &mut egui::Ui, text: &str) {
         Vec2::new(EDITOR_LABEL_W, 22.0),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
-            ui.label(RichText::new(text).font(f_sans_med(11.5)).color(INK2));
+            ui.label(RichText::new(text).font(f_sans_med(11.5)).color(INK2()));
         },
     );
 }
@@ -4774,40 +4770,16 @@ fn draw_editor_slider_track(
     logarithmic: bool,
     track_w: f32,
 ) -> egui::Response {
-    let (rect, mut response) = ui.allocate_exact_size(
-        Vec2::new(track_w.max(60.0), 22.0),
-        egui::Sense::click_and_drag(),
-    );
-    if let Some(pos) = response.interact_pointer_pos() {
-        if response.clicked() || response.dragged() {
-            let norm = egui::emath::remap_clamp(pos.x, rect.x_range(), 0.0..=1.0);
-            *value = denormalize_slider_value(norm, min, max, logarithmic).clamp(min, max);
-            response.mark_changed();
-        }
-    }
-    if response.double_clicked() {
-        *value = default.clamp(min, max);
-        response.mark_changed();
-    }
-
-    let track = egui::Rect::from_center_size(rect.center(), Vec2::new(rect.width(), 6.0));
-    ui.painter().rect_filled(track, 3.0, PANEL2);
-    let norm = normalize_slider_value(*value, min, max, logarithmic);
-    if norm > 0.0 {
-        let mut fill = track;
-        fill.set_right(track.left() + track.width() * norm);
-        ui.painter().rect_filled(fill, 3.0, BLUE);
-    }
-    if response.hovered() || response.dragged() {
-        let x = track.left() + track.width() * norm;
-        ui.painter().circle_filled(
-            egui::pos2(x, track.center().y),
-            5.5,
-            Color32::from_rgb(238, 242, 248),
-        );
-    }
-
-    response
+    slider::draw_track(
+        ui,
+        value,
+        min,
+        max,
+        default,
+        logarithmic,
+        track_w.max(60.0),
+        slider::TrackStyle::editor(),
+    )
 }
 
 fn draw_note_freq_mode_toggle(
@@ -4819,11 +4791,11 @@ fn draw_note_freq_mode_toggle(
     let height = 22.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, PANEL2);
+    painter.rect_filled(rect, 6.0, PANEL2());
     painter.rect_stroke(
         rect,
         6.0,
-        egui::Stroke::new(1.0, LINE2),
+        egui::Stroke::new(1.0, LINE2()),
         egui::StrokeKind::Inside,
     );
 
@@ -4840,12 +4812,12 @@ fn draw_note_freq_mode_toggle(
             egui::Sense::click(),
         );
         if active {
-            painter.rect_filled(seg.shrink(1.0), 5.0, BLUE);
+            painter.rect_filled(seg.shrink(1.0), 5.0, BLUE());
         } else if response.hovered() {
             painter.rect_stroke(
                 seg.shrink(1.0),
                 5.0,
-                egui::Stroke::new(1.0, BLUE),
+                egui::Stroke::new(1.0, BLUE()),
                 egui::StrokeKind::Inside,
             );
         }
@@ -4855,7 +4827,7 @@ fn draw_note_freq_mode_toggle(
                     egui::pos2(seg.left(), rect.top() + 3.0),
                     egui::pos2(seg.left(), rect.bottom() - 3.0),
                 ],
-                egui::Stroke::new(1.0, LINE2),
+                egui::Stroke::new(1.0, LINE2()),
             );
         }
         painter.text(
@@ -4866,9 +4838,9 @@ fn draw_note_freq_mode_toggle(
             if active {
                 Color32::WHITE
             } else if response.hovered() {
-                INK
+                INK()
             } else {
-                INK2
+                INK2()
             },
         );
         if response.clicked() && !active {
@@ -4881,10 +4853,10 @@ fn draw_note_freq_mode_toggle(
 
 fn draw_note_step_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     ui.add(
-        egui::Button::new(RichText::new(label).font(f_mono_sb(12.0)).color(INK2))
+        egui::Button::new(RichText::new(label).font(f_mono_sb(12.0)).color(INK2()))
             .min_size(Vec2::new(24.0, 22.0))
-            .fill(PANEL2)
-            .stroke(egui::Stroke::new(1.0, LINE2))
+            .fill(PANEL2())
+            .stroke(egui::Stroke::new(1.0, LINE2()))
             .corner_radius(5.0),
     )
 }
@@ -4929,7 +4901,7 @@ fn draw_editor_frequency_row(
                     ui.label(
                         RichText::new(note_name(note_val))
                             .font(f_mono_sb(13.0))
-                            .color(INK),
+                            .color(INK()),
                     );
                 },
             );
@@ -4951,7 +4923,7 @@ fn draw_editor_frequency_row(
                     ui.label(
                         RichText::new(format_editor_value(*value, Some("Hz")))
                             .font(f_mono(11.0))
-                            .color(INK),
+                            .color(INK()),
                     );
                 },
             );
@@ -4989,7 +4961,7 @@ fn draw_editor_slider_row(
             ui.label(
                 RichText::new(format_editor_value(*value, suffix))
                     .font(f_mono(11.0))
-                    .color(INK),
+                    .color(INK()),
             );
         });
         response
@@ -5033,7 +5005,7 @@ fn draw_track_tab(
         ui.label(
             RichText::new("Empty slot - click a +N chip in the grid to add a module.")
                 .font(f_sans_med(11.0))
-                .color(INK3),
+                .color(INK3()),
         );
         return;
     }
@@ -5049,7 +5021,7 @@ fn draw_track_tab(
     let mut changed = false;
 
     ui.add_space(12.0);
-    ui.label(RichText::new("Name").font(f_sans_med(10.5)).color(INK3));
+    ui.label(RichText::new("Name").font(f_sans_med(10.5)).color(INK3()));
     if state.track_name_input_slot != Some(slot_idx) {
         state.track_name_input = slot.name.clone();
         state.track_name_input_slot = Some(slot_idx);
@@ -5077,7 +5049,7 @@ fn draw_track_tab(
     ui.label(
         RichText::new("Instrument")
             .font(f_sans_med(10.5))
-            .color(INK3),
+            .color(INK3()),
     );
     let kinds = [
         TrackInstrumentKind::Kick,
@@ -5129,7 +5101,7 @@ fn draw_track_tab(
         });
 
     ui.add_space(16.0);
-    ui.label(RichText::new("Routing").font(f_sans_med(10.5)).color(INK3));
+    ui.label(RichText::new("Routing").font(f_sans_med(10.5)).color(INK3()));
     ui.horizontal(|ui| {
         let mut main_on = slot.routing.main_on;
         if ui
@@ -5141,7 +5113,7 @@ fn draw_track_tab(
         }
     });
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Out").font(f_sans_med(11.0)).color(INK3));
+        ui.label(RichText::new("Out").font(f_sans_med(11.0)).color(INK3()));
         let out_options: Vec<(u8, &str)> = std::iter::once((0u8, "No Aux"))
             .chain((1..=crate::track::MAX_TRACKS as u8).map(|i| (i, "Out")))
             .collect();
@@ -5183,12 +5155,12 @@ fn draw_track_tab(
     });
 
     ui.add_space(16.0);
-    ui.label(RichText::new("MIDI").font(f_sans_med(10.5)).color(INK3));
+    ui.label(RichText::new("MIDI").font(f_sans_med(10.5)).color(INK3()));
     ui.horizontal(|ui| {
         ui.add_sized(
             Vec2::new(70.0, 20.0),
             egui::Label::new(
-                RichText::new("Channel").font(f_sans_med(11.0)).color(INK2),
+                RichText::new("Channel").font(f_sans_med(11.0)).color(INK2()),
             ),
         );
         let current_channel = layout_state.global_midi_channel;
@@ -5201,7 +5173,7 @@ fn draw_track_tab(
         ui.add_sized(
             Vec2::new(40.0, 20.0),
             egui::Label::new(
-                RichText::new("Note").font(f_sans_med(11.0)).color(INK2),
+                RichText::new("Note").font(f_sans_med(11.0)).color(INK2()),
             ),
         );
         let mut note = slot.midi_note as i32;
@@ -5223,13 +5195,13 @@ fn draw_track_tab(
     ui.label(
         RichText::new("Sequencing")
             .font(f_sans_med(10.5))
-            .color(INK3),
+            .color(INK3()),
     );
     let master_length = params.pattern_length.value().clamp(1, 64) as usize;
     ui.horizontal(|ui| {
         ui.add_sized(
             Vec2::new(70.0, 20.0),
-            egui::Label::new(RichText::new("Length").font(f_sans_med(11.0)).color(INK2)),
+            egui::Label::new(RichText::new("Length").font(f_sans_med(11.0)).color(INK2())),
         );
         draw_track_length_control(
             ui,
@@ -5314,11 +5286,11 @@ fn draw_sound_panel(
     let header_rect = ui
         .allocate_exact_size(Vec2::new(ui.available_width(), 42.0), egui::Sense::hover())
         .0;
-    ui.painter().rect_filled(header_rect, 0.0, PANEL);
+    ui.painter().rect_filled(header_rect, 0.0, PANEL());
     ui.painter().hline(
         header_rect.x_range(),
         header_rect.bottom(),
-        egui::Stroke::new(1.0, LINE),
+        egui::Stroke::new(1.0, LINE()),
     );
     ui.allocate_new_ui(
         egui::UiBuilder::new()
@@ -5344,7 +5316,7 @@ fn draw_sound_panel(
                     };
                     format!("Slot {} - {}", state.selected_instrument + 1, name)
                 };
-                ui.label(RichText::new(header_name).font(f_mono(11.0)).color(INK3));
+                ui.label(RichText::new(header_name).font(f_mono(11.0)).color(INK3()));
                 // (Engine selector belongs to the future modular phase — omitted for now.)
             });
         },
@@ -5353,11 +5325,11 @@ fn draw_sound_panel(
     let tabs_rect = ui
         .allocate_exact_size(Vec2::new(ui.available_width(), 45.0), egui::Sense::hover())
         .0;
-    ui.painter().rect_filled(tabs_rect, 0.0, PANEL);
+    ui.painter().rect_filled(tabs_rect, 0.0, PANEL());
     ui.painter().hline(
         tabs_rect.x_range(),
         tabs_rect.bottom(),
-        egui::Stroke::new(1.0, LINE),
+        egui::Stroke::new(1.0, LINE()),
     );
     ui.allocate_new_ui(
         egui::UiBuilder::new()
@@ -5386,11 +5358,11 @@ fn draw_sound_panel(
                         RichText::new(label)
                             .monospace()
                             .size(10.5)
-                            .color(if selected { Color32::WHITE } else { INK2 }),
+                            .color(if selected { Color32::WHITE } else { INK2() }),
                     )
                     .min_size(Vec2::new(tab_w, CTL_HEIGHT))
-                    .fill(if selected { BLUE } else { PANEL2 })
-                    .stroke(egui::Stroke::new(1.0, if selected { BLUE } else { LINE2 }))
+                    .fill(if selected { BLUE() } else { PANEL2() })
+                    .stroke(egui::Stroke::new(1.0, if selected { BLUE() } else { LINE2() }))
                     .corner_radius(6.0);
                     if ui.add(btn).on_hover_text(hover).clicked() {
                         state.sound_editor_tab = tab;
@@ -5663,7 +5635,7 @@ fn draw_sound_panel(
                     crate::instrument_registry::ParamFamily::Saturation => "Saturation",
                     crate::instrument_registry::ParamFamily::Output => "Output",
                 };
-                ui.label(RichText::new(section_title).font(f_sans_sb(10.5)).color(INK3));
+                ui.label(RichText::new(section_title).font(f_sans_sb(10.5)).color(INK3()));
                 ui.add_space(6.0);
 
             let has_filter_env = standard_defs
@@ -6125,10 +6097,10 @@ fn draw_fusion_idle_box_contents(ui: &mut egui::Ui, fusion_mode_active: bool) {
             RichText::new("Select 2 cells")
                 .strong()
                 .size(11.0)
-                .color(BLUE),
+                .color(BLUE()),
         );
     } else {
-        ui.label(RichText::new("Maj for fusion mode").size(11.0).color(INK2));
+        ui.label(RichText::new("Maj for fusion mode").size(11.0).color(INK2()));
     }
 }
 
@@ -6230,8 +6202,8 @@ fn draw_fusion_edit_box(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
         |ui| {
             egui::Frame::new()
-                .fill(Color32::from_rgb(24, 24, 30))
-                .stroke(egui::Stroke::new(1.0, LINE2))
+                .fill(PANEL3())
+                .stroke(egui::Stroke::new(1.0, LINE2()))
                 .corner_radius(5.0)
                 .inner_margin(3.0)
                 .show(ui, |ui| {
@@ -6290,10 +6262,10 @@ fn draw_fusion_edit_box(
                                 ui.label(
                                     RichText::new(format!("M: {}", names.join(", ")))
                                         .size(10.0)
-                                        .color(INK2),
+                                        .color(INK2()),
                                 );
                             } else {
-                                ui.label(RichText::new("M: Off").size(10.0).color(INK2));
+                                ui.label(RichText::new("M: Off").size(10.0).color(INK2()));
                             }
 
                             let del_clicked = ui
@@ -6719,7 +6691,7 @@ fn enum_combo<E: nih_plug::prelude::Enum + PartialEq + 'static>(
     let current_idx = current.to_index();
     let variants = E::variants();
     if !label.is_empty() {
-        ui.label(RichText::new(label).font(f_sans_sb(10.5)).color(INK3));
+        ui.label(RichText::new(label).font(f_sans_sb(10.5)).color(INK3()));
     }
     if let (_, Some(i)) = styled_select(ui, ("enum_combo", label), current_idx, variants, 116.0) {
         if i != current_idx {
@@ -6750,7 +6722,7 @@ fn enum_combo_compact<E: nih_plug::prelude::Enum + PartialEq + 'static>(
 }
 
 fn compact_chip(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
-    compact_chip_colored(ui, label, active, BLUE)
+    compact_chip_colored(ui, label, active, BLUE())
 }
 
 fn compact_chip_colored(
@@ -6759,9 +6731,9 @@ fn compact_chip_colored(
     active: bool,
     accent: Color32,
 ) -> egui::Response {
-    let text_color = if active { Color32::WHITE } else { INK2 };
-    let fill = if active { accent } else { PANEL2 };
-    let stroke = if active { accent } else { LINE2 };
+    let text_color = if active { Color32::WHITE } else { INK2() };
+    let fill = if active { accent } else { PANEL2() };
+    let stroke = if active { accent } else { LINE2() };
     ui.add(
         egui::Button::new(RichText::new(label).size(10.5).color(text_color))
             .min_size(Vec2::new(42.0, CTL_HEIGHT))
@@ -6774,7 +6746,7 @@ fn compact_chip_colored(
 fn genrow_label(ui: &mut egui::Ui, label: &str, min_w: f32) {
     ui.add_sized(
         Vec2::new(min_w, CTL_HEIGHT),
-        egui::Label::new(RichText::new(label).font(f_mono_med(9.5)).color(INK3)),
+        egui::Label::new(RichText::new(label).font(f_mono_med(9.5)).color(INK3())),
     );
 }
 
@@ -6785,8 +6757,8 @@ fn chip_button(
     color: Color32,
     sense: egui::Sense,
 ) -> egui::Response {
-    let text_color = if accent { color } else { INK2 };
-    let stroke = if accent { color } else { LINE2 };
+    let text_color = if accent { color } else { INK2() };
+    let stroke = if accent { color } else { LINE2() };
     let fill = if accent {
         Color32::from_rgba_premultiplied(
             ((color.r() as f32) * 0.12) as u8,
@@ -6795,7 +6767,7 @@ fn chip_button(
             255,
         )
     } else {
-        PANEL2
+        PANEL2()
     };
     ui.add(
         egui::Button::new(
@@ -6866,36 +6838,68 @@ fn start_external_midi_drag(path: &std::path::Path) -> Result<(), Box<dyn std::e
 }
 
 #[cfg(target_os = "windows")]
+fn helper_bundle_prefixes() -> Vec<PathBuf> {
+    let mut prefixes = Vec::new();
+    if let Ok(common_files) = std::env::var("CommonProgramFiles") {
+        prefixes.push(
+            PathBuf::from(common_files)
+                .join("VST3")
+                .join("drum-pattern-vst.vst3"),
+        );
+    }
+    prefixes.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("build")
+            .join("drum-pattern-vst.vst3"),
+    );
+    prefixes
+}
+
+/// Validate a helper executable candidate: the file must exist, carry the
+/// expected helper name, and live under one of the known VST3 bundle prefixes
+/// (checked on canonicalized paths so `..` traversal cannot escape).
+#[cfg(target_os = "windows")]
+fn is_valid_helper_candidate(path: &std::path::Path, prefixes: &[PathBuf]) -> bool {
+    const HELPER_NAME: &str = "drum-pattern-midi-drag-helper.exe";
+    if !path.is_file() {
+        return false;
+    }
+    if path.file_name().map(|n| n != HELPER_NAME).unwrap_or(true) {
+        return false;
+    }
+    let Ok(canonical) = path.canonicalize() else {
+        return false;
+    };
+    prefixes.iter().any(|prefix| {
+        prefix
+            .canonicalize()
+            .map(|p| canonical.starts_with(p))
+            .unwrap_or(false)
+    })
+}
+
+#[cfg(target_os = "windows")]
 fn find_midi_drag_helper() -> Option<PathBuf> {
     const HELPER_NAME: &str = "drum-pattern-midi-drag-helper.exe";
+    let prefixes = helper_bundle_prefixes();
 
+    // The env override must point at the real helper inside a known bundle,
+    // never at an arbitrary executable.
     if let Ok(path) = std::env::var("DRUM_FLASH_MIDI_DRAG_HELPER") {
         let path = PathBuf::from(path);
-        if path.is_file() {
+        if is_valid_helper_candidate(&path, &prefixes) {
             return Some(path);
         }
     }
 
-    if let Ok(common_files) = std::env::var("CommonProgramFiles") {
-        let path = PathBuf::from(common_files)
-            .join("VST3")
-            .join("drum-pattern-vst.vst3")
+    for prefix in &prefixes {
+        let candidate = prefix
             .join("Contents")
             .join("x86_64-win")
             .join(HELPER_NAME);
-        if path.is_file() {
-            return Some(path);
+        if is_valid_helper_candidate(&candidate, &prefixes) {
+            return Some(candidate);
         }
-    }
-
-    let local_bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("build")
-        .join("drum-pattern-vst.vst3")
-        .join("Contents")
-        .join("x86_64-win")
-        .join(HELPER_NAME);
-    if local_bundle.is_file() {
-        return Some(local_bundle);
     }
 
     None
@@ -6923,7 +6927,7 @@ fn draw_plock_menu(
 ) {
     use crate::plock::{FIELD_COUNT, SPECIAL_FIELD_START};
 
-    const ACCENT: Color32 = PL_LINK;
+    #[allow(non_snake_case)] let ACCENT: Color32 = PL_LINK();
     // `instrument` is a SLOT index (plock storage is per slot); registry and
     // special-param lookups go through the voice index of the slot's kind.
     let voice_idx = schema_voice_idx(params, instrument);
@@ -6946,7 +6950,7 @@ fn draw_plock_menu(
             ui.label(
                 RichText::new("Create Plock")
                     .font(f_sans_sb(10.0))
-                    .color(INK2),
+                    .color(INK2()),
             );
             ui.add_space(6.0);
             if plock_menu_action_row(ui, "Link to Global", ACCENT).clicked() {
@@ -7006,7 +7010,7 @@ fn draw_plock_menu(
             "Mixed"
         };
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3));
+            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     RichText::new(mode_text)
@@ -7327,7 +7331,7 @@ fn draw_plock_menu(
                 }
             }
         }
-        if plock_menu_action_row(ui, "Clear Plock", Color32::from_rgb(255, 80, 80)).clicked() {
+        if plock_menu_action_row(ui, "Clear Plock", DANGER()).clicked() {
             plock.clear(instrument, step);
         }
     });
@@ -7393,7 +7397,7 @@ fn draw_fusion_morph_menu(
 ) {
     use crate::plock::SPECIAL_FIELD_START;
 
-    const ACCENT: Color32 = PL_LINK;
+    #[allow(non_snake_case)] let ACCENT: Color32 = PL_LINK();
     // `instrument` is a SLOT index; schema lookups use the slot's voice index.
     let voice_idx = schema_voice_idx(params, instrument);
     let inst_def = &crate::instrument_registry::INSTRUMENTS[voice_idx];
@@ -7422,7 +7426,7 @@ fn draw_fusion_morph_menu(
             "On"
         };
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3));
+            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     RichText::new(mode_text)
@@ -7434,7 +7438,7 @@ fn draw_fusion_morph_menu(
         ui.add_space(8.0);
 
         // Disable morphing
-        if plock_menu_action_row(ui, "Disable Morphing", Color32::from_rgb(255, 80, 80)).clicked() {
+        if plock_menu_action_row(ui, "Disable Morphing", DANGER()).clicked() {
             if let Some(g) = new_fusions.get_mut(fusion_index) {
                 g.morph_count = 0;
                 g.morph_targets = [MorphTarget::default(); 4];
@@ -7725,7 +7729,7 @@ fn draw_plock_popup(
         .show(ctx, |ui| {
             // Outer border: draw a slightly larger rounded rect behind the panel.
             let content_response = egui::Frame::NONE
-                .fill(P_ACTIVE)
+                .fill(P_ACTIVE())
                 .corner_radius(RADIUS_PANEL)
                 .inner_margin(egui::Margin::same(12))
                 .show(ui, |ui| {
@@ -7771,7 +7775,7 @@ fn draw_plock_popup(
                                     state,
                                 );
                             } else {
-                                plock_menu_frame(ui, PL_LINK, |ui| {
+                                plock_menu_frame(ui, PL_LINK(), |ui| {
                                     if plock_menu_header(
                                         ui,
                                         &format!(
@@ -7780,7 +7784,7 @@ fn draw_plock_popup(
                                             group.end_cell + 1
                                         ),
                                         step,
-                                        PL_LINK,
+                                        PL_LINK(),
                                     ) {
                                         state.plock_popup = None;
                                     }
@@ -7806,11 +7810,11 @@ fn draw_plock_popup(
                                     } else {
                                         "Morphing".to_string()
                                     };
-                                    if plock_menu_action_row(ui, &morph_label, PL_LINK).clicked() {
+                                    if plock_menu_action_row(ui, &morph_label, PL_LINK()).clicked() {
                                         popup.morph_menu = true;
                                         state.plock_popup = Some(popup);
                                     }
-                                    if plock_menu_action_row(ui, "Edit Fusion Steps", PL_LINK)
+                                    if plock_menu_action_row(ui, "Edit Fusion Steps", PL_LINK())
                                         .clicked()
                                     {
                                         state.fusion_editing = Some((inst, idx));
@@ -7819,7 +7823,7 @@ fn draw_plock_popup(
                                     if plock_menu_action_row(
                                         ui,
                                         "Delete Fusion",
-                                        Color32::from_rgb(255, 80, 80),
+                                        DANGER(),
                                     )
                                     .clicked()
                                     {
@@ -7870,7 +7874,7 @@ fn draw_plock_popup(
             ui.painter().rect_stroke(
                 border_rect,
                 RADIUS_PANEL + 1.0,
-                egui::Stroke::new(1.0, LINE2),
+                egui::Stroke::new(1.0, LINE2()),
                 egui::StrokeKind::Inside,
             );
             content_response
@@ -7902,7 +7906,7 @@ fn draw_sequencer_plock_menu(
 ) {
     use crate::plock::{SequencerStepParams, StepCondition};
 
-    const ACCENT: Color32 = SEQPL;
+    #[allow(non_snake_case)] let ACCENT: Color32 = SEQPL();
     // `instrument` is a SLOT index; the label comes from the slot's voice schema.
     let inst_def = &crate::instrument_registry::INSTRUMENTS[schema_voice_idx(params, instrument)];
     let title = format!("Seq Plock {}", inst_def.label);
@@ -7921,7 +7925,7 @@ fn draw_sequencer_plock_menu(
 
         // Mode indicator
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3));
+            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let mode_text = if has_seq_plock { "Active" } else { "Inactive" };
                 ui.label(
@@ -7969,7 +7973,7 @@ fn draw_sequencer_plock_menu(
                 ui.label(
                     RichText::new("disabled on fusion")
                         .font(f_sans_med(10.0))
-                        .color(INK3),
+                        .color(INK3()),
                 );
                 ui.allocate_response(Vec2::new(1.0, 1.0), egui::Sense::hover())
             });
@@ -8000,7 +8004,7 @@ fn draw_sequencer_plock_menu(
 
         // Condition
         ui.add_space(8.0);
-        ui.label(RichText::new("Condition").font(f_sans_sb(10.0)).color(INK2));
+        ui.label(RichText::new("Condition").font(f_sans_sb(10.0)).color(INK2()));
         ui.add_space(6.0);
 
         let all_conditions = StepCondition::all();
@@ -8013,9 +8017,9 @@ fn draw_sequencer_plock_menu(
             .show(ui, |ui| {
                 for (idx, cond) in all_conditions.iter().copied().enumerate() {
                     let selected = current.condition == cond;
-                    let text_color = if selected { ACCENT } else { INK2 };
-                    let fill = if selected { PANEL2 } else { PANEL2 };
-                    let stroke_color = if selected { ACCENT } else { LINE2 };
+                    let text_color = if selected { ACCENT } else { INK2() };
+                    let fill = if selected { PANEL2() } else { PANEL2() };
+                    let stroke_color = if selected { ACCENT } else { LINE2() };
                     if ui
                         .add_sized(
                             Vec2::new(button_w.max(1.0), 26.0),
@@ -8042,7 +8046,7 @@ fn draw_sequencer_plock_menu(
         // Actions
         ui.add_space(8.0);
         if has_seq_plock || changed_this_frame {
-            if plock_menu_action_row(ui, "Clear Seq Plock", Color32::from_rgb(255, 80, 80))
+            if plock_menu_action_row(ui, "Clear Seq Plock", DANGER())
                 .clicked()
             {
                 seq_plock.clear(instrument, step);
@@ -8053,4 +8057,83 @@ fn draw_sequencer_plock_menu(
             }
         }
     });
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod midi_drag_helper_tests {
+    use super::*;
+    use std::fs;
+
+    fn make_helper(dir: &std::path::Path) -> PathBuf {
+        let exe = dir
+            .join("Contents")
+            .join("x86_64-win")
+            .join("drum-pattern-midi-drag-helper.exe");
+        fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        fs::write(&exe, b"stub").unwrap();
+        exe
+    }
+
+    #[test]
+    fn accepts_helper_inside_bundle_prefix() {
+        let root = std::env::temp_dir().join("fd_helper_test_ok");
+        let _ = fs::remove_dir_all(&root);
+        let bundle = root.join("drum-pattern-vst.vst3");
+        let exe = make_helper(&bundle);
+        assert!(is_valid_helper_candidate(&exe, &[bundle]));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_wrong_filename_inside_bundle() {
+        let root = std::env::temp_dir().join("fd_helper_test_name");
+        let _ = fs::remove_dir_all(&root);
+        let bundle = root.join("drum-pattern-vst.vst3");
+        let evil = bundle.join("Contents").join("x86_64-win").join("evil.exe");
+        fs::create_dir_all(evil.parent().unwrap()).unwrap();
+        fs::write(&evil, b"stub").unwrap();
+        assert!(!is_valid_helper_candidate(&evil, &[bundle]));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_helper_outside_bundle_prefix() {
+        let root = std::env::temp_dir().join("fd_helper_test_outside");
+        let _ = fs::remove_dir_all(&root);
+        let bundle = root.join("drum-pattern-vst.vst3");
+        let outside = root.join("elsewhere");
+        let exe = make_helper(&outside);
+        assert!(!is_valid_helper_candidate(&exe, &[bundle]));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_dotdot_traversal_escaping_prefix() {
+        let root = std::env::temp_dir().join("fd_helper_test_traversal");
+        let _ = fs::remove_dir_all(&root);
+        let bundle = root.join("drum-pattern-vst.vst3");
+        let outside = root.join("elsewhere");
+        let _ = make_helper(&outside);
+        let traversal = bundle
+            .join("..")
+            .join("elsewhere")
+            .join("Contents")
+            .join("x86_64-win")
+            .join("drum-pattern-midi-drag-helper.exe");
+        assert!(traversal.exists());
+        assert!(!is_valid_helper_candidate(&traversal, &[bundle]));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_missing_file() {
+        let root = std::env::temp_dir().join("fd_helper_test_missing");
+        let _ = fs::remove_dir_all(&root);
+        let bundle = root.join("drum-pattern-vst.vst3");
+        let missing = bundle
+            .join("Contents")
+            .join("x86_64-win")
+            .join("drum-pattern-midi-drag-helper.exe");
+        assert!(!is_valid_helper_candidate(&missing, &[bundle]));
+    }
 }

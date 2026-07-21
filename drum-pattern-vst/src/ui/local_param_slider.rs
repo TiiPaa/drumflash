@@ -1,3 +1,4 @@
+use crate::ui::slider::{denormalize_value, normalize_value};
 use nih_plug_egui::egui::emath::GuiRounding;
 use nih_plug_egui::egui::{self, Color32, Response, Sense, Ui, Vec2, Widget};
 use std::ops::RangeInclusive;
@@ -65,30 +66,21 @@ impl<'a> LocalParamSlider<'a> {
     }
 
     fn normalized_value(&self) -> f32 {
-        if self.logarithmic {
-            // Logarithmic mapping
-            let min_log = self.range.start().ln();
-            let max_log = self.range.end().ln();
-            let value_log = (*self.value).ln();
-            (value_log - min_log) / (max_log - min_log)
-        } else {
-            // Linear mapping
-            (*self.value - self.range.start()) / (self.range.end() - self.range.start())
-        }
+        normalize_value(
+            *self.value,
+            *self.range.start(),
+            *self.range.end(),
+            self.logarithmic,
+        )
     }
 
     fn set_normalized_value(&mut self, normalized: f32) {
-        let normalized = normalized.clamp(0.0, 1.0);
-        if self.logarithmic {
-            // Logarithmic mapping
-            let min_log = self.range.start().ln();
-            let max_log = self.range.end().ln();
-            let value_log = min_log + normalized * (max_log - min_log);
-            *self.value = value_log.exp();
-        } else {
-            // Linear mapping
-            *self.value = self.range.start() + normalized * (self.range.end() - self.range.start());
-        }
+        *self.value = denormalize_value(
+            normalized,
+            *self.range.start(),
+            *self.range.end(),
+            self.logarithmic,
+        );
     }
 
     fn string_value(&self) -> String {
