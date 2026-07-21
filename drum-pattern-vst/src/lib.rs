@@ -2082,6 +2082,8 @@ impl DrumFlashVst {
             seq_plock,
             self.params.pattern_length.value() as u8,
         );
+        drop(bank);
+        self.params.pattern_bank.refresh_snapshot();
         #[cfg(debug_assertions)]
         {
             nih_log!("Pattern saved to slot P{}", slot + 1);
