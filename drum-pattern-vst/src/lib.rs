@@ -753,7 +753,7 @@ impl Default for DrumFlashParams {
             .store(global_config.global_midi_channel.clamp(1, 16), Ordering::Relaxed);
 
         Self {
-            editor_state: EguiState::from_size(1480, 900),
+            editor_state: EguiState::from_size(1480, 800),
             pattern_state,
             sound_settings: PersistentSoundSettings::new(&default_layout),
             track_layout,
