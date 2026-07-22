@@ -65,7 +65,7 @@ Use the web files mainly to:
 - Primary entry point: `drum-pattern-vst/src/lib.rs`
 - Sequencer logic: `drum-pattern-vst/src/sequencer/`
 - Synthesis: `drum-pattern-vst/src/synthesis/`
-- UI work: `drum-pattern-vst/src/ui.rs`
+- UI work: `drum-pattern-vst/src/ui.rs` (orchestration only, ~370 lines) + thematic modules in `drum-pattern-vst/src/ui/`
 
 ## UI Redesign (active) — read before editing `src/ui/`
 
@@ -91,7 +91,7 @@ The plugin is a single `nih-plug` VST3 with an internal step sequencer, modular 
 - `src/sequencer/` — `Sequencer` holds one master `beat_position` (0..4 = 1 bar = 16 steps). Per-track state (`TrackState`) supplies `track_length`, `push_pull_ms`, `humanize_amount`. Humanize affects **velocity only**, not timing (avoids double triggers). Groove/swing is applied to the master grid (`src/groove.rs`). `SharedPattern` is the lock-free `Arc<…>` grid mutated by the UI and read by the audio thread. Step bitmask uses 13 bits (one per voice), masked at write time via `INSTRUMENT_COUNT = 13`.
 - `src/synthesis/` — one DSP file per voice (`kick.rs`, `snare.rs`, `hihat.rs`, `open_hihat.rs`, `tom.rs`, `clap.rs`, `ride.rs`, `cymbal.rs`, `snare606.rs`, `kick_808.rs`, `zap.rs`) plus `dsp.rs` primitives. `algos_for` describes per-voice algorithm variants exposed to the UI. Voice settings come from `SoundSettingsState` (versioned, polled per sample-block in `process()`). The amplitude envelope (`DecayReleaseEnvelope`) is bi-stage with `max(decay, release)` crossover; snare/HH/OH/Snare 606 also use a Hold phase between attack and decay.
 - `src/generator/` — four pattern generators (`probabilistic`, `markov`, `euclidean`, `classic`) driven by `Style` + density/variation params. Output writes back into `SharedPattern`.
-- `src/ui.rs` + `src/ui/` — `egui` editor.
+- `src/ui.rs` + `src/ui/` — `egui` editor. `ui.rs` only declares the modules, installs fonts and orchestrates `create_editor`. Thematic modules: `theme.rs` (runtime skins + tokens), `widgets.rs` + `slider.rs` + `local_param_slider.rs` (controls), `fmt.rs` (value/note formatting), `menus.rs` (popup chrome), `controls.rs` (param-bound controls), `editor_state.rs` (`EditorUIState` + clipboards/popups), `header.rs`, `pattern_bank.rs`, `bottom_panel.rs`, `song.rs`, `popups.rs`, `sound_editor.rs` (Sound/Track tabs), `grid.rs` (pattern grid + fusions), `plock.rs` (p-lock menus), `midi.rs` (export + drag helper).
 - `src/midi_export.rs`, `src/sound_settings.rs`, `src/groove.rs` — auxiliary modules referenced from `lib.rs`.
 - `src/bin/test_standalone.rs` — pulls modules via `#[path]` to exercise the engine without `nih-plug`.
 
