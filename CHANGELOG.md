@@ -1,5 +1,69 @@
 # Changelog
 
+## 2026-07-22 — Fenêtre 1480×800 (cible designer) + mise en page resserrée (build 20260722-161751)
+
+**Build:** `20260722-161751`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK, vérifié dans Studio One (rien de coupé).
+
+### Changements
+- **Fenêtre repassée de 1480×900 à 1480×800**, la cible du pack designer (`EguiState::from_size` + `ResizableWindow` min/fixed). Le 900 était un dépannage temporaire pour l'ancienne rangée « + Add Module », depuis supprimée.
+- **Mise en page verticale resserrée pour tenir dans 800** (fondation du nouveau design, avant le look) :
+  - Panneau bas Generator/Song : hauteur fixe 210 → **168** (Generator ~70px de corps, Song ~110px).
+  - Rythme vertical de la colonne gauche : `item_spacing.y` 16 → **10**.
+  - Marge interne de la plaque grille : `inner_margin` 11 → **8**.
+- Aucun changement de comportement audio ni de persistance.
+- Prochaine étape : le look « Skeuo » (matières hardware) puis les retouches restantes du tri `CHANGES.md`.
+
+---
+
+## 2026-07-21 — Pack designer revue UI (docs, pas de build)
+
+**Type:** documentation uniquement (aucun changement de code, pas de nouveau build).
+
+### Changements
+- **`design-pack/ui-review-2026-07/`** : pack complet pour revue UI par le designer.
+  - `README.md` — vue d'ensemble, évolutions depuis la maquette de juin, liste des 10 captures à fournir.
+  - `UI-STATE.md` — inventaire de l'UI implémentée (header, pattern bank, page bar, grille 14 lanes, états cellules, interactions, bottom panel, Sound Editor, popups, skins).
+  - `SKINS.md` + `skins.json` — palettes des 3 skins (Dark/Midnight/Ember) par token, version JSON.
+  - `TOKENS.md` — tailles, rayons, colonnes de grille, typographie IBM Plex, règles visuelles.
+  - `screenshots/` — dossier prêt pour les captures (1480×900).
+
+---
+
+## 2026-07-21 — [AUDIT-Q6] Découpage de `ui.rs` en modules thématiques (build 20260721-170521)
+
+**Build:** `20260721-170521`
+**Validation:** `cargo test` OK (188 lib + 1 midi_drag_helper + 104 test_standalone), `cargo check` OK (0 warning), `build.ps1 -Install` OK
+
+### Changements
+- **`src/ui.rs` réduit de ~8 060 à 366 lignes** : ne garde que les déclarations de modules, `install_egui_fonts` et l'orchestration `create_editor`. Aucun changement de comportement ni de rendu.
+- **Nouveaux modules dans `src/ui/`** :
+  - `editor_state.rs` — `EditorUIState`, structs popup/clipboard, opérations lane (copy/paste/clear/randomize), helpers plock par lane.
+  - `menus.rs` — chrome des popups (frame/header/rows).
+  - `fmt.rs` — formatage valeurs/notes/fréquences.
+  - `controls.rs` — setters param, length control, modifier fusion, chips/combos/segmenteds/LED.
+  - `midi.rs` — export MIDI + helper drag Windows (déplacé depuis ui.rs).
+  - `header.rs` — barre d'en-tête + `header_param_slider`.
+  - `pattern_bank.rs` — barre Patterns P1-P8 + save/load pattern.
+  - `bottom_panel.rs` — panneau Generator | Song + contrôles générateur.
+  - `song.rs` — éditeur de song chain.
+  - `popups.rs` — Add Module, page menu, Settings, lane preset warning.
+  - `sound_editor.rs` — Sound/Track tabs, lignes éditeur, presets de layout, `store_field`.
+  - `grid.rs` — grille pattern, step cells, fusion, reorder de lanes, page bar, mixer_rows.
+  - `plock.rs` — menus p-lock sound/morph/sequencer + popup.
+- **`AGENTS.md`** : structure UI documentée.
+
+### À tester dans Studio One (build 20260721-170521)
+1. Ouvrir le plugin → l'interface est **visuellement identique** à la build précédente (header, grille, panneaux).
+2. Grille : toggle steps, p-lock clic droit (Link/Snapshot), fusion (shift+clic), drag de step, reorder de lane, Len lock, pages 1-4.
+3. Sound Editor : onglets Sound/Track, sliders toutes familles, Hz/Notes sur Kick/808, algo combo, presets de layout (Preset 4/12, Clear All).
+4. Pattern bank : Save/Load P1-P8, copy/paste slot, Clear, Export/Drag MIDI.
+5. Bottom panel : Generator (presets, GENERATE) + Song editor (blocks, repeats, clear).
+6. Popups : Settings (analog, MIDI channel, skin), Add Module sur lane vide.
+7. Régression : skins, song mode, multi-out, sauvegarde/rechargement projet OK.
+
+---
+
 ## 2026-07-21 — [AUDIT-Q5] Validation du chemin du MIDI drag helper (build 20260721-152237)
 
 **Build:** `20260721-152237`

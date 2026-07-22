@@ -6,7 +6,7 @@
 - [x] [MG-4] Adapt sequencer to iterate active tracks
 - [x] [MG-5] Adapt audio engine to 14 independent synth instances + routing
 - [x] [MG-6] Adapt pattern bank to store only musical data (no layout)
-- [ ] [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change) — rollback 20260701: reverted after Studio One startup crash
+- [x] [MG-7] Refactor UI grid for modular lanes (active tracks, add/remove/change) — rollback 20260701: reverted after Studio One startup crash, puis complété via MG-7a.2 (`+ Add Module`) et MG-8
   - [x] [MG-7.1] Checkpoint sûr : ajouter `selected_track_slot` dans l'état UI, synchronisé avec les 13 lanes fixes, sans changement VST3/state audio (build 20260701-172602)
   - [x] [MG-7.2] Checkpoint sûr : sélectionner le slot via les interactions de grille/lane restantes (volume, Hum, Push, Len, fusion double-clic/shift-clic, plock clic-droit) sans changement VST3/state audio (build 20260701-173832)
   - [x] [MG-7.2a] Fix compat audio : tant que l'UI affiche 13 lanes fixes, le layout par défaut et le template 4 slots buggué sont migrés vers les 13 voix legacy pour éviter les lanes 5+ silencieuses (build 20260701-174700)
@@ -724,7 +724,7 @@
   - Warnings de confirmation avant Paste (écrase la page cible) et Clear (supprime grille + plocks + fusions de la page).
   - Build `20260623-124600`.
 - [ ] [100z] Animations .14s (hover/toggle) — basse priorité.
-- [ ] [100aa] Nettoyage final : adopter `StyledButton` (hover chrome), retirer `design_system.rs`/`SegmentedControl` non câblés, remplacer `allocate_ui_at_rect` (déprécié) par `allocate_new_ui`.
+- [x] [100aa] ~~Nettoyage final : adopter `StyledButton` (hover chrome), retirer `design_system.rs`/`SegmentedControl` non câblés, remplacer `allocate_ui_at_rect` (déprécié) par `allocate_new_ui`~~ — **OBSOLÈTE (2026-07-21)** : `allocate_ui_at_rect` déjà remplacé (build précédente), `design_system.rs`/`SegmentedControl` déjà supprimés ; seul `StyledButton` resterait (helper bouton partagé, peu prioritaire).
 - [x] [100ab] Dropdown Algo dynamique dans le menu p-lock (plage selon algo_count, nom affiché, masquage si 1 algo) - build 20260624-171823.
 - [x] [100ac] Morphing par pulse sur les cellules fusionnees (select Morph + slider End, interpolation lineaire, params continus + special params continus, persistence DAW pattern-v3 + pattern bank) - build 20260629-160624.
 
@@ -961,7 +961,9 @@ Probl�me: "Je veux un m�lange des deux"
 - [x] **[AUDIT-Q4]** Unifier les 4 implémentations de sliders (LocalParamSlider / editor / mini / header) : module `src/ui/slider.rs` (logique + track core partagés), wrappers editor/mini, LocalParamSlider sur helpers communs. (build 20260721-142452)
 - [x] **[SKIN-1]** Système de skins : `Theme` runtime dans `theme.rs` (const → accessors), migration des couleurs hardcodées vers des tokens, skins intégrés (Dark/Midnight/Ember), sélecteur dans Settings, persistance `GlobalConfig`. (build 20260721-150308)
 - [x] **[AUDIT-Q5]** Valider le chemin de `DRUM_FLASH_MIDI_DRAG_HELPER` : nom exact + prefix bundle canonisé, 5 tests Windows. (build 20260721-152237)
-- [ ] **REPRENDRE ICI** **[AUDIT-Q6]** Éclater `ui.rs` (~7 400 lignes) en modules thématiques — chantier structurant, planification séparée.
+- [x] **[AUDIT-Q6]** Éclater `ui.rs` (~8 060 → 366 lignes) en 13 modules thématiques (`editor_state`, `menus`, `fmt`, `controls`, `midi`, `header`, `pattern_bank`, `bottom_panel`, `song`, `popups`, `sound_editor`, `grid`, `plock`). (build 20260721-170521)
+- [ ] **[BUG-LANE-DESYNC]** Décalage de tête de lecture entre lanes au changement Song/Pattern + changement de pattern — en attente de l'isolation du déclencheur par l'utilisateur.
+- [ ] **REPRENDRE ICI** **[94]** Ajouter un paramètre pitch LFO sur les Toms (P2, synthèse).
 - TR-909 style: Kick=0.8, Snare=0.7, Tom=0.9 (l�g�rement digital)
 - Modern Techno: Kick=0.2, Snare=0.3, Tom=0.4 (plus digital)
 - Acoustic simulation: Tous � 1.0 avec long decay
