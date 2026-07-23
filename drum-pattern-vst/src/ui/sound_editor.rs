@@ -78,7 +78,7 @@ fn draw_note_freq_mode_toggle(
     let height = 22.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, PANEL2());
+    painter.rect_filled(rect, RADIUS_CTL, PANEL2());
     painter.rect_stroke(
         rect,
         6.0,
@@ -648,7 +648,7 @@ pub fn draw_sound_panel(
                     .min_size(Vec2::new(tab_w, CTL_HEIGHT))
                     .fill(if selected { BLUE() } else { PANEL2() })
                     .stroke(egui::Stroke::new(1.0, if selected { BLUE() } else { LINE2() }))
-                    .corner_radius(6.0);
+                    .corner_radius(RADIUS_CTL);
                     if ui.add(btn).on_hover_text(hover).clicked() {
                         state.sound_editor_tab = tab;
                     }

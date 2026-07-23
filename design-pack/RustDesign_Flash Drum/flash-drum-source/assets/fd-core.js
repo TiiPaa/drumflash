@@ -35,6 +35,8 @@
     track.addEventListener('pointerdown', e => { drag = true; track.setPointerCapture(e.pointerId); setX(e.clientX); });
     track.addEventListener('pointermove', e => { if (drag) setX(e.clientX); });
     track.addEventListener('pointerup', () => drag = false);
+    track.addEventListener('dblclick', () => { v = spec.value; render(); onChange && onChange(v); });
+    track.title = 'Double-clic : valeur par défaut';
     render();
     wrap.api = { get: () => v, set: x => { v = x; render(); } };
     return wrap;
@@ -45,10 +47,12 @@
     const wrap = el('div', 'ctl ctl--freq');
     const lab = el('span', 'ctl__label', { textContent: spec.label });
     const notes = el('button', 'notes', { textContent: 'Notes' });
+    const dec = el('button', 'stepbtn stepbtn--l', { textContent: '◂', title: '-1 demi-ton' });
+    const inc = el('button', 'stepbtn', { textContent: '▸', title: '+1 demi-ton' });
     const track = el('div', 'sld'); const fill = el('div', 'sld__fill'); const knob = el('div', 'sld__knob');
     track.append(fill, knob);
     const val = el('span', 'ctl__val');
-    wrap.append(lab, notes, track, val);
+    wrap.append(lab, notes, track, dec, val, inc);
     let v = spec.value, asNotes = false; const fmt = spec.fmt || (x => x.toFixed(2));
     const NOTE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const toNote = hz => { const m = Math.round(69 + 12 * Math.log2(hz / 440)); return NOTE[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); };
@@ -57,13 +61,22 @@
       fill.style.width = (t * 100) + '%'; knob.style.left = (t * 100) + '%';
       val.textContent = asNotes ? toNote(v) : fmt(v);
     }
-    notes.addEventListener('click', () => { asNotes = !asNotes; notes.classList.toggle('on', asNotes); render(); });
+    notes.addEventListener('click', () => { asNotes = !asNotes; notes.classList.toggle('on', asNotes); wrap.classList.toggle('notes-on', asNotes); render(); });
+    function stepNote(d) {
+      const m = Math.round(69 + 12 * Math.log2(v / 440)) + d;
+      v = clamp(440 * Math.pow(2, (m - 69) / 12), spec.min, spec.max);
+      render(); onChange && onChange(v);
+    }
+    dec.addEventListener('click', () => stepNote(-1));
+    inc.addEventListener('click', () => stepNote(1));
     function setX(cx) { const r = track.getBoundingClientRect(); let t = clamp((cx - r.left) / r.width, 0, 1);
       v = spec.min + t * (spec.max - spec.min); if (spec.step) v = Math.round(v / spec.step) * spec.step; render(); onChange && onChange(v); }
     let drag = false;
     track.addEventListener('pointerdown', e => { drag = true; track.setPointerCapture(e.pointerId); setX(e.clientX); });
     track.addEventListener('pointermove', e => { if (drag) setX(e.clientX); });
     track.addEventListener('pointerup', () => drag = false);
+    track.addEventListener('dblclick', () => { v = spec.value; render(); onChange && onChange(v); });
+    track.title = 'Double-clic : valeur par défaut';
     render();
     return wrap;
   }
@@ -95,7 +108,15 @@
       menu.append(it);
     });
     sel.append(cur, car, menu);
-    sel.addEventListener('click', () => menu.classList.toggle('open'));
+    sel.addEventListener('click', () => {
+      const willOpen = !menu.classList.contains('open');
+      menu.classList.toggle('open');
+      if (willOpen) {
+        menu.classList.remove('up');
+        const r = menu.getBoundingClientRect();
+        if (r.bottom > window.innerHeight - 8) menu.classList.add('up');
+      }
+    });
     document.addEventListener('click', e => { if (!sel.contains(e.target)) menu.classList.remove('open'); });
     wrap.append(lab, sel);
     return wrap;
@@ -136,8 +157,6 @@
     ctx.beginPath(); ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2; ctx.moveTo(padX, baseY); ctx.lineTo(xA, topY); ctx.stroke();
     curve(xA, topY, xD, susY, dc, '#4a9eff');
     curve(xD, susY, xR, baseY, rc, '#a855f7');
-    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.font = '10px ui-monospace, monospace';
-    ctx.fillText('A', xA - 3, baseY - 3); ctx.fillText('D', xD - 9, susY - 4); ctx.fillText('R', xR - 12, baseY - 3);
   }
 
   // ---- editor (Sound tab) ----
@@ -191,32 +210,78 @@
     document.addEventListener('contextmenu', e => { if (plkEl && plkEl.contains(e.target)) e.preventDefault(); });
     return plkEl;
   }
-  function openPlock(x, y, instId, stepAbs, mode) {
+  function openPlock(x, y, instId, stepAbs, mode, paint) {
     const m = ensurePlk(); m.innerHTML = '';
+    paint = paint || (() => {});
     const inst = FD.instruments.find(i => i.id === instId);
     const lane = FD.pattern[instId];
     const plState = lane.plock[stepAbs];
+    const hasSeq = !!lane.seq[stepAbs];
     const h = el('div', 'plk__h');
-    const pin = el('span', 'pin'); pin.style.background = mode === 'Sequencer' ? 'var(--seqpl)' : (plState === 'snapshot' ? 'var(--pl-snap)' : 'var(--pl-link)');
+    const pin = el('span', 'pin');
+    pin.style.background = mode === 'Sequencer'
+      ? (hasSeq ? 'var(--seqpl)' : 'var(--faint)')
+      : (plState === 'snapshot' ? 'var(--pl-snap)' : plState === 'link' ? 'var(--pl-link)' : 'var(--faint)');
     h.append(pin, el('span', null, { textContent: (mode === 'Sequencer' ? 'Seq Plock ' : 'Plock ') + inst.name }));
     h.append(el('span', 'step-n', { textContent: 'Step ' + (stepAbs + 1) }));
     m.append(h);
+    const opt = (label, fn, danger) => {
+      const b = el('button', 'plk__opt' + (danger ? ' plk__opt--danger' : ''), { textContent: label });
+      b.addEventListener('click', () => fn());
+      return b;
+    };
+    const reopen = () => openPlock(x, y, instId, stepAbs, mode, paint);
+    const close = () => m.classList.remove('open');
+
     if (mode === 'Sequencer') {
-      FD.seqPlockSchema.forEach(c => m.append(plkRow(c)));
-    } else {
+      // popup unique (cf. design original) : Mode Inactive/Active + params + grille + action en bas
       const modeLine = el('div', 'plk__mode');
       modeLine.append(el('span', null, { textContent: 'Mode' }));
-      modeLine.append(select({ options: ['Link to global', 'Snapshot'], value: plState === 'snapshot' ? 'Snapshot' : 'Link to global' }));
+      modeLine.append(el('span', 'plk__modeval', { textContent: hasSeq ? 'Active' : 'Inactive' }));
       m.append(modeLine);
-      // Volume first, then the instrument's sliders
-      const items = [{ kind: 'slider', label: 'Volume', key: 'vol', min: -60, max: 6, step: 0.1, value: FD.params[instId].vol, fmt: v => v.toFixed(1) }];
-      FD.schemaForEngine(inst.engine).forEach(sec => sec.items.forEach(c => {
-        if (c.key && c.key !== 'vol' && (c.kind === 'slider' || c.kind === 'freq')) items.push({ ...c, value: FD.params[instId][c.key] });
-      }));
-      items.slice(0, 8).forEach(c => m.append(plkRow(c)));
-      const foot = el('div', 'plk__foot');
-      foot.append(el('button', null, { textContent: 'Copy Plock' }), el('button', null, { textContent: 'Paste Plock' }));
-      m.append(foot);
+      m.append(plkRow(FD.seqPlockSchema[0], true)); // Probability
+      m.append(plkRow(FD.seqPlockSchema[1], true)); // Stutter
+      m.append(el('div', 'plk__lab', { textContent: 'Condition' }));
+      const grid = el('div', 'plk__cond');
+      FD.seqConditions.forEach(o => {
+        const b = el('button', 'plk__cbtn' + (o === 'Always' ? ' on' : ''), { textContent: o });
+        b.addEventListener('click', () => { grid.querySelectorAll('.plk__cbtn').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+        grid.append(b);
+      });
+      m.append(grid);
+      const act = el('button', 'plk__create' + (hasSeq ? ' plk__create--danger' : ''), { textContent: hasSeq ? 'Clear Seq Plock' : 'Create Seq Plock' });
+      act.addEventListener('click', () => {
+        if (hasSeq) { lane.seq[stepAbs] = 0; paint(); close(); }
+        else { lane.seq[stepAbs] = 1; if (!lane.hits[stepAbs]) lane.hits[stepAbs] = 1; paint(); reopen(); }
+      });
+      m.append(act);
+    } else {
+      if (plState === 'none') {
+        // pas de p-lock : menu de création
+        m.append(el('div', 'plk__state', { textContent: 'No plock on this step' }));
+        m.append(opt('Link to Global', () => { lane.plock[stepAbs] = 'link'; paint(); reopen(); }));
+        m.append(opt('Snapshot Current Settings', () => { lane.plock[stepAbs] = 'snapshot'; paint(); reopen(); }));
+        m.append(opt('Paste Plock', () => { lane.plock[stepAbs] = 'snapshot'; paint(); close(); }));
+      } else {
+        // p-lock existant : édition
+        const modeLine = el('div', 'plk__mode');
+        modeLine.append(el('span', null, { textContent: plState === 'snapshot' ? 'Full Snapshot' : 'Linked' }));
+        modeLine.append(select({ options: ['Link to global', 'Snapshot'], value: plState === 'snapshot' ? 'Snapshot' : 'Link to global' },
+          v => { lane.plock[stepAbs] = v === 'Snapshot' ? 'snapshot' : 'link'; paint(); reopen(); }));
+        m.append(modeLine);
+        // Volume first, then the instrument's sliders
+        const items = [{ kind: 'slider', label: 'Volume', key: 'vol', min: -60, max: 6, step: 0.1, value: FD.params[instId].vol, fmt: v => v.toFixed(1) }];
+        FD.schemaForEngine(inst.engine).forEach(sec => sec.items.forEach(c => {
+          if (c.key && c.key !== 'vol' && (c.kind === 'slider' || c.kind === 'freq')) items.push({ ...c, value: FD.params[instId][c.key] });
+        }));
+        items.slice(0, 8).forEach(c => m.append(plkRow(c)));
+        const foot = el('div', 'plk__foot');
+        foot.append(el('button', null, { textContent: 'Copy Plock' }), el('button', null, { textContent: 'Paste Plock' }));
+        const clr = el('button', 'plk__foot--danger', { textContent: 'Clear' });
+        clr.addEventListener('click', () => { lane.plock[stepAbs] = 'none'; paint(); close(); });
+        foot.append(clr);
+        m.append(foot);
+      }
     }
     m.style.left = Math.min(x, window.innerWidth - 250) + 'px';
     m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 20) + 'px';
@@ -224,12 +289,12 @@
     // reposition after layout
     requestAnimationFrame(() => { m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 12) + 'px'; });
   }
-  function plkRow(c) {
+  function plkRow(c, noUndo) {
     const row = el('div', 'plk__row');
     // inside the narrow popup, render freq as a plain slider (no Notes toggle)
     const spec = { ...c, kind: c.kind === 'freq' ? 'slider' : c.kind, fmt: c.fmt || (v => v.toFixed(2)) };
     row.append(ctlFor(spec, () => {}));
-    row.append(el('button', 'undo', { textContent: '↺', title: 'Reset' }));
+    if (!noUndo) row.append(el('button', 'undo', { textContent: '↺', title: 'Reset' }));
     return row;
   }
 
@@ -266,6 +331,18 @@
       });
     });
     m.append(wrap);
+    // actions de lane (parité alpha)
+    const acts = el('div', 'lanemenu__acts');
+    [['Copy Lane', () => { FD._laneClip = instId; }],
+     ['Paste Lane', () => { if (FD._laneClip && FD._laneClip !== instId) { const src = FD.pattern[FD._laneClip]; const dst = FD.pattern[instId]; dst.hits = [...src.hits]; dst.plock = [...src.plock]; dst.seq = [...src.seq]; dst.fusion = src.fusion.map(f => ({ ...f })); (onStruct || (() => {}))(); } }],
+     ['Randomize', () => { const L = FD.pattern[instId]; const len = FD.lanes[instId].len; for (let s = 0; s < len; s++) L.hits[s] = Math.random() < 0.28 ? 1 : 0; (onStruct || (() => {}))(); }],
+     ['Clear Lane', () => { const L = FD.pattern[instId]; L.hits.fill(0); L.plock.fill('none'); L.seq.fill(0); L.fusion.length = 0; (onStruct || (() => {}))(); }]]
+    .forEach(([label, fn]) => {
+      const b = el('button', 'lanemenu__act', { textContent: label });
+      b.addEventListener('click', () => { fn(); m.classList.remove('open'); });
+      acts.append(b);
+    });
+    m.append(acts);
     // remove (kept ≥ 1 lane)
     const rm = el('button', 'lanemenu__clear', { textContent: 'Remove lane' });
     if (FD.instruments.length <= 1) rm.disabled = true;
@@ -276,6 +353,16 @@
     m.style.top = '0px';
     requestAnimationFrame(() => { m.style.top = Math.max(8, Math.min(y, window.innerHeight - m.offsetHeight - 12)) + 'px'; });
   }
+
+  // ---- value tip (visible pendant hover ET drag) ----
+  let tipEl = null;
+  function showTip(x, y, text) {
+    if (!tipEl) { tipEl = el('div', 'fd-tip'); document.body.append(tipEl); }
+    tipEl.textContent = text;
+    tipEl.style.left = x + 'px'; tipEl.style.top = (y - 8) + 'px';
+    tipEl.classList.add('show');
+  }
+  function hideTip() { if (tipEl) tipEl.classList.remove('show'); }
 
   // ---- sequencer (paged, p-locks, fusion, modular lanes) ----
   function buildSequencer(container, opts = {}) {
@@ -334,7 +421,7 @@
       row.addEventListener('drop', e => { e.preventDefault(); doDrop(inst.id, row, e.clientY); });
       row.append(grip);
       // name (select + assign menu)
-      const name = el('button', 'seq__name', { textContent: inst.tag || inst.id, title: inst.name + ' · ' + FD.engineLabel(inst.engine) + '  (right-click to assign)' });
+      const name = el('button', 'seq__name', { textContent: inst.name, title: inst.name + ' · ' + FD.engineLabel(inst.engine) + '  (right-click to assign)' });
       name.addEventListener('click', () => { select(inst.id); onSelect(inst.id); });
       name.addEventListener('contextmenu', e => { e.preventDefault(); select(inst.id); onSelect(inst.id); openLaneMenu(e.clientX, e.clientY, inst.id, opts.onLaneChange || (() => {}), () => { renderRows(); onLanesChange(); }); });
       row.append(name);
@@ -364,16 +451,61 @@
         });
         cell.addEventListener('contextmenu', e => {
           e.preventDefault(); const abs = (page - 1) * PAGE + i; if (abs >= lane.len) return;
-          select(inst.id); onSelect(inst.id); openPlock(e.clientX, e.clientY, inst.id, abs, mode);
+          select(inst.id); onSelect(inst.id); openPlock(e.clientX, e.clientY, inst.id, abs, mode, () => paintCell(inst.id, i, abs));
         });
         cells.push(cell); stepsW.append(cell);
       }
       row.append(stepsW);
+      // lane vide : pastille +N → popup Add Module
+      if (!inst.engine) {
+        const pill = el('button', 'lane-addpill', { textContent: '+' + (FD.instruments.indexOf(inst) + 1), title: 'Assign a module to this lane' });
+        pill.addEventListener('click', e => {
+          e.stopPropagation();
+          openAddMenu(e.clientX, e.clientY, type => {
+            FD.assignEngine(inst.id, type);
+            (opts.onLaneChange || (() => {}))(inst.id);
+            renderRows(); onLanesChange();
+          });
+        });
+        stepsW.style.position = 'relative';
+        stepsW.append(pill);
+      }
       cellEls[inst.id] = cells;
       // extras
-      const hum = el('div', 'seq__extra'); const hb = el('div', 'minisld minisld--dim'); const hf = el('div', 'minisld__f'); hf.style.width = (lane.hum * 100) + '%'; hb.append(hf); hb.style.width = '34px'; hum.append(hb); row.append(hum);
-      const push = el('div', 'seq__extra'); push.append(el('span', 'ex__num' + (lane.push === 0 ? ' is-zero' : ''), { textContent: (lane.push > 0 ? '+' : '') + lane.push + ' ms' })); row.append(push);
-      const len = el('div', 'seq__extra'); const lenN = el('span', 'ex__num', { textContent: lane.len }); len.append(lenN); row.append(len);
+      const hum = el('div', 'seq__extra'); const hb = el('div', 'minisld minisld--dim'); const hf = el('div', 'minisld__f');
+      const humText = () => 'Hum ' + Math.round(lane.hum * 100) + ' %';
+      const paintHum = () => { hf.style.width = (lane.hum * 100) + '%'; };
+      let hd = false;
+      const setHum = cx => { const r = hb.getBoundingClientRect(); lane.hum = clamp((cx - r.left) / r.width, 0, 1); paintHum(); };
+      hb.addEventListener('pointerdown', e => { hd = true; hb.setPointerCapture(e.pointerId); setHum(e.clientX); showTip(e.clientX, hb.getBoundingClientRect().top, humText()); });
+      hb.addEventListener('pointermove', e => { if (hd) setHum(e.clientX); showTip(e.clientX, hb.getBoundingClientRect().top, humText()); });
+      hb.addEventListener('pointerup', () => hd = false);
+      hb.addEventListener('pointerleave', () => { if (!hd) hideTip(); });
+      hb.append(hf); hb.style.width = '34px'; paintHum(); hum.append(hb); row.append(hum);
+      // Push : mini-slider bipolaire (±50 ms), comme le code original
+      const push = el('div', 'seq__extra');
+      const pb = el('div', 'minisld'); pb.style.width = '34px';
+      const pf = el('div', 'minisld__f');
+      const pushText = () => 'Push ' + (lane.push > 0 ? '+' : '') + lane.push + ' ms';
+      const paintPush = () => { pf.style.width = ((lane.push + 50) / 100 * 100) + '%'; };
+      let pd = false;
+      const setPush = cx => { const r = pb.getBoundingClientRect(); const t = clamp((cx - r.left) / r.width, 0, 1); lane.push = Math.round(t * 100 - 50); paintPush(); };
+      pb.addEventListener('pointerdown', e => { pd = true; pb.setPointerCapture(e.pointerId); setPush(e.clientX); showTip(e.clientX, pb.getBoundingClientRect().top, pushText()); });
+      pb.addEventListener('pointermove', e => { if (pd) setPush(e.clientX); showTip(e.clientX, pb.getBoundingClientRect().top, pushText()); });
+      pb.addEventListener('pointerup', () => pd = false);
+      pb.addEventListener('pointerleave', () => { if (!pd) hideTip(); });
+      pb.append(pf); paintPush(); push.append(pb); row.append(push);
+      // Len : champ éditable clavier + souris
+      const len = el('div', 'seq__extra');
+      const lenN = el('input', 'ex__input');
+      lenN.type = 'number'; lenN.min = 1; lenN.max = FD.STEPS; lenN.value = lane.len;
+      lenN.addEventListener('change', () => {
+        let v = Math.round(+lenN.value || lane.len);
+        v = Math.max(1, Math.min(FD.STEPS, v));
+        lenN.value = v; lane.len = v; renderPage();
+      });
+      lenN.addEventListener('keydown', e => e.stopPropagation());
+      len.append(lenN); row.append(len);
       lenEls[inst.id] = lenN;
       body.append(row); rowEls[inst.id] = row;
     }
@@ -430,7 +562,7 @@
     function renderPage() {
       FD.instruments.forEach(inst => {
         for (let i = 0; i < PAGE; i++) paintCell(inst.id, i, (page - 1) * PAGE + i);
-        if (lenEls[inst.id]) lenEls[inst.id].textContent = FD.lanes[inst.id].len;
+        if (lenEls[inst.id]) lenEls[inst.id].value = FD.lanes[inst.id].len;
       });
       head._lbls.forEach((l, i) => { l.textContent = (page - 1) * PAGE + i + 1; });
     }

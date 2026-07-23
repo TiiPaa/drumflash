@@ -1,0 +1,33 @@
+{
+  "comment": "Flash Drum — thème Graphite (design retenu). Schéma étendu : les surfaces à dégradé vertical sont des paires [top, bottom] en RGB. Les tokens plats gardent le format skins.json.",
+  "name": "Graphite",
+  "radius": { "panel": 4, "popup": 5, "control": 3, "cell": 2, "tag": 3 },
+  "gradients": {
+    "app_bg": [[21, 24, 29], [14, 16, 20]],
+    "header": [[37, 41, 50], [26, 29, 35]],
+    "panel": [[32, 36, 43], [24, 27, 33]],
+    "control": [[44, 49, 60], [33, 37, 45]],
+    "control_active": [[79, 208, 242], [42, 144, 176]],
+    "cell_off": [[29, 33, 41], [22, 25, 32]],
+    "cell_beat": [[35, 40, 51], [26, 30, 38]],
+    "cell_active": [[91, 214, 245], [42, 144, 176]],
+    "cell_pl_link": [[255, 171, 61], [224, 120, 0]],
+    "cell_pl_snap": [[242, 85, 85], [181, 34, 34]],
+    "cell_seqpl": [[192, 123, 255], [138, 63, 208]],
+    "slider_fill": [[87, 212, 244], [47, 164, 198]],
+    "popup": [[38, 43, 52], [28, 32, 39]],
+    "generate": [[79, 208, 242], [37, 136, 168]]
+  },
+  "tokens": {
+    "blue": [62, 193, 232], "blue_dark": [42, 144, 176],
+    "line_control": [18, 20, 26], "line_panel": [11, 12, 16], "line_active": [26, 100, 128],
+    "ink": [230, 234, 240], "ink2": [154, 164, 178], "ink3": [107, 116, 130], "faint": [74, 81, 93],
+    "cell_current": [51, 57, 71], "cell_border": [13, 15, 19],
+    "slider_track": [13, 15, 19], "handle_top": [255, 255, 255], "handle_bottom": [184, 196, 210],
+    "envelope_bg": [10, 12, 16], "text_on_accent": [4, 34, 46],
+    "well_bg_alpha": [0, 0, 0, 71], "top_highlight_alpha": [255, 255, 255, 18],
+    "glow_accent_alpha": [62, 193, 232, 46], "glow_link_alpha": [255, 150, 30, 46],
+    "glow_snap_alpha": [230, 60, 60, 46], "glow_seqpl_alpha": [168, 85, 247, 51]
+  },
+  "notes": "Glows : rayon 4-6 px, à rendre en egui par 1-2 rects translucides expand +2/+4. Liseré haut : ligne 1px top_highlight_alpha sur contrôles/panneaux. Puits de grille : well_bg_alpha + 2 lignes noires empilées (inner shadow)."
+}

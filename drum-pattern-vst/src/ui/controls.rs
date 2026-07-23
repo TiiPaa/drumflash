@@ -185,7 +185,7 @@ pub fn compact_chip_colored(
             .min_size(Vec2::new(42.0, CTL_HEIGHT))
             .fill(fill)
             .stroke(egui::Stroke::new(1.0, stroke))
-            .corner_radius(6.0),
+            .corner_radius(RADIUS_CTL),
     )
 }
 
@@ -225,7 +225,7 @@ pub fn chip_button(
         .min_size(Vec2::new(0.0, CTL_HEIGHT))
         .fill(fill)
         .stroke(egui::Stroke::new(1.0, stroke))
-        .corner_radius(6.0)
+        .corner_radius(RADIUS_CTL)
         .sense(sense),
     )
 }
@@ -280,7 +280,7 @@ fn text_segmented(
     let total_w: f32 = widths.iter().sum();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(total_w, CTL_HEIGHT), egui::Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, PANEL2());
+    painter.rect_filled(rect, RADIUS_CTL, PANEL2());
 
     let mut result = selected.min(options.len().saturating_sub(1));
     let mut x = rect.left();

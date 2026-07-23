@@ -863,10 +863,10 @@ fn draw_empty_slot_lane_v2(
 fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
     let fill = if response.hovered() { P_HOVER() } else { PANEL2() };
-    ui.painter().rect_filled(rect, RADIUS_CTL, fill);
+    ui.painter().rect_filled(rect, RADIUS_PAD, fill);
     ui.painter().rect_stroke(
         rect,
-        RADIUS_CTL,
+        RADIUS_PAD,
         egui::Stroke::new(1.0, LINE2()),
         egui::StrokeKind::Inside,
     );
@@ -1302,7 +1302,7 @@ fn draw_page_bar_v2(
                 .min_size(Vec2::new(28.0, CTL_HEIGHT))
                 .fill(if active { BLUE() } else { PANEL2() })
                 .stroke(egui::Stroke::new(1.0, if active { BLUE() } else { LINE2() }))
-                .corner_radius(6.0),
+                .corner_radius(RADIUS_CTL),
             );
             if play_page == page {
                 let led = response.rect.center_bottom() + egui::vec2(0.0, 6.0);
@@ -1346,7 +1346,7 @@ fn draw_page_bar_v2(
             1.0,
             if state.follow_mode { BLUE() } else { LINE2() },
         ))
-        .corner_radius(6.0);
+        .corner_radius(RADIUS_CTL);
         if ui.add(follow).clicked() {
             state.follow_mode = !state.follow_mode;
         }
@@ -1385,7 +1385,7 @@ fn draw_page_bar_v2(
                             .min_size(Vec2::new(36.0, CTL_HEIGHT))
                             .fill(if active { BLUE() } else { PANEL2() })
                             .stroke(egui::Stroke::new(1.0, if active { BLUE() } else { LINE2() }))
-                            .corner_radius(6.0);
+                            .corner_radius(RADIUS_CTL);
                     if ui.add(btn).clicked() {
                         setter.set_parameter(&params.pattern_length, len as i32);
                     }
@@ -1395,7 +1395,7 @@ fn draw_page_bar_v2(
                     .min_size(Vec2::new(36.0, CTL_HEIGHT))
                     .fill(PANEL2())
                     .stroke(egui::Stroke::new(1.0, LINE2()))
-                    .corner_radius(6.0);
+                    .corner_radius(RADIUS_CTL);
                 if ui.add_enabled(can_double, x2).clicked() {
                     for i in 0..master_length {
                         pattern.set_step_mask(master_length + i, pattern.load_step_mask(i));
@@ -1535,12 +1535,12 @@ fn draw_lane_name_v2(ui: &mut egui::Ui, width: f32, selected: bool, label: &str)
     } else {
         PANEL2()
     };
-    ui.painter().rect_filled(rect, RADIUS_CTL, fill);
+    ui.painter().rect_filled(rect, RADIUS_PAD, fill);
     // Borderless at rest; only the selected lane gets a blue outline.
     if selected {
         ui.painter().rect_stroke(
             rect,
-            RADIUS_CTL,
+            RADIUS_PAD,
             egui::Stroke::new(1.0, BLUE()),
             egui::StrokeKind::Inside,
         );
@@ -1573,10 +1573,10 @@ fn draw_tag_button_v2(
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(TAG_SIZE), egui::Sense::click());
     let fill = if active { color } else { PANEL2() };
     let text = if active { text_on } else { FAINT() };
-    ui.painter().rect_filled(rect, 4.0, fill);
+    ui.painter().rect_filled(rect, RADIUS_TAG, fill);
     ui.painter().rect_stroke(
         rect,
-        4.0,
+        RADIUS_TAG,
         egui::Stroke::new(1.0, if active { color } else { LINE2() }),
         egui::StrokeKind::Inside,
     );
@@ -1652,13 +1652,39 @@ fn draw_step_cell_v2(
     };
 
     if !is_fusion_mid {
-        ui.painter().rect_filled(block_rect, 4.0, fill);
-        if stroke.width > 0.0 && stroke.color.a() > 0 {
-            if dashed_border {
+        if dashed_border {
+            // Empty-lane placeholder: flat recessed fill + dotted outline.
+            ui.painter().rect_filled(block_rect, 4.0, fill);
+            if stroke.width > 0.0 && stroke.color.a() > 0 {
                 draw_dashed_rect(ui.painter(), block_rect.shrink(0.5));
+            }
+        } else {
+            // Skeuo pad texture (designer recipe, rust/skeuo_widgets.rs::pad): an
+            // Image rounded to the pad radius via corner_radius. Fusion blocks /
+            // editing / selection keep the vector fallback.
+            let source = if fusion_span.is_none() {
+                crate::ui::pads::pad_source_for(fill)
             } else {
-                ui.painter()
-                    .rect_stroke(block_rect, 4.0, stroke, egui::StrokeKind::Inside);
+                None
+            };
+            if let Some(src) = source {
+                // egui can't round a texture in this renderer, so the pad shows
+                // the PNG's own baked corner (~2 px at cell size). Overlays below
+                // use RADIUS_PAD_TEX to match it.
+                egui::Image::new(src)
+                    .tint(Color32::WHITE)
+                    .paint_at(ui, block_rect);
+            } else {
+                paint_pad(ui.painter(), block_rect, fill);
+            }
+            // Hover highlight, hugging the pad's real (baked) corner.
+            if hover > 0.01 {
+                ui.painter().rect_stroke(
+                    block_rect,
+                    egui::epaint::CornerRadius::same(RADIUS_PAD_TEX as u8),
+                    egui::Stroke::new(1.0, lerp_color(stroke.color, BLUE(), hover)),
+                    egui::StrokeKind::Inside,
+                );
             }
         }
     }
@@ -1670,8 +1696,8 @@ fn draw_step_cell_v2(
         let pulse = ((time * 2.5).sin() + 1.0) * 0.5;
         let alpha = 120 + (pulse * 80.0) as u8;
         ui.painter().rect_stroke(
-            rect.shrink(1.0),
-            4.0,
+            rect.shrink(0.75),
+            egui::epaint::CornerRadius::same(RADIUS_PAD_TEX as u8),
             egui::Stroke::new(1.5, white_a(alpha)),
             egui::StrokeKind::Inside,
         );
@@ -1686,6 +1712,99 @@ fn draw_step_cell_v2(
         );
     }
     response
+}
+
+const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
+    Color32::from_rgb(r, g, b)
+}
+
+/// Fill a rect with a vertical (top→bottom) gradient via a 2-triangle Mesh.
+fn fill_vgrad(painter: &egui::Painter, rect: egui::Rect, top: Color32, bottom: Color32) {
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(rect.left_top(), top);
+    mesh.colored_vertex(rect.right_top(), top);
+    mesh.colored_vertex(rect.left_bottom(), bottom);
+    mesh.colored_vertex(rect.right_bottom(), bottom);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(1, 2, 3);
+    painter.add(egui::Shape::mesh(mesh));
+}
+
+/// Paint one step cell as a skeuomorphic rubber pad — exact recipe ported from
+/// the designer's `fd-skeuo.css` (`.step` variants). Off pads are a vertical
+/// gradient; lit pads are a radial (concentric circles at 50%/30%) from a bright
+/// core, through the state colour, to a darkened rim. SKEUO.md §1-2.
+fn paint_pad(painter: &egui::Painter, rect: egui::Rect, fill: Color32) {
+    let r = 4.0;
+
+    // Map the incoming state colour to the exact skeuo recipe.
+    // Lit recipes: (core, mid, outer, border, glow-rgb).
+    let lit = if fill == BLUE() {
+        Some((rgb(154, 220, 255), rgb(74, 182, 255), rgb(30, 110, 160), rgb(13, 58, 92)))
+    } else if fill == PL_LINK() {
+        Some((rgb(255, 217, 160), rgb(255, 154, 46), rgb(176, 94, 10), rgb(74, 42, 4)))
+    } else if fill == SEQPL() {
+        Some((rgb(220, 186, 255), rgb(176, 106, 255), rgb(106, 53, 176), rgb(44, 16, 80)))
+    } else {
+        None
+    };
+
+    if let Some((core, mid, outer, border)) = lit {
+        let clip = painter.with_clip_rect(rect);
+        // Rim fills the whole pad (corners take the darkest stop).
+        clip.rect_filled(rect, r, outer);
+        // Radial: mid then core circle centred at 50% / 30%.
+        let c = egui::pos2(rect.center().x, rect.top() + rect.height() * 0.30);
+        let w = rect.width();
+        clip.circle_filled(c, w * 0.52, mid);
+        clip.circle_filled(c, w * 0.26, core);
+        // Inset top highlight (rgba white .5) + border.
+        clip.line_segment(
+            [
+                egui::pos2(rect.left() + 1.5, rect.top() + 1.0),
+                egui::pos2(rect.right() - 1.5, rect.top() + 1.0),
+            ],
+            egui::Stroke::new(1.0, Color32::from_white_alpha(128)),
+        );
+        painter.rect_stroke(rect, r, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+        return;
+    }
+
+    // Off pads: vertical gradient + tinted border, per fd-skeuo.css.
+    let (top, bottom, border) = if fill == CELL_EMPTY_BEAT() {
+        (rgb(55, 56, 62), rgb(44, 45, 50), rgb(19, 19, 23))
+    } else if fill == CELL_PL_LINK_OFF() {
+        (rgb(58, 45, 28), rgb(46, 35, 20), rgb(74, 42, 4))
+    } else if fill == CELL_PL_SNAP_OFF() {
+        (rgb(58, 33, 28), rgb(46, 24, 20), rgb(74, 15, 8))
+    } else if fill == CELL_SEQPL_OFF() {
+        (rgb(50, 40, 62), rgb(39, 30, 48), rgb(44, 16, 80))
+    } else if fill == FUSION_FILL() {
+        (rgb(39, 64, 88), rgb(28, 47, 66), rgb(19, 19, 23))
+    } else {
+        // Empty off cell (and playhead-current, whose ring is drawn separately).
+        (rgb(49, 50, 55), rgb(40, 41, 45), rgb(19, 19, 23))
+    };
+
+    // Rounded base in the bottom colour so the corners stay filled, then the
+    // gradient inset by 1px, then the recessed-rubber bevels and border.
+    painter.rect_filled(rect, r, bottom);
+    fill_vgrad(painter, rect.shrink(1.0), top, bottom);
+    painter.line_segment(
+        [
+            egui::pos2(rect.left() + 2.0, rect.top() + 1.0),
+            egui::pos2(rect.right() - 2.0, rect.top() + 1.0),
+        ],
+        egui::Stroke::new(1.0, Color32::from_white_alpha(18)),
+    );
+    painter.line_segment(
+        [
+            egui::pos2(rect.left() + 2.0, rect.bottom() - 1.0),
+            egui::pos2(rect.right() - 2.0, rect.bottom() - 1.0),
+        ],
+        egui::Stroke::new(1.0, Color32::from_black_alpha(90)),
+    );
+    painter.rect_stroke(rect, r, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
 }
 
 fn draw_dashed_rect(painter: &egui::Painter, rect: egui::Rect) {
@@ -1886,7 +2005,7 @@ fn draw_mini_slider_value_tooltip(ui: &egui::Ui, response: &egui::Response, text
             egui::Frame::NONE
                 .fill(P_ACTIVE())
                 .stroke(egui::Stroke::new(1.0, LINE2()))
-                .corner_radius(6.0)
+                .corner_radius(RADIUS_CTL)
                 .inner_margin(egui::Margin {
                     left: 8,
                     right: 8,

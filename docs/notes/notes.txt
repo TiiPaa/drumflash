@@ -1,3 +1,5 @@
 - gestion des presets : a faire dans un modal avec gestion des user presets de modele de grid / pattern / songs
 - plock sequenceur : solo paramétré
 - Snare : Améliorer l'algo, la snare n'a pas assez de corps 
+- hi hat trop fort
+- BD pas assez fort

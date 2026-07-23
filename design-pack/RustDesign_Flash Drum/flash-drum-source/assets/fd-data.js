@@ -189,10 +189,11 @@
   function tagFor(engine) { return TAG_FOR[engine || ''] || 'LN'; }
 
   const instruments = [
-    { id: 'L1', tag: 'BD',  name: 'Kick',       engine: 'synth-kick'  },
-    { id: 'L2', tag: 'SD',  name: 'Snare',      engine: 'synth-snare' },
-    { id: 'L3', tag: 'HH',  name: 'Closed Hat', engine: 'synth-hat'   },
-    { id: 'L4', tag: 'TOM', name: 'Tom',        engine: 'synth-tom'   },
+    { id: 'L1', tag: 'BD',  name: 'Kick',   engine: 'synth-kick'  },
+    { id: 'L2', tag: 'SD',  name: 'Snare',  engine: 'synth-snare' },
+    { id: 'L3', tag: 'HH',  name: 'HiHat',  engine: 'synth-hat'   },
+    { id: 'L4', tag: 'TOM', name: 'Tom1',   engine: 'synth-tom'   },
+    { id: 'L5', tag: '--',  name: 'Empty',  engine: null          },
   ];
 
   // ---- pattern (keyed by lane id) ----------------------------------------
@@ -201,6 +202,7 @@
     L2: lane([5, 13], { seq: [5] }),
     L3: lane([3, 7, 15], { link: [5, 9], seq: [11] }),
     L4: lane([7]),
+    L5: lane([]),
   };
   pattern.L1.hits[4] = 1; pattern.L1.hits[8] = 1;
   pattern.L3.hits[4] = 1; pattern.L3.hits[8] = 1;
@@ -268,17 +270,22 @@
 
   // sequencer p-lock params (context menu in Sequencer mode)
   const seqPlockSchema = [
-    S('Probability', 'prob', { min: 0, max: 100, step: 1, value: 100, unit: '%', fmt: v => Math.round(v) }),
-    S('Stutter', 'stutter', { min: 0, max: 8, step: 1, value: 0, fmt: v => Math.round(v) }),
-    SEL('Condition', 'cond', ['Always', '1:2', '2:2', '1:4', 'Fill', '!Fill'], 'Always'),
-    S('Micro-timing', 'micro', { min: -50, max: 50, step: 1, value: 0, unit: 'ms', fmt: v => (v > 0 ? '+' : '') + Math.round(v) }),
+    S('Probability', 'prob', { min: 0, max: 100, step: 1, value: 100, unit: '', fmt: v => Math.round(v) + '%' }),
+    S('Stutter', 'stutter', { min: 1, max: 16, step: 1, value: 1, fmt: v => Math.round(v) + 'x' }),
+  ];
+  // conditions (grille 3 colonnes — cf. popup original)
+  const seqConditions = [
+    'Always', '1st loop only', 'Not 1st loop',
+    '1/2', '2/2', '1/3',
+    '2/3', '3/3', '1/4',
+    '2/4', '3/4', '4/4',
   ];
 
   window.FD = {
     instruments, pattern, lanes, params, transport,
     ENGINES, schemaForEngine, engineLabel, engineList, defaultParams,
     assignEngine, renameLane, addLane, removeLane, moveLane, tagFor,
-    oscFor, seqPlockSchema,
+    oscFor, seqPlockSchema, seqConditions,
     STEPS, PAGE, LANE_COUNT,
     stepLabels: Array.from({ length: PAGE }, (_, i) => i + 1),
   };

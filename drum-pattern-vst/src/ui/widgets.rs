@@ -109,7 +109,7 @@ impl Widget for ToggleLED {
             0.14,
         );
         let bg = lerp_color(PANEL2(), blue_glow(64), on_t);
-        painter.rect_filled(rect, 6.0, bg);
+        painter.rect_filled(rect, RADIUS_CTL, bg);
         let off_border = lerp_color(LINE2(), BLUE(), hover * 0.6);
         let stroke_color = lerp_color(off_border, BLUE(), on_t);
         painter.rect_stroke(
@@ -175,7 +175,7 @@ pub fn styled_select(
     let hovered = response.hovered();
     let hover = hover_t(ui.ctx(), response.id, hovered || popup_open);
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, PANEL2());
+    painter.rect_filled(rect, RADIUS_CTL, PANEL2());
     painter.rect_stroke(
         rect,
         6.0,
@@ -224,7 +224,7 @@ pub fn styled_select(
                 egui::Frame::NONE
                     .fill(P_ACTIVE())
                     .stroke(egui::Stroke::new(1.0, LINE2()))
-                    .corner_radius(6.0)
+                    .corner_radius(RADIUS_CTL)
                     .inner_margin(0.0)
                     .show(ui, |ui| {
                         ui.set_min_width(width);
@@ -293,7 +293,7 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
     let total: f32 = seg_ws.iter().sum();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(total, h), Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 6.0, PANEL2());
+    painter.rect_filled(rect, RADIUS_CTL, PANEL2());
 
     let mut result = selected;
     let mut x = rect.left();
@@ -348,6 +348,6 @@ pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
         }
         x += w;
     }
-    painter.rect_stroke(rect, 6.0, egui::Stroke::new(1.0, LINE2()), StrokeKind::Inside);
+    painter.rect_stroke(rect, RADIUS_CTL, egui::Stroke::new(1.0, LINE2()), StrokeKind::Inside);
     result
 }

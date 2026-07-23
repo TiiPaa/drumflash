@@ -1,0 +1,57 @@
+/* Flash Drum — 3 skin proposals (July 2026), grounded in the L214 design system palette.
+   Pure token swaps — same mechanism as the app's runtime skins (skins.json).
+   Applied via <html data-skin="paper|encre|miaulet">. No layout/typography change. */
+
+/* ============ PAPER — light warm studio (L214 beige/white + miaulet + orange) ============ */
+[data-skin="paper"]{
+  --bg:#f9f7f5; --panel:#ffffff; --panel2:#f3f3f3; --p-hover:#e9e7ec; --p-active:#dfe0fa;
+  --line:#cdcdce; --line2:#9e9e9d; --divider:#e8e6e3;
+  --blue:#5f68d9; --blue-d:#4f53a8; --blue-dim:rgba(95,104,217,.5); --blue-glow:rgba(95,104,217,.15);
+  --green:#27b18a; --red:#ac3a16; --amber:#e3b612;
+  --pl-link:#ff6028; --pl-link-dim:#ff9777; --pl-snap:#c94417; --pl-snap-dim:#e67f90;
+  --seqpl:#d9566c; --seqpl-dim:#ed9aa6;
+  --ink:#201f22; --ink2:#454447; --ink3:#6f6f72; --faint:#9e9e9d;
+  --cell-off:#f3f1ee; --cell-beat:#eceae7; --cell-current:#dfe0fa;
+  --cell-link-off:#ffdbd0; --cell-snap-off:#ffb9a2; --cell-seqpl-off:#fce4e7;
+  --cell-muted:#dfe0fa; --cell-muted-line:#bfc3f5;
+  --fusion-fill:#bfc3f5; --fusion-mid:#dfe0fa; --fusion-ink:#201f22;
+  --playhead:rgba(32,31,34,.65);
+  --envelope-bg:#ffffff; --handle:#201f22; --pop-title:#201f22;
+}
+[data-skin="paper"] .brand b,[data-skin="paper"] .ed-h .t,[data-skin="paper"] .sblock__p{color:#201f22;}
+[data-skin="paper"] .plk,[data-skin="paper"] .lanemenu{background:#ffffff;box-shadow:0 16px 40px rgba(32,31,34,.18);}
+[data-skin="paper"] .step.st-hit,[data-skin="paper"] .step.st-link,
+[data-skin="paper"] .step.st-snap,[data-skin="paper"] .step.st-seqhit{box-shadow:none;}
+
+/* ============ ENCRE — L214 warm anthracite dark, orange primary accent ============ */
+[data-skin="encre"]{
+  --bg:#161518; --panel:#201f22; --panel2:#282828; --p-hover:#323135; --p-active:#3c3a40;
+  --line:#343337; --line2:#454447; --divider:#2a292d;
+  --blue:#ff6028; --blue-d:#c94417; --blue-dim:rgba(255,96,40,.5); --blue-glow:rgba(255,96,40,.22);
+  --green:#3fbe9a; --red:#f87171; --amber:#ecc02a;
+  --pl-link:#ff9777; --pl-link-dim:#c94417; --pl-snap:#dc3232; --pl-snap-dim:#a01e1e;
+  --seqpl:#828aea; --seqpl-dim:#4f53a8;
+  --ink:#f3f3f3; --ink2:#b9b7ba; --ink3:#9e9e9d; --faint:#6f6f72;
+  --cell-off:#232226; --cell-beat:#2b2a2e; --cell-current:#3c3a40;
+  --cell-link-off:#3a2a14; --cell-snap-off:#3a1c18; --cell-seqpl-off:#2a2840;
+  --cell-muted:#3c3a40; --cell-muted-line:#454447;
+  --fusion-fill:#3a2a20; --fusion-mid:#2e2419;
+  --envelope-bg:#1a191c;
+}
+
+/* ============ MIAULET — periwinkle night (violet surfaces, pink seq-plocks) ============ */
+[data-skin="miaulet"]{
+  --bg:#121324; --panel:#1b1c33; --panel2:#24264a; --p-hover:#2e3054; --p-active:#383a64;
+  --line:#2c2e4e; --line2:#3e4068; --divider:#232544;
+  --blue:#a0a6ee; --blue-d:#5f68d9; --blue-dim:rgba(160,166,238,.5); --blue-glow:rgba(160,166,238,.22);
+  --green:#56cbab; --red:#f87171; --amber:#fad95f;
+  --pl-link:#ff6028; --pl-link-dim:#b45023; --pl-snap:#dc3232; --pl-snap-dim:#aa2d37;
+  --seqpl:#d9566c; --seqpl-dim:#a0465a;
+  --ink:#e8e8f6; --ink2:#a5a8c8; --ink3:#73769b; --faint:#525578;
+  --cell-off:#1f213a; --cell-beat:#282a4a; --cell-current:#3a3c64;
+  --cell-link-off:#302010; --cell-snap-off:#30161e; --cell-seqpl-off:#341a28;
+  --cell-muted:#383a64; --cell-muted-line:#3e4068;
+  --fusion-fill:#1e285a; --fusion-mid:#191f42;
+  --envelope-bg:#0f101e;
+}
+[data-skin="miaulet"] .seq__row.is-sel .seq__name{color:#121324;}
