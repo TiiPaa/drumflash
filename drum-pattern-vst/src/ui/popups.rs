@@ -367,7 +367,7 @@ pub fn draw_lane_preset_warning_if_any(
                         .min_size(Vec2::new(128.0, CTL_HEIGHT))
                         .fill(RED())
                         .stroke(egui::Stroke::new(1.0, RED()))
-                        .corner_radius(6.0);
+                        .corner_radius(RADIUS_CTL);
                         if ui.add(apply).clicked() {
                             apply_lane_preset_action(
                                 params,
@@ -385,7 +385,7 @@ pub fn draw_lane_preset_warning_if_any(
                         .min_size(Vec2::new(82.0, CTL_HEIGHT))
                         .fill(PANEL2())
                         .stroke(egui::Stroke::new(1.0, LINE2()))
-                        .corner_radius(6.0);
+                        .corner_radius(RADIUS_CTL);
                         if ui.add(cancel).clicked() {
                             state.lane_preset_confirm = None;
                         }

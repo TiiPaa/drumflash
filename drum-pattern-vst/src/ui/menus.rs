@@ -132,7 +132,7 @@ pub fn plock_menu_action_row(ui: &mut egui::Ui, label: &str, accent: Color32) ->
         egui::Button::new(RichText::new(label).font(f_sans_med(10.5)).color(accent))
             .fill(PANEL2())
             .stroke(egui::Stroke::new(1.0, LINE2()))
-            .corner_radius(6.0),
+            .corner_radius(RADIUS_CTL),
     )
 }
 

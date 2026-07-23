@@ -1135,7 +1135,7 @@ fn draw_sequencer_plock_menu(
                             )
                             .fill(fill)
                             .stroke(egui::Stroke::new(1.0, stroke_color))
-                            .corner_radius(6.0),
+                            .corner_radius(RADIUS_CTL),
                         )
                         .clicked()
                     {

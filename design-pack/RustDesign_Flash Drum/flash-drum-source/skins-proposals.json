@@ -1,0 +1,59 @@
+{
+  "comment": "Flash Drum — 3 propositions de skins (juillet 2026), palette du design system L214. Même schéma que skins.json — à coller dans le registre de skins.",
+  "skins": [
+    {
+      "name": "Paper",
+      "comment": "Skin clair studio — beige/blanc L214, accent miaulet (violet), p-locks orange. Inhabituel pour un VST : lisible en plein jour.",
+      "tokens": {
+        "bg": [249, 247, 245], "panel": [255, 255, 255], "panel2": [243, 243, 243], "panel3": [246, 244, 241],
+        "p_hover": [233, 231, 236], "p_active": [223, 224, 250], "line": [205, 205, 206], "line2": [158, 158, 157],
+        "blue": [95, 104, 217], "green": [39, 177, 138], "red": [172, 58, 22], "amber": [227, 182, 18],
+        "pl_link": [255, 96, 40], "pl_link_dim": [255, 151, 119], "pl_snap_dim": [230, 127, 144],
+        "seqpl": [217, 86, 108], "seqpl_dim": [237, 154, 166],
+        "ink": [32, 31, 34], "ink2": [69, 68, 71], "ink3": [111, 111, 114], "faint": [158, 158, 157],
+        "cell_empty_beat": [236, 234, 231], "cell_empty_off": [243, 241, 238], "cell_current": [223, 224, 250],
+        "cell_disabled": [250, 249, 247], "fusion_fill": [191, 195, 245], "cell_seqpl_off": [252, 228, 231],
+        "cell_pl_snap_off": [255, 185, 162], "cell_pl_link_off": [255, 219, 208], "song_empty": [243, 241, 238],
+        "danger": [172, 58, 22], "danger_dim": [201, 68, 23], "danger_soft": [230, 77, 24],
+        "drag_target": [227, 182, 18], "handle": [32, 31, 34], "mute_fill": [254, 247, 226],
+        "solo_fill": [228, 247, 243], "envelope_bg": [255, 255, 255], "envelope_curve": [255, 96, 40]
+      }
+    },
+    {
+      "name": "Encre",
+      "comment": "Anthracite chaud L214 (#201f22), orange #ff6028 en accent principal, seq-plocks periwinkle.",
+      "tokens": {
+        "bg": [22, 21, 24], "panel": [32, 31, 34], "panel2": [40, 40, 40], "panel3": [36, 35, 39],
+        "p_hover": [50, 49, 53], "p_active": [60, 58, 64], "line": [52, 51, 55], "line2": [69, 68, 71],
+        "blue": [255, 96, 40], "green": [63, 190, 154], "red": [248, 113, 113], "amber": [236, 192, 42],
+        "pl_link": [255, 151, 119], "pl_link_dim": [201, 68, 23], "pl_snap_dim": [160, 30, 30],
+        "seqpl": [130, 138, 234], "seqpl_dim": [79, 83, 168],
+        "ink": [243, 243, 243], "ink2": [185, 183, 186], "ink3": [158, 158, 157], "faint": [111, 111, 114],
+        "cell_empty_beat": [43, 42, 46], "cell_empty_off": [35, 34, 38], "cell_current": [60, 58, 64],
+        "cell_disabled": [19, 18, 21], "fusion_fill": [58, 42, 32], "cell_seqpl_off": [42, 40, 64],
+        "cell_pl_snap_off": [58, 28, 24], "cell_pl_link_off": [58, 42, 20], "song_empty": [28, 27, 30],
+        "danger": [255, 80, 80], "danger_dim": [180, 60, 60], "danger_soft": [255, 120, 120],
+        "drag_target": [250, 217, 95], "handle": [243, 243, 243], "mute_fill": [42, 32, 10],
+        "solo_fill": [10, 40, 28], "envelope_bg": [26, 25, 28], "envelope_curve": [255, 96, 40]
+      }
+    },
+    {
+      "name": "Miaulet",
+      "comment": "Nuit periwinkle — surfaces teintées violet, accent miaulet-300, p-locks orange, seq-plocks rose.",
+      "tokens": {
+        "bg": [18, 19, 36], "panel": [27, 28, 51], "panel2": [36, 38, 74], "panel3": [32, 33, 64],
+        "p_hover": [46, 48, 84], "p_active": [56, 58, 100], "line": [44, 46, 78], "line2": [62, 64, 104],
+        "blue": [160, 166, 238], "green": [86, 203, 171], "red": [248, 113, 113], "amber": [250, 217, 95],
+        "pl_link": [255, 96, 40], "pl_link_dim": [180, 80, 35], "pl_snap_dim": [170, 45, 55],
+        "seqpl": [217, 86, 108], "seqpl_dim": [160, 70, 90],
+        "ink": [232, 232, 246], "ink2": [165, 168, 200], "ink3": [115, 118, 155], "faint": [82, 85, 120],
+        "cell_empty_beat": [40, 42, 74], "cell_empty_off": [31, 33, 58], "cell_current": [58, 60, 100],
+        "cell_disabled": [14, 15, 28], "fusion_fill": [30, 40, 90], "cell_seqpl_off": [52, 26, 40],
+        "cell_pl_snap_off": [48, 22, 30], "cell_pl_link_off": [48, 32, 16], "song_empty": [22, 23, 42],
+        "danger": [255, 90, 95], "danger_dim": [175, 60, 65], "danger_soft": [255, 130, 135],
+        "drag_target": [252, 226, 131], "handle": [232, 232, 246], "mute_fill": [40, 32, 12],
+        "solo_fill": [10, 36, 26], "envelope_bg": [15, 16, 30], "envelope_curve": [160, 166, 238]
+      }
+    }
+  ]
+}

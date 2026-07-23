@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-23 — Skeuo : pads en textures + rayons harmonisés (build 20260723-155528)
+
+**Build:** `20260723-155528`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK, coins des pads validés dans Studio One.
+
+### Changements
+- **Pads du séquenceur rendus via les textures PNG du designer** (`assets/pads/pad-*.png`) au lieu d'un dessin vectoriel — chargées par le loader `egui_extras` + `include_image!` (installé au démarrage de l'éditeur). Mapping état→texture (hit/link/seq/off/off-beat/off-link/off-snap/seq-off) ; fusion/édition/sélection gardent le rendu vectoriel.
+- **Rayons harmonisés au thème Skeuo** (`RADIUS.md` / `SPEC-COMPUTED.md`) : panneaux/popups 7, keycaps 5, tags 3, nom de lane 4, pads 4, ADSR 4.
+- **Fit des coins de pad** : egui-baseview ne sait pas arrondir une texture, donc les overlays vectoriels d'un pad (anneau de lecture, surbrillance de survol) utilisent le coin RÉEL de la texture (`RADIUS_PAD_TEX = 2 px`, mesuré) au lieu de 4 px — l'anneau épouse le pad, plus de coin carré qui dépasse.
+- Dépendances : `image` (png) + `egui_extras` (image loader).
+- Plan complet de la refonte visuelle ajouté à `TODO.md` (section `[SKEUO]`, SK-0 → SK-16).
+
+---
+
 ## 2026-07-22 — Fenêtre 1480×800 (cible designer) + mise en page resserrée (build 20260722-161751)
 
 **Build:** `20260722-161751`

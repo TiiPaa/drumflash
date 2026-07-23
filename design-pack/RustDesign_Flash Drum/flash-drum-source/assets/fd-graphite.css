@@ -1,0 +1,44 @@
+/* Flash Drum — thème GRAPHITE (design retenu). Appliqué via <html data-rd="graphite">. */
+/* ============ GRAPHITE — station premium (Geist 2) : charbon usiné, cyan rétroéclairé ============ */
+[data-rd="graphite"]{--bg:#111318;--panel:#1b1e24;--panel2:#252932;--p-hover:#2d323d;--p-active:#353b48;
+  --line:#2a2e38;--line2:#3a404c;--divider:#232730;
+  --blue:#3ec1e8;--blue-d:#2a90b0;--blue-glow:rgba(62,193,232,.35);--blue-dim:rgba(62,193,232,.5);
+  --ink:#e6eaf0;--ink2:#9aa4b2;--ink3:#6b7482;--faint:#4a515d;
+  --cell-off:#181b21;--cell-beat:#1e222a;--cell-current:#333947;--envelope-bg:#0d0f13;--handle:#f2f6fa;}
+[data-rd="graphite"] .app{background:linear-gradient(180deg,#15181d,#0e1014);}
+[data-rd="graphite"] .bar{background:linear-gradient(180deg,#252932,#1a1d23);border-bottom:1px solid #05060a;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 2px 10px rgba(0,0,0,.5);}
+[data-rd="graphite"] .panel,[data-rd="graphite"] .botpanel{background:linear-gradient(180deg,#20242b,#181b21);
+  border:1px solid #0b0c10;border-radius:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 8px 22px rgba(0,0,0,.45);}
+[data-rd="graphite"] .seqwrap{background:rgba(0,0,0,.28);border-radius:3px;box-shadow:inset 0 2px 10px rgba(0,0,0,.55);margin:6px;padding:10px 12px;}
+[data-rd="graphite"] .plk,[data-rd="graphite"] .lanemenu{border-radius:5px;}
+[data-rd="graphite"] .tag,[data-rd="graphite"] .sblock,[data-rd="graphite"] .saddblock,[data-rd="graphite"] .seq__add{border-radius:3px;}
+[data-rd="graphite"] .pg,[data-rd="graphite"] .qbtn,[data-rd="graphite"] .chip,[data-rd="graphite"] .pbtn,
+[data-rd="graphite"] .pslot,[data-rd="graphite"] .itab,[data-rd="graphite"] .tgl,[data-rd="graphite"] .fusebtn,
+[data-rd="graphite"] .selbox,[data-rd="graphite"] .seg button,[data-rd="graphite"] .seg--clk button
+{background:linear-gradient(180deg,#2c313c,#21252d);border-color:#12141a;box-shadow:inset 0 1px 0 rgba(255,255,255,.07);border-radius:3px;}
+[data-rd="graphite"] .seg,[data-rd="graphite"] .seg--clk{border-radius:3px;}
+[data-rd="graphite"] .pg.on,[data-rd="graphite"] .qbtn.on,[data-rd="graphite"] .pslot.on,[data-rd="graphite"] .itab.on,
+[data-rd="graphite"] .fusebtn.on,[data-rd="graphite"] .seg--clk button.on
+{background:linear-gradient(180deg,#4fd0f2,#2a90b0);border-color:#1a6480;color:#04222e;box-shadow:0 0 5px rgba(62,193,232,.18),inset 0 1px 0 rgba(255,255,255,.3);}
+[data-rd="graphite"] .tgl.on{background:linear-gradient(180deg,#2c313c,#21252d);border-color:#2a90b0;color:var(--ink);box-shadow:none;}
+[data-rd="graphite"] .genbtn{background:linear-gradient(180deg,#4fd0f2,#2588a8);border:1px solid #1a6480;color:#04222e;border-radius:3px;
+  box-shadow:0 0 6px rgba(62,193,232,.16),inset 0 1px 0 rgba(255,255,255,.35);}
+[data-rd="graphite"] .sld,[data-rd="graphite"] .minisld{background:#0d0f13;box-shadow:inset 0 1px 3px rgba(0,0,0,.8);}
+[data-rd="graphite"] .sld{height:7px;}
+[data-rd="graphite"] .sld__fill,[data-rd="graphite"] .minisld__f{background:linear-gradient(180deg,#57d4f4,#2fa4c6);box-shadow:none;}
+[data-rd="graphite"] .sld__knob{opacity:1;width:13px;height:13px;background:radial-gradient(circle at 35% 30%,#ffffff,#b8c4d2);box-shadow:0 2px 4px rgba(0,0,0,.7);}
+[data-rd="graphite"] .step{background:linear-gradient(180deg,#1d2129,#161920);border-color:#0d0f13;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);border-radius:2px;}
+[data-rd="graphite"] .step.is-beat{background:linear-gradient(180deg,#232833,#1a1e26);}
+[data-rd="graphite"] .step.st-hit{background:linear-gradient(180deg,#5bd6f5,#2a90b0);box-shadow:0 0 4px rgba(62,193,232,.2),inset 0 1px 0 rgba(255,255,255,.35);}
+[data-rd="graphite"] .step.st-link{background:linear-gradient(180deg,#ffab3d,#e07800);box-shadow:0 0 4px rgba(255,150,30,.18),inset 0 1px 0 rgba(255,255,255,.3);}
+[data-rd="graphite"] .step.st-snap{background:linear-gradient(180deg,#f25555,#b52222);box-shadow:0 0 4px rgba(230,60,60,.18),inset 0 1px 0 rgba(255,255,255,.25);}
+[data-rd="graphite"] .step.st-seqhit{background:linear-gradient(180deg,#c07bff,#8a3fd0);box-shadow:0 0 4px rgba(168,85,247,.2),inset 0 1px 0 rgba(255,255,255,.25);}
+[data-rd="graphite"] .seq__name{background:linear-gradient(180deg,#272c36,#1e222a);border:1px solid #12141a;border-radius:3px;}
+[data-rd="graphite"] .seq__row.is-sel .seq__name{background:linear-gradient(180deg,#4fd0f2,#2a90b0);border-color:#1a6480;color:#04222e;box-shadow:none;}
+[data-rd="graphite"] .adsr{background:#0a0c10;border-color:#05060a;box-shadow:inset 0 2px 8px rgba(0,0,0,.7),0 0 0 1px rgba(62,193,232,.08);border-radius:3px;}
+[data-rd="graphite"] .plk,[data-rd="graphite"] .lanemenu{background:linear-gradient(180deg,#262b34,#1c2027);border-color:#0b0c10;box-shadow:0 24px 60px rgba(0,0,0,.7);}
+[data-rd="graphite"] .seg button.on{background:linear-gradient(180deg,#ffab3d,#e07800);color:#2a1600;}
+[data-rd="graphite"] .seg.seg--seq button.on{background:linear-gradient(180deg,#c07bff,#8a3fd0);color:#fff;}
+[data-rd="graphite"] #botTabs button.on{background:linear-gradient(180deg,#4fd0f2,#2a90b0);color:#04222e;}
+
