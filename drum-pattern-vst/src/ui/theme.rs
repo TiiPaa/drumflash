@@ -417,8 +417,17 @@ pub fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 // ============================================================
 // Primitives (rayons, gaps, strokes)
 // ============================================================
+// Radius scheme (Skeuo spec — RADIUS.md / SPEC-COMPUTED.md):
+// 3 (tags, sliders) -> 4 (pads, lane name, LCD) -> 5 (keycaps, wells, blocks) -> 7 (plates, popups).
+pub const RADIUS_TAG: f32 = 3.0;
+pub const RADIUS_PAD: f32 = 4.0;
+/// Effective corner radius of the baked pad PNGs once scaled into a cell (~2 px
+/// at the ~27 px cell width). egui can't round the texture, so vector overlays
+/// on a pad (playhead ring, hover outline) use THIS to hug the pad's real corner
+/// instead of RADIUS_PAD — otherwise the squarer PNG corner pokes past the ring.
+pub const RADIUS_PAD_TEX: f32 = 2.0;
 pub const RADIUS_CTL: f32 = 5.0;
-pub const RADIUS_PANEL: f32 = 9.0;
+pub const RADIUS_PANEL: f32 = 7.0;
 pub const GAP_TIGHT: f32 = 3.0;
 
 // Hauteurs / tailles standard

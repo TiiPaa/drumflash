@@ -27,8 +27,8 @@ pub fn draw_amp_envelope(
     let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 7.0, ENVELOPE_BG());
-    painter.rect_stroke(rect, 7.0, Stroke::new(1.0, LINE()), StrokeKind::Inside);
+    painter.rect_filled(rect, RADIUS_PAD, ENVELOPE_BG());
+    painter.rect_stroke(rect, RADIUS_PAD, Stroke::new(1.0, LINE()), StrokeKind::Inside);
 
     let pad_x = 12.0f32;
     let pad_y = 12.0f32;
@@ -174,8 +174,8 @@ pub fn draw_filter_envelope(
     let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 7.0, ENVELOPE_BG());
-    painter.rect_stroke(rect, 7.0, Stroke::new(1.0, LINE()), StrokeKind::Inside);
+    painter.rect_filled(rect, RADIUS_PAD, ENVELOPE_BG());
+    painter.rect_stroke(rect, RADIUS_PAD, Stroke::new(1.0, LINE()), StrokeKind::Inside);
 
     let pad_x = 14.0f32;
     let pad_y = 10.0f32;

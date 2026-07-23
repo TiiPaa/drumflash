@@ -252,7 +252,7 @@ fn draw_generator_bar(
             )
             .fill(BLUE())
             .stroke(egui::Stroke::new(1.0, BLUE()))
-            .corner_radius(6.0),
+            .corner_radius(RADIUS_CTL),
         );
 
         if gen_btn_response.clicked() {
