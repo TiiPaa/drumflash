@@ -256,7 +256,12 @@ pub fn create_editor(
                     let body_w = ui.available_width();
                     let (body_rect, _) =
                         ui.allocate_exact_size(Vec2::new(body_w, body_h), egui::Sense::hover());
-                    ui.painter().rect_filled(body_rect, 0.0, BG());
+                    crate::ui::widgets::vgrad(
+                        ui.painter(),
+                        body_rect,
+                        &[(0.0, WINDOW_BG_TOP), (1.0, WINDOW_BG_BOT)],
+                        0.0,
+                    );
 
                     let right_w = 568.0;
                     let left_w = (body_rect.width() - right_w).max(0.0);

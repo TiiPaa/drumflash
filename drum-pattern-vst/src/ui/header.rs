@@ -136,9 +136,18 @@ pub fn draw_header_bar(
         egui::Sense::hover(),
     );
 
-    // Fond PANEL() + bordure basse LINE()
+    // Skeuo metal header: vertical gradient + top highlight + bottom border.
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, PANEL());
+    crate::ui::widgets::vgrad(
+        &painter,
+        rect,
+        &[(0.0, HEADER_TOP), (0.6, HEADER_MID), (1.0, HEADER_BOT)],
+        0.0,
+    );
+    painter.line_segment(
+        [rect.left_top(), rect.right_top()],
+        egui::Stroke::new(1.0, Color32::from_white_alpha(30)),
+    );
     painter.line_segment(
         [rect.left_bottom(), rect.right_bottom()],
         egui::Stroke::new(1.0, LINE()),

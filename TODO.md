@@ -14,7 +14,7 @@
 
 ### Look Skeuo à porter (via `rust/skeuo_theme.rs` + `skeuo_widgets.rs`)
 - [ ] [SK-2] Intégrer `skeuo_theme.rs` : palette (surfaces, encres, accents), géométrie (R_MICRO 3 / R_PAD 4 / R_KEYCAP 5 / R_PLATE 7), tailles. Remplacer nos couleurs plates par la palette Skeuo.
-- [ ] [SK-3] Fond fenêtre + en-tête + plaques + **puits de grille** (`well()`) en dégradés verticaux (approx. `vgrad()` par bandes) + bordures.
+- [x] [SK-3] Fond fenêtre + en-tête en dégradés verticaux (`vgrad()` par bandes) + puits de grille encastré (fill foncé + bord #121215 + ombre interne haute). Build 20260723-163946. Reste : plaques bottom-panel / pattern-bank / sound-editor (à faire avec SK-4).
 - [ ] [SK-4] Boutons / onglets / pages / slots Px / selects / segmented → look **keycap** biseauté (`keycap()`, états Rest / PressedBlue / PressedAmber).
 - [ ] [SK-5] Bouton **GENERATE** → keycap ambre (`generate_button()`).
 - [ ] [SK-6] Sliders → piste creusée + fill bleu + **capuchon strié** 12×19 (`hslider()`).

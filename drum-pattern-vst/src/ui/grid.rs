@@ -77,9 +77,9 @@ pub fn draw_grid_v2(
 
     let mut fusion_editing_started_this_frame = false;
 
-    egui::Frame::new()
-        .fill(PANEL())
-        .stroke(egui::Stroke::new(1.0, LINE()))
+    let well_resp = egui::Frame::new()
+        .fill(WELL_FILL)
+        .stroke(egui::Stroke::new(1.0, PANEL_BORDER))
         .corner_radius(RADIUS_PANEL)
         .inner_margin(8.0)
         .show(ui, |ui| {
@@ -210,6 +210,21 @@ pub fn draw_grid_v2(
                 &lane_row_rects,
             );
         });
+
+    // Recessed well: dark inset shadow along the top edge + faint bottom
+    // highlight (SPEC seqwrap: inset 0 2 6 rgba(0,0,0,.6) + inset 0 -1 0 white .05).
+    {
+        let wr = well_resp.response.rect;
+        let p = ui.painter_at(wr);
+        let x0 = wr.left() + 4.0;
+        let x1 = wr.right() - 4.0;
+        for (dy, a) in [(1.0f32, 150u8), (2.0, 95), (3.0, 55), (4.0, 30), (5.0, 14)] {
+            p.line_segment(
+                [egui::pos2(x0, wr.top() + dy), egui::pos2(x1, wr.top() + dy)],
+                egui::Stroke::new(1.0, Color32::from_black_alpha(a)),
+            );
+        }
+    }
 
     let mut fusion_edit_box_rect = None;
     ui.horizontal(|ui| {
