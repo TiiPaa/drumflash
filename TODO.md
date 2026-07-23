@@ -1,3 +1,41 @@
+## [SKEUO] Refonte visuelle « hardware » (pack designer RustDesign_Flash Drum, 2026-07-23)
+
+> Pack de référence : `design-pack/RustDesign_Flash Drum/flash-drum-source/`.
+> Docs autoritaires : `HANDOFF.md` (index), `SPEC-COMPUTED.md` ⭐ (cotes mesurées), `RADIUS.md`, `SKEUO.md` (recettes), `rust/skeuo_theme.rs` + `rust/skeuo_widgets.rs` ⭐ (code egui clé en main), `png/` (textures + `reference-full-ui.png` = cible).
+> Stratégie : porter les 2 fichiers Rust du designer comme module `skeuo` (theme + widgets), garder notre layout, remplacer le *rendu* de chaque élément par ses fonctions (`pad`, `keycap`, `generate_button`, `hslider`, `led`, `lcd_frame`, `well`). Le module « ne fait que le look ».
+
+### Fondations — FAIT
+- [x] [SK-0a] Fenêtre 1480×800 + mise en page verticale resserrée pour tenir dans 800 (build 20260722-161751)
+- [x] [SK-0b] Pads affichés via les textures PNG du designer (`assets/pads/pad-*.png`) — build 20260722-180702
+- [x] [SK-0c] Rayons harmonisés au nouveau `RADIUS.md` : panneaux 7, keycaps 5, tags 3, nom de lane 4, pads 4, ADSR 4 (build 20260723-102824)
+
+### Blocage — coins des pads
+- [x] [SK-1] **Coins des pads carrés qui dépassaient de l'anneau de lecture.** egui (egui-baseview) ne sait PAS arrondir une texture. Solution retenue (sur remarque utilisateur) : **adapter nos overlays vectoriels au coin réel du PNG** au lieu de vouloir arrondir la texture. Le coin baké mesure ~13 texels sur 176 → **~2 px à l'écran** (`RADIUS_PAD_TEX = 2.0`). L'anneau de lecture et la surbrillance de survol passent de 4 px à 2 px pour épouser le pad (build 20260723-155528). À valider dans S1.
+
+### Look Skeuo à porter (via `rust/skeuo_theme.rs` + `skeuo_widgets.rs`)
+- [ ] [SK-2] Intégrer `skeuo_theme.rs` : palette (surfaces, encres, accents), géométrie (R_MICRO 3 / R_PAD 4 / R_KEYCAP 5 / R_PLATE 7), tailles. Remplacer nos couleurs plates par la palette Skeuo.
+- [ ] [SK-3] Fond fenêtre + en-tête + plaques + **puits de grille** (`well()`) en dégradés verticaux (approx. `vgrad()` par bandes) + bordures.
+- [ ] [SK-4] Boutons / onglets / pages / slots Px / selects / segmented → look **keycap** biseauté (`keycap()`, états Rest / PressedBlue / PressedAmber).
+- [ ] [SK-5] Bouton **GENERATE** → keycap ambre (`generate_button()`).
+- [ ] [SK-6] Sliders → piste creusée + fill bleu + **capuchon strié** 12×19 (`hslider()`).
+- [ ] [SK-7] Switches 34×18 (texture `switch-on/off.png` ou vectoriel).
+- [ ] [SK-8] LED des toggles header → `led()` (cercles concentriques + halo léger).
+- [ ] [SK-9] Écran ADSR → look **LCD vert** (`lcd_frame()`), courbe A/D/R par-dessus.
+- [ ] [SK-10] Tags M/S/T (17×17 r3) + nom de lane (52×21 r4) en dégradés (textures `lane-name-*.png` dispo).
+
+### Deltas comportement / layout restants (`CHANGES.md`, hors look)
+- [ ] [SK-11] Header : regrouper « Seq Mode » (Internal/Ext MIDI + MIDI Pat), déplacer **Auto-Edit dans ⚙ Settings**, moitiés de segmented symétriques.
+- [ ] [SK-12] Page bar : LED rouge de lecture **dans le coin haut-droit** du bouton (au lieu de sous le bouton).
+- [ ] [SK-13] Menu clic-droit de lane : ajouter « Name » (renommer) et « Engine » (choisir l'instrument, groupé).
+- [ ] [SK-14] Patterns sur **plaque dédiée** ; bouton **Clr** rouge au survol ; **pastille verte** coin haut-droit sur slots occupés.
+- [ ] [SK-15] Generator sur **2 rangées** (Type / A-Mix-B puis Dens-Var-GENERATE).
+- [ ] [SK-16] Sound Editor : dropdowns largeur fixe 170 px + ouverture vers le haut près du bord bas ; mode Notes avec flèches **◂ ▸** ; **retirer les lettres A/D/R** du graphe (légende du bas uniquement).
+
+### Ordre proposé (1 build testable par étape)
+1. SK-1 (débloquer les pads) → 2. SK-2/SK-3 (palette + fonds) → 3. SK-4/SK-5 (keycaps) → 4. SK-6..SK-10 (contrôles) → 5. SK-11..SK-16 (comportement).
+
+---
+
 ## Modular Grid Redesign (active — V1.5)
 
 - [x] [MG-1] Internal track model: `TrackSlot`, `TrackInstrumentKind`, `TrackRouting`, `TrackLayoutState`

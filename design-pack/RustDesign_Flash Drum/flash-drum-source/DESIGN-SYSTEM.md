@@ -70,6 +70,8 @@ Convention : **chiffre = mono, mot = sans.**
 
 ## 3. Primitives
 
+> ⚠️ **Valeurs du thème plat d'origine — périmées pour Skeuo.** Pour le thème retenu, utiliser `RADIUS.md` (pads = 4 px, keycaps = 5 px, plaques = 7 px) et `SPEC-COMPUTED.md`.
+
 ```rust
 pub const RADIUS_CTL: f32 = 5.0;   // boutons, cellules, selects
 pub const RADIUS_PANEL: f32 = 9.0;

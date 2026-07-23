@@ -7,7 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/fd-base.css?v=16">
+<link rel="stylesheet" href="assets/fd-base.css?v=33">
+<link rel="stylesheet" href="assets/fd-skins-l214.css?v=2">
+<script>var __q=new URLSearchParams(location.search);document.documentElement.dataset.skin=__q.get('skin')||'';document.documentElement.dataset.rd=__q.get('rd')!==null?__q.get('rd'):'skeuo';document.documentElement.dataset.layout=__q.get('layout')||'';</script>
 <style>
   html,body{margin:0;background:#070709;}
   .app{width:1480px;height:800px;background:var(--bg);color:var(--ink);font-family:var(--sans);
@@ -26,14 +28,20 @@
   .hsl{display:flex;align-items:center;gap:8px;}
   .hsl .ctl{width:172px;} .hsl .ctl__label{width:auto;min-width:38px;}
   .htog{display:flex;gap:6px;}
+  #settingsBtn{color:var(--ink3);} #settingsBtn:hover{color:var(--ink);}
+  .settingspop{position:fixed;top:48px;right:12px;z-index:300;width:300px;display:none;flex-direction:column;gap:12px;
+    background:var(--p-active);border:1px solid var(--line2);border-radius:9px;padding:14px;box-shadow:0 16px 40px rgba(0,0,0,.6);}
+  .settingspop.open{display:flex;}
+  .settingspop .h{font:600 11px/1 var(--sans);color:var(--pop-title,#fff);}
+  .settingspop .ctl__label{width:auto;min-width:88px;font-size:10.5px;}
   /* ---- coordinated control system ----
      Standard chrome control: height 26, radius 6, 1px line2, bg panel2, ink2.
      Word label = 600 11px sans · numeric/code label = 600 10.5px mono.
      Hover = border blue + ink · Active/on = bg blue + #fff. */
   .clk{display:flex;align-items:center;gap:8px;}
   .clk__lab{font:600 10.5px/1 var(--sans);letter-spacing:.02em;color:var(--ink3);}
-  .seg--clk{display:flex;height:26px;border:1px solid var(--line2);border-radius:6px;overflow:hidden;}
-  .seg--clk button{display:flex;align-items:center;gap:6px;padding:0 12px;border:0;background:var(--panel2);color:var(--ink2);font:600 11px/1 var(--sans);cursor:pointer;transition:.14s;}
+  .seg--clk{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;height:26px;border:1px solid var(--line2);border-radius:6px;overflow:hidden;}
+  .seg--clk button{display:flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;border:0;background:var(--panel2);color:var(--ink2);font:600 11px/1 var(--sans);cursor:pointer;transition:.14s;}
   .seg--clk button+button{border-left:1px solid var(--line2);}
   .seg--clk button::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--faint);transition:.14s;}
   .seg--clk button:hover{color:var(--ink);}
@@ -58,8 +66,8 @@
   .pg:hover:not(:disabled):not(.on){color:var(--ink);border-color:var(--blue);}
   .pg.on{background:var(--blue);color:#fff;border-color:var(--blue);}
   .pg:disabled{opacity:.3;cursor:default;}
-  .pg .led{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:transparent;}
-  .pg.playing .led{background:var(--red);box-shadow:0 0 6px var(--red);}
+  .pg .led{position:absolute;top:3px;right:3px;width:4px;height:4px;border-radius:50%;background:transparent;}
+  .pg.playing .led{background:var(--red);box-shadow:0 0 4px var(--red);}
   .lenrow{display:flex;align-items:center;gap:7px;margin-left:auto;flex:0 0 auto;}
   .lenrow .lab{font:600 10.5px/1 var(--sans);letter-spacing:.02em;color:var(--ink3);}
   .lenSld{width:132px;flex:0 0 132px;}
@@ -81,8 +89,8 @@
   .modebar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
   .pill-grp{display:flex;align-items:center;gap:8px;}
   .pill-grp .k{flex:0 0 84px;font:600 10.5px/1 var(--sans);letter-spacing:.02em;color:var(--ink3);}
-  .seg{display:flex;height:26px;border:1px solid var(--line2);border-radius:6px;overflow:hidden;}
-  .seg button{display:flex;align-items:center;padding:0 12px;border:0;background:var(--panel2);color:var(--ink2);font:600 11px/1 var(--sans);cursor:pointer;transition:.14s;}
+  .seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;height:26px;border:1px solid var(--line2);border-radius:6px;overflow:hidden;}
+  .seg button{display:flex;align-items:center;justify-content:center;padding:0 12px;border:0;background:var(--panel2);color:var(--ink2);font:600 11px/1 var(--sans);cursor:pointer;transition:.14s;}
   .seg button+button{border-left:1px solid var(--line2);}
   .seg button:hover{color:var(--ink);}
   .seg button.on{background:var(--pl-link);color:#1a1206;}
@@ -98,20 +106,39 @@
   .patbar .cnt{font:500 10px/1 var(--mono);color:var(--blue);}
   .pbtn{display:flex;align-items:center;height:26px;padding:0 12px;border-radius:6px;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2);font:600 11px/1 var(--sans);cursor:pointer;transition:.14s;}
   .pbtn:hover{color:var(--ink);border-color:var(--blue);}
+  .pbtn--danger{color:var(--ink3);}
+  .pbtn--danger:hover{color:var(--red);border-color:var(--red);}
   .pslot{position:relative;width:30px;height:26px;border-radius:6px;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2);font:600 10.5px/1 var(--mono);cursor:pointer;transition:.14s;}
   .pslot:hover:not(.on){color:var(--ink);border-color:var(--blue);}
-  .pslot.filled::after{content:'';position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:var(--green);}
+  .pslot.filled::after{content:'';position:absolute;top:3px;right:3px;width:4px;height:4px;border-radius:50%;background:var(--green);}
   .pslot.on{background:var(--blue);color:#fff;border-color:var(--blue);}
   .pslot.on::after{background:#fff;}
 
   /* shared bottom panel: Generator OR Song (mutually exclusive) */
   .botpanel{display:flex;flex-direction:column;}
   .botpanel__h{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);}
+  /* ---- Layout B : contrôles de grille regroupés dans le panneau séquenceur ---- */
+  [data-layout="b"] .col-l{gap:10px;padding-top:11px;padding-bottom:11px;}
+  [data-layout="b"] .seqgroup{display:flex;flex-direction:column;}
+  [data-layout="b"] .seqgroup .pagebar{padding:9px 13px;border-bottom:1px solid var(--divider);margin:0;}
+  [data-layout="b"] .seqgroup .modebar{padding:8px 13px;border-top:1px solid var(--divider);margin:0;}
+  [data-layout="b"] .seqgroup .seqwrap{border:0;box-shadow:none;background:transparent;border-radius:0;margin:0;}
+  [data-layout="b"] .seqgroup .seqwrap::before,[data-layout="b"] .seqgroup .seqwrap::after{content:none;}
+  [data-layout="b"] .hint{display:none;}
+  [data-layout="b"] .modebar .fusebtn{margin-left:auto;}
+  [data-layout="b"] .patbar{padding:8px 13px;margin:0;}
+  [data-layout="b"] .patbar.panel{border-radius:7px;}
   .botpanel__meta{font:500 10.5px/1 var(--mono);color:var(--ink3);}
   .botpanel__meta b{color:var(--blue);}
   .botpanel__body{padding:11px 12px;}
   .bp-pane[hidden]{display:none;}
-  .genrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .genrow{display:flex;align-items:center;gap:8px;}
+  .genrow+.genrow{margin-top:9px;}
+  .morph{display:flex;align-items:center;gap:8px;}
+  #gType{width:148px;} #gType .ctl{width:100%;}
+  #gA,#gB{width:104px;} #gA .ctl,#gB .ctl{width:100%;} #gA .ctl__label,#gB .ctl__label{min-width:12px;width:auto;}
+  #gMix{width:124px;} #gMix .ctl{width:100%;}
+  #gDens,#gVar{width:126px;} #gDens .ctl,#gVar .ctl{width:100%;}
   .genrow .k{font:600 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);min-width:62px;}
   .chip{display:flex;align-items:center;height:26px;padding:0 12px;border-radius:6px;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2);font:600 11px/1 var(--sans);cursor:pointer;white-space:nowrap;transition:.14s;}
   .chip:hover{color:var(--ink);border-color:var(--blue);}
@@ -152,6 +179,13 @@
   .ed-h{display:flex;align-items:center;gap:10px;padding:11px 14px 9px;border-bottom:1px solid var(--line);}
   .ed-h .t{font:700 13px/1 var(--sans);color:#fff;}
   .ed-h .who{font:500 11px/1 var(--mono);color:var(--ink3);}
+  .edmode{display:flex;border-bottom:1px solid var(--line);}
+  .edmode button{flex:1;height:30px;border:0;background:var(--panel);color:var(--ink2);font:600 11px/1 var(--sans);cursor:pointer;transition:.14s;}
+  .edmode button+button{border-left:1px solid var(--line);}
+  .edmode button:hover:not(.on){color:var(--ink);}
+  .edmode button.on{background:var(--blue);color:#fff;}
+  .trkname{flex:1 1 auto;height:26px;min-width:0;background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--ink);font:500 11px/1 var(--sans);padding:0 9px;}
+  .trkname:focus{outline:none;border-color:var(--blue);}
   .ed-tabs2{display:flex;margin-left:auto;border:1px solid var(--line2);border-radius:6px;overflow:hidden;}
   .ed-tabs2 button{padding:5px 12px;border:0;background:var(--panel2);color:var(--ink2);font:600 10px/1 var(--sans);cursor:pointer;}
   .ed-tabs2 button+button{border-left:1px solid var(--line2);}
@@ -165,6 +199,7 @@
   .ptab{padding:14px 2px;}
   .ptab .edsec{border-top-color:var(--divider);}
 </style>
+<link rel="stylesheet" href="assets/fd-skeuo.css?v=3">
 </head>
 <body>
 <div class="app">
@@ -178,17 +213,18 @@
     <div id="hGroove"></div>
     <div class="vbar"></div>
     <div class="clk" title="Sequencer source: Internal sequencer plays the grid, or follow incoming MIDI from the DAW">
-      <span class="clk__lab">Seq</span>
+      <span class="clk__lab">Seq Mode</span>
       <div class="seg seg--clk" id="clkSeg">
         <button class="on" data-clk="int">Internal</button>
         <button data-clk="ext">Ext MIDI</button>
       </div>
+      <button class="tgl" id="midiPat" title="Le pattern suit les program changes MIDI (indisponible en Ext MIDI)"><span class="led"></span>MIDI Pat</button>
     </div>
     <div class="vbar"></div>
     <div class="htog">
       <button class="tgl on" data-chk><span class="led"></span>Choke</button>
-      <button class="tgl on" data-chk><span class="led"></span>Auto-Edit</button>
     </div>
+    <button class="tgl" id="settingsBtn" style="margin-left:auto;" title="Settings">⚙ Settings</button>
   </div>
 
   <div class="body">
@@ -225,8 +261,10 @@
         <span class="ttl">Patterns</span>
         <button class="pbtn">Save</button>
         <div id="slots" style="display:flex;gap:4px;"></div>
-        <button class="pbtn">Clr</button>
         <span style="flex:1 1 auto;"></span>
+        <button class="chip chip--accent" id="randomBtn" title="Remplissage aléatoire du pattern courant — indépendant du générateur">⟳ Random</button>
+        <button class="pbtn pbtn--danger">Clr</button>
+        <span class="vbar"></span>
         <button class="chip" id="exportMidi">Export MIDI</button>
         <button class="chip chip--midi" id="dragMidi" draggable="true" title="Drag the current pattern into your DAW">
           <span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span>Drag MIDI
@@ -242,10 +280,13 @@
         <div class="botpanel__body">
           <div class="bp-pane" id="genPane">
             <div class="genrow">
-              <div id="gType"></div><div id="gA"></div><div id="gB"></div>
-              <div id="gMix"></div><div id="gDens"></div><div id="gVar"></div>
+              <div class="ggrp" id="gType"></div>
+              <span class="vbar"></span>
+              <div class="morph"><div id="gA"></div><div id="gMix"></div><div id="gB"></div></div>
+            </div>
+            <div class="genrow">
+              <div id="gDens"></div><div id="gVar"></div>
               <span class="sep"></span>
-              <button class="chip chip--accent" id="randomBtn">⟳ Random</button>
               <button class="genbtn">GENERATE</button>
             </div>
           </div>
@@ -261,14 +302,14 @@
       <div class="ed-h">
         <span class="t">Sound Editor</span><span class="who" id="edWho">Kick</span>
       </div>
-      <div class="insttabs" id="insttabs"></div>
+      <div class="edmode" id="edMode"><button class="on" data-t="sound">Sound</button><button data-t="track">Track</button></div>
       <div class="ed-scroll"><div id="editor"></div></div>
     </div>
   </div>
 </div>
 
-<script src="assets/fd-data.js?v=16"></script>
-<script src="assets/fd-core.js?v=16"></script>
+<script src="assets/fd-data.js?v=20"></script>
+<script src="assets/fd-core.js?v=29"></script>
 <script>
 (function(){
   const C=window.FDCore, FD=window.FD;
@@ -277,10 +318,31 @@
   document.getElementById('hSwing').append(C.slider({label:'Swing',min:0,max:100,step:1,value:0,unit:'%',fmt:v=>Math.round(v)}));
   document.getElementById('hGroove').append(C.select({label:'',options:['Straight','Swing 16th','Shuffle','MPC'],value:'Swing 16th'}));
   document.querySelectorAll('[data-chk]').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
+
+  // ===== Settings popup =====
+  (function(){
+    const btn=document.getElementById('settingsBtn');
+    const pop=C.el('div','settingspop'); document.body.append(pop);
+    pop.append(C.el('div','h',{textContent:'Settings'}));
+    pop.append(C.toggle({label:'Auto-Edit',value:true}));
+    pop.append(C.slider({label:'Default Analog',min:0,max:1,step:.01,value:0,fmt:v=>v.toFixed(2)}));
+    pop.append(C.slider({label:'MIDI Channel',min:1,max:16,step:1,value:10,fmt:v=>''+Math.round(v)}));
+    const skins={'Dark':'','Paper':'paper','Encre':'encre','Miaulet':'miaulet'};
+    const cur=Object.keys(skins).find(k=>skins[k]===document.documentElement.dataset.skin)||'Dark';
+    pop.append(C.select({label:'Skin',options:Object.keys(skins),value:cur},k=>{document.documentElement.dataset.skin=skins[k];}));
+    btn.onclick=e=>{e.stopPropagation();pop.classList.toggle('open');};
+    document.addEventListener('click',e=>{if(!pop.contains(e.target)&&e.target!==btn)pop.classList.remove('open');});
+  })();
   // clock source (internal sequencer vs external MIDI from DAW)
+  const midiPat=document.getElementById('midiPat');
+  midiPat.onclick=()=>{ if(!midiPat.disabled) midiPat.classList.toggle('on'); };
   document.getElementById('clkSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
     document.getElementById('clkSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
     FD.transport.clock=b.dataset.clk;
+    const ext=b.dataset.clk==='ext';
+    midiPat.disabled=ext;
+    if(ext) midiPat.classList.remove('on');
+    midiPat.style.opacity=ext?'.4':'';
   });
 
   // ===== bottom panel : Generator OR Song (mutually exclusive) =====
@@ -365,7 +427,7 @@
   });
 
   // ===== editor (Sound Editor) =====
-  const insttabs=document.getElementById('insttabs');
+  const insttabs=C.el('div'); // (sélecteurs d'instruments retirés — sélection via la grille)
   let curInst='L1';
   function rebuildTabs(){
     insttabs.innerHTML='';
@@ -377,11 +439,45 @@
     if(!FD.instruments.find(i=>i.id===curInst)) setInst(FD.instruments[0].id);
     insttabs.querySelectorAll('.itab').forEach(t=>t.classList.toggle('on',t.dataset.id===curInst));
   }
+  function renderTrack(id){
+    const box=document.getElementById('editor'); box.innerHTML='';
+    const inst=FD.instruments.find(i=>i.id===id), lane=FD.lanes[id];
+    const sec=t=>{const s=C.el('section','edsec');s.append(C.el('div','edsec__h',{textContent:t}));const b=C.el('div','edsec__b');s.append(b);box.append(s);return b;};
+    const b1=sec('Track');
+    const row=C.el('div','ctl');
+    row.append(C.el('span','ctl__label',{textContent:'Name'}));
+    const inp=C.el('input','trkname'); inp.type='text'; inp.maxLength=6; inp.value=inst.name.slice(0,6);
+    inp.addEventListener('input',()=>{ FD.renameLane(id,inp.value);
+      const r=document.querySelector('.seq__row[data-id="'+id+'"] .seq__name'); if(r){ r.title=inp.value; r.textContent=inp.value; }
+      const t=insttabs.querySelector('.itab[data-id="'+id+'"]'); if(t) t.title=inp.value;
+      document.getElementById('edWho').textContent='Slot '+(FD.instruments.findIndex(i=>i.id===id)+1)+' – '+inp.value; });
+    row.append(inp); b1.append(row);
+    const groups=FD.engineList(); const opts=[]; const map={};
+    Object.keys(groups).forEach(g=>groups[g].forEach(e=>{opts.push(e.label);map[e.label]=e.type;}));
+    b1.append(C.select({label:'Instrument',options:opts,value:FD.engineLabel(inst.engine)},lbl=>{ FD.assignEngine(id,map[lbl]); seq.renderRows(); rebuildTabs(); setInst(id); }));
+    const b2=sec('Routing');
+    b2.append(C.toggle({label:'Main',value:true}));
+    b2.append(C.select({label:'Out',options:['No Aux','Out 1','Out 2','Out 3','Out 4','Out 5','Out 6','Out 7','Out 8','Out 9','Out 10','Out 11','Out 12','Out 13','Out 14'],value:'No Aux'}));
+    const b3=sec('MIDI');
+    b3.append(C.slider({label:'Channel',min:1,max:16,step:1,value:10,fmt:v=>''+Math.round(v)}));
+    b3.append(C.slider({label:'Note',min:0,max:127,step:1,value:36,fmt:v=>''+Math.round(v)}));
+    const b4=sec('Sequencing');
+    b4.append(C.slider({label:'Length',min:1,max:64,step:1,value:lane.len,fmt:v=>''+Math.round(v)},v=>{ lane.len=Math.round(v); seq.renderPage(); }));
+    b4.append(C.toggle({label:'Lock Length',value:false}));
+  }
+  let edTab='sound';
+  function renderEditor(){ if(edTab==='sound') C.buildEditor(document.getElementById('editor'), curInst); else renderTrack(curInst); }
+  document.getElementById('edMode').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    edTab=b.dataset.t;
+    document.getElementById('edMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    renderEditor();
+  });
   function setInst(id){
     curInst=id;
     insttabs.querySelectorAll('.itab').forEach(t=>t.classList.toggle('on',t.dataset.id===id));
-    document.getElementById('edWho').textContent=FD.instruments.find(i=>i.id===id).name;
-    C.buildEditor(document.getElementById('editor'), id);
+    const inst=FD.instruments.find(i=>i.id===id);
+    document.getElementById('edWho').textContent='Slot '+(FD.instruments.findIndex(i=>i.id===id)+1)+' – '+inst.name;
+    renderEditor();
   }
   // called when a lane's engine/name changes (from header selector or lane right-click menu)
   function onLaneChange(id){
@@ -390,7 +486,7 @@
     if(row){
       row.classList.toggle('is-empty', !inst.engine);
       const nm=row.querySelector('.seq__name');
-      if(nm) nm.title=inst.name+' · '+FD.engineLabel(inst.engine)+'  (right-click to assign)';
+      if(nm){ nm.title=inst.name+' · '+FD.engineLabel(inst.engine)+'  (right-click to assign)'; nm.textContent=inst.name; }
     }
     const tab=insttabs.querySelector('.itab[data-id="'+id+'"]'); if(tab){ tab.title=inst.name; tab.textContent=inst.tag; }
     if(id===curInst) setInst(id);
@@ -404,7 +500,7 @@
   function pageCount(){ return Math.ceil(FD.transport.len/FD.PAGE); }
   let curPage=1;
   for(let i=1;i<=4;i++){
-    const b=C.el('button','pg'+(i===1?' on':''),{textContent:i});
+    const b=C.el('button','pg'+(i===1?' on playing':''),{textContent:i}); // 'playing' = LED rouge : page en cours de lecture (démo : page 1)
     b.append(C.el('span','led')); b.dataset.p=i;
     b.onclick=()=>{ if(b.disabled) return; gotoPage(i); };
     pgnum.append(b); pgBtns.push(b);
@@ -439,6 +535,19 @@
   });
   document.getElementById('fuse').onclick=function(){ this.classList.toggle('on'); };
 
+})();
+</script>
+<script>
+// Layout B : proposition de regroupement ergonomique — les contrôles qui AGISSENT sur la
+// grille (pages, longueur, follow, mode p-lock, fusion) vivent DANS le panneau séquenceur.
+(function(){
+  if(document.documentElement.dataset.layout!=='b') return;
+  var pagebar=document.querySelector('.pagebar'), seqPanel=document.querySelector('.panel.seqwrap'), modebar=document.querySelector('.modebar');
+  var group=document.createElement('div'); group.className='panel seqgroup';
+  seqPanel.parentNode.insertBefore(group, pagebar);
+  group.append(pagebar, seqPanel, modebar);
+  seqPanel.classList.remove('panel');
+  document.querySelector('.patbar').classList.add('panel');
 })();
 </script>
 </body>

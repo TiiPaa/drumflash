@@ -31,6 +31,7 @@ mod header;
 mod local_param_slider;
 mod menus;
 mod midi;
+mod pads;
 mod pattern_bank;
 mod plock;
 mod popups;
@@ -178,6 +179,8 @@ pub fn create_editor(
         },
         |egui_ctx, _state| {
             install_egui_fonts(egui_ctx);
+            // PNG loader for the skeuo pad textures (egui::include_image!).
+            egui_extras::install_image_loaders(egui_ctx);
 
             // Style global sombre
             let mut visuals = egui::Visuals::dark();
