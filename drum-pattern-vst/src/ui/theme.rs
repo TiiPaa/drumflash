@@ -426,6 +426,17 @@ pub const RADIUS_PAD: f32 = 4.0;
 /// on a pad (playhead ring, hover outline) use THIS to hug the pad's real corner
 /// instead of RADIUS_PAD — otherwise the squarer PNG corner pokes past the ring.
 pub const RADIUS_PAD_TEX: f32 = 2.0;
+
+// Skeuo surfaces (SPEC-COMPUTED.md / skeuo_theme.rs) — skin-independent metal look.
+pub const WINDOW_BG_TOP: Color32 = Color32::from_rgb(42, 43, 48);
+pub const WINDOW_BG_BOT: Color32 = Color32::from_rgb(30, 31, 35);
+pub const HEADER_TOP: Color32 = Color32::from_rgb(61, 62, 68);
+pub const HEADER_MID: Color32 = Color32::from_rgb(43, 44, 49);
+pub const HEADER_BOT: Color32 = Color32::from_rgb(38, 39, 43);
+/// Recessed grid well (seqwrap) — darker inset behind the pads.
+pub const WELL_FILL: Color32 = Color32::from_rgb(29, 30, 34);
+/// Dark border of plates/wells (#121215).
+pub const PANEL_BORDER: Color32 = Color32::from_rgb(18, 18, 21);
 pub const RADIUS_CTL: f32 = 5.0;
 pub const RADIUS_PANEL: f32 = 7.0;
 pub const GAP_TIGHT: f32 = 3.0;

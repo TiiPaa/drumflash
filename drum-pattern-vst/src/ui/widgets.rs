@@ -6,6 +6,40 @@ pub fn hover_t(ctx: &egui::Context, id: egui::Id, hovered: bool) -> f32 {
     ctx.animate_value_with_time(id, if hovered { 1.0 } else { 0.0 }, 0.14)
 }
 
+/// Vertical gradient approximated by stacked horizontal bands — egui has no
+/// native gradient. Recipe from the designer's `skeuo_widgets.rs::vgrad`:
+/// a rounded base rect in the bottom colour, then N inner bands top→bottom
+/// (inset 1px so the rounded corners stay clean). `stops` = (position 0..1, colour).
+pub fn vgrad(painter: &egui::Painter, rect: egui::Rect, stops: &[(f32, Color32)], radius: f32) {
+    let base = stops.last().map(|s| s.1).unwrap_or(Color32::BLACK);
+    painter.rect_filled(rect, egui::epaint::CornerRadius::same(radius as u8), base);
+    let inner = rect.shrink(1.0);
+    let n = 12;
+    for i in 0..n {
+        let t = i as f32 / n as f32;
+        let c = vgrad_sample(stops, t);
+        let y0 = inner.top() + inner.height() * t;
+        let y1 = inner.top() + inner.height() * (i as f32 + 1.0) / n as f32;
+        painter.rect_filled(
+            egui::Rect::from_min_max(egui::pos2(inner.left(), y0), egui::pos2(inner.right(), y1)),
+            egui::epaint::CornerRadius::ZERO,
+            c,
+        );
+    }
+}
+
+fn vgrad_sample(stops: &[(f32, Color32)], t: f32) -> Color32 {
+    let mut prev = stops[0];
+    for &s in stops {
+        if t <= s.0 {
+            let span = (s.0 - prev.0).max(1e-4);
+            return lerp_color(prev.1, s.1, ((t - prev.0) / span).clamp(0.0, 1.0));
+        }
+        prev = s;
+    }
+    stops.last().map(|s| s.1).unwrap_or(Color32::BLACK)
+}
+
 // ============================================================
 // ToggleSwitch — 34×18 r10
 // ============================================================
