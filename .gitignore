@@ -28,3 +28,6 @@ tail_content.txt
 # OS
 .DS_Store
 Thumbs.db
+
+# UI render previews (dev artifacts, not shipped)
+/ui-preview/

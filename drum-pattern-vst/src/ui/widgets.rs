@@ -14,18 +14,77 @@ pub fn vgrad(painter: &egui::Painter, rect: egui::Rect, stops: &[(f32, Color32)]
     let base = stops.last().map(|s| s.1).unwrap_or(Color32::BLACK);
     painter.rect_filled(rect, egui::epaint::CornerRadius::same(radius as u8), base);
     let inner = rect.shrink(1.0);
+    let r = radius.max(0.0);
     let n = 12;
     for i in 0..n {
         let t = i as f32 / n as f32;
         let c = vgrad_sample(stops, t);
         let y0 = inner.top() + inner.height() * t;
         let y1 = inner.top() + inner.height() * (i as f32 + 1.0) / n as f32;
+        // Follow the rounded corners so the square bands don't poke out past the
+        // rounded base (which showed as light pixels at the corners).
+        let d = (y0 - inner.top()).min(inner.bottom() - y1).max(0.0);
+        let inset = if d < r { r - (r * r - (r - d) * (r - d)).sqrt() } else { 0.0 };
         painter.rect_filled(
-            egui::Rect::from_min_max(egui::pos2(inner.left(), y0), egui::pos2(inner.right(), y1)),
+            egui::Rect::from_min_max(
+                egui::pos2(inner.left() + inset, y0),
+                egui::pos2(inner.right() - inset, y1),
+            ),
             egui::epaint::CornerRadius::ZERO,
             c,
         );
     }
+}
+
+/// Keycap visual state. Maps to one of the three baked textures the designer
+/// approved (rest grey / pressed blue / pressed amber). egui cannot render a
+/// clean skeuo gradient in vector (banding + corner artefacts), so the beauty
+/// lives in high-res baked PNGs, blitted here as a horizontal 3-slice so any
+/// button width keeps crisp, undistorted corners.
+#[derive(Clone, Copy)]
+pub enum KeycapState {
+    Rest,
+    PressedBlue,
+    PressedAmber,
+}
+
+// The baked tiles are 40 logical pt wide with an 8 pt corner cap; the middle
+// (uniform vertical gradient) is stretched, the two caps are kept 1:1.
+const KEYCAP_TILE_W: f32 = 40.0;
+const KEYCAP_CAP: f32 = 8.0;
+
+fn keycap_source(state: KeycapState) -> egui::ImageSource<'static> {
+    match state {
+        KeycapState::Rest => egui::include_image!("../../assets/keycaps/keycap-rest.png"),
+        KeycapState::PressedBlue => egui::include_image!("../../assets/keycaps/keycap-blue.png"),
+        KeycapState::PressedAmber => egui::include_image!("../../assets/keycaps/keycap-amber.png"),
+    }
+}
+
+/// Paint a keycap background by horizontally 3-slicing the baked texture into
+/// `rect`. Height fills `rect` 1:1 (tiles baked at CTL_HEIGHT), so only the
+/// middle stretches — corners never distort.
+pub fn keycap_tex(ui: &egui::Ui, rect: egui::Rect, state: KeycapState) {
+    let src = keycap_source(state);
+    let cap = KEYCAP_CAP.min(rect.width() * 0.5);
+    let cap_u = KEYCAP_CAP / KEYCAP_TILE_W;
+    let (x0, x1) = (rect.left(), rect.right());
+    let slice = |dx0: f32, dx1: f32, ux0: f32, ux1: f32| {
+        let dr = egui::Rect::from_min_max(
+            egui::pos2(dx0, rect.top()),
+            egui::pos2(dx1, rect.bottom()),
+        );
+        egui::Image::new(src.clone())
+            .uv(egui::Rect::from_min_max(
+                egui::pos2(ux0, 0.0),
+                egui::pos2(ux1, 1.0),
+            ))
+            .tint(Color32::WHITE)
+            .paint_at(ui, dr);
+    };
+    slice(x0, x0 + cap, 0.0, cap_u); // left cap
+    slice(x0 + cap, x1 - cap, cap_u, 1.0 - cap_u); // stretched middle
+    slice(x1 - cap, x1, 1.0 - cap_u, 1.0); // right cap
 }
 
 fn vgrad_sample(stops: &[(f32, Color32)], t: f32) -> Color32 {
@@ -33,7 +92,9 @@ fn vgrad_sample(stops: &[(f32, Color32)], t: f32) -> Color32 {
     for &s in stops {
         if t <= s.0 {
             let span = (s.0 - prev.0).max(1e-4);
-            return lerp_color(prev.1, s.1, ((t - prev.0) / span).clamp(0.0, 1.0));
+            // Gamma-correct interpolation (designer's `lerp_to_gamma`): linear
+            // lerp muddied the mid-tones and read as "flat/ugly".
+            return prev.1.lerp_to_gamma(s.1, ((t - prev.0) / span).clamp(0.0, 1.0));
         }
         prev = s;
     }
@@ -208,14 +269,16 @@ pub fn styled_select(
 
     let hovered = response.hovered();
     let hover = hover_t(ui.ctx(), response.id, hovered || popup_open);
+    keycap_tex(ui, rect, KeycapState::Rest);
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, RADIUS_CTL, PANEL2());
-    painter.rect_stroke(
-        rect,
-        6.0,
-        egui::Stroke::new(1.0, lerp_color(LINE2(), BLUE(), hover)),
-        StrokeKind::Inside,
-    );
+    if hover > 0.01 {
+        painter.rect_stroke(
+            rect,
+            RADIUS_CTL,
+            egui::Stroke::new(1.0, lerp_color(LINE2(), BLUE(), hover)),
+            StrokeKind::Inside,
+        );
+    }
 
     painter.text(
         egui::pos2(rect.left() + 9.0, rect.center().y),

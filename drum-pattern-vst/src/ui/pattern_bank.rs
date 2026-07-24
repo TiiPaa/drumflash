@@ -169,19 +169,10 @@ pub fn draw_pattern_bank(
             };
 
             let btn_size = Vec2::new(30.0, 26.0);
-            let fill = if is_loaded {
-                P_ACTIVE()
-            } else if occupied {
-                PANEL2()
+            let kc_state = if is_loaded {
+                crate::ui::widgets::KeycapState::PressedBlue
             } else {
-                BG() // much darker for empty slot
-            };
-            let stroke_color = if is_loaded {
-                GREEN() // green ring for loaded
-            } else if occupied {
-                LINE2()
-            } else {
-                LINE() // dimmer border for empty slot
+                crate::ui::widgets::KeycapState::Rest
             };
 
             let response = ui
@@ -191,18 +182,23 @@ pub fn draw_pattern_bank(
                     |ui| {
                         let (rect, response) =
                             ui.allocate_exact_size(btn_size, egui::Sense::click());
-                        let visuals = ui.style().interact(&response);
-                        let rect = rect.expand(visuals.expansion);
-                        let corner_radius = 5.0;
-                        ui.painter().rect_filled(rect, corner_radius, fill);
-                        ui.painter().rect_stroke(
-                            rect,
-                            corner_radius,
-                            egui::Stroke::new(2.0, stroke_color),
-                            egui::StrokeKind::Outside,
-                        );
-
-                        let label_color = if is_loaded { GREEN() } else { INK() };
+                        crate::ui::widgets::keycap_tex(ui, rect, kc_state);
+                        // Empty slots read dimmer than saved ones.
+                        if !occupied && !is_loaded {
+                            ui.painter()
+                                .rect_filled(rect, 5.0, Color32::from_black_alpha(95));
+                        }
+                        if response.is_pointer_button_down_on() {
+                            ui.painter()
+                                .rect_filled(rect, 5.0, Color32::from_black_alpha(60));
+                        }
+                        let label_color = if is_loaded {
+                            Color32::from_rgb(234, 246, 255)
+                        } else if occupied {
+                            INK_KEYCAP
+                        } else {
+                            Color32::from_rgb(120, 121, 128)
+                        };
                         ui.painter().text(
                             rect.center(),
                             egui::Align2::CENTER_CENTER,

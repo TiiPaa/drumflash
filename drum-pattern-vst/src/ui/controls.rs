@@ -1,7 +1,7 @@
 //! Small param-bound controls and keyboard helpers shared across panels.
 
 use crate::ui::theme::*;
-use crate::ui::widgets::{styled_select, ToggleLED};
+use crate::ui::widgets::{keycap_tex, styled_select, KeycapState, ToggleLED};
 use crate::DrumFlashParams;
 use nih_plug::prelude::*;
 use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
@@ -177,16 +177,74 @@ pub fn compact_chip_colored(
     active: bool,
     accent: Color32,
 ) -> egui::Response {
-    let text_color = if active { Color32::WHITE } else { INK2() };
-    let fill = if active { accent } else { PANEL2() };
-    let stroke = if active { accent } else { LINE2() };
-    ui.add(
-        egui::Button::new(RichText::new(label).size(10.5).color(text_color))
-            .min_size(Vec2::new(42.0, CTL_HEIGHT))
-            .fill(fill)
-            .stroke(egui::Stroke::new(1.0, stroke))
-            .corner_radius(RADIUS_CTL),
-    )
+    let font = egui::FontId::proportional(10.5);
+    let tw = ui
+        .fonts(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
+    let w = (tw + 18.0).max(42.0);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), egui::Sense::click());
+    let _ = accent; // active state uses the baked blue keycap; accent kept for API
+    let state = if active { KeycapState::PressedBlue } else { KeycapState::Rest };
+    keycap_tex(ui, rect, state);
+    keycap_feedback(ui.painter(), rect, &resp);
+    let text_color = if active { Color32::from_rgb(234, 246, 255) } else { INK_KEYCAP };
+    ui.painter()
+        .text(rect.center(), egui::Align2::CENTER_CENTER, label, font, text_color);
+    resp
+}
+
+/// Hover/press feedback overlay for custom-painted keycaps (egui::Button gives
+/// this for free; our hand-painted keycaps need it explicitly).
+fn keycap_feedback(painter: &egui::Painter, rect: egui::Rect, resp: &egui::Response) {
+    // Pressed-in look only (no hover highlight, per user preference).
+    if resp.is_pointer_button_down_on() {
+        painter.rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(60));
+    }
+}
+
+/// Unified keycap button: baked texture background (rest/blue/amber) + centred
+/// label, sized like an egui `Button::min_size` (grows with the label). Used for
+/// pages, length/x2, pattern slots, tabs, GENERATE — everything that should read
+/// as a hardware key. Disabled buttons dim and stop sensing clicks.
+pub fn keycap_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    min_w: f32,
+    state: KeycapState,
+    enabled: bool,
+    font: egui::FontId,
+) -> egui::Response {
+    let tw = ui.fonts(|f| {
+        f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE)
+            .size()
+            .x
+    });
+    let w = (tw + 18.0).max(min_w);
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), sense);
+    keycap_tex(ui, rect, state);
+    if enabled {
+        keycap_feedback(ui.painter(), rect, &resp);
+    }
+    let base = match state {
+        KeycapState::Rest => INK_KEYCAP,
+        KeycapState::PressedBlue => Color32::from_rgb(234, 246, 255),
+        KeycapState::PressedAmber => Color32::from_rgb(255, 240, 214),
+    };
+    let text_color = if enabled {
+        base
+    } else {
+        // dim the whole key and grey the label
+        ui.painter()
+            .rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(80));
+        Color32::from_rgb(118, 119, 126)
+    };
+    ui.painter()
+        .text(rect.center(), egui::Align2::CENTER_CENTER, label, font, text_color);
+    resp
 }
 
 pub fn genrow_label(ui: &mut egui::Ui, label: &str, min_w: f32) {
@@ -203,31 +261,18 @@ pub fn chip_button(
     color: Color32,
     sense: egui::Sense,
 ) -> egui::Response {
-    let text_color = if accent { color } else { INK2() };
-    let stroke = if accent { color } else { LINE2() };
-    let fill = if accent {
-        Color32::from_rgba_premultiplied(
-            ((color.r() as f32) * 0.12) as u8,
-            ((color.g() as f32) * 0.12) as u8,
-            ((color.b() as f32) * 0.12) as u8,
-            255,
-        )
-    } else {
-        PANEL2()
-    };
-    ui.add(
-        egui::Button::new(
-            RichText::new(label)
-                .size(10.5)
-                .color(text_color)
-                .font(f_sans_sb(11.0)),
-        )
-        .min_size(Vec2::new(0.0, CTL_HEIGHT))
-        .fill(fill)
-        .stroke(egui::Stroke::new(1.0, stroke))
-        .corner_radius(RADIUS_CTL)
-        .sense(sense),
-    )
+    // Keycap look: momentary action buttons stay at "rest"; the accent (if any)
+    // only tints the label (e.g. orange for Random).
+    let font = f_sans_sb(11.0);
+    let tw = ui.fonts(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
+    let w = tw + 20.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), sense);
+    keycap_tex(ui, rect, KeycapState::Rest);
+    keycap_feedback(ui.painter(), rect, &resp);
+    let text_color = if accent { color } else { INK_KEYCAP };
+    ui.painter()
+        .text(rect.center(), egui::Align2::CENTER_CENTER, label, font, text_color);
+    resp
 }
 
 pub fn algo_combo(ui: &mut egui::Ui, setter: &ParamSetter, param: &IntParam, algo_names: &[&str]) {
@@ -296,7 +341,7 @@ fn text_segmented(
             egui::Sense::click(),
         );
         if active {
-            painter.rect_filled(seg.shrink(1.0), 5.0, *accent);
+            crate::ui::widgets::keycap_tex(ui, seg.shrink(1.0), KeycapState::PressedBlue);
         } else if response.hovered() {
             painter.rect_filled(seg.shrink(1.0), 5.0, P_HOVER());
             painter.rect_stroke(
