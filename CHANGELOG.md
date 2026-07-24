@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-24 — Skeuo : keycaps en textures bakées (chips, pages, slots, dropdowns, GENERATE) (build 20260724-153847)
+
+**Build:** `20260724-153847`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Texture keycap validée hors Studio One via un previewer maison (rendu PNG) ; assemblage à valider dans Studio One.
+
+### Changements
+- **Nouvelle méthode de travail UI** : les surfaces skeuo (dégradés) rendaient mal en vectoriel egui (banding, artefacts de coins, liseré = « trait blanc moche »). On bake désormais des **textures PNG haute-déf** que je valide **en image de mon côté** (outil `image` dans le scratchpad, sorties dans `ui-preview/` gitignoré) avant tout build — fin de la boucle d'itération aveugle dans Studio One.
+- **Keycaps = textures bakées, posées en 3-tranches horizontal** (coins 1:1, milieu étiré → coins nets à toute largeur, hauteur 1:1 sur `CTL_HEIGHT`). 3 états : `keycap-rest/blue/amber.png` dans `assets/keycaps/`. Nouveau `widgets::keycap_tex()` + helper unifié `controls::keycap_button()`.
+- **Éléments passés en keycap** : chips presets/actions + segmented (déjà faits), **pages 1-4** + Follow + longueurs 16/32/48/64 + x2, **slots P1-P8** de la banque (chargé=bleu, occupé=repos, vide=assombri), **dropdowns** (`styled_select`, liseré bleu au survol), **GENERATE** en **ambre** (`PressedAmber`).
+- Feedback clic « enfoncé » (assombrissement) sur les keycaps ; pas de retour au survol (préférence utilisateur). Plus de liseré clair.
+- Save/Clr de la banque et LED rouge de page inchangés (hors périmètre / effets dédiés).
+
+---
+
 ## 2026-07-23 — Skeuo : pads en textures + rayons harmonisés (build 20260723-155528)
 
 **Build:** `20260723-155528`
