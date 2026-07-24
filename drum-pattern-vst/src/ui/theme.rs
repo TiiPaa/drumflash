@@ -437,6 +437,9 @@ pub const HEADER_BOT: Color32 = Color32::from_rgb(38, 39, 43);
 pub const WELL_FILL: Color32 = Color32::from_rgb(29, 30, 34);
 /// Dark border of plates/wells (#121215).
 pub const PANEL_BORDER: Color32 = Color32::from_rgb(18, 18, 21);
+/// Keycap (bouton biseauté) : bord sombre + texte au repos.
+pub const KEYCAP_BORDER: Color32 = Color32::from_rgb(23, 23, 27);
+pub const INK_KEYCAP: Color32 = Color32::from_rgb(201, 203, 211);
 pub const RADIUS_CTL: f32 = 5.0;
 pub const RADIUS_PANEL: f32 = 7.0;
 pub const GAP_TIGHT: f32 = 3.0;

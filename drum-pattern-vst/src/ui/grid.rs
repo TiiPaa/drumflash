@@ -1307,17 +1307,17 @@ fn draw_page_bar_v2(
         for page in 0..4 {
             let enabled = page < page_count.max(1);
             let active = state.current_page == page;
-            let response = ui.add_enabled(
+            let response = crate::ui::controls::keycap_button(
+                ui,
+                &format!("{}", page + 1),
+                28.0,
+                if active {
+                    crate::ui::widgets::KeycapState::PressedBlue
+                } else {
+                    crate::ui::widgets::KeycapState::Rest
+                },
                 enabled,
-                egui::Button::new(
-                    RichText::new(format!("{}", page + 1))
-                        .monospace()
-                        .size(10.5),
-                )
-                .min_size(Vec2::new(28.0, CTL_HEIGHT))
-                .fill(if active { BLUE() } else { PANEL2() })
-                .stroke(egui::Stroke::new(1.0, if active { BLUE() } else { LINE2() }))
-                .corner_radius(RADIUS_CTL),
+                f_mono_med(10.5),
             );
             if play_page == page {
                 let led = response.rect.center_bottom() + egui::vec2(0.0, 6.0);
@@ -1342,27 +1342,19 @@ fn draw_page_bar_v2(
             }
         }
 
-        let follow = egui::Button::new(
-            RichText::new(if state.follow_mode {
-                "Follow ON"
-            } else {
-                "Follow OFF"
-            })
-            .font(f_sans_sb(11.0))
-            .color(if state.follow_mode {
-                Color32::WHITE
-            } else {
-                INK2()
-            }),
-        )
-        .min_size(Vec2::new(78.0, CTL_HEIGHT))
-        .fill(if state.follow_mode { BLUE() } else { PANEL2() })
-        .stroke(egui::Stroke::new(
-            1.0,
-            if state.follow_mode { BLUE() } else { LINE2() },
-        ))
-        .corner_radius(RADIUS_CTL);
-        if ui.add(follow).clicked() {
+        let follow_label = if state.follow_mode {
+            "Follow ON"
+        } else {
+            "Follow OFF"
+        };
+        let follow_state = if state.follow_mode {
+            crate::ui::widgets::KeycapState::PressedBlue
+        } else {
+            crate::ui::widgets::KeycapState::Rest
+        };
+        if crate::ui::controls::keycap_button(ui, follow_label, 78.0, follow_state, true, f_sans_sb(11.0))
+            .clicked()
+        {
             state.follow_mode = !state.follow_mode;
         }
         const LEN_GROUP_W: f32 = 468.0;
@@ -1395,23 +1387,34 @@ fn draw_page_bar_v2(
                 draw_len_value_fixed(ui, master_length, LEN_VALUE_W);
                 for &len in &[16, 32, 48, 64] {
                     let active = master_length == len;
-                    let btn =
-                        egui::Button::new(RichText::new(format!("{}", len)).monospace().size(10.5))
-                            .min_size(Vec2::new(36.0, CTL_HEIGHT))
-                            .fill(if active { BLUE() } else { PANEL2() })
-                            .stroke(egui::Stroke::new(1.0, if active { BLUE() } else { LINE2() }))
-                            .corner_radius(RADIUS_CTL);
-                    if ui.add(btn).clicked() {
+                    if crate::ui::controls::keycap_button(
+                        ui,
+                        &format!("{}", len),
+                        36.0,
+                        if active {
+                            crate::ui::widgets::KeycapState::PressedBlue
+                        } else {
+                            crate::ui::widgets::KeycapState::Rest
+                        },
+                        true,
+                        f_mono_med(10.5),
+                    )
+                    .clicked()
+                    {
                         setter.set_parameter(&params.pattern_length, len as i32);
                     }
                 }
                 let can_double = master_length <= 32;
-                let x2 = egui::Button::new(RichText::new("x2").monospace().size(10.5))
-                    .min_size(Vec2::new(36.0, CTL_HEIGHT))
-                    .fill(PANEL2())
-                    .stroke(egui::Stroke::new(1.0, LINE2()))
-                    .corner_radius(RADIUS_CTL);
-                if ui.add_enabled(can_double, x2).clicked() {
+                if crate::ui::controls::keycap_button(
+                    ui,
+                    "x2",
+                    36.0,
+                    crate::ui::widgets::KeycapState::Rest,
+                    can_double,
+                    f_mono_med(10.5),
+                )
+                .clicked()
+                {
                     for i in 0..master_length {
                         pattern.set_step_mask(master_length + i, pattern.load_step_mask(i));
                         for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
