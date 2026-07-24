@@ -243,16 +243,13 @@ fn draw_generator_bar(
         // GENERATE, pushed to the right edge
         let space = (ui.available_width() - GEN_BTN_W).max(10.0);
         ui.add_space(space);
-        let gen_btn_response = ui.add_sized(
-            Vec2::new(GEN_BTN_W, CTL_HEIGHT),
-            egui::Button::new(
-                RichText::new("GENERATE")
-                    .font(f_sans_sb(11.0))
-                    .color(Color32::WHITE),
-            )
-            .fill(BLUE())
-            .stroke(egui::Stroke::new(1.0, BLUE()))
-            .corner_radius(RADIUS_CTL),
+        let gen_btn_response = crate::ui::controls::keycap_button(
+            ui,
+            "GENERATE",
+            GEN_BTN_W,
+            crate::ui::widgets::KeycapState::PressedAmber,
+            true,
+            f_sans_sb(11.0),
         );
 
         if gen_btn_response.clicked() {
