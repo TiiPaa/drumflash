@@ -35,6 +35,7 @@ mod pads;
 mod pattern_bank;
 mod plock;
 mod popups;
+mod skeuo;
 mod slider;
 mod song;
 mod sound_editor;
