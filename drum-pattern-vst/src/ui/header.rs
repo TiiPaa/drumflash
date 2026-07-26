@@ -93,22 +93,8 @@ pub fn header_param_slider<P: Param>(
         setter.end_set_parameter(param);
     }
 
-    painter.rect_filled(track, 3.0, PANEL2());
-    let fill_w = (track.width() * frac).max(0.0);
-    if fill_w > 0.5 {
-        painter.rect_filled(
-            egui::Rect::from_min_max(track.min, egui::pos2(track.left() + fill_w, track.max.y)),
-            3.0,
-            BLUE(),
-        );
-    }
-    if resp.hovered() || resp.dragged() {
-        painter.circle_filled(
-            egui::pos2(track.left() + fill_w, cy),
-            5.5,
-            HANDLE(),
-        );
-    }
+    // All slider visuals live in one place: `skeuo::slider_track` (Len = with cap).
+    crate::ui::skeuo::slider_track(ui, track, frac, BLUE(), true);
 }
 
 /// A 1px vertical separator (height 22) with 14pt horizontal padding on each side.

@@ -44,6 +44,9 @@ pub struct TrackStyle {
     pub fill: Color32,
     /// Handle circle radius drawn on hover/drag.
     pub handle_r: f32,
+    /// Draw a striped fader cap at the value (full sliders) vs a plain fill bar
+    /// (tiny Vol/Hum/Push mini-sliders).
+    pub cap: bool,
 }
 
 impl TrackStyle {
@@ -54,6 +57,7 @@ impl TrackStyle {
             corner: 3.0,
             fill: BLUE(),
             handle_r: 5.5,
+            cap: true,
         }
     }
 
@@ -64,6 +68,7 @@ impl TrackStyle {
             corner: 5.0,
             fill: BLUE(),
             handle_r: 4.0,
+            cap: false,
         }
     }
 }
@@ -95,21 +100,9 @@ pub fn draw_track(
     }
 
     let track = egui::Rect::from_center_size(rect.center(), Vec2::new(rect.width(), style.track_h));
-    ui.painter().rect_filled(track, style.corner, PANEL2());
     let norm = normalize_value(*value, min, max, logarithmic);
-    if norm > 0.0 {
-        let mut fill = track;
-        fill.set_right(track.left() + track.width() * norm);
-        ui.painter().rect_filled(fill, style.corner, style.fill);
-    }
-    if response.hovered() || response.dragged() {
-        let x = track.left() + track.width() * norm;
-        ui.painter().circle_filled(
-            egui::pos2(x, track.center().y),
-            style.handle_r,
-            HANDLE(),
-        );
-    }
+    // All slider visuals live in one place: `skeuo::slider_track`.
+    crate::ui::skeuo::slider_track(ui, track, norm, style.fill, style.cap);
 
     response
 }

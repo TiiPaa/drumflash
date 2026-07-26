@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-26 — Skeuo VECTORIEL dans le plugin + module `skeuo.rs` centralisé (build 20260726-184543)
+
+**Branche:** `skeuo-vector` (repartie de `backup/skeuo-redesign`) · **Build:** `20260726-184543`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Rendu pré-validé via un previewer egui headless **pixel-fidèle** (`egui_kittest` + wgpu, crate scratch `egui_lab`, sorties `ui-lab/`) avant chaque build.
+
+### Changements
+- **Nouveau module `src/ui/skeuo.rs`** = maison unique des éléments graphiques : une fonction par élément (`keycap`, `pad`, `slider_track`, `well_recess`, `lcd_bg`), appelée par TOUS les sites d'appel. Changer un élément (vectoriel OU bitmap) = une seule édition. Primitives bas-niveau (dégradés mesh, ombres, radial…) dans `widgets.rs`.
+- **Tout le look bascule en pur vectoriel egui** (fini les textures PNG) : dégradés en mesh à sommets colorés (lisses, sans banding), ombres douces empilées, ombres de creux qui épousent les coins.
+- **Keycaps** (`skeuo::keycap`, relais `widgets::keycap_tex`) → boutons/pages/slots/GENERATE/segmented/dropdown.
+- **Pads** (`skeuo::pad`) : minimal — rect arrondi plein + bordure, **sans glow ni radial** (qui bavaient sur les voisins / faisaient un blob).
+- **Puits de grille** (`skeuo::well_recess`) : ombres haut + gauche + droite, fondues, corner-safe.
+- **Sliders** (`skeuo::slider_track`, UNIQUE pour Len + Vol/Hum/Push + ENV) : sillon creusé + fill pilule ; **capuchon strié** pour les gros sliders, pas les mini.
+- **Écran ADSR** (`skeuo::lcd_bg`) : verre vert CRT + creux + scanlines + bord vert-noir, courbe par-dessus.
+
+### Reste à faire
+- Nettoyer ~13 warnings (code textures/handles obsolète : `pads::pad_source_for`, `RADIUS_PAD_TEX`, `KEYCAP_BORDER`, `HANDLE`, `ENVELOPE_BG`, primitives pas encore câblées).
+- **LED / switch / tags** → `skeuo::*` (encore versions backup).
+- Châssis / plaques (fonds de panneaux).
+- Centraliser `local_param_slider` (sliders menus p-lock) vers `skeuo::slider_track`.
+
+---
+
 ## 2026-07-24 — Skeuo : keycaps en textures bakées (chips, pages, slots, dropdowns, GENERATE) (build 20260724-153847)
 
 **Build:** `20260724-153847`

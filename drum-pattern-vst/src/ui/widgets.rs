@@ -36,11 +36,7 @@ pub fn vgrad(painter: &egui::Painter, rect: egui::Rect, stops: &[(f32, Color32)]
     }
 }
 
-/// Keycap visual state. Maps to one of the three baked textures the designer
-/// approved (rest grey / pressed blue / pressed amber). egui cannot render a
-/// clean skeuo gradient in vector (banding + corner artefacts), so the beauty
-/// lives in high-res baked PNGs, blitted here as a horizontal 3-slice so any
-/// button width keeps crisp, undistorted corners.
+/// Keycap visual state → vector skeuo keycap (rest grey / pressed blue / amber).
 #[derive(Clone, Copy)]
 pub enum KeycapState {
     Rest,
@@ -48,43 +44,197 @@ pub enum KeycapState {
     PressedAmber,
 }
 
-// The baked tiles are 40 logical pt wide with an 8 pt corner cap; the middle
-// (uniform vertical gradient) is stretched, the two caps are kept 1:1.
-const KEYCAP_TILE_W: f32 = 40.0;
-const KEYCAP_CAP: f32 = 8.0;
+// ============================================================
+// Skeuo vector primitives (validated in the egui lab, rendered by the same
+// egui pipeline the plugin uses — smooth gradients, soft shadows, no banding).
+// ============================================================
 
-fn keycap_source(state: KeycapState) -> egui::ImageSource<'static> {
-    match state {
-        KeycapState::Rest => egui::include_image!("../../assets/keycaps/keycap-rest.png"),
-        KeycapState::PressedBlue => egui::include_image!("../../assets/keycaps/keycap-blue.png"),
-        KeycapState::PressedAmber => egui::include_image!("../../assets/keycaps/keycap-amber.png"),
+/// Smooth 3-stop vertical gradient via a colour-per-vertex mesh (no banding).
+/// `mid_t` is the middle stop position (0..1).
+pub fn grad3(
+    p: &egui::Painter,
+    rect: egui::Rect,
+    ctop: Color32,
+    cmid: Color32,
+    cbot: Color32,
+    mid_t: f32,
+) {
+    let ym = rect.top() + rect.height() * mid_t;
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let mut m = egui::epaint::Mesh::default();
+    m.colored_vertex(egui::pos2(l, t), ctop);
+    m.colored_vertex(egui::pos2(r, t), ctop);
+    m.colored_vertex(egui::pos2(l, ym), cmid);
+    m.colored_vertex(egui::pos2(r, ym), cmid);
+    m.colored_vertex(egui::pos2(l, b), cbot);
+    m.colored_vertex(egui::pos2(r, b), cbot);
+    m.add_triangle(0, 1, 3);
+    m.add_triangle(0, 3, 2);
+    m.add_triangle(2, 3, 5);
+    m.add_triangle(2, 5, 4);
+    p.add(egui::Shape::mesh(m));
+}
+
+/// Soft drop shadow: stacked rounded rects with a quadratic alpha falloff (a real
+/// gradient halo, unlike egui's coarse single-ramp `Shadow`). `dy` = downward
+/// offset, `reach` = px spread, `peak` = inner alpha.
+pub fn soft_shadow(p: &egui::Painter, rect: egui::Rect, radius: f32, dy: f32, reach: f32, peak: f32) {
+    let steps = 10;
+    for i in (1..=steps).rev() {
+        let t = i as f32 / steps as f32;
+        let grow = reach * t;
+        let a = peak * (1.0 - t) * (1.0 - t);
+        let rr = rect.translate(egui::vec2(0.0, dy)).expand(grow);
+        p.rect_filled(rr, radius + grow, Color32::from_black_alpha(a.round().clamp(0.0, 255.0) as u8));
     }
 }
 
-/// Paint a keycap background by horizontally 3-slicing the baked texture into
-/// `rect`. Height fills `rect` 1:1 (tiles baked at CTL_HEIGHT), so only the
-/// middle stretches — corners never distort.
+/// Thin line whose alpha fades to 0 at both ends (centre-peaked) — for the relief
+/// liseré and the domed inner shadow.
+pub fn fade_line(p: &egui::Painter, rect: egui::Rect, rgb: (u8, u8, u8), peak: u8) {
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let cx = rect.center().x;
+    let c0 = Color32::from_rgba_unmultiplied(rgb.0, rgb.1, rgb.2, 0);
+    let cc = Color32::from_rgba_unmultiplied(rgb.0, rgb.1, rgb.2, peak);
+    let mut m = egui::epaint::Mesh::default();
+    m.colored_vertex(egui::pos2(l, t), c0);
+    m.colored_vertex(egui::pos2(cx, t), cc);
+    m.colored_vertex(egui::pos2(r, t), c0);
+    m.colored_vertex(egui::pos2(l, b), c0);
+    m.colored_vertex(egui::pos2(cx, b), cc);
+    m.colored_vertex(egui::pos2(r, b), c0);
+    m.add_triangle(0, 1, 4);
+    m.add_triangle(0, 4, 3);
+    m.add_triangle(1, 2, 5);
+    m.add_triangle(1, 5, 4);
+    p.add(egui::Shape::mesh(m));
+}
+
+/// Horizontal inset at depth `d` from an edge to stay inside a corner of radius
+/// `r` (so square shadow bands don't poke past rounded corners).
+pub fn arc_inset(r: f32, d: f32) -> f32 {
+    if d < r {
+        (r - (r * r - (r - d) * (r - d)).max(0.0).sqrt()).max(0.0)
+    } else {
+        0.0
+    }
+}
+
+/// Recess wall shadow along the TOP edge: fades down, hugs the rounded corners.
+pub fn inner_top_shadow(p: &egui::Painter, rect: egui::Rect, radius: f32, height: f32, peak: u8) {
+    let n = 12;
+    for i in 0..n {
+        let t = i as f32 / n as f32;
+        let y0 = rect.top() + 1.0 + height * t;
+        let y1 = rect.top() + 1.0 + height * (i as f32 + 1.0) / n as f32;
+        let a = (peak as f32 * (1.0 - t)).round().max(0.0) as u8;
+        if a == 0 {
+            continue;
+        }
+        let ins = arc_inset(radius, (y0 - rect.top()).max(0.0)).max(1.0);
+        let x0 = rect.left() + ins;
+        let x1 = (rect.right() - ins).max(x0);
+        p.rect_filled(egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)), egui::epaint::CornerRadius::ZERO, Color32::from_black_alpha(a));
+    }
+}
+
+/// Recess wall shadows on the LEFT + RIGHT edges: fade inward, hug the corners.
+pub fn inner_side_shadows(p: &egui::Painter, rect: egui::Rect, radius: f32, width: f32, peak: u8) {
+    let n = 8;
+    for i in 0..n {
+        let t = i as f32 / n as f32;
+        let a = (peak as f32 * (1.0 - t)).round().max(0.0) as u8;
+        if a == 0 {
+            continue;
+        }
+        let d0 = width * t;
+        let d1 = width * (i as f32 + 1.0) / n as f32;
+        let ins = arc_inset(radius, d0.max(0.5)).max(1.0);
+        let yt = rect.top() + ins;
+        let yb = (rect.bottom() - ins).max(yt);
+        let col = Color32::from_black_alpha(a);
+        p.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.left() + 1.0 + d0, yt), egui::pos2(rect.left() + 1.0 + d1, yb)), egui::epaint::CornerRadius::ZERO, col);
+        p.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.right() - 1.0 - d1, yt), egui::pos2(rect.right() - 1.0 - d0, yb)), egui::epaint::CornerRadius::ZERO, col);
+    }
+}
+
+/// Linear RGB lerp between two colours.
+pub fn lerp_c(a: Color32, b: Color32, t: f32) -> Color32 {
+    let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
+}
+
+/// Smooth radial gradient in a rect: triangle fan from `hot` (0..1 rel) to the
+/// perimeter, mid ring at 45% — the backlit-pad look, no banding, fills exactly.
+pub fn radial_rect(p: &egui::Painter, rect: egui::Rect, cc: Color32, cm: Color32, ce: Color32, hot: (f32, f32)) {
+    let hs = egui::pos2(rect.left() + rect.width() * hot.0, rect.top() + rect.height() * hot.1);
+    let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()];
+    let k = 8;
+    let mut peri = Vec::with_capacity(4 * k);
+    for e in 0..4 {
+        let a = corners[e];
+        let b = corners[(e + 1) % 4];
+        for i in 0..k {
+            let t = i as f32 / k as f32;
+            peri.push(egui::pos2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+        }
+    }
+    let n = peri.len();
+    let mut m = egui::epaint::Mesh::default();
+    m.colored_vertex(hs, cc);
+    for pt in &peri {
+        m.colored_vertex(egui::pos2(hs.x + (pt.x - hs.x) * 0.45, hs.y + (pt.y - hs.y) * 0.45), cm);
+    }
+    for pt in &peri {
+        m.colored_vertex(*pt, ce);
+    }
+    let mid = |i: usize| 1 + i as u32;
+    let out = |i: usize| 1 + n as u32 + i as u32;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        m.add_triangle(0, mid(i), mid(j));
+        m.add_triangle(mid(i), out(i), out(j));
+        m.add_triangle(mid(i), out(j), mid(j));
+    }
+    p.add(egui::Shape::mesh(m));
+}
+
+/// Even highlight/shadow line: full `peak` across the middle, fading to 0 only
+/// near the ends (avoids the centre "point" a centre-peaked fade makes on pads).
+pub fn plateau_line(p: &egui::Painter, rect: egui::Rect, rgb: (u8, u8, u8), peak: u8) {
+    let e = (rect.width() * 0.22).min(6.0);
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let c0 = Color32::from_rgba_unmultiplied(rgb.0, rgb.1, rgb.2, 0);
+    let cc = Color32::from_rgba_unmultiplied(rgb.0, rgb.1, rgb.2, peak);
+    let mut m = egui::epaint::Mesh::default();
+    for (x, c) in [(l, c0), (l + e, cc), (r - e, cc), (r, c0)] {
+        m.colored_vertex(egui::pos2(x, t), c);
+    }
+    for (x, c) in [(l, c0), (l + e, cc), (r - e, cc), (r, c0)] {
+        m.colored_vertex(egui::pos2(x, b), c);
+    }
+    for q in 0..3u32 {
+        m.add_triangle(q, q + 1, q + 5);
+        m.add_triangle(q, q + 5, q + 4);
+    }
+    p.add(egui::Shape::mesh(m));
+}
+
+/// Soft coloured glow behind a rect (stacked expanding fills, quadratic falloff).
+pub fn soft_glow(p: &egui::Painter, rect: egui::Rect, radius: f32, reach: f32, peak: f32, rgb: (u8, u8, u8)) {
+    let steps = 8;
+    for i in (1..=steps).rev() {
+        let t = i as f32 / steps as f32;
+        let grow = reach * t;
+        let a = peak * (1.0 - t) * (1.0 - t);
+        p.rect_filled(rect.expand(grow), radius + grow, Color32::from_rgba_unmultiplied(rgb.0, rgb.1, rgb.2, a.round().clamp(0.0, 255.0) as u8));
+    }
+}
+
+/// Thin relay to the single keycap renderer, [`crate::ui::skeuo::keycap`]. Kept
+/// for the existing call sites — all keycap visuals live in one place now.
 pub fn keycap_tex(ui: &egui::Ui, rect: egui::Rect, state: KeycapState) {
-    let src = keycap_source(state);
-    let cap = KEYCAP_CAP.min(rect.width() * 0.5);
-    let cap_u = KEYCAP_CAP / KEYCAP_TILE_W;
-    let (x0, x1) = (rect.left(), rect.right());
-    let slice = |dx0: f32, dx1: f32, ux0: f32, ux1: f32| {
-        let dr = egui::Rect::from_min_max(
-            egui::pos2(dx0, rect.top()),
-            egui::pos2(dx1, rect.bottom()),
-        );
-        egui::Image::new(src.clone())
-            .uv(egui::Rect::from_min_max(
-                egui::pos2(ux0, 0.0),
-                egui::pos2(ux1, 1.0),
-            ))
-            .tint(Color32::WHITE)
-            .paint_at(ui, dr);
-    };
-    slice(x0, x0 + cap, 0.0, cap_u); // left cap
-    slice(x0 + cap, x1 - cap, cap_u, 1.0 - cap_u); // stretched middle
-    slice(x1 - cap, x1, 1.0 - cap_u, 1.0); // right cap
+    crate::ui::skeuo::keycap(ui, rect, state);
 }
 
 fn vgrad_sample(stops: &[(f32, Color32)], t: f32) -> Color32 {

@@ -31,3 +31,6 @@ Thumbs.db
 
 # UI render previews (dev artifacts, not shipped)
 /ui-preview/
+
+# egui lab render previews (dev artifacts)
+/ui-lab/
