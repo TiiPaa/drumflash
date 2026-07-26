@@ -12,16 +12,18 @@
 ### Blocage — coins des pads
 - [x] [SK-1] **Coins des pads carrés qui dépassaient de l'anneau de lecture.** egui (egui-baseview) ne sait PAS arrondir une texture. Solution retenue (sur remarque utilisateur) : **adapter nos overlays vectoriels au coin réel du PNG** au lieu de vouloir arrondir la texture. Le coin baké mesure ~13 texels sur 176 → **~2 px à l'écran** (`RADIUS_PAD_TEX = 2.0`). L'anneau de lecture et la surbrillance de survol passent de 4 px à 2 px pour épouser le pad (build 20260723-155528). À valider dans S1.
 
-### Look Skeuo à porter (via `rust/skeuo_theme.rs` + `skeuo_widgets.rs`)
+### Look Skeuo à porter — ⚠️ APPROCHE CHANGÉE : PUR VECTORIEL egui, module centralisé
+> **Branche `skeuo-vector`** (repartie de `backup/skeuo-redesign`, build 20260726-184543). Fini les textures PNG : tout le rendu des éléments vit dans **`src/ui/skeuo.rs`** (une fonction par élément : `keycap`/`pad`/`slider_track`/`well_recess`/`lcd_bg`), appelée partout. Rendu pré-validé au labo `egui_kittest`+wgpu (crate `egui_lab`, sorties `ui-lab/`). Voir CHANGELOG 2026-07-26.
 - [ ] [SK-2] Intégrer `skeuo_theme.rs` : palette (surfaces, encres, accents), géométrie (R_MICRO 3 / R_PAD 4 / R_KEYCAP 5 / R_PLATE 7), tailles. Remplacer nos couleurs plates par la palette Skeuo.
-- [x] [SK-3] Fond fenêtre + en-tête en dégradés verticaux (`vgrad()` par bandes) + puits de grille encastré (fill foncé + bord #121215 + ombre interne haute). Build 20260723-163946. Reste : plaques bottom-panel / pattern-bank / sound-editor (à faire avec SK-4).
-- [ ] [SK-4] Boutons / onglets / pages / slots Px / selects / segmented → look **keycap** biseauté (`keycap()`, états Rest / PressedBlue / PressedAmber).
-- [ ] [SK-5] Bouton **GENERATE** → keycap ambre (`generate_button()`).
-- [ ] [SK-6] Sliders → piste creusée + fill bleu + **capuchon strié** 12×19 (`hslider()`).
-- [ ] [SK-7] Switches 34×18 (texture `switch-on/off.png` ou vectoriel).
-- [ ] [SK-8] LED des toggles header → `led()` (cercles concentriques + halo léger).
-- [ ] [SK-9] Écran ADSR → look **LCD vert** (`lcd_frame()`), courbe A/D/R par-dessus.
-- [ ] [SK-10] Tags M/S/T (17×17 r3) + nom de lane (52×21 r4) en dégradés (textures `lane-name-*.png` dispo).
+- [x] [SK-3] Puits de grille encastré → refait en vectoriel `skeuo::well_recess` (ombres haut + gauche + droite, corner-safe). Reste : plaques bottom-panel / pattern-bank / sound-editor.
+- [x] [SK-4] Boutons / pages / slots / selects / segmented → **`skeuo::keycap`** (vectoriel, build 20260726-184543).
+- [x] [SK-5] **GENERATE** → keycap ambre `skeuo::keycap(PressedAmber)` (build 20260726-184543).
+- [x] [SK-6] Sliders → **`skeuo::slider_track`** (sillon creusé + fill pilule + capuchon strié sur les gros, pas les mini) (build 20260726-184543).
+- [ ] [SK-7] **REPRENDRE ICI** — Switches (`ToggleSwitch` widgets.rs) → `skeuo::switch` (encore version backup).
+- [ ] [SK-8] LED des toggles header (`ToggleLED`) → `skeuo::led` (cercles concentriques + halo, versions validées labo).
+- [x] [SK-9] Écran ADSR → **`skeuo::lcd_bg`** (verre vert CRT + creux + scanlines) (build 20260726-184543).
+- [ ] [SK-10] Tags M/S/T (17×17 r3) + nom de lane (52×21 r4) → `skeuo::tag` / `skeuo::lane_name`.
+- [ ] [SK-cleanup] Supprimer ~13 warnings (code textures/handles obsolète) ; centraliser `local_param_slider` vers `skeuo::slider_track`.
 
 ### Deltas comportement / layout restants (`CHANGES.md`, hors look)
 - [ ] [SK-11] Header : regrouper « Seq Mode » (Internal/Ext MIDI + MIDI Pat), déplacer **Auto-Edit dans ⚙ Settings**, moitiés de segmented symétriques.
