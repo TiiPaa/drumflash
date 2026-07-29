@@ -15,7 +15,7 @@ use crate::ui::theme::*;
 use crate::ui::widgets::styled_select;
 use crate::DrumFlashParams;
 use nih_plug::{params::persist::PersistentField, prelude::*};
-use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
+use nih_plug_egui::egui::{self, RichText, Vec2};
 
 pub fn draw_add_module_popup_if_any(
     ui: &mut egui::Ui,
@@ -170,6 +170,7 @@ pub fn draw_page_popup_if_any(
 /// Global settings popup (default analog value, MIDI settings, skin).
 pub fn draw_settings_popup_if_any(
     ui: &mut egui::Ui,
+    setter: &ParamSetter,
     params: &DrumFlashParams,
     state: &mut EditorUIState,
 ) {
@@ -192,19 +193,32 @@ pub fn draw_settings_popup_if_any(
                 // Header with close button
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Settings").font(f_sans_sb(11.0)).color(BLUE()));
-                    ui.add_space((ui.available_width() - 20.0).max(0.0));
-                    if ui
-                        .button(
-                            RichText::new("x")
-                                .font(f_sans_med(10.5))
-                                .color(INK3()),
-                        )
-                        .clicked()
+                    ui.add_space((ui.available_width() - 22.0).max(0.0));
+                    if crate::ui::controls::keycap_button(
+                        ui,
+                        "×",
+                        22.0,
+                        crate::ui::widgets::KeycapState::Rest,
+                        true,
+                        f_sans_med(12.0),
+                    )
+                    .clicked()
                     {
                         state.settings_open = false;
                     }
                 });
                 ui.add_space(12.0);
+
+                // Auto-Edit (moved here from the header).
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Auto-Edit").font(f_sans_med(10.5)).color(INK3()));
+                    ui.add_space((ui.available_width() - 34.0).max(0.0));
+                    let checked = params.auto_edit.value();
+                    if ui.add(crate::ui::widgets::ToggleSwitch::new(checked)).clicked() {
+                        crate::ui::controls::set_bool_param_if_changed(setter, &params.auto_edit, !checked);
+                    }
+                });
+                ui.add_space(14.0);
 
                 // Default Analog
                 ui.label(
@@ -287,35 +301,114 @@ pub fn draw_settings_popup_if_any(
 }
 
 pub fn draw_lane_preset_dropdown(ui: &mut egui::Ui, state: &mut EditorUIState) {
-    egui::ComboBox::from_id_salt("lane_preset_dropdown")
-        .selected_text(RichText::new("Preset").font(f_sans_sb(10.5)).color(INK2()))
-        .width(94.0)
-        .show_ui(ui, |ui| {
-            ui.set_min_width(132.0);
-            if ui
-                .selectable_label(
-                    false,
-                    RichText::new("Clear All").font(f_sans_med(11.0)).color(RED()),
-                )
-                .clicked()
-            {
-                state.lane_preset_confirm = Some(LanePresetAction::ClearAll);
-                ui.close_menu();
-            }
-            if ui
-                .selectable_label(false, RichText::new("Preset 4").font(f_sans_med(11.0)))
-                .clicked()
-            {
-                state.lane_preset_confirm = Some(LanePresetAction::Preset4);
-                ui.close_menu();
-            }
-            if ui
-                .selectable_label(false, RichText::new("Preset 12").font(f_sans_med(11.0)))
-                .clicked()
-            {
-                state.lane_preset_confirm = Some(LanePresetAction::Preset12);
-                ui.close_menu();
-            }
+    // Skeuo dropdown (styled_select → skeuo::keycap). Entry 0 is the resting
+    // "Preset" label (no-op); 1..=3 trigger the actions.
+    let opts = ["Preset", "Clear All", "Preset 4", "Preset 12"];
+    if let (_, Some(i)) = crate::ui::widgets::styled_select(ui, "lane_preset_dropdown", 0, &opts, 94.0) {
+        match i {
+            1 => state.lane_preset_confirm = Some(LanePresetAction::ClearAll),
+            2 => state.lane_preset_confirm = Some(LanePresetAction::Preset4),
+            3 => state.lane_preset_confirm = Some(LanePresetAction::Preset12),
+            _ => {}
+        }
+    }
+}
+
+pub fn draw_pattern_load_warning_if_any(
+    ui: &mut egui::Ui,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    state: &mut EditorUIState,
+    load_pattern_request: &std::sync::Arc<std::sync::atomic::AtomicU32>,
+) {
+    let Some(slot) = state.pattern_load_confirm else {
+        return;
+    };
+
+    let screen_rect = ui.ctx().screen_rect();
+    let panel_w = 338.0;
+    let pos = egui::pos2(
+        screen_rect.center().x - panel_w * 0.5,
+        screen_rect.center().y - 40.0,
+    );
+    egui::Area::new(ui.id().with("pattern_load_warning"))
+        .kind(egui::UiKind::Popup)
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
+        .show(ui.ctx(), |ui| {
+            let bg = ui.painter().add(egui::Shape::Noop);
+            let resp = egui::Frame::NONE
+                .inner_margin(egui::Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_width(panel_w);
+                    ui.label(RichText::new("Warning").font(f_sans_sb(12.0)).color(RED()));
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(format!(
+                            "The current pattern has unsaved changes. Switching to P{} will discard them.",
+                            slot + 1
+                        ))
+                        .font(f_sans_med(10.5))
+                        .color(INK2()),
+                    );
+                    ui.add_space(10.0);
+                    // Shared tail of the two confirming actions: switch to the
+                    // target slot (loading its pattern, or a fresh empty grid).
+                    let switch_to_slot = |state: &mut EditorUIState| {
+                        let occupied = params
+                            .pattern_bank
+                            .bank
+                            .lock()
+                            .map(|b| b.slots[slot].occupied)
+                            .unwrap_or(false);
+                        if occupied {
+                            load_pattern_request
+                                .store((slot + 1) as u32, std::sync::atomic::Ordering::Relaxed);
+                        } else {
+                            crate::ui::pattern_bank::clear_current_grid(pattern, params);
+                        }
+                        state.last_loaded_slot = Some(slot);
+                        state.pattern_load_confirm = None;
+                    };
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        // Save the current pattern into ITS slot first, then switch.
+                        if let Some(current) = state.last_loaded_slot {
+                            if crate::ui::controls::chip_button(
+                                ui,
+                                "Save & Load",
+                                true,
+                                BLUE(),
+                                egui::Sense::click(),
+                            )
+                            .clicked()
+                            {
+                                crate::ui::pattern_bank::save_current_pattern_to_bank_slot(
+                                    params, pattern, current,
+                                );
+                                switch_to_slot(state);
+                            }
+                        }
+                        if crate::ui::controls::chip_button(
+                            ui,
+                            format!("Discard & Load P{}", slot + 1).as_str(),
+                            true,
+                            RED(),
+                            egui::Sense::click(),
+                        )
+                        .clicked()
+                        {
+                            switch_to_slot(state);
+                        }
+                        if crate::ui::controls::chip_button(ui, "Cancel", false, INK2(), egui::Sense::click())
+                            .clicked()
+                        {
+                            state.pattern_load_confirm = None;
+                        }
+                    });
+                });
+            ui.painter()
+                .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
         });
 }
 
@@ -341,9 +434,8 @@ pub fn draw_lane_preset_warning_if_any(
         .order(egui::Order::Foreground)
         .fixed_pos(pos)
         .show(ui.ctx(), |ui| {
-            egui::Frame::NONE
-                .fill(P_ACTIVE())
-                .corner_radius(RADIUS_PANEL)
+            let bg = ui.painter().add(egui::Shape::Noop);
+            let resp = egui::Frame::NONE
                 .inner_margin(egui::Margin::same(12))
                 .show(ui, |ui| {
                     ui.set_width(panel_w);
@@ -357,39 +449,23 @@ pub fn draw_lane_preset_warning_if_any(
                         .font(f_sans_med(10.5))
                         .color(INK2()),
                     );
-                    ui.add_space(8.0);
+                    ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        let apply = egui::Button::new(
-                            RichText::new(action.apply_label())
-                                .font(f_sans_sb(10.5))
-                                .color(Color32::WHITE),
-                        )
-                        .min_size(Vec2::new(128.0, CTL_HEIGHT))
-                        .fill(RED())
-                        .stroke(egui::Stroke::new(1.0, RED()))
-                        .corner_radius(RADIUS_CTL);
-                        if ui.add(apply).clicked() {
-                            apply_lane_preset_action(
-                                params,
-                                sound_settings,
-                                pattern,
-                                state,
-                                action,
-                            );
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        if crate::ui::controls::chip_button(ui, action.apply_label().as_str(), true, RED(), egui::Sense::click())
+                            .clicked()
+                        {
+                            apply_lane_preset_action(params, sound_settings, pattern, state, action);
                             state.lane_preset_confirm = None;
                         }
-
-                        let cancel = egui::Button::new(
-                            RichText::new("Cancel").font(f_sans_sb(10.5)).color(INK2()),
-                        )
-                        .min_size(Vec2::new(82.0, CTL_HEIGHT))
-                        .fill(PANEL2())
-                        .stroke(egui::Stroke::new(1.0, LINE2()))
-                        .corner_radius(RADIUS_CTL);
-                        if ui.add(cancel).clicked() {
+                        if crate::ui::controls::chip_button(ui, "Cancel", false, INK2(), egui::Sense::click())
+                            .clicked()
+                        {
                             state.lane_preset_confirm = None;
                         }
                     });
                 });
+            ui.painter()
+                .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
         });
 }

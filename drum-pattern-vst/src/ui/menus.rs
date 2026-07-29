@@ -6,49 +6,39 @@ use crate::ui::widgets::styled_select;
 use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
 
 pub fn plock_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mut egui::Ui)) {
-    // Remove the default context-menu border/shadow so our inner frame is the only chrome.
+    let _ = accent; // the accent now lives in the header (title + underline), not a top bar
     ui.visuals_mut().widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
     ui.visuals_mut().widgets.noninteractive.corner_radius = egui::CornerRadius::same(0);
 
-    let frame = egui::Frame::NONE
-        .fill(P_ACTIVE())
-        .corner_radius(RADIUS_PANEL)
-        .inner_margin(egui::Margin::same(12));
-    frame.show(ui, |ui| {
-        ui.set_min_width(280.0);
-        ui.set_max_width(350.0);
-        // Top accent bar
-        let bar_rect = ui.available_rect_before_wrap();
-        let bar_rect = egui::Rect::from_min_max(
-            bar_rect.left_top(),
-            egui::pos2(bar_rect.right(), bar_rect.top() + 3.0),
-        );
-        ui.painter().rect_filled(bar_rect, 0.0, accent);
-        ui.add_space(8.0);
-        content(ui);
-    });
+    // Reserve a slot for the skeuo plate, painted BEHIND the content once its
+    // final rect is known (relief + border + liseré + soft shadow).
+    let bg = ui.painter().add(egui::Shape::Noop);
+    let resp = egui::Frame::NONE
+        .inner_margin(egui::Margin::same(12))
+        .show(ui, |ui| {
+            ui.set_min_width(280.0);
+            ui.set_max_width(350.0);
+            content(ui);
+        });
+    ui.painter()
+        .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
 }
 
 pub fn page_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mut egui::Ui)) {
+    let _ = accent;
     ui.visuals_mut().widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
     ui.visuals_mut().widgets.noninteractive.corner_radius = egui::CornerRadius::same(0);
 
-    let frame = egui::Frame::NONE
-        .fill(P_ACTIVE())
-        .corner_radius(RADIUS_PANEL)
-        .inner_margin(egui::Margin::same(10));
-    frame.show(ui, |ui| {
-        ui.set_min_width(130.0);
-        ui.set_max_width(150.0);
-        let bar_rect = ui.available_rect_before_wrap();
-        let bar_rect = egui::Rect::from_min_max(
-            bar_rect.left_top(),
-            egui::pos2(bar_rect.right(), bar_rect.top() + 3.0),
-        );
-        ui.painter().rect_filled(bar_rect, 0.0, accent);
-        ui.add_space(8.0);
-        content(ui);
-    });
+    let bg = ui.painter().add(egui::Shape::Noop);
+    let resp = egui::Frame::NONE
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_min_width(130.0);
+            ui.set_max_width(160.0);
+            content(ui);
+        });
+    ui.painter()
+        .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
 }
 
 pub fn plock_menu_header(ui: &mut egui::Ui, title: &str, _step: usize, accent: Color32) -> bool {
@@ -56,33 +46,25 @@ pub fn plock_menu_header(ui: &mut egui::Ui, title: &str, _step: usize, accent: C
     ui.horizontal(|ui| {
         ui.label(RichText::new(title).font(f_sans_sb(11.0)).color(accent));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let button_size = egui::Vec2::new(22.0, 22.0);
-            let response = ui.allocate_response(button_size, egui::Sense::click());
-            let pressed = response.is_pointer_button_down_on();
-
-            let (fill, text_color) = if pressed {
-                (accent, INK())
-            } else {
-                (Color32::TRANSPARENT, INK3())
-            };
-
-            if pressed {
-                ui.painter().rect_filled(response.rect, RADIUS_CTL, fill);
-            }
-            ui.painter().text(
-                response.rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "×",
-                f_sans_med(14.0),
-                text_color,
-            );
-
+            // Discreet painted ✓ ("done" — plock changes are applied live, so this
+            // is NOT a cancel; a × would wrongly suggest discarding).
+            let (rect, response) = ui.allocate_exact_size(egui::Vec2::new(18.0, 18.0), egui::Sense::click());
+            let col = if response.hovered() { accent } else { INK2() };
+            let c = rect.center();
+            let s = 5.0;
+            let st = egui::Stroke::new(2.0, col);
+            ui.painter().line_segment([egui::pos2(c.x - s, c.y + s * 0.1), egui::pos2(c.x - s * 0.25, c.y + s * 0.8)], st);
+            ui.painter().line_segment([egui::pos2(c.x - s * 0.25, c.y + s * 0.8), egui::pos2(c.x + s, c.y - s * 0.8)], st);
             if response.clicked() {
                 close_clicked = true;
             }
         });
     });
-    ui.add_space(4.0);
+    ui.add_space(3.0);
+    // Thin accent underline.
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter().rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 90));
+    ui.add_space(6.0);
     close_clicked
 }
 
@@ -127,13 +109,44 @@ pub fn plock_menu_row(
 }
 
 pub fn plock_menu_action_row(ui: &mut egui::Ui, label: &str, accent: Color32) -> egui::Response {
-    ui.add_sized(
-        Vec2::new(ui.available_width(), 26.0),
-        egui::Button::new(RichText::new(label).font(f_sans_med(10.5)).color(accent))
-            .fill(PANEL2())
-            .stroke(egui::Stroke::new(1.0, LINE2()))
-            .corner_radius(RADIUS_CTL),
-    )
+    // Full-width keycap with the accent-coloured label (red for destructive, etc.).
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), egui::Sense::click());
+    crate::ui::skeuo::keycap(ui, rect, crate::ui::widgets::KeycapState::Rest);
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(60));
+    }
+    ui.painter()
+        .text(rect.center(), egui::Align2::CENTER_CENTER, label, f_sans_med(10.5), accent);
+    resp
+}
+
+/// Full-width keycap row for the egui-native context menus (lane name, empty
+/// lane, lane length, song block). Returns the `Response` so callers can chain
+/// `.on_hover_text(...)`. `enabled` dims the label and drops the press feedback;
+/// the caller still gates its action on the same condition.
+pub fn context_menu_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    accent: Color32,
+    enabled: bool,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), egui::Sense::click());
+    crate::ui::skeuo::keycap(ui, rect, crate::ui::widgets::KeycapState::Rest);
+    if enabled && resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(60));
+    }
+    let col = if enabled { accent } else { INK3() };
+    ui.painter()
+        .text(rect.center(), egui::Align2::CENTER_CENTER, label, f_sans_med(10.5), col);
+    resp
+}
+
+/// Faint separator line used to group items inside a context menu.
+pub fn context_menu_separator(ui: &mut egui::Ui) {
+    ui.add_space(2.0);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter().rect_filled(r, 0.0, LINE());
+    ui.add_space(2.0);
 }
 
 pub fn plock_menu_enum_row(

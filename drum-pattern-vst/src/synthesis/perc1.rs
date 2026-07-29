@@ -238,7 +238,7 @@ impl Voice for Perc1Voice {
         self.osc_b_l.set_freq(freq * 1.5);
         let mod_sample = self.osc_b_l.next();
         self.osc_a_l.set_freq(freq + mod_sample * fm_deviation);
-        let mut dry = self.osc_a_l.next() * amp * self.settings.volume * self.drift.level;
+        let mut dry = self.osc_a_l.next() * amp * self.drift.level;
 
         // Filter — additive envelope: Cutoff at rest + (envelope × amount × depth)
         let filter_env_val = self.filter_env.next();
@@ -247,7 +247,7 @@ impl Voice for Perc1Voice {
         let effective_freq = filter_freq + filter_env_val * filter_env_amount * 15000.0;
         self.filter
             .set_cutoff(effective_freq.max(20.0).min(20000.0), self.sample_rate);
-        dry = self.filter.process(dry);
+        dry = self.filter.process(self.saturation.process_at(true, dry));
 
         // Simple mono delay
         let wet = self.delay_buf_l[self.delay_pos];
@@ -258,8 +258,10 @@ impl Voice for Perc1Voice {
         }
 
         let width = self.settings.width.clamp(0.0, 1.0);
+        // Volume post-saturation: the knob sets the final level, not the drive.
         self.dc_block_l
-            .process(self.saturation.process(dry + wet * width * 0.5))
+            .process(self.saturation.process_at(false, dry + wet * width * 0.5))
+            * self.settings.volume
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -292,13 +294,13 @@ impl Voice for Perc1Voice {
         self.osc_b_l.set_freq(freq * 1.5);
         let mod_l = self.osc_b_l.next();
         self.osc_a_l.set_freq(freq + mod_l * fm_deviation);
-        let mut dry_l = self.osc_a_l.next() * amp * self.settings.volume * self.drift.level;
+        let mut dry_l = self.osc_a_l.next() * amp * self.drift.level;
 
         // Right channel
         self.osc_b_r.set_freq(freq * 1.5 * detune);
         let mod_r = self.osc_b_r.next();
         self.osc_a_r.set_freq(freq * detune + mod_r * fm_deviation);
-        let mut dry_r = self.osc_a_r.next() * amp * self.settings.volume * self.drift.level;
+        let mut dry_r = self.osc_a_r.next() * amp * self.drift.level;
 
         // Filter — additive envelope
         let filter_env_val = self.filter_env.next();
@@ -307,8 +309,8 @@ impl Voice for Perc1Voice {
         let effective_freq = filter_freq + filter_env_val * filter_env_amount * 15000.0;
         self.filter
             .set_cutoff(effective_freq.max(20.0).min(20000.0), self.sample_rate);
-        dry_l = self.filter.process(dry_l);
-        dry_r = self.filter.process(dry_r);
+        dry_l = self.filter.process(self.saturation.process_at(true, dry_l));
+        dry_r = self.filter.process(self.saturation.process_at(true, dry_r));
 
         // Slap delay
         let wet_l = self.delay_buf_l[self.delay_pos];
@@ -321,12 +323,15 @@ impl Voice for Perc1Voice {
         }
 
         let delay_mix = width * 0.5;
+        // Volume post-saturation: the knob sets the final level, not the drive.
         let l = self
             .dc_block_l
-            .process(self.saturation.process(dry_l + wet_l * delay_mix));
+            .process(self.saturation.process_at(false, dry_l + wet_l * delay_mix))
+            * self.settings.volume;
         let r = self
             .dc_block_r
-            .process(self.saturation.process(dry_r + wet_r * delay_mix));
+            .process(self.saturation.process_at(false, dry_r + wet_r * delay_mix))
+            * self.settings.volume;
         (l, r)
     }
 

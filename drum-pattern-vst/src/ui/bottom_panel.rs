@@ -13,7 +13,7 @@ use crate::ui::song::draw_song_editor;
 use crate::ui::theme::*;
 use crate::DrumFlashParams;
 use nih_plug::prelude::*;
-use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
+use nih_plug_egui::egui::{self, Vec2};
 use std::sync::{
     atomic::{AtomicBool, AtomicU32},
     Arc,
@@ -192,87 +192,68 @@ fn draw_generator_bar(
     const STYLE_W: f32 = 70.0;
     const GEN_BTN_W: f32 = 104.0;
 
-    // Single aligned row: algorithm · style A → B · Mix/Dens/Var · GENERATE (right).
-    ui.horizontal(|ui| {
-        ui.set_height(CTL_HEIGHT);
-        ui.spacing_mut().item_spacing.x = 0.0;
+    // Two rows: (1) Type · style A → Mix → B   (2) Density · Variation · GENERATE.
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
 
-        // Generator algorithm (Probabilistic / Euclidean / Markov / …)
-        enum_combo_compact(ui, setter, &params.generator_type, "gen_type", GEN_TYPE_W);
+        // Row 1 — algorithm + style morph.
+        ui.horizontal(|ui| {
+            ui.set_height(CTL_HEIGHT);
+            ui.spacing_mut().item_spacing.x = 0.0;
+            genrow_label(ui, "Type", 40.0);
+            enum_combo_compact(ui, setter, &params.generator_type, "gen_type", GEN_TYPE_W);
+            ui.add_space(16.0);
+            genrow_label(ui, "A", 12.0);
+            ui.add_space(5.0);
+            enum_combo_compact(ui, setter, &params.style_primary, "style_a", STYLE_W);
+            ui.add_space(14.0);
+            header_param_slider(ui, setter, &params.style_mix, 110.0, "Mix A/B", false);
+            ui.add_space(14.0);
+            genrow_label(ui, "B", 12.0);
+            ui.add_space(5.0);
+            enum_combo_compact(ui, setter, &params.style_secondary, "style_b", STYLE_W);
+        });
 
-        // Style morph A → B
-        ui.add_space(16.0);
-        genrow_label(ui, "A", 12.0);
-        ui.add_space(5.0);
-        enum_combo_compact(ui, setter, &params.style_primary, "style_a", STYLE_W);
-        ui.add_space(12.0);
-        genrow_label(ui, "B", 12.0);
-        ui.add_space(5.0);
-        enum_combo_compact(ui, setter, &params.style_secondary, "style_b", STYLE_W);
+        // Row 2 — amounts + GENERATE (right).
+        ui.horizontal(|ui| {
+            ui.set_height(CTL_HEIGHT);
+            ui.spacing_mut().item_spacing.x = 0.0;
+            header_param_slider(ui, setter, &params.gen_density, 150.0, "Density", false);
+            ui.add_space(18.0);
+            header_param_slider(ui, setter, &params.gen_variation, 150.0, "Variation", false);
 
-        // Amounts (design-system pill sliders)
-        ui.add_space(18.0);
-        const SLIDER_TOTAL_W: f32 = 110.0;
-        header_param_slider(
-            ui,
-            setter,
-            &params.style_mix,
-            SLIDER_TOTAL_W,
-            "Mix A/B",
-            false,
-        );
-        ui.add_space(10.0);
-        header_param_slider(
-            ui,
-            setter,
-            &params.gen_density,
-            SLIDER_TOTAL_W,
-            "Density",
-            false,
-        );
-        ui.add_space(10.0);
-        header_param_slider(
-            ui,
-            setter,
-            &params.gen_variation,
-            SLIDER_TOTAL_W,
-            "Variation",
-            false,
-        );
-
-        // GENERATE, pushed to the right edge
-        let space = (ui.available_width() - GEN_BTN_W).max(10.0);
-        ui.add_space(space);
-        let gen_btn_response = crate::ui::controls::keycap_button(
-            ui,
-            "GENERATE",
-            GEN_BTN_W,
-            crate::ui::widgets::KeycapState::PressedAmber,
-            true,
-            f_sans_sb(11.0),
-        );
-
-        if gen_btn_response.clicked() {
-            params.plock_state.state.clear_all();
-            params.seq_plock_state.state.clear_all();
-            let seed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| duration.as_nanos() as u64)
-                .unwrap_or(0);
-            let gen_params = generator::GeneratorParams {
-                generator_type: params.generator_type.value(),
-                style_primary: params.style_primary.value(),
-                style_secondary: params.style_secondary.value(),
-                style_mix: params.style_mix.value(),
-                density: params.gen_density.value(),
-                variation: params.gen_variation.value(),
-                seed,
-            };
-            let generated = generator::generate(&gen_params, params.track_layout.state.as_ref());
-            let pattern_length = params.pattern_length.value() as usize;
-            crate::ui::grid::clear_all_fusions(pattern);
-            load_pattern_for_ui_with_length(pattern, &generated, pattern_length);
-            state.last_loaded_slot = None;
-        }
+            let space = (ui.available_width() - GEN_BTN_W).max(10.0);
+            ui.add_space(space);
+            let gen_btn_response = crate::ui::controls::keycap_button(
+                ui,
+                "GENERATE",
+                GEN_BTN_W,
+                crate::ui::widgets::KeycapState::PressedAmber,
+                true,
+                f_sans_sb(11.0),
+            );
+            if gen_btn_response.clicked() {
+                params.plock_state.state.clear_all();
+                params.seq_plock_state.state.clear_all();
+                let seed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|duration| duration.as_nanos() as u64)
+                    .unwrap_or(0);
+                let gen_params = generator::GeneratorParams {
+                    generator_type: params.generator_type.value(),
+                    style_primary: params.style_primary.value(),
+                    style_secondary: params.style_secondary.value(),
+                    style_mix: params.style_mix.value(),
+                    density: params.gen_density.value(),
+                    variation: params.gen_variation.value(),
+                    seed,
+                };
+                let generated = generator::generate(&gen_params, params.track_layout.state.as_ref());
+                let pattern_length = params.pattern_length.value() as usize;
+                crate::ui::grid::clear_all_fusions(pattern);
+                load_pattern_for_ui_with_length(pattern, &generated, pattern_length);
+                state.last_loaded_slot = None;
+            }
+        });
     });
 }
