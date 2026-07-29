@@ -3,3 +3,17 @@
 - Snare : Améliorer l'algo, la snare n'a pas assez de corps 
 - hi hat trop fort
 - BD pas assez fort
+- le paramètre stéréo à disparu des instruments pouvant être stéréo
+- différencier les slot pattern vide des slots remplis
+- s'assurer que le volume est post saturation
+- Remplacer le choke actuel par une gestion par choke group dans l'onglet track disponible pour tous les instruments. Prévoir 4 choke groups.
+- dans l'onglet track, aligner le champ Name avec la longueur des dropdowns Type et Aux Out
+- Prévoir 16 patterns au lieu de 8
+- revoir le design des lanes vides (plus discret)
+- ajouter des presets de style (Latin, Bossa, Techno...), au moins 10.
+- ajouter des env exponentiel negatif pour des attaques plus claquantes.
+- Possibilité de linker 2 lanes (juste les steps du grid). Prérequis : être à côté. Pour faire du layering
+- prévoir un instruments de type ambiant avec des bouts de samples d'ambiances noisy et possibilité de mettre un offset aléatoire.
+- Saturation pre filter ne semble pas fonctionner
+- Warning lorsque l'on change de pattern et que la pattern courante n'est pas sauvegardée
+- visuel : quand la tête de lecture passe sur une cellule fusionnée il faut entourer toute la cellule fusionnée, actuellement ça entoure toujours les steps individuels

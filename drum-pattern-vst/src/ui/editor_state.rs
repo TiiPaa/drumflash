@@ -174,6 +174,10 @@ pub struct EditorUIState {
     /// Pending global lane preset. Requires explicit confirmation because it mutates the current pattern/layout.
     #[serde(default)]
     pub lane_preset_confirm: Option<LanePresetAction>,
+    /// Pending pattern-bank slot load (click on P1-P8) while the current
+    /// pattern has unsaved changes. Requires explicit confirmation.
+    #[serde(skip)]
+    pub pattern_load_confirm: Option<usize>,
     /// Source slot while dragging a lane reorder handle.
     #[serde(default)]
     pub lane_drag_source: Option<usize>,

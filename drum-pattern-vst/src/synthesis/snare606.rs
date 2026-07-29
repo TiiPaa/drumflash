@@ -188,7 +188,8 @@ impl Voice for Snare606Voice {
         self.lp_softener.set_cutoff(cutoff, self.sample_rate);
 
         // Stage 1: white noise. Stage 2: passive LP "softener".
-        let raw = self.noise.next();
+        let noise = self.noise.next();
+        let raw = self.saturation.process_at(true, noise);
         let softened = self.lp_softener.process(raw);
 
         // Stage 3: Swing-VCA — envelope-shaped excitation.
@@ -209,13 +210,12 @@ impl Voice for Snare606Voice {
         let body_gain = 0.4 + tone * 0.6; // 0.4 .. 1.0
         let wires_gain = (1.0 - tone) * 0.5 + crisp * 0.4;
 
-        let mut mixed =
-            (body * body_gain + wires_raw * wires_gain) * self.settings.volume * self.drift.level;
+        let mut mixed = (body * body_gain + wires_raw * wires_gain) * self.drift.level;
 
-        // Apply saturation (post-filter by default)
-        mixed = self.saturation.process(mixed);
+        // Saturation post-filter by default; volume stays post-saturation.
+        mixed = self.saturation.process_at(false, mixed);
 
-        self.dc_block_l.process(mixed)
+        self.dc_block_l.process(mixed) * self.settings.volume
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -242,8 +242,14 @@ impl Voice for Snare606Voice {
         self.lp_softener_r.set_cutoff(cutoff, self.sample_rate);
 
         // Stage 1-2: independent white noise + LP softener per channel.
-        let softened_l = self.lp_softener.process(self.noise.next());
-        let softened_r = self.lp_softener_r.process(self.noise_r.next());
+        let noise_l = self.noise.next();
+        let noise_r = self.noise_r.next();
+        let softened_l = self
+            .lp_softener
+            .process(self.saturation.process_at(true, noise_l));
+        let softened_r = self
+            .lp_softener_r
+            .process(self.saturation.process_at(true, noise_r));
 
         // Stage 3: envelope-shaped excitation.
         let excitation_l = softened_l * env;
@@ -262,16 +268,22 @@ impl Voice for Snare606Voice {
         let crisp = self.wire_crisp();
         let body_gain = 0.4 + tone * 0.6;
         let wires_gain = (1.0 - tone) * 0.5 + crisp * 0.4;
-        let vol = self.settings.volume;
 
-        let mut left = (body_l * body_gain + wires_l * wires_gain) * vol * self.drift.level;
-        let mut right = (body_r * body_gain + wires_r * wires_gain) * vol * self.drift.level;
+        let mut left = (body_l * body_gain + wires_l * wires_gain) * self.drift.level;
+        let mut right = (body_r * body_gain + wires_r * wires_gain) * self.drift.level;
 
-        // Apply saturation (post-filter by default)
-        left = self.dc_block_l.process(self.saturation.process(left));
-        right = self.dc_block_r.process(self.saturation.process(right));
+        // Saturation post-filter by default; volume stays post-saturation.
+        left = self
+            .dc_block_l
+            .process(self.saturation.process_at(false, left));
+        right = self
+            .dc_block_r
+            .process(self.saturation.process_at(false, right));
 
-        (left, right)
+        (
+            left * self.settings.volume,
+            right * self.settings.volume,
+        )
     }
 
     fn is_active(&self) -> bool {

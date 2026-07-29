@@ -150,8 +150,8 @@ impl Voice for SnareVoice {
             1 => {
                 // Noise: pure white noise, no oscillator
                 let mixed = self.noise.next() * 0.5;
-                let filtered = self.filter.process(mixed);
-                filtered * env * self.settings.volume
+                let filtered = self.filter.process(self.saturation.process_at(true, mixed));
+                filtered * env
             }
             2 => {
                 // Layered: fundamental + overtone + noise
@@ -159,8 +159,10 @@ impl Voice for SnareVoice {
                 let overtone = ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.3;
                 let osc = (fundamental + overtone) * snap * 0.5;
                 let noise = self.noise.next() * (1.0 - snap) * 0.5;
-                let filtered = self.filter.process(osc + noise);
-                filtered * env * self.settings.volume
+                let filtered = self
+                    .filter
+                    .process(self.saturation.process_at(true, osc + noise));
+                filtered * env
             }
             _ => {
                 // Synth: triangle osc + noise (ratio controlled by snap)
@@ -168,8 +170,10 @@ impl Voice for SnareVoice {
                 let noise_gain = (1.0 - snap) * 0.5;
                 let osc = self.osc.next() * osc_gain;
                 let noise = self.noise.next() * noise_gain;
-                let filtered = self.filter.process(osc + noise);
-                filtered * env * self.settings.volume
+                let filtered = self
+                    .filter
+                    .process(self.saturation.process_at(true, osc + noise));
+                filtered * env
             }
         };
 
@@ -179,8 +183,10 @@ impl Voice for SnareVoice {
             return 0.0;
         }
 
+        // Volume post-saturation: the knob sets the final level, not the drive.
         self.dc_block_l
-            .process(self.saturation.process(output * self.drift.level))
+            .process(self.saturation.process_at(false, output * self.drift.level))
+            * self.settings.volume
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -208,8 +214,10 @@ impl Voice for SnareVoice {
                 // Noise: pure white noise, no oscillator
                 let mixed_l = self.noise.next() * 0.5;
                 let mixed_r = self.noise_r.next() * 0.5;
-                let filtered_l = self.filter.process(mixed_l);
-                let filtered_r = self.filter_r.process(mixed_r);
+                let filtered_l = self.filter.process(self.saturation.process_at(true, mixed_l));
+                let filtered_r = self
+                    .filter_r
+                    .process(self.saturation.process_at(true, mixed_r));
                 (filtered_l, filtered_r)
             }
             2 => {
@@ -219,8 +227,12 @@ impl Voice for SnareVoice {
                 let osc = (fundamental + overtone) * snap * 0.5;
                 let noise_l = self.noise.next() * (1.0 - snap) * 0.5;
                 let noise_r = self.noise_r.next() * (1.0 - snap) * 0.5;
-                let filtered_l = self.filter.process(osc + noise_l);
-                let filtered_r = self.filter_r.process(osc + noise_r);
+                let filtered_l = self
+                    .filter
+                    .process(self.saturation.process_at(true, osc + noise_l));
+                let filtered_r = self
+                    .filter_r
+                    .process(self.saturation.process_at(true, osc + noise_r));
                 (filtered_l, filtered_r)
             }
             _ => {
@@ -230,8 +242,12 @@ impl Voice for SnareVoice {
                 let osc = self.osc.next() * osc_gain;
                 let noise_l = self.noise.next() * noise_gain;
                 let noise_r = self.noise_r.next() * noise_gain;
-                let filtered_l = self.filter.process(osc + noise_l);
-                let filtered_r = self.filter_r.process(osc + noise_r);
+                let filtered_l = self
+                    .filter
+                    .process(self.saturation.process_at(true, osc + noise_l));
+                let filtered_r = self
+                    .filter_r
+                    .process(self.saturation.process_at(true, osc + noise_r));
                 (filtered_l, filtered_r)
             }
         };
@@ -241,11 +257,17 @@ impl Voice for SnareVoice {
             return (0.0, 0.0);
         }
 
-        let vol = env * self.settings.volume * self.drift.level;
-        let l = self.dc_block_l.process(self.saturation.process(left * vol));
+        // Volume post-saturation: the knob sets the final level, not the drive.
+        let env_lvl = env * self.drift.level;
+        let vol = self.settings.volume;
+        let l = self
+            .dc_block_l
+            .process(self.saturation.process_at(false, left * env_lvl))
+            * vol;
         let r = self
             .dc_block_r
-            .process(self.saturation.process(right * vol));
+            .process(self.saturation.process_at(false, right * env_lvl))
+            * vol;
         (l, r)
     }
 
@@ -328,6 +350,36 @@ impl Voice for SnareVoice {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression guard: the Volume knob must sit AFTER the saturation stage
+    /// (same contract as the kick's `test_kick_volume_is_post_saturation`).
+    #[test]
+    fn test_snare_volume_is_post_saturation() {
+        let sr = 44100.0;
+        let render = |volume: f32| -> Vec<f32> {
+            let mut s = SnareSettings::from(VoiceSettings::snare());
+            s.saturation_type = 1;
+            s.saturation_amount = 1.0;
+            s.saturation_mix = 1.0;
+            s.saturation_output_gain = 1.0;
+            s.analog = 0.0;
+            s.volume = volume;
+            let mut snare = SnareVoice::new(sr, s);
+            snare.set_settings(s.into());
+            snare.trigger();
+            (0..4000).map(|_| snare.process_sample()).collect()
+        };
+        let quiet = render(0.5);
+        let loud = render(1.0);
+        let peak = loud.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        assert!(peak > 0.05, "saturated snare should not be silent");
+        for (i, (a, b)) in quiet.iter().zip(loud.iter()).enumerate() {
+            assert!(
+                (b - a * 2.0).abs() < 1e-5,
+                "sample {i}: loud({b}) != 2 * quiet({a}) — volume is not post-saturation"
+            );
+        }
+    }
 
     #[test]
     fn test_snare_basic() {

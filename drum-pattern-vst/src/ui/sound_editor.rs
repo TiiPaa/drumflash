@@ -37,15 +37,27 @@ pub fn format_editor_value(value: f32, suffix: Option<&str>) -> String {
     }
 }
 
-/// Left-aligned label in the fixed 138px column so every editor row aligns.
+/// Left-aligned label that occupies EXACTLY the fixed column width, so every
+/// row's control starts at the same x. `allocate_ui_with_layout` shrinks to the
+/// text (ragged left edges) — we allocate the exact box and paint the label.
 pub fn editor_label(ui: &mut egui::Ui, text: &str) {
-    ui.allocate_ui_with_layout(
-        Vec2::new(EDITOR_LABEL_W, 22.0),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.label(RichText::new(text).font(f_sans_med(11.5)).color(INK2()));
-        },
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(EDITOR_LABEL_W, 22.0), egui::Sense::hover());
+    ui.painter().text(
+        egui::pos2(rect.left(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        text,
+        f_sans_med(11.5),
+        INK2(),
     );
+}
+
+/// Section header (separator + muted title) shared by the Sound and Track tabs.
+pub fn editor_section_header(ui: &mut egui::Ui, title: &str) {
+    ui.add_space(4.0);
+    ui.separator();
+    ui.add_space(2.0);
+    ui.label(RichText::new(title).font(f_sans_sb(10.5)).color(INK3()));
+    ui.add_space(6.0);
 }
 
 pub fn draw_editor_slider_track(
@@ -74,78 +86,32 @@ fn draw_note_freq_mode_toggle(
     id_salt: impl std::hash::Hash,
     notes_active: bool,
 ) -> Option<bool> {
-    let width = 78.0;
-    let height = 22.0;
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, RADIUS_CTL, PANEL2());
-    painter.rect_stroke(
-        rect,
-        6.0,
-        egui::Stroke::new(1.0, LINE2()),
-        egui::StrokeKind::Inside,
-    );
-
-    let mut result = None;
-    for (idx, label) in ["Hz", "Note"].iter().enumerate() {
-        let active = (idx == 1) == notes_active;
-        let seg = egui::Rect::from_min_size(
-            egui::pos2(rect.left() + idx as f32 * width * 0.5, rect.top()),
-            Vec2::new(width * 0.5, height),
-        );
-        let response = ui.interact(
-            seg,
-            ui.make_persistent_id(("note_freq_mode", &id_salt, idx)),
-            egui::Sense::click(),
-        );
-        if active {
-            painter.rect_filled(seg.shrink(1.0), 5.0, BLUE());
-        } else if response.hovered() {
-            painter.rect_stroke(
-                seg.shrink(1.0),
-                5.0,
-                egui::Stroke::new(1.0, BLUE()),
-                egui::StrokeKind::Inside,
-            );
-        }
-        if idx == 1 {
-            painter.line_segment(
-                [
-                    egui::pos2(seg.left(), rect.top() + 3.0),
-                    egui::pos2(seg.left(), rect.bottom() - 3.0),
-                ],
-                egui::Stroke::new(1.0, LINE2()),
-            );
-        }
-        painter.text(
-            seg.center(),
-            egui::Align2::CENTER_CENTER,
-            *label,
-            f_sans_sb(10.5),
-            if active {
-                Color32::WHITE
-            } else if response.hovered() {
-                INK()
-            } else {
-                INK2()
-            },
-        );
-        if response.clicked() && !active {
-            result = Some(idx == 1);
-        }
+    // Same keycap-based renderer as every other segmented switch.
+    let selected = if notes_active { 1 } else { 0 };
+    let new = crate::ui::skeuo::segmented(ui, id_salt, &["Hz", "Note"], selected);
+    if new != selected {
+        Some(new == 1)
+    } else {
+        None
     }
-
-    result
 }
 
-fn draw_note_step_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(RichText::new(label).font(f_mono_sb(12.0)).color(INK2()))
-            .min_size(Vec2::new(24.0, 22.0))
-            .fill(PANEL2())
-            .stroke(egui::Stroke::new(1.0, LINE2()))
-            .corner_radius(5.0),
-    )
+fn draw_note_step_button(ui: &mut egui::Ui, left: bool) -> egui::Response {
+    // Keycap with a PAINTED triangle (◂ / ▸) — the glyphs are missing from Plex.
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(24.0, 22.0), egui::Sense::click());
+    crate::ui::skeuo::keycap(ui, rect, crate::ui::widgets::KeycapState::Rest);
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(rect, 5.0, Color32::from_black_alpha(60));
+    }
+    let c = rect.center();
+    let s = 4.0;
+    let tri = if left {
+        vec![egui::pos2(c.x + s * 0.4, c.y - s), egui::pos2(c.x + s * 0.4, c.y + s), egui::pos2(c.x - s * 0.6, c.y)]
+    } else {
+        vec![egui::pos2(c.x - s * 0.4, c.y - s), egui::pos2(c.x - s * 0.4, c.y + s), egui::pos2(c.x + s * 0.6, c.y)]
+    };
+    ui.painter().add(egui::Shape::convex_polygon(tri, INK(), egui::Stroke::NONE));
+    resp
 }
 
 pub struct EditorFrequencyRowResult {
@@ -170,13 +136,17 @@ fn draw_editor_frequency_row(
         ui.spacing_mut().item_spacing.x = 8.0;
         editor_label(ui, label);
 
+        // Mode switch FIRST — a fixed position right after the label, so it does
+        // NOT jump when toggling Hz <-> Note (and matches the mockup: switch, then
+        // slider). The slider/stepper fills the rest; the value stays right-aligned.
+        let mode_change = draw_note_freq_mode_toggle(ui, id_salt, notes_active);
+
         let mut value_changed = false;
         let mut row_response = ui.allocate_response(Vec2::ZERO, egui::Sense::hover());
-        let mode_w = 78.0;
 
         if notes_active {
             let note_val = freq_to_note(*value * ratio).round();
-            if draw_note_step_button(ui, "-").clicked() {
+            if draw_note_step_button(ui, true).clicked() {
                 let new_note = (note_val - 1.0).max(0.0);
                 *value = note_to_freq(new_note) / ratio;
                 value_changed = true;
@@ -192,15 +162,13 @@ fn draw_editor_frequency_row(
                     );
                 },
             );
-            if draw_note_step_button(ui, "+").clicked() {
+            if draw_note_step_button(ui, false).clicked() {
                 let new_note = (note_val + 1.0).min(127.0);
                 *value = note_to_freq(new_note) / ratio;
                 value_changed = true;
             }
-            let used_w = 24.0 + 8.0 + 58.0 + 8.0 + 24.0;
-            ui.add_space((ui.available_width() - mode_w - 8.0 - used_w).max(0.0));
         } else {
-            let track_w = (ui.available_width() - EDITOR_VALUE_W - 8.0 - mode_w - 8.0).max(60.0);
+            let track_w = (ui.available_width() - EDITOR_VALUE_W - 8.0).max(60.0);
             row_response = draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w);
             value_changed = row_response.changed();
             ui.allocate_ui_with_layout(
@@ -216,7 +184,6 @@ fn draw_editor_frequency_row(
             );
         }
 
-        let mode_change = draw_note_freq_mode_toggle(ui, id_salt, notes_active);
         EditorFrequencyRowResult {
             response: row_response,
             value_changed,
@@ -252,6 +219,21 @@ pub fn draw_editor_slider_row(
             );
         });
         response
+    })
+    .inner
+}
+
+/// Skeuo dropdown flush to the params column's right edge (matches the mockup:
+/// dropdowns line up with slider values and toggles, not left after the label).
+/// The caller draws `editor_label` first, then calls this in the same row.
+fn right_aligned_select(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    selected: usize,
+    options: &[&str],
+) -> Option<usize> {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        styled_select(ui, id_salt, selected, options, 146.0).1
     })
     .inner
 }
@@ -296,47 +278,59 @@ fn draw_track_tab(
         return;
     }
 
-    ui.add_space(8.0);
-    ui.label(
-        RichText::new(format!("Slot {} — {}", slot_idx + 1, slot.name))
-            .font(f_sans_sb(12.0))
-            .color(Color32::WHITE),
-    );
-
     let mut new_state = layout_state.clone();
     let mut changed = false;
 
-    ui.add_space(12.0);
-    ui.label(RichText::new("Name").font(f_sans_med(10.5)).color(INK3()));
+    // Keep the name buffer in sync with the selected slot.
     if state.track_name_input_slot != Some(slot_idx) {
         state.track_name_input = slot.name.clone();
         state.track_name_input_slot = Some(slot_idx);
     }
+
+    ui.add_space(2.0);
+
+    // ---- Instrument ----
+    editor_section_header(ui, "Instrument");
+
+    // Name — same 146×26 keycap box as the Type/Aux Out dropdowns so the right
+    // edges line up.
     ui.horizontal(|ui| {
-        let response = ui.add(
-            egui::TextEdit::singleline(&mut state.track_name_input)
-                .id(egui::Id::new(("track_name", slot_idx)))
-                .char_limit(6)
-                .desired_width(180.0)
-                .font(f_sans_med(12.0))
-                .text_color(Color32::WHITE),
-        );
-        if state.track_name_focus_request {
-            state.track_name_focus_request = false;
-            response.request_focus();
-        }
-        if response.changed() {
-            new_state.slots[slot_idx].name = state.track_name_input.clone();
-            changed = true;
-        }
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Name");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (rect, _) =
+                ui.allocate_exact_size(Vec2::new(146.0, CTL_HEIGHT), egui::Sense::hover());
+            crate::ui::widgets::keycap_tex(ui, rect, crate::ui::widgets::KeycapState::Rest);
+            let response = ui
+                .allocate_new_ui(
+                    egui::UiBuilder::new()
+                        .max_rect(rect.shrink2(Vec2::new(8.0, 0.0)))
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    |ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut state.track_name_input)
+                                .id(egui::Id::new(("track_name", slot_idx)))
+                                .char_limit(6)
+                                .desired_width(f32::INFINITY)
+                                .font(f_sans_med(12.0))
+                                .text_color(Color32::WHITE)
+                                .frame(false),
+                        )
+                    },
+                )
+                .inner;
+            if state.track_name_focus_request {
+                state.track_name_focus_request = false;
+                response.request_focus();
+            }
+            if response.changed() {
+                new_state.slots[slot_idx].name = state.track_name_input.clone();
+                changed = true;
+            }
+        });
     });
 
-    ui.add_space(12.0);
-    ui.label(
-        RichText::new("Instrument")
-            .font(f_sans_med(10.5))
-            .color(INK3()),
-    );
+    // Type (instrument kind)
     let kinds = [
         TrackInstrumentKind::Kick,
         TrackInstrumentKind::Snare,
@@ -351,153 +345,144 @@ fn draw_track_tab(
         TrackInstrumentKind::Perc1,
     ];
     let current_kind = slot.kind;
-    let current_label = current_kind.default_name();
-    egui::ComboBox::from_id_salt("track_kind")
-        .selected_text(
-            RichText::new(current_label)
-                .font(f_sans_med(11.0))
-                .color(Color32::WHITE),
-        )
-        .width(180.0)
-        .show_ui(ui, |ui| {
-            for kind in kinds {
-                let label = kind.default_name();
-                if ui
-                    .selectable_label(
-                        kind == current_kind,
-                        RichText::new(label).font(f_sans_med(11.0)),
-                    )
-                    .clicked()
-                    && kind != current_kind
-                {
+    let kind_labels: Vec<&str> = kinds.iter().map(|k| k.default_name()).collect();
+    let cur_kind_idx = kinds.iter().position(|k| *k == current_kind).unwrap_or(0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Type");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let (_, Some(i)) =
+                crate::ui::widgets::styled_select(ui, "track_kind", cur_kind_idx, &kind_labels, 146.0)
+            {
+                let kind = kinds[i];
+                if kind != current_kind {
+                    let label = kind.default_name();
                     new_state.slots[slot_idx].kind = kind;
                     new_state.slots[slot_idx].name = label.to_string();
                     new_state.slots[slot_idx].midi_note = kind.default_midi_note();
                     state.track_name_input = label.to_string();
                     changed = true;
-                    // New kind → new voice: align the slot's settings with the
-                    // new instrument's defaults (the audio thread reinitializes
-                    // the voice via last_slot_kinds detection).
+                    // New kind → new voice: seed the slot's settings from the new
+                    // instrument's defaults (the audio thread reinitializes it).
                     sound_settings.reset_slot_to_defaults(slot_idx, kind, state.global_config.default_analog);
-                    // Keep the selection on this slot; the Sound tab schema
-                    // follows the slot's kind automatically.
                     state.selected_instrument = slot_idx;
                 }
             }
         });
+    });
 
-    ui.add_space(16.0);
-    ui.label(RichText::new("Routing").font(f_sans_med(10.5)).color(INK3()));
+    // ---- Routing ----
+    editor_section_header(ui, "Routing");
+
+    // Main Mix (toggle)
     ui.horizontal(|ui| {
-        let mut main_on = slot.routing.main_on;
-        if ui
-            .checkbox(&mut main_on, RichText::new("Main").font(f_sans_med(11.0)))
-            .changed()
-        {
-            new_state.slots[slot_idx].routing.main_on = main_on;
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Main Mix");
+        let avail = ui.available_width();
+        ui.add_space((avail - 34.0).max(0.0));
+        let checked = slot.routing.main_on;
+        if ui.add(ToggleSwitch::new(checked)).clicked() {
+            new_state.slots[slot_idx].routing.main_on = !checked;
             changed = true;
         }
     });
+
+    // Aux Out (dropdown)
+    let current_out = slot.routing.out_select.index();
+    let out_labels: Vec<String> = (0..=crate::track::MAX_TRACKS)
+        .map(|i| if i == 0 { "No Aux".to_string() } else { format!("Out {}", i) })
+        .collect();
+    let out_refs: Vec<&str> = out_labels.iter().map(|s| s.as_str()).collect();
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Out").font(f_sans_med(11.0)).color(INK3()));
-        let out_options: Vec<(u8, &str)> = std::iter::once((0u8, "No Aux"))
-            .chain((1..=crate::track::MAX_TRACKS as u8).map(|i| (i, "Out")))
-            .collect();
-        let current_out = slot.routing.out_select.index();
-        egui::ComboBox::from_id_salt("track_out")
-            .selected_text(
-                RichText::new(if current_out == 0 {
-                    "No Aux".to_string()
-                } else {
-                    format!("Out {}", current_out)
-                })
-                .font(f_sans_med(11.0))
-                .color(Color32::WHITE),
-            )
-            .width(120.0)
-            .show_ui(ui, |ui| {
-                for (idx, _) in &out_options {
-                    let label = if *idx == 0 {
-                        "No Aux".to_string()
-                    } else {
-                        format!("Out {}", idx)
-                    };
-                    if ui
-                        .selectable_label(
-                            current_out == *idx,
-                            RichText::new(&label).font(f_sans_med(11.0)),
-                        )
-                        .clicked()
-                        && current_out != *idx
-                    {
-                        new_state.assign_slot_output_exclusive(
-                            slot_idx,
-                            crate::track::TrackAudioOut::from_index(*idx),
-                        );
-                        changed = true;
-                    }
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Aux Out");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let (_, Some(i)) =
+                crate::ui::widgets::styled_select(ui, "track_out", current_out as usize, &out_refs, 146.0)
+            {
+                if i as u8 != current_out {
+                    new_state.assign_slot_output_exclusive(
+                        slot_idx,
+                        crate::track::TrackAudioOut::from_index(i as u8),
+                    );
+                    changed = true;
                 }
-            });
+            }
+        });
     });
 
-    ui.add_space(16.0);
-    ui.label(RichText::new("MIDI").font(f_sans_med(10.5)).color(INK3()));
+    // Choke group (dropdown) — when this slot triggers, every other active
+    // slot in the same group is silenced (classic HH→OH, generalized).
+    let current_choke = slot.routing.choke_group.min(crate::track::CHOKE_GROUP_COUNT) as usize;
+    let choke_labels = ["None", "1", "2", "3", "4"];
     ui.horizontal(|ui| {
-        ui.add_sized(
-            Vec2::new(70.0, 20.0),
-            egui::Label::new(
-                RichText::new("Channel").font(f_sans_med(11.0)).color(INK2()),
-            ),
-        );
-        let current_channel = layout_state.global_midi_channel;
-        ui.label(
-            RichText::new(format!("{}", current_channel))
-                .font(f_mono_med(12.0))
-                .color(Color32::WHITE),
-        );
-        ui.add_space(8.0);
-        ui.add_sized(
-            Vec2::new(40.0, 20.0),
-            egui::Label::new(
-                RichText::new("Note").font(f_sans_med(11.0)).color(INK2()),
-            ),
-        );
-        let mut note = slot.midi_note as i32;
-        if ui
-            .add(egui::DragValue::new(&mut note).range(0..=127).speed(1.0))
-            .changed()
-        {
-            new_state.slots[slot_idx].midi_note = note.clamp(0, 127) as u8;
-            changed = true;
-        }
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Choke");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let (_, Some(i)) =
+                crate::ui::widgets::styled_select(ui, "track_choke", current_choke, &choke_labels, 146.0)
+            {
+                if i != current_choke {
+                    new_state.slots[slot_idx].routing.choke_group = i as u8;
+                    changed = true;
+                }
+            }
+        });
+    });
+
+    // ---- MIDI ----
+    editor_section_header(ui, "MIDI");
+
+    // Channel (global, read-only)
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Channel");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                RichText::new(format!("{}", layout_state.global_midi_channel))
+                    .font(f_mono_med(12.0))
+                    .color(Color32::WHITE),
+            );
+        });
+    });
+
+    // Note
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Note");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let mut note = slot.midi_note as i32;
+            if ui
+                .add(egui::DragValue::new(&mut note).range(0..=127).speed(1.0))
+                .changed()
+            {
+                new_state.slots[slot_idx].midi_note = note.clamp(0, 127) as u8;
+                changed = true;
+            }
+        });
+    });
+
+    // ---- Sequencing ----
+    editor_section_header(ui, "Sequencing");
+    let master_length = params.pattern_length.value().clamp(1, 64) as usize;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Length");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            draw_track_length_control(
+                ui,
+                setter,
+                params,
+                params.lengths()[slot_idx],
+                slot_idx,
+                master_length,
+            );
+        });
     });
 
     if changed {
         PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
     }
-
-    // Per-track sequencing params kept out of the grid only where useful.
-    ui.add_space(16.0);
-    ui.label(
-        RichText::new("Sequencing")
-            .font(f_sans_med(10.5))
-            .color(INK3()),
-    );
-    let master_length = params.pattern_length.value().clamp(1, 64) as usize;
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            Vec2::new(70.0, 20.0),
-            egui::Label::new(RichText::new("Length").font(f_sans_med(11.0)).color(INK2())),
-        );
-        draw_track_length_control(
-            ui,
-            setter,
-            params,
-            params.lengths()[slot_idx],
-            slot_idx,
-            master_length,
-        );
-    });
 }
 
 pub fn apply_lane_layout_preset(
@@ -571,7 +556,7 @@ pub fn draw_sound_panel(
     let header_rect = ui
         .allocate_exact_size(Vec2::new(ui.available_width(), 42.0), egui::Sense::hover())
         .0;
-    ui.painter().rect_filled(header_rect, 0.0, PANEL());
+    ui.painter().rect_filled(header_rect, 0.0, PANEL_SKEUO_HEADER);
     ui.painter().hline(
         header_rect.x_range(),
         header_rect.bottom(),
@@ -585,7 +570,7 @@ pub fn draw_sound_panel(
             ui.horizontal_centered(|ui| {
                 ui.set_height(header_rect.height());
                 ui.label(
-                    RichText::new("Sound Editor")
+                    RichText::new("Lane Editor")
                         .font(f_sans_bold(13.0))
                         .color(Color32::WHITE),
                 );
@@ -607,55 +592,52 @@ pub fn draw_sound_panel(
         },
     );
 
+    // Mode toggle: two FLUSH tabs — full width, 50/50, no radius, hairline between,
+    // blue when active, plaque colour (lightens on hover) when inactive. The only
+    // segmented in the app without a keycap: it reads as two tabs at the edge.
     let tabs_rect = ui
-        .allocate_exact_size(Vec2::new(ui.available_width(), 45.0), egui::Sense::hover())
+        .allocate_exact_size(Vec2::new(ui.available_width(), 30.0), egui::Sense::hover())
         .0;
-    ui.painter().rect_filled(tabs_rect, 0.0, PANEL());
-    ui.painter().hline(
-        tabs_rect.x_range(),
-        tabs_rect.bottom(),
-        egui::Stroke::new(1.0, LINE()),
-    );
-    ui.allocate_new_ui(
-        egui::UiBuilder::new()
-            .max_rect(tabs_rect.shrink2(Vec2::new(12.0, 9.0)))
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-                // Two fixed tabs. The edited lane is chosen by clicking it in the
-                // grid (auto-edit), not through per-instrument tab buttons.
-                let tab_w = ((tabs_rect.width() - 24.0 - GAP_TIGHT) / 2.0).floor();
-                for (tab, label, hover) in [
-                    (
-                        SoundEditorTab::Sound,
-                        "Sound Editor",
-                        "Synthesis settings of the selected lane",
-                    ),
-                    (
-                        SoundEditorTab::Track,
-                        "Track",
-                        "Instrument type, MIDI note, routing, length",
-                    ),
-                ] {
-                    let selected = state.sound_editor_tab == tab;
-                    let btn = egui::Button::new(
-                        RichText::new(label)
-                            .monospace()
-                            .size(10.5)
-                            .color(if selected { Color32::WHITE } else { INK2() }),
-                    )
-                    .min_size(Vec2::new(tab_w, CTL_HEIGHT))
-                    .fill(if selected { BLUE() } else { PANEL2() })
-                    .stroke(egui::Stroke::new(1.0, if selected { BLUE() } else { LINE2() }))
-                    .corner_radius(RADIUS_CTL);
-                    if ui.add(btn).on_hover_text(hover).clicked() {
-                        state.sound_editor_tab = tab;
-                    }
-                }
-            });
-        },
-    );
+    let half = tabs_rect.width() * 0.5;
+    for (idx, (tab, label, hover_txt)) in [
+        (SoundEditorTab::Sound, "Sound", "Synthesis settings of the selected lane"),
+        (SoundEditorTab::Track, "Track", "Instrument type, MIDI note, routing, length"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let seg = egui::Rect::from_min_size(
+            egui::pos2(tabs_rect.left() + idx as f32 * half, tabs_rect.top()),
+            Vec2::new(half, tabs_rect.height()),
+        );
+        let selected = state.sound_editor_tab == tab;
+        let resp = ui
+            .interact(seg, ui.make_persistent_id(("lane_editor_tab", idx)), egui::Sense::click())
+            .on_hover_text(hover_txt);
+        let fill = if selected {
+            BLUE()
+        } else if resp.hovered() {
+            PANEL_SKEUO_HOVER
+        } else {
+            PANEL_SKEUO_HEADER
+        };
+        ui.painter().rect_filled(seg, 0.0, fill);
+        ui.painter().text(
+            seg.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            f_mono_med(10.5),
+            if selected { Color32::WHITE } else { INK2() },
+        );
+        if resp.clicked() {
+            state.sound_editor_tab = tab;
+        }
+    }
+    // Hairline between the two tabs + bottom border of the toggle band.
+    ui.painter()
+        .vline(tabs_rect.center().x, tabs_rect.y_range(), egui::Stroke::new(1.0, LINE()));
+    ui.painter()
+        .hline(tabs_rect.x_range(), tabs_rect.bottom(), egui::Stroke::new(1.0, LINE()));
 
     let inst = &sound_settings.instruments[state.selected_instrument];
     let (
@@ -863,10 +845,10 @@ pub fn draw_sound_panel(
             }
             ui.add(egui::Separator::default().spacing(8.0));
 
-            // Volume en tête (sans titre de section) — même largeur que les sections.
+            // Volume en tête (sans titre de section) — pleine largeur, comme les
+            // sections sans graphe.
             let vol_changed = ui
                 .scope(|ui| {
-                    ui.set_max_width(EDITOR_PARAMS_W);
                     draw_editor_slider_row(
                         ui,
                         "Volume",
@@ -928,7 +910,14 @@ pub fn draw_sound_panel(
                 .any(|d| d.field == crate::instrument_registry::StandardField::FilterEnvAmount);
             let has_graph = family == crate::instrument_registry::ParamFamily::Env
                 || (family == crate::instrument_registry::ParamFamily::Filter && has_filter_env);
-            let params_w = EDITOR_PARAMS_W;
+            // Graph sections keep a fixed params column so the ADSR/filter graph
+            // keeps its space; graph-less sections fill the panel (wide sliders,
+            // values/dropdowns/toggles flush right — like the mockup).
+            let params_w = if has_graph {
+                EDITOR_PARAMS_W
+            } else {
+                ui.available_width()
+            };
             ui.horizontal(|ui| {
                 // Left column: params (width-constrained so the graph keeps its space)
                 ui.vertical(|ui| {
@@ -1063,7 +1052,7 @@ pub fn draw_sound_panel(
                                 let type_names = ["None", "SoftClip", "Valve", "Transistor", "HardClip", "Tape"];
                                 let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
                                 editor_label(ui, def.label);
-                                if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
+                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
                             // Cymbal Noise Type: show select with names
@@ -1071,7 +1060,7 @@ pub fn draw_sound_panel(
                                 let type_names = ["White", "Pink", "Brown", "Blue"];
                                 let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
                                 editor_label(ui, def.label);
-                                if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
+                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
                             // Kick Click Type: show select with names
@@ -1079,7 +1068,7 @@ pub fn draw_sound_panel(
                                 let type_names = ["Soft", "Medium", "Hard"];
                                 let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
                                 editor_label(ui, def.label);
-                                if let (_, Some(idx)) = styled_select(ui, def.name, current_idx, &type_names, 146.0) {
+                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
                                 } else {
@@ -1116,7 +1105,10 @@ pub fn draw_sound_panel(
                                 ui.horizontal(|ui| {
                                     editor_label(ui, "Algorithm");
                                     let algo_names: Vec<&str> = algos.iter().map(|a| a.name).collect();
-                                    algo_combo(ui, setter, algo_param, &algo_names);
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| algo_combo(ui, setter, algo_param, &algo_names),
+                                    );
                                 });
                             }
                         }

@@ -88,7 +88,7 @@ pub fn draw_grid_v2(
 
             let row_w = ui.available_width();
             let grip_w = 14.0;
-            let name_w = 50.0;
+            let name_w = 46.0;
             let vol_w = 56.0;
             let mst_w = STEP_H * 3.0 + GAP_TIGHT * 2.0;
             let extra_w = 44.0;
@@ -292,9 +292,8 @@ fn draw_legacy_slot_lane_v2(
         ui.spacing_mut().item_spacing.x = gap;
         ui.set_height(LANE_H);
 
-        let grip_response = draw_seq_grip_v2(ui, grip_w, LANE_H)
-            .on_hover_cursor(egui::CursorIcon::Grab)
-            .on_hover_text("Drag to reorder lane");
+        let grip_response =
+            draw_seq_grip_v2(ui, grip_w, LANE_H).on_hover_cursor(egui::CursorIcon::Grab);
         if grip_response.is_pointer_button_down_on() || grip_response.drag_started() {
             state.lane_drag_source = Some(slot_idx);
             select_legacy_track(state, slot_idx);
@@ -316,8 +315,7 @@ fn draw_legacy_slot_lane_v2(
             };
             name.chars().take(6).collect::<String>()
         };
-        let name_response = draw_lane_name_v2(ui, name_w, selected, &slot_name)
-            .on_hover_text(crate::instrument_registry::INSTRUMENTS[voice_idx].full_name);
+        let name_response = draw_lane_name_v2(ui, name_w, selected, &slot_name);
         if name_response.clicked() {
             select_legacy_track(state, slot_idx);
         }
@@ -330,19 +328,18 @@ fn draw_legacy_slot_lane_v2(
         }
 
         name_response.context_menu(|ui| {
-            if ui.button("Copy Lane").clicked() {
+            use crate::ui::menus::{context_menu_button, context_menu_separator};
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.set_min_width(148.0);
+            ui.set_max_width(148.0);
+            if context_menu_button(ui, "Copy Lane", INK(), true).clicked() {
                 state.copy_lane(params, slot_idx, sound_settings, pattern, plock);
                 state.lane_clear_grid_confirm = None;
                 state.lane_delete_confirm = None;
                 ui.close_menu();
             }
-            if ui
-                .add_enabled(
-                    state.lane_clipboard.is_some(),
-                    egui::Button::new("Paste Lane"),
-                )
-                .clicked()
-            {
+            let can_paste = state.lane_clipboard.is_some();
+            if context_menu_button(ui, "Paste Lane", INK(), can_paste).clicked() && can_paste {
                 if state.paste_lane(setter, params, slot_idx, sound_settings, pattern, plock) {
                     // Flash visual feedback
                     state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
@@ -351,13 +348,7 @@ fn draw_legacy_slot_lane_v2(
                 state.lane_delete_confirm = None;
                 ui.close_menu();
             }
-            if ui
-                .add_enabled(
-                    state.lane_clipboard.is_some(),
-                    egui::Button::new("Paste Grid"),
-                )
-                .clicked()
-            {
+            if context_menu_button(ui, "Paste Grid", INK(), can_paste).clicked() && can_paste {
                 if state.paste_grid(params, slot_idx, pattern) {
                     // Flash visual feedback
                     state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
@@ -366,24 +357,20 @@ fn draw_legacy_slot_lane_v2(
                 state.lane_delete_confirm = None;
                 ui.close_menu();
             }
-            ui.separator();
+            context_menu_separator(ui);
             let confirm_clear_grid = state.lane_clear_grid_confirm == Some(slot_idx);
-            if ui
-                .button(
-                    RichText::new(if confirm_clear_grid {
-                        "Confirm Clear Lane?"
-                    } else {
-                        "Clear Lane"
-                    })
-                    .font(f_sans_med(11.0))
-                    .color(RED()),
-                )
-                .on_hover_text(if confirm_clear_grid {
-                    "Click again to clear this lane's steps, fusions and plocks"
-                } else {
-                    "Clear this lane's steps, fusions and plocks; keeps instrument, sound, routing and lane controls"
-                })
-                .clicked()
+            if context_menu_button(
+                ui,
+                if confirm_clear_grid { "Confirm Clear Lane?" } else { "Clear Lane" },
+                RED(),
+                true,
+            )
+            .on_hover_text(if confirm_clear_grid {
+                "Click again to clear this lane's steps, fusions and plocks"
+            } else {
+                "Clear this lane's steps, fusions and plocks; keeps instrument, sound, routing and lane controls"
+            })
+            .clicked()
             {
                 if confirm_clear_grid {
                     state.clear_lane(params, slot_idx, pattern, plock);
@@ -394,18 +381,14 @@ fn draw_legacy_slot_lane_v2(
                 }
             }
             let confirm_delete = state.lane_delete_confirm == Some(slot_idx);
-            if ui
-                .button(
-                    RichText::new(if confirm_delete {
-                        "Confirm Delete Lane?"
-                    } else {
-                        "Delete Lane"
-                    })
-                    .font(f_sans_med(11.0))
-                    .color(RED()),
-                )
-                .on_hover_text("Deactivate this lane; the slot becomes empty and can be reactivated later")
-                .clicked()
+            if context_menu_button(
+                ui,
+                if confirm_delete { "Confirm Delete Lane?" } else { "Delete Lane" },
+                RED(),
+                true,
+            )
+            .on_hover_text("Deactivate this lane; the slot becomes empty and can be reactivated later")
+            .clicked()
             {
                 if confirm_delete {
                     deactivate_slot(params, state, slot_idx);
@@ -415,8 +398,7 @@ fn draw_legacy_slot_lane_v2(
                     state.lane_clear_grid_confirm = None;
                 }
             }
-            if ui
-                .button(RichText::new("Randomize Lane").font(f_sans_med(11.0)))
+            if context_menu_button(ui, "Randomize Lane", INK(), true)
                 .on_hover_text("Fill this lane with random steps (30% density); clears fusions and plocks")
                 .clicked()
             {
@@ -431,7 +413,7 @@ fn draw_legacy_slot_lane_v2(
         let inst_state = &sound_settings.instruments[slot_idx];
         let mut lane_vol = f32::from_bits(inst_state.volume.load(Ordering::Relaxed));
         let lane_vol_response =
-            draw_mini_value_slider(ui, &mut lane_vol, 0.0, 2.0, 1.0, vol_w, BLUE(), "Lane Volume");
+            draw_mini_value_slider(ui, &mut lane_vol, 0.0, 2.0, 1.0, vol_w, BLUE(), "");
         if lane_vol_response.clicked() || lane_vol_response.dragged() {
             select_legacy_track(state, slot_idx);
         }
@@ -449,9 +431,9 @@ fn draw_legacy_slot_lane_v2(
                 setter,
                 row.mute,
                 "M",
-                AMBER(),
-                MUTE_FILL(),
-                "Mute",
+                RED(),
+                Color32::WHITE,
+                "",
             )
             .clicked()
                 && params.auto_edit.value()
@@ -465,7 +447,7 @@ fn draw_legacy_slot_lane_v2(
                 "S",
                 GREEN(),
                 SOLO_FILL(),
-                "Solo",
+                "",
             )
             .clicked()
                 && params.auto_edit.value()
@@ -477,8 +459,10 @@ fn draw_legacy_slot_lane_v2(
                 state.slot_flash_until[slot_idx] = now + 0.10;
             }
             let is_flashing = now < state.slot_flash_until[slot_idx];
-            if draw_tag_button_v2(ui, "T", AMBER(), Color32::BLACK, is_flashing, "Test").clicked() {
+            if draw_tag_button_v2(ui, "T", AMBER(), Color32::BLACK, is_flashing, "").clicked() {
                 voice_test_triggers[slot_idx].store(true, Ordering::Release);
+                // Flash amber on click too (not just on incoming external MIDI).
+                state.slot_flash_until[slot_idx] = now + 0.10;
                 if params.auto_edit.value() {
                     select_legacy_track(state, slot_idx);
                 }
@@ -543,8 +527,10 @@ fn draw_legacy_slot_lane_v2(
                 let is_fusion_mid = fusion_group.is_some() && !is_fusion_start;
 
                 let active = !beyond_len && pattern.is_active(source_step, slot_idx);
+                // Inside a fused group, the playhead marker lives on the START
+                // cell only — it rings the whole fused block, not the steps.
                 let is_current = if let Some(group) = fusion_group {
-                    group.contains(play_step) && play_step == global_step
+                    group.contains(play_step) && group.is_start(global_step)
                 } else {
                     play_step == global_step
                 };
@@ -779,7 +765,7 @@ fn draw_empty_slot_lane_v2(
     setter: &ParamSetter,
     params: &DrumFlashParams,
     slot_idx: usize,
-    page_offset: usize,
+    _page_offset: usize,
     grip_w: f32,
     name_w: f32,
     vol_w: f32,
@@ -797,8 +783,7 @@ fn draw_empty_slot_lane_v2(
         ui.set_height(LANE_H);
 
         draw_seq_grip_v2(ui, grip_w, LANE_H);
-        let name_response = draw_empty_lane_name_v2(ui, name_w, slot_idx + 1)
-            .on_hover_text("Choose an instrument for this slot");
+        let name_response = draw_empty_lane_name_v2(ui, name_w, slot_idx + 1);
         let add_click_pos = if name_response.clicked() {
             name_response.interact_pointer_pos()
         } else {
@@ -806,12 +791,12 @@ fn draw_empty_slot_lane_v2(
         };
 
         name_response.context_menu(|ui| {
-            if ui
-                .add_enabled(
-                    state.lane_clipboard.is_some(),
-                    egui::Button::new("Paste Lane"),
-                )
-                .clicked()
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.set_min_width(118.0);
+            ui.set_max_width(118.0);
+            let can_paste = state.lane_clipboard.is_some();
+            if crate::ui::menus::context_menu_button(ui, "Paste Lane", INK(), can_paste).clicked()
+                && can_paste
             {
                 if state.paste_lane(setter, params, slot_idx, sound_settings, pattern, plock) {
                     // Flash visual feedback
@@ -825,42 +810,27 @@ fn draw_empty_slot_lane_v2(
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-            for local_step in 0..16 {
-                let (fill, stroke) = step_colors_v2(
-                    ui.ctx(),
-                    false,
-                    local_step,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    true,
-                    false,
-                    false,
-                    false,
-                    false,
-                );
-                let step = page_offset + local_step + 1;
+            for _local_step in 0..16 {
+                // Empty lane: flat near-invisible cells — no dashed outline
+                // (unlike the out-of-length cells, which keep their dashes).
                 draw_step_cell_v2(
                     ui,
                     Vec2::new(cell_w, STEP_H),
-                    fill,
-                    stroke,
+                    CELL_DISABLED(),
+                    egui::Stroke::new(1.0, Color32::TRANSPARENT),
                     "",
                     false,
                     false,
                     false,
                     None,
                     true,
-                )
-                .on_hover_text(format!("Empty slot - step {}", step));
+                );
             }
         });
 
-        draw_empty_lane_chip_v2(ui, extra_w, "--");
-        draw_empty_lane_chip_v2(ui, extra_w, "--");
-        draw_empty_lane_chip_v2(ui, extra_w, "--");
+        draw_empty_lane_chip_v2(ui, extra_w, "");
+        draw_empty_lane_chip_v2(ui, extra_w, "");
+        draw_empty_lane_chip_v2(ui, extra_w, "");
         add_click_pos
     });
     (inner.response, inner.inner)
@@ -868,12 +838,14 @@ fn draw_empty_slot_lane_v2(
 
 fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
-    let fill = if response.hovered() { P_HOVER() } else { PANEL2() };
+    // Discreet at rest (near-background), readable on hover — the `+N` is the
+    // only affordance of an empty lane.
+    let fill = if response.hovered() { P_HOVER() } else { BG() };
     ui.painter().rect_filled(rect, RADIUS_PAD, fill);
     ui.painter().rect_stroke(
         rect,
         RADIUS_PAD,
-        egui::Stroke::new(1.0, LINE2()),
+        egui::Stroke::new(1.0, LINE()),
         egui::StrokeKind::Inside,
     );
     ui.painter().text(
@@ -888,13 +860,8 @@ fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) ->
 
 fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::hover());
+    // Borderless dark boxes: they only reserve the column space.
     ui.painter().rect_filled(rect, RADIUS_CTL, BG());
-    ui.painter().rect_stroke(
-        rect,
-        RADIUS_CTL,
-        egui::Stroke::new(1.0, LINE()),
-        egui::StrokeKind::Inside,
-    );
     if !label.is_empty() {
         ui.painter().text(
             rect.center(),
@@ -1311,13 +1278,9 @@ fn draw_page_bar_v2(
                 f_mono_med(10.5),
             );
             if play_page == page {
-                let led = response.rect.center_bottom() + egui::vec2(0.0, 6.0);
-                ui.painter().circle_filled(
-                    led,
-                    5.0,
-                    Color32::from_rgba_unmultiplied(248, 113, 113, 45),
-                );
-                ui.painter().circle_filled(led, 2.5, RED());
+                // Red play LED incrusted in the button's top-right corner.
+                let r = response.rect;
+                crate::ui::skeuo::play_led(ui.painter(), egui::pos2(r.right() - 7.0, r.top() + 7.0), 2.6);
             }
             if response.clicked() {
                 state.current_page = page;
@@ -1537,37 +1500,7 @@ fn draw_seq_grip_v2(ui: &mut egui::Ui, width: f32, height: f32) -> egui::Respons
 
 fn draw_lane_name_v2(ui: &mut egui::Ui, width: f32, selected: bool, label: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
-    let fill = if selected {
-        BLUE()
-    } else if response.hovered() {
-        P_HOVER()
-    } else {
-        PANEL2()
-    };
-    ui.painter().rect_filled(rect, RADIUS_PAD, fill);
-    // Borderless at rest; only the selected lane gets a blue outline.
-    if selected {
-        ui.painter().rect_stroke(
-            rect,
-            RADIUS_PAD,
-            egui::Stroke::new(1.0, BLUE()),
-            egui::StrokeKind::Inside,
-        );
-    }
-    let text_color = if selected {
-        Color32::WHITE
-    } else if response.hovered() {
-        INK()
-    } else {
-        INK2()
-    };
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        label,
-        f_mono_sb(11.0),
-        text_color,
-    );
+    crate::ui::skeuo::lane_name(ui, rect, label, selected);
     response
 }
 
@@ -1580,22 +1513,7 @@ fn draw_tag_button_v2(
     tooltip: &str,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(TAG_SIZE), egui::Sense::click());
-    let fill = if active { color } else { PANEL2() };
-    let text = if active { text_on } else { FAINT() };
-    ui.painter().rect_filled(rect, RADIUS_TAG, fill);
-    ui.painter().rect_stroke(
-        rect,
-        RADIUS_TAG,
-        egui::Stroke::new(1.0, if active { color } else { LINE2() }),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        label,
-        f_mono_sb(9.0),
-        text,
-    );
+    crate::ui::skeuo::tag(ui, rect, label, active, color, text_on);
     if tooltip.is_empty() {
         response
     } else {
@@ -1668,8 +1586,9 @@ fn draw_step_cell_v2(
                 draw_dashed_rect(ui.painter(), block_rect.shrink(0.5));
             }
         } else {
-            // Every pad's look lives in one place: `skeuo::pad`.
-            crate::ui::skeuo::pad(ui, block_rect, fill);
+            // Step cell = designer baked bitmap atlas (state + fusion length,
+            // bleed-corrected). Overlays (playhead ring, pulse count) drawn below.
+            crate::ui::pads::draw_pad(ui, block_rect, fill, fusion_span, enabled);
             // Hover: a subtle white outline that fades in (state-agnostic, so it
             // never tints an orange/red pad blue).
             if hover > 0.01 {
@@ -1684,13 +1603,19 @@ fn draw_step_cell_v2(
     }
 
     // Playhead: an inset white ring drawn ON TOP of the state border, with a
-    // subtle pulse so the playing column reads at a glance.
+    // subtle pulse so the playing column reads at a glance. On a fused cell the
+    // ring wraps the WHOLE fusion block, not the individual start cell.
     if playhead {
         let time = ui.ctx().input(|i| i.time) as f32;
         let pulse = ((time * 2.5).sin() + 1.0) * 0.5;
         let alpha = 120 + (pulse * 80.0) as u8;
+        let ring_rect = if fusion_span.is_some() {
+            block_rect
+        } else {
+            rect
+        };
         ui.painter().rect_stroke(
-            rect.shrink(0.75),
+            ring_rect.shrink(0.75),
             egui::epaint::CornerRadius::same(3),
             egui::Stroke::new(1.5, white_a(alpha)),
             egui::StrokeKind::Inside,
@@ -2083,20 +2008,42 @@ fn finish_fusion_editing_for_ui(pattern_for_ui: &SharedPattern, state: &mut Edit
     state.fusion_editing = None;
 }
 
-fn draw_fusion_idle_box_contents(ui: &mut egui::Ui, fusion_mode_active: bool) {
-    ui.label(RichText::new("Fusion").strong().size(11.0));
-    ui.separator();
+fn fusion_text_w(ui: &egui::Ui, s: &str, font: egui::FontId) -> f32 {
+    ui.fonts(|f| f.layout_no_wrap(s.to_string(), font, Color32::WHITE).size().x)
+}
 
-    if fusion_mode_active {
-        ui.label(
-            RichText::new("Select 2 cells")
-                .strong()
-                .size(11.0)
-                .color(BLUE()),
-        );
-    } else {
-        ui.label(RichText::new("Maj for fusion mode").size(11.0).color(INK2()));
+/// Raised sub-panel background for the fusion strip (relief + border + top liseré).
+fn fusion_strip_bg(ui: &egui::Ui, rect: egui::Rect) {
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, 6.0, rgb(38, 39, 44));
+    grad3(&p, rect.shrink(2.5), rgb(45, 46, 51), rgb(40, 41, 46), rgb(37, 38, 43), 0.55);
+    p.rect_stroke(rect, 6.0, egui::Stroke::new(1.0, rgb(20, 20, 24)), egui::StrokeKind::Inside);
+    plateau_line(
+        &p,
+        egui::Rect::from_min_size(rect.min + Vec2::new(10.0, 1.5), Vec2::new((rect.width() - 20.0).max(0.0), 1.0)),
+        (255, 255, 255),
+        16,
+    );
+}
+
+/// Compact keycap button for the fusion strip (h19, so it never touches the strip
+/// edges). Returns the click response.
+fn fusion_key(
+    ui: &mut egui::Ui,
+    w: f32,
+    label: &str,
+    state: KeycapState,
+    tc: Color32,
+    sense: egui::Sense,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 19.0), sense);
+    crate::ui::skeuo::keycap(ui, rect, state);
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(rect, 5.0, Color32::from_black_alpha(60));
     }
+    ui.painter()
+        .text(rect.center(), egui::Align2::CENTER_CENTER, label, f_sans_sb(11.0), tc);
+    resp
 }
 
 fn current_field_value_for_fusion(
@@ -2187,119 +2134,120 @@ fn draw_fusion_edit_box(
     fusion_mode_active: bool,
 ) -> egui::Rect {
     let box_size = Vec2::new(380.0, 28.0);
-
-    // Allocate the exact outer size so the parent row never grows, even if the
-    // edit-content widgets are slightly taller than the idle-content widgets.
+    // Fixed outer size so the parent row never grows between idle/edit states.
     let (rect, response) = ui.allocate_exact_size(box_size, egui::Sense::hover());
-    ui.allocate_new_ui(
-        egui::UiBuilder::new()
-            .max_rect(rect)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        |ui| {
-            egui::Frame::new()
-                .fill(PANEL3())
-                .stroke(egui::Stroke::new(1.0, LINE2()))
-                .corner_radius(5.0)
-                .inner_margin(3.0)
-                .show(ui, |ui| {
-                    let inner_size = Vec2::new(box_size.x - 6.0, box_size.y - 6.0);
-                    ui.set_min_size(inner_size);
-                    ui.set_max_size(inner_size);
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        if let Some((instrument, index, group)) =
-                            edited_fusion_for_ui(pattern_for_ui, state)
-                        {
-                            ui.label(
-                                RichText::new(format!(
-                                    "F {}-{}",
-                                    group.start_cell + 1,
-                                    group.end_cell + 1
-                                ))
-                                .strong()
-                                .size(11.0),
-                            );
-                            ui.label(RichText::new("Steps:").size(11.0));
+    fusion_strip_bg(ui, rect);
 
-                            let step_drag = egui::DragValue::new(&mut state.fusion_edit_steps)
-                                .range(1..=64)
-                                .speed(1.0)
-                                .fixed_decimals(0);
-                            let step_response = ui.add_sized(Vec2::new(40.0, 18.0), step_drag);
-                            if state.fusion_edit_focus_request {
-                                state.fusion_edit_focus_request = false;
-                                step_response.request_focus();
-                            }
-                            if step_response.lost_focus() {
-                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                                if let Some(group) = new_fusions.get_mut(index) {
-                                    group.step_count = state.fusion_edit_steps;
-                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
-                                }
-                                finish_fusion_editing_for_ui(pattern_for_ui, state);
-                            }
+    let font = f_sans_med(11.0);
+    let g = 8.0_f32;
 
-                            // Morph targets display (compact)
-                            if group.morph_count > 0 {
-                                let morphable = crate::instrument_registry::morphable_fields(
-                                    schema_voice_idx(params, instrument),
-                                );
-                                let names: Vec<&str> = group.morph_targets
-                                    [..group.morph_count as usize]
-                                    .iter()
-                                    .map(|t| {
-                                        morphable
-                                            .iter()
-                                            .find(|f| f.field_index == t.field as usize)
-                                            .map(|f| f.label)
-                                            .unwrap_or("?")
-                                    })
-                                    .collect();
-                                ui.label(
-                                    RichText::new(format!("M: {}", names.join(", ")))
-                                        .size(10.0)
-                                        .color(INK2()),
-                                );
-                            } else {
-                                ui.label(RichText::new("M: Off").size(10.0).color(INK2()));
-                            }
+    if let Some((instrument, index, group)) = edited_fusion_for_ui(pattern_for_ui, state) {
+        let range = format!("Fusion {}–{}", group.start_cell + 1, group.end_cell + 1);
+        let morph = if group.morph_count > 0 {
+            let morphable =
+                crate::instrument_registry::morphable_fields(schema_voice_idx(params, instrument));
+            let names: Vec<&str> = group.morph_targets[..group.morph_count as usize]
+                .iter()
+                .map(|t| {
+                    morphable
+                        .iter()
+                        .find(|f| f.field_index == t.field as usize)
+                        .map(|f| f.label)
+                        .unwrap_or("?")
+                })
+                .collect();
+            format!("Morph: {}", names.join(", "))
+        } else {
+            "Morph: Off".to_string()
+        };
 
-                            let del_clicked = ui
-                                .allocate_ui_with_layout(
-                                    Vec2::new(32.0, 18.0),
-                                    egui::Layout::left_to_right(egui::Align::Center),
-                                    |ui| ui.add(egui::Button::new("Del").small()),
-                                )
-                                .inner
-                                .clicked();
-                            if del_clicked {
-                                let mut new_fusions = pattern_for_ui.load_fusions(instrument);
-                                if index < new_fusions.len() {
-                                    new_fusions.remove(index);
-                                    pattern_for_ui.store_fusions(instrument, &new_fusions);
-                                }
-                                state.fusion_editing = None;
-                            }
-                            let close_clicked = ui
-                                .allocate_ui_with_layout(
-                                    Vec2::new(22.0, 18.0),
-                                    egui::Layout::left_to_right(egui::Align::Center),
-                                    |ui| ui.add(egui::Button::new("×").small()),
-                                )
-                                .inner
-                                .clicked();
-                            if close_clicked {
-                                finish_fusion_editing_for_ui(pattern_for_ui, state);
-                            }
-                        } else {
-                            if state.fusion_editing.is_some() {
-                                state.fusion_editing = None;
-                            }
-                            draw_fusion_idle_box_contents(ui, fusion_mode_active);
-                        }
-                    });
-                });
-        },
-    );
+        let (fw, delw, xw) = (40.0_f32, 44.0_f32, 28.0_f32);
+        let content = fusion_text_w(ui, &range, font.clone())
+            + g + fusion_text_w(ui, "Steps", font.clone())
+            + g + fw
+            + g + fusion_text_w(ui, &morph, font.clone())
+            + g + delw
+            + g + xw;
+        let lead = ((box_size.x - content) * 0.5).max(6.0);
+
+        ui.allocate_new_ui(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.add_space(lead);
+                ui.label(RichText::new(range.as_str()).font(font.clone()).color(Color32::WHITE));
+                ui.add_space(g);
+                ui.label(RichText::new("Steps").font(font.clone()).color(INK3()));
+                ui.add_space(g);
+                let step_drag = egui::DragValue::new(&mut state.fusion_edit_steps)
+                    .range(1..=64)
+                    .speed(1.0)
+                    .fixed_decimals(0);
+                let step_response = ui.add_sized(Vec2::new(fw, 18.0), step_drag);
+                if state.fusion_edit_focus_request {
+                    state.fusion_edit_focus_request = false;
+                    step_response.request_focus();
+                }
+                if step_response.lost_focus() {
+                    let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                    if let Some(group) = new_fusions.get_mut(index) {
+                        group.step_count = state.fusion_edit_steps;
+                        pattern_for_ui.store_fusions(instrument, &new_fusions);
+                    }
+                    finish_fusion_editing_for_ui(pattern_for_ui, state);
+                }
+                ui.add_space(g);
+                ui.label(RichText::new(morph.as_str()).font(font.clone()).color(INK2()));
+                ui.add_space(g);
+                if fusion_key(ui, delw, "Del", KeycapState::Rest, rgb(230, 120, 110), egui::Sense::click())
+                    .clicked()
+                {
+                    let mut new_fusions = pattern_for_ui.load_fusions(instrument);
+                    if index < new_fusions.len() {
+                        new_fusions.remove(index);
+                        pattern_for_ui.store_fusions(instrument, &new_fusions);
+                    }
+                    state.fusion_editing = None;
+                }
+                ui.add_space(g);
+                if fusion_key(ui, xw, "×", KeycapState::Rest, INK(), egui::Sense::click()).clicked() {
+                    finish_fusion_editing_for_ui(pattern_for_ui, state);
+                }
+            },
+        );
+    } else {
+        if state.fusion_editing.is_some() {
+            state.fusion_editing = None;
+        }
+        let mono = f_mono_med(10.5);
+        let hint = if fusion_mode_active {
+            "Sélectionne 2 cellules"
+        } else {
+            "+ glisser pour fusionner"
+        };
+        let majw = 40.0_f32;
+        let content =
+            fusion_text_w(ui, "FUSION", mono.clone()) + g + majw + g + fusion_text_w(ui, hint, font.clone());
+        let lead = ((box_size.x - content) * 0.5).max(6.0);
+        let hint_color = if fusion_mode_active { BLUE() } else { INK3() };
+
+        ui.allocate_new_ui(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.add_space(lead);
+                ui.label(RichText::new("FUSION").font(mono.clone()).color(INK3()));
+                ui.add_space(g);
+                fusion_key(ui, majw, "Maj", KeycapState::PressedAmber, rgb(255, 240, 214), egui::Sense::hover());
+                ui.add_space(g);
+                ui.label(RichText::new(hint).font(font.clone()).color(hint_color));
+            },
+        );
+    }
 
     response.rect
 }

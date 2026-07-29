@@ -177,7 +177,8 @@ impl Voice for HiHatVoice {
         self.filter
             .set_cutoff(modulated_cutoff.max(100.0), self.sample_rate);
 
-        let noise = self.noise.next();
+        let raw_noise = self.noise.next();
+        let noise = self.saturation.process_at(true, raw_noise);
         let peaked = self.peaking.process(noise);
         let filtered = self.filter.process(peaked);
 
@@ -187,7 +188,12 @@ impl Voice for HiHatVoice {
             * SHIMMER_GAIN;
         let body = filtered + shimmer;
 
-        let output = body * env * self.settings.volume * self.analog_drift.level_multiplier;
+        // Saturation was never wired on HiHat — it now is. Volume stays
+        // post-saturation: the knob sets the final level, not the drive.
+        let output = self.saturation.process_at(false, body)
+            * env
+            * self.analog_drift.level_multiplier
+            * self.settings.volume;
 
         // Stop when silent
         if !self.envelope.is_active() {
@@ -217,8 +223,10 @@ impl Voice for HiHatVoice {
         self.filter.set_cutoff(cutoff, self.sample_rate);
         self.filter_r.set_cutoff(cutoff, self.sample_rate);
 
-        let noise_l = self.noise.next();
-        let noise_r = self.noise_r.next();
+        let raw_l = self.noise.next();
+        let raw_r = self.noise_r.next();
+        let noise_l = self.saturation.process_at(true, raw_l);
+        let noise_r = self.saturation.process_at(true, raw_r);
         let peaked_l = self.peaking.process(noise_l);
         let peaked_r = self.peaking_r.process(noise_r);
         let filtered_l = self.filter.process(peaked_l);
@@ -239,10 +247,12 @@ impl Voice for HiHatVoice {
             return (0.0, 0.0);
         }
 
-        let vol = env * self.settings.volume * self.analog_drift.level_multiplier;
+        let vol = env * self.analog_drift.level_multiplier * self.settings.volume;
         (
-            self.dc_block_l.process(body_l * vol),
-            self.dc_block_r.process(body_r * vol),
+            self.dc_block_l
+                .process(self.saturation.process_at(false, body_l) * vol),
+            self.dc_block_r
+                .process(self.saturation.process_at(false, body_r) * vol),
         )
     }
 
@@ -395,6 +405,40 @@ mod tests {
 
         let sample = hihat.process_sample();
         assert!(sample.abs() > 0.0);
+    }
+
+    /// Regression guard: HiHat saturation settings were stored and shown in
+    /// the UI but never applied to the audio path. Heavy saturation must
+    /// audibly change the rendered output.
+    #[test]
+    fn test_hihat_saturation_is_wired() {
+        let sr = 44100.0;
+        let render = |sat_on: bool| -> Vec<f32> {
+            let mut s = HiHatSettings::from(VoiceSettings::hihat());
+            s.analog = 0.0; // deterministic
+            if sat_on {
+                s.saturation_type = 4; // HardClip — the most obvious
+                s.saturation_amount = 1.0;
+                s.saturation_mix = 1.0;
+                s.saturation_output_gain = 1.0;
+            }
+            let mut hihat = HiHatVoice::new(sr, s);
+            hihat.set_settings(s.into());
+            hihat.trigger();
+            (0..2000).map(|_| hihat.process_sample()).collect()
+        };
+        let dry = render(false);
+        let wet = render(true);
+        let peak = dry.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        assert!(peak > 0.05, "hihat should not be silent");
+        let max_diff = dry
+            .iter()
+            .zip(wet.iter())
+            .fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
+        assert!(
+            max_diff > 0.01,
+            "saturation has no effect on HiHat (max diff {max_diff})"
+        );
     }
 
     #[test]

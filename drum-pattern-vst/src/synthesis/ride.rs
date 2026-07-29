@@ -125,9 +125,10 @@ impl Voice for RideVoice {
 
         // Direct mono processing without calling stereo version
         let metallic = self.osc1.next() * 0.5 + self.osc2.next() * 0.3 + self.osc3.next() * 0.2;
-        let raw = metallic + self.noise.next() * 0.4;
+        let noise = self.noise.next();
+        let raw = self.saturation.process_at(true, metallic + noise * 0.4);
         let filtered = self.filter.process(raw);
-        self.saturation.process(filtered)
+        self.saturation.process_at(false, filtered)
             * env
             * self.settings.volume
             * self.analog_drift.level_multiplier
@@ -169,12 +170,14 @@ impl Voice for RideVoice {
             }
         };
 
-        let filtered_l = self.filter.process(raw_l);
-        let filtered_r = self.filter_r.process(raw_r);
+        let filtered_l = self.filter.process(self.saturation.process_at(true, raw_l));
+        let filtered_r = self
+            .filter_r
+            .process(self.saturation.process_at(true, raw_r));
         let vol = env * self.settings.volume * self.analog_drift.level_multiplier;
         (
-            self.saturation.process(filtered_l) * vol,
-            self.saturation.process(filtered_r) * vol,
+            self.saturation.process_at(false, filtered_l) * vol,
+            self.saturation.process_at(false, filtered_r) * vol,
         )
     }
 

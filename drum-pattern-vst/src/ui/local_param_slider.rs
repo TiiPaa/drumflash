@@ -144,36 +144,19 @@ impl<'a> Widget for LocalParamSlider<'a> {
             response.mark_changed();
         }
 
-        // Draw the slider
+        // Draw the slider — shared skeuo track renderer, same look as every
+        // other slider in the plugin (editor rows, lane minis, header).
         if ui.is_rect_visible(response.rect) {
-            // Background
-            ui.painter()
-                .rect_filled(response.rect, 0.0, ui.visuals().widgets.inactive.bg_fill);
-
-            // Filled portion
-            let filled_proportion = self.normalized_value();
-            if filled_proportion > 0.0 {
-                let mut filled_rect = response.rect;
-                filled_rect.set_width(response.rect.width() * filled_proportion);
-                let filled_bg = if response.dragged() {
-                    // Slightly brighter when dragging
-                    let mut hsv =
-                        egui::epaint::Hsva::from(egui::Rgba::from(ui.visuals().selection.bg_fill));
-                    hsv.v += 0.1;
-                    hsv.a = 1.0;
-                    egui::Color32::from(hsv)
-                } else {
-                    ui.visuals().selection.bg_fill
-                };
-                ui.painter().rect_filled(filled_rect, 0.0, filled_bg);
-            }
-
-            // Border
-            ui.painter().rect_stroke(
-                response.rect,
-                0.0,
-                egui::Stroke::new(1.0, ui.visuals().widgets.active.bg_fill),
-                egui::StrokeKind::Middle,
+            let track = egui::Rect::from_center_size(
+                response.rect.center(),
+                egui::vec2(response.rect.width(), 6.0),
+            );
+            crate::ui::skeuo::slider_track(
+                ui,
+                track,
+                self.normalized_value(),
+                crate::ui::theme::BLUE(),
+                false,
             );
         }
 

@@ -29,7 +29,7 @@ use pattern_bank::SONG_BLOCKS;
 use plock::{PersistentPlockState, PersistentSequencerPlockState};
 use sequencer::{pattern::PersistentPattern, Pattern, Sequencer, SharedPattern};
 use sound_settings::{PersistentSoundSettings, SoundSettingsState};
-use synthesis::{DrumSynthesizer, DrumVoice};
+use synthesis::DrumSynthesizer;
 
 const VST3_CLASS_ID: [u8; 16] = *b"DrumFlashPlugin1";
 pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
@@ -443,6 +443,8 @@ pub struct DrumFlashParams {
     pub bassdrum808_saturation_mix: FloatParam,
     #[id = "b8_sat_out"]
     pub bassdrum808_saturation_output_gain: FloatParam,
+    #[id = "b8_sat_pre"]
+    pub bassdrum808_saturation_pre_filter: FloatParam,
 
     #[id = "mute_kick"]
     pub mute_kick: BoolParam,
@@ -1200,6 +1202,13 @@ impl Default for DrumFlashParams {
                 FloatRange::Linear { min: 0.5, max: 2.0 },
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
+            bassdrum808_saturation_pre_filter: FloatParam::new(
+                "808 Saturation Pre-Filter",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_smoother(SmoothingStyle::Linear(10.0))
+            .with_step_size(1.0),
 
             mute_kick: BoolParam::new("Mute Kick", false),
             mute_snare: BoolParam::new("Mute Snare", false),
@@ -1382,7 +1391,9 @@ impl Default for DrumFlashParams {
             )
             .with_smoother(SmoothingStyle::Linear(10.0)),
 
-            hihat_chokes_oh: BoolParam::new("HiHat Chokes OpenHH", true),
+            // Legacy global HH→OH choke, replaced by per-slot choke groups
+            // (Track tab). Kept declared (hidden) so old sessions still load.
+            hihat_chokes_oh: BoolParam::new("HiHat Chokes OpenHH", true).hide(),
             auto_edit: BoolParam::new("Auto Edit", true),
 
             clap_echo: FloatParam::new("Clap Echo", 1.0, FloatRange::Linear { min: 0.0, max: 3.0 })
@@ -1836,6 +1847,7 @@ impl DrumFlashParams {
             (11, 5) => Some(&self.bassdrum808_saturation_amount),
             (11, 6) => Some(&self.bassdrum808_saturation_mix),
             (11, 7) => Some(&self.bassdrum808_saturation_output_gain),
+            (11, 8) => Some(&self.bassdrum808_saturation_pre_filter),
             (12, 0) => Some(&self.perc1_sweep),
             (12, 1) => Some(&self.perc1_speed),
             (12, 2) => Some(&self.perc1_bite),
@@ -1909,6 +1921,25 @@ impl Default for DrumFlashVst {
         };
         plugin.sequencer.play();
         plugin
+    }
+}
+
+/// Silence every other active slot sharing `slot_idx`'s choke group.
+/// Generalizes the old HH→OH choke to any instrument, driven by the per-slot
+/// `choke_group` (0 = none) set in the Track tab. Lock-free, audio-thread safe.
+fn apply_choke_groups(
+    synthesizer: &mut synthesis::DrumSynthesizer,
+    layout: &track::AtomicTrackLayout,
+    slot_idx: usize,
+) {
+    let group = layout.choke_group_for_slot(slot_idx);
+    if group == 0 {
+        return;
+    }
+    for s in 0..track::MAX_TRACKS {
+        if s != slot_idx && layout.is_active(s) && layout.choke_group_for_slot(s) == group {
+            synthesizer.reset_voice(s);
+        }
     }
 }
 
@@ -2224,7 +2255,6 @@ impl DrumFlashVst {
         _step: u32,
         sample_idx: usize,
         context: &mut impl ProcessContext<Self>,
-        hihat_chokes_oh: bool,
         hard: bool,
         settings: synthesis::VoiceSettings,
     ) {
@@ -2237,15 +2267,7 @@ impl DrumFlashVst {
         } else {
             self.synthesizer.trigger(slot_idx, velocity);
         }
-        if hihat_chokes_oh && voice_idx == 2 {
-            // Open hi-hat lives at the slot currently mapped to DrumVoice::OpenHiHat.
-            // Reset that synthesizer slot rather than a hard-coded index.
-            if let Some(oh_slot) = (0..crate::track::MAX_TRACKS)
-                .find(|&s| self.sequencer.slot_voices()[s] == Some(DrumVoice::OpenHiHat as usize))
-            {
-                self.synthesizer.reset_voice(oh_slot);
-            }
-        }
+        apply_choke_groups(&mut self.synthesizer, &self.params.track_layout.state, slot_idx);
         let (note, channel) = self.resolve_midi_output_for_slot(slot_idx);
         context.send_event(NoteEvent::NoteOn {
             timing: sample_idx as u32,
@@ -2539,9 +2561,6 @@ impl Plugin for DrumFlashVst {
         // Sync fusions from pattern to sequencer without allocating in the audio thread.
         self.sequencer.sync_fusions_from_pattern();
 
-        // Hi-hat chokes open hi-hat
-        let hihat_chokes_oh = self.params.hihat_chokes_oh.value();
-
         // Snapshot the active track layout and propagate it to the sequencer.
         let mut slot_voices = [None; crate::track::MAX_TRACKS];
         for slot in 0..crate::track::MAX_TRACKS {
@@ -2681,7 +2700,6 @@ impl Plugin for DrumFlashVst {
                         step,
                         sample_idx,
                         context,
-                        hihat_chokes_oh,
                         hard,
                         settings,
                     );
@@ -2823,7 +2841,6 @@ impl Plugin for DrumFlashVst {
                                         step_for_trigger,
                                         sample_idx,
                                         context,
-                                        hihat_chokes_oh,
                                         false,
                                         settings,
                                     );
@@ -2850,7 +2867,6 @@ impl Plugin for DrumFlashVst {
                             step_for_trigger,
                             sample_idx,
                             context,
-                            hihat_chokes_oh,
                             false,
                             base_settings,
                         );
@@ -2899,13 +2915,11 @@ impl Plugin for DrumFlashVst {
                             };
                             self.synthesizer.set_voice_settings(slot_idx, settings);
                             self.synthesizer.trigger(slot_idx, velocity);
-                            if hihat_chokes_oh && voice_idx == 2 {
-                                if let Some(oh_slot) = (0..crate::track::MAX_TRACKS).find(|&s| {
-                                    slot_voices[s] == Some(DrumVoice::OpenHiHat as usize)
-                                }) {
-                                    self.synthesizer.reset_voice(oh_slot);
-                                }
-                            }
+                            apply_choke_groups(
+                                &mut self.synthesizer,
+                                &self.params.track_layout.state,
+                                slot_idx,
+                            );
                             // Forward the MIDI event to the output on the global
                             // MIDI channel. The note itself is preserved from the
                             // incoming event.
@@ -3580,6 +3594,59 @@ mod tests {
     }
 
     #[test]
+    fn choke_group_silences_same_group_slots() {
+        use crate::track::{
+            AtomicTrackLayout, TrackInstrumentKind, TrackLayoutState, TrackSlot,
+        };
+
+        let mut layout = TrackLayoutState::empty_layout();
+        layout.slots[0] = TrackSlot::active_with_kind(TrackInstrumentKind::HiHat);
+        layout.slots[1] = TrackSlot::active_with_kind(TrackInstrumentKind::OpenHiHat);
+        layout.slots[2] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+        layout.slots[0].routing.choke_group = 1;
+        layout.slots[1].routing.choke_group = 1;
+        layout.slots[2].routing.choke_group = 2; // different group: must survive
+        let atomic = AtomicTrackLayout::from_state(&layout);
+
+        let mut synth = synthesis::DrumSynthesizer::new();
+        synth.initialize_with_layout(44100.0, &layout);
+
+        let render = |synth: &mut synthesis::DrumSynthesizer, slot: usize, n: usize| -> f32 {
+            let mut sum = 0.0f32;
+            let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
+            for _ in 0..n {
+                synth.process_voice_samples_stereo(&mut outputs);
+                sum += outputs[slot][0].abs() + outputs[slot][1].abs();
+            }
+            sum
+        };
+
+        // OH (long decay) rings.
+        synth.trigger(1, 1.0);
+        let before = render(&mut synth, 1, 64);
+        assert!(before > 0.0, "OH should ring before the choke: {before}");
+
+        // HH (same group 1) triggers → OH choked; Kick (group 2) untouched.
+        synth.trigger(1, 1.0); // retrigger to make sure it is ringing
+        synth.trigger(0, 1.0);
+        apply_choke_groups(&mut synth, &atomic, 0);
+        let oh_after = render(&mut synth, 1, 2000);
+        assert_eq!(oh_after, 0.0, "OH must be choked by group 1, got {oh_after}");
+        let kick_out = render(&mut synth, 2, 64);
+        // Kick was never triggered here — trigger it now to prove it still works.
+        synth.trigger(2, 1.0);
+        let kick_out = render(&mut synth, 2, 64);
+        assert!(kick_out > 0.0, "Kick in another group must still sound");
+        let _ = kick_out;
+
+        // A slot with no group chokes nothing.
+        synth.trigger(1, 1.0);
+        apply_choke_groups(&mut synth, &atomic, 2); // kick's group = 2
+        let oh_still = render(&mut synth, 1, 256);
+        assert!(oh_still > 0.0, "slot with another group must not choke OH");
+    }
+
+    #[test]
     fn add_stereo_aux_sample_skips_inactive_or_incomplete_outputs() {
         let mut empty_left: [f32; 0] = [];
         let mut empty_right: [f32; 0] = [];
@@ -3680,7 +3747,7 @@ mod tests {
     #[test]
     fn cymbal_shimmer_freq_propagates_through_voice_settings_for() {
         let vst = DrumFlashVst::default();
-        let cy_idx = DrumVoice::Cymbal as usize;
+        let cy_idx = synthesis::DrumVoice::Cymbal as usize;
 
         // Slot 9 is inactive in the default 4-lane layout, so its per-slot
         // specials are seeded from the legacy voice of the same index (Cymbal).

@@ -1,5 +1,34 @@
-## [SKEUO] Refonte visuelle « hardware » (pack designer RustDesign_Flash Drum, 2026-07-23)
+## Nouvelles tâches — session 2026-07-29
 
+### Régressions / bugs (P1)
+- [x] [135] **Le paramètre Stereo a disparu des instruments pouvant être stéréo** — régression : la checkbox avait été perdue des schémas FULL_STD (Snare, Perc1) et HIHAT_STD (HiHat). Restaurée + 2 tests de régression (stereo_capable/mono_voices).
+- [x] [136] **Saturation Pre-Filter ne semble pas fonctionner** — le flag `pre_filter` était écrit mais JAMAIS lu par le DSP. Nouveau helper `SaturationConfig::process_at(pre_stage, x)` câblé dans les 11 voix saturées : pre = saturation avant le filtre de la voix, post = après (défaut). Bonus : la saturation du **HiHat n'était pas câblée du tout** (settings/UI mais aucun appel DSP) — corrigé ; toggle Pre-Filter ajouté au B8 (special index 8, param legacy `b8_sat_pre`).
+- [x] [137] **S'assurer que le Volume est post-saturation** — `settings.volume` déplacé APRÈS `saturation.process` sur Kick, Snare, Tom1-3, Clap, Snare606, B8, Perc1 (était pré-sat → le volume changeait le drive). Le drift analog de niveau reste pré-sat (caractère du hit). Tests `test_kick/snare_volume_is_post_saturation` + `test_hihat_saturation_is_wired` + `process_at_routes_by_stage`.
+- [x] [138] **Playhead sur cellule fusionnée** — quand la tête de lecture passe sur une fusion, entourer toute la cellule fusionnée (actuellement entoure les steps individuels) (build 20260729-143825 : ring sur le `block_rect` de la cellule de départ uniquement).
+- [x] [139] **Warning pattern non sauvegardée** — plaque skeuo « The current pattern has unsaved changes » au clic sur un slot P1-P8 quand la grille est dirty (même slot = reload, slot vide = positionnement) ; boutons Discard & Load / Cancel. Dirty check factorisé dans `pattern_is_dirty` (build 20260729-174208).
+
+### Quick wins UI (P1/P2)
+- [x] [140] **Onglet Track : aligner le champ Name** avec la largeur des dropdowns Type et Aux Out (box keycap 146×26, TextEdit sans frame — build 20260729-100737).
+- [x] [141] **Design des lanes vides plus discret** — cellules plates sans pointillés, chips sans bordure ni `--`, `+N` assombri (build 20260729-100737).
+- [x] [142] **Différencier visuellement les slots Pattern Bank vides des remplis** — pastille blanche sur occupés, contour fantôme sur vides (build 20260729-100737).
+- [x] [143] **Volumes par défaut : HiHat trop fort, BD pas assez fort** — Kick/808→1.0, HH→0.2, OH→0.3 (build 20260729-100737).
+
+### Features moyennes (P2)
+- [ ] [144] **Snare : améliorer l'algo** — pas assez de corps (enrichir la synthèse : body oscillator, tuning, noise blend).
+- [ ] [145] **Plock séquenceur : solo paramétré** — à clarifier (solo par step ?).
+- [ ] [146] **Enveloppes exponentielles négatives** — pour des attaques plus claquantes (courbe d'attaque exp inversée, par voix ou global ?).
+- [x] [147] **Choke groups** — 4 choke groups assignables par slot dans l'onglet Track (dropdown None/1-4), tous instruments. Quand un slot trigger, les autres slots actifs du même groupe sont silencés (`apply_choke_groups`, lock-free via le routing byte atomique bits 4-6). Remplace le choke global HH→OH : param `hihat_chokes_oh` masqué (conservé pour les vieilles sessions), toggle header retiré, migration automatique HH/OH→groupe 1 (sentinel serde 0xFF), presets 12 lanes + legacy 13 avec HH/OH en groupe 1 (build 20260729-174208).
+- [ ] **REPRENDRE ICI** [148] **Presets de style pour le Generator** — au moins 10 (Latin, Bossa, Techno, ...).
+
+### Grosses features (P2/P3)
+- [ ] [149] **16 patterns au lieu de 8** — extension Pattern Bank (persistance, UI slots, migration des sessions).
+- [ ] [150] **Gestion des presets dans un modal** — user presets de modèles de grid / patterns / songs.
+- [ ] [151] **Linker 2 lanes adjacentes** (steps du grid uniquement) pour du layering.
+- [ ] [152] **Instrument Ambiant** — voix jouant des bouts de samples d'ambiances noisy avec offset aléatoire (dépend de l'infra sampler [83] ?).
+
+---
+
+## [SKEUO] Refonte visuelle « hardware » (pack designer RustDesign_Flash Drum, 2026-07-23)
 > Pack de référence : `design-pack/RustDesign_Flash Drum/flash-drum-source/`.
 > Docs autoritaires : `HANDOFF.md` (index), `SPEC-COMPUTED.md` ⭐ (cotes mesurées), `RADIUS.md`, `SKEUO.md` (recettes), `rust/skeuo_theme.rs` + `rust/skeuo_widgets.rs` ⭐ (code egui clé en main), `png/` (textures + `reference-full-ui.png` = cible).
 > Stratégie : porter les 2 fichiers Rust du designer comme module `skeuo` (theme + widgets), garder notre layout, remplacer le *rendu* de chaque élément par ses fonctions (`pad`, `keycap`, `generate_button`, `hslider`, `led`, `lcd_frame`, `well`). Le module « ne fait que le look ».
@@ -14,24 +43,23 @@
 
 ### Look Skeuo à porter — ⚠️ APPROCHE CHANGÉE : PUR VECTORIEL egui, module centralisé
 > **Branche `skeuo-vector`** (repartie de `backup/skeuo-redesign`, build 20260726-184543). Fini les textures PNG : tout le rendu des éléments vit dans **`src/ui/skeuo.rs`** (une fonction par élément : `keycap`/`pad`/`slider_track`/`well_recess`/`lcd_bg`), appelée partout. Rendu pré-validé au labo `egui_kittest`+wgpu (crate `egui_lab`, sorties `ui-lab/`). Voir CHANGELOG 2026-07-26.
-- [ ] [SK-2] Intégrer `skeuo_theme.rs` : palette (surfaces, encres, accents), géométrie (R_MICRO 3 / R_PAD 4 / R_KEYCAP 5 / R_PLATE 7), tailles. Remplacer nos couleurs plates par la palette Skeuo.
 - [x] [SK-3] Puits de grille encastré → refait en vectoriel `skeuo::well_recess` (ombres haut + gauche + droite, corner-safe). Reste : plaques bottom-panel / pattern-bank / sound-editor.
 - [x] [SK-4] Boutons / pages / slots / selects / segmented → **`skeuo::keycap`** (vectoriel, build 20260726-184543).
 - [x] [SK-5] **GENERATE** → keycap ambre `skeuo::keycap(PressedAmber)` (build 20260726-184543).
 - [x] [SK-6] Sliders → **`skeuo::slider_track`** (sillon creusé + fill pilule + capuchon strié sur les gros, pas les mini) (build 20260726-184543).
-- [ ] [SK-7] **REPRENDRE ICI** — Switches (`ToggleSwitch` widgets.rs) → `skeuo::switch` (encore version backup).
-- [ ] [SK-8] LED des toggles header (`ToggleLED`) → `skeuo::led` (cercles concentriques + halo, versions validées labo).
+- [x] [SK-7] Switches (`ToggleSwitch`) → `skeuo::switch` (glissière encastrée + bouton rond métal glissant) (build 20260728-094309).
+- [x] [SK-8] LED des toggles header (`ToggleLED`) → `skeuo::led` (verre radial + reflet, SANS halo) + pilule keycap grise (build 20260727-124102).
 - [x] [SK-9] Écran ADSR → **`skeuo::lcd_bg`** (verre vert CRT + creux + scanlines) (build 20260726-184543).
-- [ ] [SK-10] Tags M/S/T (17×17 r3) + nom de lane (52×21 r4) → `skeuo::tag` / `skeuo::lane_name`.
-- [ ] [SK-cleanup] Supprimer ~13 warnings (code textures/handles obsolète) ; centraliser `local_param_slider` vers `skeuo::slider_track`.
+- [x] [SK-10] Tags M/S/T (17×17 r3) + nom de lane (52×21 r4) → `skeuo::tag` / `skeuo::lane_name` (build 20260728-094309).
+- [x] [SK-cleanup] Supprimer ~13 warnings (code textures/handles obsolète) ; centraliser `local_param_slider` vers `skeuo::slider_track` (build 20260729-090446). SK-2 et SK-14 annulés à la demande.
 
 ### Deltas comportement / layout restants (`CHANGES.md`, hors look)
-- [ ] [SK-11] Header : regrouper « Seq Mode » (Internal/Ext MIDI + MIDI Pat), déplacer **Auto-Edit dans ⚙ Settings**, moitiés de segmented symétriques.
-- [ ] [SK-12] Page bar : LED rouge de lecture **dans le coin haut-droit** du bouton (au lieu de sous le bouton).
-- [ ] [SK-13] Menu clic-droit de lane : ajouter « Name » (renommer) et « Engine » (choisir l'instrument, groupé).
-- [ ] [SK-14] Patterns sur **plaque dédiée** ; bouton **Clr** rouge au survol ; **pastille verte** coin haut-droit sur slots occupés.
-- [ ] [SK-15] Generator sur **2 rangées** (Type / A-Mix-B puis Dens-Var-GENERATE).
-- [ ] [SK-16] Sound Editor : dropdowns largeur fixe 170 px + ouverture vers le haut près du bord bas ; mode Notes avec flèches **◂ ▸** ; **retirer les lettres A/D/R** du graphe (légende du bas uniquement).
+- [x] [SK-11] Header : groupe « Seq Mode » (Internal/Ext MIDI + MIDI Pat collés), **Auto-Edit → ⚙ Settings**, segmented à moitiés symétriques (`segmented_equal`) (build 20260728-102242).
+- [x] [SK-12] Page bar : LED rouge de lecture **dans le coin haut-droit** du bouton (au lieu de sous le bouton) + même LED dans les blocs du Song (`skeuo::play_led`, build 20260727-142106).
+- [x] [SK-15] Generator sur **2 rangées** (R1 Type/A-Mix-B, R2 Dens-Var-GENERATE) (build 20260728-102242).
+- [x] [SK-16] Lane Editor : dropdowns **ouverture vers le haut** près du bord bas ; mode Notes avec flèches **◂ ▸** peintes ; **A/D/R retirées** du graphe → légende en bas (build 20260728-111256).
+- [x] [SK-17] Modals Lot 1 — popups « maison » (Plock son/Morph/Seq, Add Module, Page, Settings, Warning preset) en **plaque skeuo** (`skeuo::plate_shape` via slot réservé) ; header `×` → ✓ discret + trait d'accent ; rangées d'action → keycap (build 20260728-162504).
+- [x] [SK-18] Modals Lot 2 — **menus contextuels egui natifs** (nom de lane, lane vide, longueur de lane, block Song) : frame relevé (Visuals) + rangées **keycap** (`menus::context_menu_button`), largeur fixée par menu (build 20260728-165711).
 
 ### Ordre proposé (1 build testable par étape)
 1. SK-1 (débloquer les pads) → 2. SK-2/SK-3 (palette + fonds) → 3. SK-4/SK-5 (keycaps) → 4. SK-6..SK-10 (contrôles) → 5. SK-11..SK-16 (comportement).
@@ -1003,7 +1031,7 @@ Probl�me: "Je veux un m�lange des deux"
 - [x] **[AUDIT-Q5]** Valider le chemin de `DRUM_FLASH_MIDI_DRAG_HELPER` : nom exact + prefix bundle canonisé, 5 tests Windows. (build 20260721-152237)
 - [x] **[AUDIT-Q6]** Éclater `ui.rs` (~8 060 → 366 lignes) en 13 modules thématiques (`editor_state`, `menus`, `fmt`, `controls`, `midi`, `header`, `pattern_bank`, `bottom_panel`, `song`, `popups`, `sound_editor`, `grid`, `plock`). (build 20260721-170521)
 - [ ] **[BUG-LANE-DESYNC]** Décalage de tête de lecture entre lanes au changement Song/Pattern + changement de pattern — en attente de l'isolation du déclencheur par l'utilisateur.
-- [ ] **REPRENDRE ICI** **[94]** Ajouter un paramètre pitch LFO sur les Toms (P2, synthèse).
+- [ ] [94] Ajouter un paramètre pitch LFO sur les Toms (P2, synthèse).
 - TR-909 style: Kick=0.8, Snare=0.7, Tom=0.9 (l�g�rement digital)
 - Modern Techno: Kick=0.2, Snare=0.3, Tom=0.4 (plus digital)
 - Acoustic simulation: Tous � 1.0 avec long decay

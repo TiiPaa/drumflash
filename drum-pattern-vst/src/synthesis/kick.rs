@@ -285,13 +285,13 @@ impl Voice for KickVoice {
                 * (1.0 + filter_env_val * self.settings.filter_env_amount * 8.0);
             let smoothed_cutoff = self.filter_cutoff_smoother.process(target_cutoff.max(20.0));
             self.filter.set_cutoff(smoothed_cutoff, self.sample_rate);
-            let filtered = self.filter.process(raw);
+            let filtered = self.filter.process(self.saturation.process_at(true, raw));
 
             let env = self.amp_env.next();
             if env <= 0.0 {
                 self.active = false;
             } else {
-                body = filtered * env * self.settings.volume * self.drift_level;
+                body = filtered * env * self.drift_level;
             }
         }
 
@@ -302,8 +302,10 @@ impl Voice for KickVoice {
         };
 
         let out = self.dc_block.process(body + click);
-        // Apply saturation (post-filter by default)
-        self.saturation.process(out)
+        // Saturation post-filter by default (pre-filter moves it before the
+        // filter). Volume stays post-saturation: the knob sets the final level
+        // without changing the drive character.
+        self.saturation.process_at(false, out) * self.settings.volume
     }
 
     fn is_active(&self) -> bool {
@@ -494,6 +496,40 @@ mod tests {
             "digital render still clicks: max sample step = {}",
             max_step
         );
+    }
+
+    /// Regression guard: the Volume knob must sit AFTER the saturation stage.
+    /// With heavy saturation engaged, doubling the volume must exactly double
+    /// every output sample (a pre-saturation volume would change the drive and
+    /// break this linear relationship).
+    #[test]
+    fn test_kick_volume_is_post_saturation() {
+        let sr = 44100.0;
+        let render = |volume: f32| -> Vec<f32> {
+            let mut settings = KickSettings::default_at(sr);
+            settings.analog = 0.0; // deterministic digital path
+            settings.click_level = 0.0;
+            settings.decay = 0.3;
+            settings.volume = volume;
+            settings.saturation_type = 1; // SoftClip
+            settings.saturation_amount = 1.0;
+            settings.saturation_mix = 1.0;
+            settings.saturation_output_gain = 1.0;
+            let mut kick = KickVoice::new(sr, settings);
+            kick.set_settings(settings.into());
+            kick.trigger();
+            (0..4000).map(|_| kick.process_sample()).collect()
+        };
+        let quiet = render(0.5);
+        let loud = render(1.0);
+        let peak = loud.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        assert!(peak > 0.05, "saturated kick should not be silent");
+        for (i, (a, b)) in quiet.iter().zip(loud.iter()).enumerate() {
+            assert!(
+                (b - a * 2.0).abs() < 1e-5,
+                "sample {i}: loud({b}) != 2 * quiet({a}) — volume is not post-saturation"
+            );
+        }
     }
 
     /// Regression guard for the "attack = 0" click. A 0 ms attack must stay
