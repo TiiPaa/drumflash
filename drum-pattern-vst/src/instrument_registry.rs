@@ -303,6 +303,7 @@ const FULL_STD: &[StandardParamDef] = &[
         false,
         None,
     ),
+    cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
 ];
 
 /// HiHat-specific: like FULL_STD but the Freq knob controls the peaking filter
@@ -398,6 +399,7 @@ const HIHAT_STD: &[StandardParamDef] = &[
         false,
         None,
     ),
+    cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
 ];
 
 /// Kick-like: no hold, no filter env, no stereo.
@@ -1094,7 +1096,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // Kick-like: no hold, no filter env, no stereo
         sound_settings_default: [
-            60.0, 0.5, 0.8, 30.0, 0.0015, 0.5, 5.0, 3.0, 0.0, 1.0, 0.05, 0.5, 0.0,
+            60.0, 0.5, 1.0, 30.0, 0.0015, 0.5, 5.0, 3.0, 0.0, 1.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 0.3,
         filter_type_label: "LP",
@@ -1246,7 +1248,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // Full: hold, filter env, stereo
         sound_settings_default: [
-            8000.0, 0.36, 0.3, 5000.0, 0.0003, 0.0, 8.0, 3.0, 0.0, 1.0, 0.04, 0.5, 1.0,
+            8000.0, 0.36, 0.2, 5000.0, 0.0003, 0.0, 8.0, 3.0, 0.0, 1.0, 0.04, 0.5, 1.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -1335,7 +1337,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, no filter env, stereo-capable
         sound_settings_default: [
-            6000.0, 0.66, 0.4, 8000.0, 0.0003, 0.4, 5.5, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+            6000.0, 0.66, 0.3, 8000.0, 0.0003, 0.4, 5.5, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -1921,10 +1923,19 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 7,
                 ParamFamily::Saturation,
             ),
+            sp_discrete(
+                "bassdrum808_saturation_pre_filter",
+                "Saturation Pre-Filter",
+                0.0,
+                0.0,
+                1.0,
+                8,
+                ParamFamily::Saturation,
+            ),
         ],
         // Minimal: no hold, no filter env, no stereo
         sound_settings_default: [
-            50.0, 0.4, 0.9, 3000.0, 0.0015, 0.0, 3.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+            50.0, 0.4, 1.0, 3000.0, 0.0015, 0.0, 3.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
@@ -2131,4 +2142,39 @@ pub fn morphable_fields(voice_idx: usize) -> Vec<MorphableField> {
 /// MIDI notes, `None` otherwise.
 pub fn voice_idx_from_midi_note(note: u8) -> Option<usize> {
     INSTRUMENTS.iter().position(|inst| inst.midi_note == note)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn has_stereo(def: &InstrumentDef) -> bool {
+        def.standard_params
+            .iter()
+            .any(|p| p.field == StandardField::Stereo)
+    }
+
+    #[test]
+    fn stereo_capable_voices_expose_the_stereo_checkbox() {
+        // Snare, HiHat, OpenHiHat, Clap, Ride, Cymbal, Snare606, Perc1.
+        for idx in [1usize, 2, 3, 7, 8, 9, 10, 12] {
+            assert!(
+                has_stereo(&INSTRUMENTS[idx]),
+                "{} (idx {idx}) lost its Stereo standard param",
+                INSTRUMENTS[idx].name
+            );
+        }
+    }
+
+    #[test]
+    fn mono_voices_do_not_expose_the_stereo_checkbox() {
+        // Kick, Tom1-3, B8 stay mono.
+        for idx in [0usize, 4, 5, 6, 11] {
+            assert!(
+                !has_stereo(&INSTRUMENTS[idx]),
+                "{} (idx {idx}) unexpectedly exposes Stereo",
+                INSTRUMENTS[idx].name
+            );
+        }
+    }
 }

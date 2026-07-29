@@ -95,6 +95,24 @@ The plugin is a single `nih-plug` VST3 with an internal step sequencer, modular 
 - `src/midi_export.rs`, `src/sound_settings.rs`, `src/groove.rs` — auxiliary modules referenced from `lib.rs`.
 - `src/bin/test_standalone.rs` — pulls modules via `#[path]` to exercise the engine without `nih-plug`.
 
+### Saturation chain & choke groups (2026-07-29)
+
+- **Saturation stage routing** : `SaturationConfig::process_at(pre_stage, x)` is
+  the ONLY way voices apply saturation. Each saturated voice calls it twice —
+  once before its filter, once after — and the `pre_filter` flag (special
+  param "Saturation Pre-Filter") routes which call is active. Never call
+  `process()` directly from a voice.
+- **Volume is post-saturation** : `settings.volume` multiplies AFTER the
+  saturation stage in every voice (the analog level drift stays pre-sat, it is
+  part of the hit character). Moving volume pre-sat changes the drive and
+  breaks the `*_volume_is_post_saturation` tests.
+- **Choke groups** : per-slot `routing.choke_group` (0 = none, 1..=4) set in the
+  Track tab, packed into bits 4-6 of the atomic routing byte
+  (`track.rs::routing_byte`). `apply_choke_groups()` in `lib.rs` silences
+  same-group slots at trigger time. Legacy sessions (no field) deserialize to
+  the `CHOKE_LEGACY` sentinel and migrate to HiHat/OpenHiHat = group 1. The
+  old global `hihat_chokes_oh` param is hidden but kept for session loading.
+
 ### Vendored nih-plug — do not unvendor
 
 `Cargo.toml` resolves `nih_plug` and `nih_plug_egui` to `vendor/nih-plug/`. That copy carries patches required for Studio One multi-out and state save/restore parity. **Replacing it with the crates.io version will silently break multi-out and state restore.** Specifically the local fork:

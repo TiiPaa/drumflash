@@ -180,8 +180,8 @@ impl Voice for TomVoice {
                     }
                 };
                 self.filter.set_cutoff(modulated_cutoff, self.sample_rate);
-                let filtered = self.filter.process(body);
-                tone = filtered * env * self.settings.volume * self.drift.level;
+                let filtered = self.filter.process(self.saturation.process_at(true, body));
+                tone = filtered * env * self.drift.level;
             }
         }
 
@@ -192,8 +192,10 @@ impl Voice for TomVoice {
             0.0
         };
 
+        // Volume post-saturation: the knob sets the final level, not the drive.
         self.dc_block
-            .process(self.saturation.process(tone + attack))
+            .process(self.saturation.process_at(false, tone + attack))
+            * self.settings.volume
     }
 
     fn is_active(&self) -> bool {

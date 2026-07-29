@@ -18,7 +18,6 @@ pub struct Theme {
     pub bg: Color32,
     pub panel: Color32,
     pub panel2: Color32,
-    pub panel3: Color32,
     pub p_hover: Color32,
     pub p_active: Color32,
     pub line: Color32,
@@ -51,14 +50,9 @@ pub struct Theme {
     pub song_empty: Color32,
     // Feedback
     pub danger: Color32,
-    pub danger_dim: Color32,
-    pub danger_soft: Color32,
     pub drag_target: Color32,
-    pub handle: Color32,
-    pub mute_fill: Color32,
     pub solo_fill: Color32,
     // Envelope graphs
-    pub envelope_bg: Color32,
     pub envelope_curve: Color32,
 }
 
@@ -69,7 +63,6 @@ pub const SKIN_DARK: Theme = Theme {
     bg: Color32::from_rgb(10, 10, 15),
     panel: Color32::from_rgb(20, 20, 25),
     panel2: Color32::from_rgb(28, 28, 36),
-    panel3: Color32::from_rgb(24, 24, 30),
     p_hover: Color32::from_rgb(36, 36, 48),
     p_active: Color32::from_rgb(42, 42, 56),
     line: Color32::from_rgb(42, 42, 53),
@@ -97,13 +90,8 @@ pub const SKIN_DARK: Theme = Theme {
     cell_pl_link_off: Color32::from_rgb(36, 26, 8),
     song_empty: Color32::from_rgb(18, 18, 24),
     danger: Color32::from_rgb(255, 80, 80),
-    danger_dim: Color32::from_rgb(180, 60, 60),
-    danger_soft: Color32::from_rgb(255, 120, 120),
     drag_target: Color32::from_rgb(255, 200, 80),
-    handle: Color32::from_rgb(238, 242, 248),
-    mute_fill: Color32::from_rgb(26, 18, 6),
     solo_fill: Color32::from_rgb(6, 32, 15),
-    envelope_bg: Color32::from_rgb(12, 12, 17),
     envelope_curve: Color32::from_rgb(255, 160, 60),
 };
 
@@ -111,7 +99,6 @@ pub const SKIN_MIDNIGHT: Theme = Theme {
     bg: Color32::from_rgb(8, 10, 18),
     panel: Color32::from_rgb(14, 18, 30),
     panel2: Color32::from_rgb(20, 26, 40),
-    panel3: Color32::from_rgb(18, 23, 36),
     p_hover: Color32::from_rgb(26, 34, 52),
     p_active: Color32::from_rgb(32, 42, 62),
     line: Color32::from_rgb(30, 38, 56),
@@ -139,13 +126,8 @@ pub const SKIN_MIDNIGHT: Theme = Theme {
     cell_pl_link_off: Color32::from_rgb(40, 26, 12),
     song_empty: Color32::from_rgb(14, 17, 26),
     danger: Color32::from_rgb(255, 90, 90),
-    danger_dim: Color32::from_rgb(170, 60, 60),
-    danger_soft: Color32::from_rgb(255, 130, 130),
     drag_target: Color32::from_rgb(250, 204, 21),
-    handle: Color32::from_rgb(226, 232, 240),
-    mute_fill: Color32::from_rgb(30, 22, 10),
     solo_fill: Color32::from_rgb(8, 34, 20),
-    envelope_bg: Color32::from_rgb(10, 12, 20),
     envelope_curve: Color32::from_rgb(96, 165, 250),
 };
 
@@ -153,7 +135,6 @@ pub const SKIN_EMBER: Theme = Theme {
     bg: Color32::from_rgb(16, 10, 8),
     panel: Color32::from_rgb(26, 16, 12),
     panel2: Color32::from_rgb(36, 22, 16),
-    panel3: Color32::from_rgb(30, 19, 14),
     p_hover: Color32::from_rgb(48, 30, 20),
     p_active: Color32::from_rgb(58, 38, 26),
     line: Color32::from_rgb(52, 34, 24),
@@ -181,13 +162,8 @@ pub const SKIN_EMBER: Theme = Theme {
     cell_pl_link_off: Color32::from_rgb(48, 30, 14),
     song_empty: Color32::from_rgb(26, 17, 14),
     danger: Color32::from_rgb(255, 90, 80),
-    danger_dim: Color32::from_rgb(175, 60, 50),
-    danger_soft: Color32::from_rgb(255, 130, 115),
     drag_target: Color32::from_rgb(251, 191, 36),
-    handle: Color32::from_rgb(245, 235, 225),
-    mute_fill: Color32::from_rgb(40, 24, 8),
     solo_fill: Color32::from_rgb(10, 36, 18),
-    envelope_bg: Color32::from_rgb(18, 12, 10),
     envelope_curve: Color32::from_rgb(251, 146, 60),
 };
 
@@ -243,10 +219,6 @@ pub fn PANEL() -> Color32 {
 #[inline]
 pub fn PANEL2() -> Color32 {
     current().panel2
-}
-#[inline]
-pub fn PANEL3() -> Color32 {
-    current().panel3
 }
 #[inline]
 pub fn P_HOVER() -> Color32 {
@@ -357,32 +329,12 @@ pub fn DANGER() -> Color32 {
     current().danger
 }
 #[inline]
-pub fn DANGER_DIM() -> Color32 {
-    current().danger_dim
-}
-#[inline]
-pub fn DANGER_SOFT() -> Color32 {
-    current().danger_soft
-}
-#[inline]
 pub fn DRAG_TARGET() -> Color32 {
     current().drag_target
 }
 #[inline]
-pub fn HANDLE() -> Color32 {
-    current().handle
-}
-#[inline]
-pub fn MUTE_FILL() -> Color32 {
-    current().mute_fill
-}
-#[inline]
 pub fn SOLO_FILL() -> Color32 {
     current().solo_fill
-}
-#[inline]
-pub fn ENVELOPE_BG() -> Color32 {
-    current().envelope_bg
 }
 #[inline]
 pub fn ENVELOPE_CURVE() -> Color32 {
@@ -392,12 +344,6 @@ pub fn ENVELOPE_CURVE() -> Color32 {
 // ============================================================
 // Color helpers
 // ============================================================
-#[inline]
-pub fn blue_glow(alpha: u8) -> Color32 {
-    let blue = current().blue;
-    Color32::from_rgba_unmultiplied(blue.r(), blue.g(), blue.b(), alpha)
-}
-
 #[inline]
 pub fn white_a(alpha: u8) -> Color32 {
     Color32::from_white_alpha(alpha)
@@ -419,13 +365,7 @@ pub fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 // ============================================================
 // Radius scheme (Skeuo spec — RADIUS.md / SPEC-COMPUTED.md):
 // 3 (tags, sliders) -> 4 (pads, lane name, LCD) -> 5 (keycaps, wells, blocks) -> 7 (plates, popups).
-pub const RADIUS_TAG: f32 = 3.0;
 pub const RADIUS_PAD: f32 = 4.0;
-/// Effective corner radius of the baked pad PNGs once scaled into a cell (~2 px
-/// at the ~27 px cell width). egui can't round the texture, so vector overlays
-/// on a pad (playhead ring, hover outline) use THIS to hug the pad's real corner
-/// instead of RADIUS_PAD — otherwise the squarer PNG corner pokes past the ring.
-pub const RADIUS_PAD_TEX: f32 = 2.0;
 
 // Skeuo surfaces (SPEC-COMPUTED.md / skeuo_theme.rs) — skin-independent metal look.
 pub const WINDOW_BG_TOP: Color32 = Color32::from_rgb(42, 43, 48);
@@ -435,10 +375,16 @@ pub const HEADER_MID: Color32 = Color32::from_rgb(43, 44, 49);
 pub const HEADER_BOT: Color32 = Color32::from_rgb(38, 39, 43);
 /// Recessed grid well (seqwrap) — darker inset behind the pads.
 pub const WELL_FILL: Color32 = Color32::from_rgb(29, 30, 34);
+/// Lane Editor panel surface — skeuo chassis grey (replaces the old near-black
+/// `PANEL()` that made the whole right column read as a black rectangle).
+pub const PANEL_SKEUO: Color32 = Color32::from_rgb(37, 38, 43);
+/// Header/tab band of the Lane Editor — slightly lighter than the panel body.
+pub const PANEL_SKEUO_HEADER: Color32 = Color32::from_rgb(44, 45, 51);
+/// Hover tint for the Lane Editor tabs.
+pub const PANEL_SKEUO_HOVER: Color32 = Color32::from_rgb(52, 53, 60);
 /// Dark border of plates/wells (#121215).
 pub const PANEL_BORDER: Color32 = Color32::from_rgb(18, 18, 21);
-/// Keycap (bouton biseauté) : bord sombre + texte au repos.
-pub const KEYCAP_BORDER: Color32 = Color32::from_rgb(23, 23, 27);
+/// Keycap (bouton biseauté) : texte au repos.
 pub const INK_KEYCAP: Color32 = Color32::from_rgb(201, 203, 211);
 pub const RADIUS_CTL: f32 = 5.0;
 pub const RADIUS_PANEL: f32 = 7.0;
@@ -512,17 +458,6 @@ mod tests {
         set_skin("Ember");
         assert_eq!(skin_name(), "Ember");
         assert_eq!(BG(), SKIN_EMBER.bg);
-        let glow = blue_glow(128);
-        assert_eq!(glow.a(), 128);
-        // Color32 stores premultiplied linear values, so compare the opaque
-        // (unpremultiplied) color instead of raw channels.
-        let opaque = glow.to_opaque();
-        assert!(
-            (opaque.r() as i16 - SKIN_EMBER.blue.r() as i16).abs() <= 2,
-            "opaque={:?} expected≈{:?}",
-            opaque,
-            SKIN_EMBER.blue
-        );
 
         set_skin("DoesNotExist");
         assert_eq!(skin_name(), "Ember");

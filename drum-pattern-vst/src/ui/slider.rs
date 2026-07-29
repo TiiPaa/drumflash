@@ -38,12 +38,8 @@ pub struct TrackStyle {
     pub height: f32,
     /// Thickness of the drawn track bar.
     pub track_h: f32,
-    /// Corner radius of the track and fill.
-    pub corner: f32,
     /// Fill color of the value portion.
     pub fill: Color32,
-    /// Handle circle radius drawn on hover/drag.
-    pub handle_r: f32,
     /// Draw a striped fader cap at the value (full sliders) vs a plain fill bar
     /// (tiny Vol/Hum/Push mini-sliders).
     pub cap: bool,
@@ -54,9 +50,7 @@ impl TrackStyle {
         Self {
             height: 22.0,
             track_h: 6.0,
-            corner: 3.0,
             fill: BLUE(),
-            handle_r: 5.5,
             cap: true,
         }
     }
@@ -65,9 +59,7 @@ impl TrackStyle {
         Self {
             height: 17.0,
             track_h: 6.0,
-            corner: 5.0,
             fill: BLUE(),
-            handle_r: 4.0,
             cap: false,
         }
     }

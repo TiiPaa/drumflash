@@ -27,130 +27,10 @@ pub fn draw_pattern_bank(
         ui.label(RichText::new("Patterns").strong().size(12.0).color(INK()));
         ui.add_space(8.0);
 
-        // MIDI export chips (left side, always visible)
-        if chip_button(ui, "Export", false, BLUE(), egui::Sense::click()).clicked() {
-            let bpm = params.bpm.value();
-            let pattern_length = params.pattern_length.value() as usize;
-            let swing = params.swing.value();
-            let groove_type = params.groove_type.value();
-            match export_midi_to_documents(
-                pattern,
-                &params.track_layout.state,
-                bpm,
-                pattern_length,
-                swing,
-                groove_type,
-            ) {
-                Ok(path) => {
-                    nih_log!("MIDI exported to: {}", path.display());
-                    state.last_midi_export_path = Some(path.display().to_string());
-                    state.last_midi_export_error = None;
-                }
-                Err(e) => {
-                    nih_log!("MIDI export failed: {}", e);
-                    state.last_midi_export_path = None;
-                    state.last_midi_export_error = Some(e.to_string());
-                }
-            }
-        }
-        let drag_response = chip_button(ui, "Drag", false, BLUE(), egui::Sense::click())
-            .on_hover_text("Drag the current pattern into your DAW");
-        if drag_response.clicked() {
-            let bpm = params.bpm.value();
-            let pattern_length = params.pattern_length.value() as usize;
-            let swing = params.swing.value();
-            let groove_type = params.groove_type.value();
-            match export_midi_to_documents(
-                pattern,
-                &params.track_layout.state,
-                bpm,
-                pattern_length,
-                swing,
-                groove_type,
-            )
-            .and_then(|path| start_external_midi_drag(&path).map(|_| path))
-            {
-                Ok(path) => {
-                    nih_log!("MIDI drag helper started from: {}", path.display());
-                    state.last_midi_export_path = Some(path.display().to_string());
-                    state.last_midi_export_error = None;
-                }
-                Err(e) => {
-                    nih_log!("MIDI drag failed: {}", e);
-                    state.last_midi_export_path = None;
-                    state.last_midi_export_error = Some(e.to_string());
-                }
-            }
-        }
-
-        ui.add_space(8.0);
-
-        // Save button (blinks when save mode is active)
-        let is_save_mode = state.save_mode_active;
-        let time = ui.ctx().input(|i| i.time);
-        let blink = if is_save_mode {
-            ((time * 4.0).sin() + 1.0) / 2.0 // 0..1 oscillation
-        } else {
-            0.0
-        };
-        let save_fill = if is_save_mode {
-            let blue = BLUE();
-            let blink = blink as f32;
-            Color32::from_rgb(
-                (blue.r() as f32 + blink * 80.0) as u8,
-                (blue.g() as f32 + blink * 40.0) as u8,
-                blue.b(),
-            )
-        } else {
-            PANEL2()
-        };
-        let save_btn = egui::Button::new(RichText::new("Save").size(10.0).strong().monospace())
-            .min_size(Vec2::new(44.0, 26.0))
-            .fill(save_fill)
-            .stroke(egui::Stroke::new(
-                1.5,
-                if is_save_mode { BLUE() } else { LINE2() },
-            ))
-            .corner_radius(5.0);
-        let save_response = ui.add(save_btn);
-        let save_response = save_response.on_hover_text(
-            RichText::new(if is_save_mode {
-                "Click a slot (P1-P8) to save the current pattern there"
-            } else {
-                "Activate save mode, then click a slot to store the current pattern"
-            })
-            .size(11.0)
-            .monospace(),
-        );
-        if save_response.clicked() {
-            state.save_mode_active = !state.save_mode_active;
-            state.clear_confirm_mode = false;
-        }
-
-        ui.add_space(8.0);
+        // (Save/Clr keycaps + Export/Drag are drawn AFTER the slots — see below.)
 
         // Determine if current pattern is dirty compared to last_loaded_slot
-        let is_dirty = state.last_loaded_slot.map_or(false, |slot_idx| {
-            if let Ok(bank) = params.pattern_bank.bank.lock() {
-                let slot = &bank.slots[slot_idx];
-                if !slot.occupied {
-                    return false;
-                }
-                // Compare step masks
-                let current_masks = pattern.step_masks();
-                if slot.step_masks != current_masks {
-                    return true;
-                }
-                // Compare pattern length
-                let current_len = params.pattern_length.value() as u8;
-                if slot.pattern_length != current_len {
-                    return true;
-                }
-                false
-            } else {
-                false
-            }
-        });
+        let is_dirty = pattern_is_dirty(params, pattern, state);
 
         // P1-P8 slots
         for i in 0..8 {
@@ -182,11 +62,20 @@ pub fn draw_pattern_bank(
                     |ui| {
                         let (rect, response) =
                             ui.allocate_exact_size(btn_size, egui::Sense::click());
-                        crate::ui::widgets::keycap_tex(ui, rect, kc_state);
-                        // Empty slots read dimmer than saved ones.
-                        if !occupied && !is_loaded {
-                            ui.painter()
-                                .rect_filled(rect, 5.0, Color32::from_black_alpha(95));
+                        // Occupied slots read as raised keycaps with a bright
+                        // label; empty slots are flat recessed boxes — the
+                        // difference in shape language is obvious at a glance.
+                        let is_empty = !occupied && !is_loaded;
+                        if is_empty {
+                            ui.painter().rect_filled(rect, 5.0, BG());
+                            ui.painter().rect_stroke(
+                                rect,
+                                5.0,
+                                egui::Stroke::new(1.0, LINE()),
+                                egui::StrokeKind::Inside,
+                            );
+                        } else {
+                            crate::ui::widgets::keycap_tex(ui, rect, kc_state);
                         }
                         if response.is_pointer_button_down_on() {
                             ui.painter()
@@ -197,7 +86,7 @@ pub fn draw_pattern_bank(
                         } else if occupied {
                             INK_KEYCAP
                         } else {
-                            Color32::from_rgb(120, 121, 128)
+                            FAINT()
                         };
                         ui.painter().text(
                             rect.center(),
@@ -234,9 +123,19 @@ pub fn draw_pattern_bank(
                         .store((i + 1) as u32, std::sync::atomic::Ordering::Relaxed);
                     state.save_mode_active = false;
                     state.last_loaded_slot = Some(i);
+                } else if is_dirty {
+                    // Unsaved changes: warn before discarding them (loading an
+                    // occupied slot OR positioning on an empty one both wipe
+                    // the working grid).
+                    state.pattern_load_confirm = Some(i);
                 } else if occupied {
                     load_pattern_request
                         .store((i + 1) as u32, std::sync::atomic::Ordering::Relaxed);
+                    state.last_loaded_slot = Some(i);
+                } else {
+                    // Empty slot: position on it — fresh empty grid, ready to
+                    // build a new pattern (Save will store into this slot).
+                    clear_current_grid(pattern, params);
                     state.last_loaded_slot = Some(i);
                 }
             }
@@ -257,87 +156,155 @@ pub fn draw_pattern_bank(
             }
         }
 
-        ui.add_space(8.0);
+        ui.add_space(10.0);
 
-        // Clear button: wipes all sound + sequencer plocks (two-step confirmation)
+        // Save (keycap; armed = pressed blue). Click, then click a slot to store.
+        let save_state = if state.save_mode_active {
+            crate::ui::widgets::KeycapState::PressedBlue
+        } else {
+            crate::ui::widgets::KeycapState::Rest
+        };
+        let save_response =
+            crate::ui::controls::keycap_button(ui, "Save", 46.0, save_state, true, f_mono_med(10.5))
+                .on_hover_text(
+                    RichText::new(if state.save_mode_active {
+                        "Click a slot (P1-P8) to save the current pattern there"
+                    } else {
+                        "Activate save mode, then click a slot to store the current pattern"
+                    })
+                    .size(11.0)
+                    .monospace(),
+                );
+        if save_response.clicked() {
+            state.save_mode_active = !state.save_mode_active;
+            state.clear_confirm_mode = false;
+        }
+
+        // Clr (keycap; two-step — the confirm phase offers a choice: clear the
+        // current GRID only, or clear the grid AND empty the bank SLOT).
         let is_clear_confirm = state.clear_confirm_mode;
-        let clear_blink = if is_clear_confirm {
-            ((time * 4.0).sin() + 1.0) / 2.0 // 0..1 oscillation
-        } else {
-            0.0
-        };
-        let clear_fill = if is_clear_confirm {
-            let d = DANGER();
-            let blink = clear_blink as f32;
-            Color32::from_rgb(
-                (d.r() as f32 - 55.0 + blink * 55.0) as u8,
-                (d.g() as f32 - 20.0 + blink * 40.0) as u8,
-                (d.b() as f32 - 20.0 + blink * 40.0) as u8,
-            )
-        } else {
-            PANEL2()
-        };
-        let clear_btn = egui::Button::new(
-            RichText::new(if is_clear_confirm { "Sure?" } else { "Clr" })
-                .size(10.0)
-                .strong()
-                .monospace(),
-        )
-        .min_size(Vec2::new(44.0, 26.0))
-        .fill(clear_fill)
-        .stroke(egui::Stroke::new(
-            1.5,
-            if is_clear_confirm {
-                DANGER_SOFT()
-            } else {
-                LINE2()
-            },
-        ))
-        .corner_radius(5.0);
-        let clear_response = ui.add(clear_btn);
-        let clear_response = clear_response.on_hover_text(
-            RichText::new(if is_clear_confirm {
-                "Click again to confirm clearing the current pattern"
-            } else {
-                "Clear all steps and plocks from the current pattern"
-            })
-            .size(11.0)
-            .monospace(),
-        );
-        if clear_response.clicked() {
-            if is_clear_confirm {
-                // Confirmed: clear grid + plocks + fusions
-                load_pattern_for_ui(pattern, &crate::sequencer::pattern::Pattern::empty());
-                params.plock_state.state.clear_all();
-                params.seq_plock_state.state.clear_all();
-                // Clear all fusions
-                for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
-                    pattern.store_fusions(inst, &[]);
-                }
-                state.last_loaded_slot = None;
+        if is_clear_confirm {
+            let grid_response = chip_button(ui, "Grid", true, BLUE(), egui::Sense::click())
+                .on_hover_text(
+                    RichText::new("Clear the current grid only — the slot keeps its saved pattern")
+                        .size(11.0)
+                        .monospace(),
+                );
+            if grid_response.clicked() {
+                clear_current_grid(pattern, params);
                 state.clear_confirm_mode = false;
-            } else {
-                // Enter confirmation mode, cancel save mode if active
+            }
+            if state.last_loaded_slot.is_some() {
+                let slot_response = chip_button(ui, "Slot", true, RED(), egui::Sense::click())
+                    .on_hover_text(
+                        RichText::new(
+                            "Clear the current grid AND empty the bank slot it was loaded from",
+                        )
+                        .size(11.0)
+                        .monospace(),
+                    );
+                if slot_response.clicked() {
+                    clear_current_grid(pattern, params);
+                    if let Some(i) = state.last_loaded_slot {
+                        if let Ok(mut bank) = params.pattern_bank.bank.lock() {
+                            bank.slots[i] = crate::pattern_bank::PatternSlot::default();
+                            drop(bank);
+                            params.pattern_bank.refresh_snapshot();
+                        }
+                    }
+                    state.clear_confirm_mode = false;
+                }
+            }
+            let cancel_response = chip_button(ui, "X", false, INK3(), egui::Sense::click())
+                .on_hover_text(RichText::new("Cancel").size(11.0).monospace());
+            if cancel_response.clicked() {
+                state.clear_confirm_mode = false;
+            }
+        } else {
+            let clear_response = chip_button(ui, "Clr", false, BLUE(), egui::Sense::click())
+                .on_hover_text(
+                    RichText::new("Clear the current grid or empty the current bank slot")
+                        .size(11.0)
+                        .monospace(),
+                );
+            if clear_response.clicked() {
                 state.clear_confirm_mode = true;
                 state.save_mode_active = false;
             }
         }
 
-        ui.add_space(8.0);
-
-        if let Some(path) = &state.last_midi_export_path {
-            if ui.button("Copy Path").clicked() {
-                ui.ctx().copy_text(path.clone());
+        // Export / Drag (MIDI export, separate concern) pushed to the right edge.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let drag_response = chip_button(ui, "Drag", false, BLUE(), egui::Sense::click())
+                .on_hover_text("Drag the current pattern into your DAW");
+            if drag_response.clicked() {
+                let bpm = params.bpm.value();
+                let pattern_length = params.pattern_length.value() as usize;
+                let swing = params.swing.value();
+                let groove_type = params.groove_type.value();
+                match export_midi_to_documents(
+                    pattern,
+                    &params.track_layout.state,
+                    bpm,
+                    pattern_length,
+                    swing,
+                    groove_type,
+                )
+                .and_then(|path| start_external_midi_drag(&path).map(|_| path))
+                {
+                    Ok(path) => {
+                        nih_log!("MIDI drag helper started from: {}", path.display());
+                        state.last_midi_export_path = Some(path.display().to_string());
+                        state.last_midi_export_error = None;
+                    }
+                    Err(e) => {
+                        nih_log!("MIDI drag failed: {}", e);
+                        state.last_midi_export_path = None;
+                        state.last_midi_export_error = Some(e.to_string());
+                    }
+                }
             }
-            ui.label(RichText::new("Exported").size(10.0));
-        } else if state.last_midi_export_error.is_some() {
-            ui.label(
-                RichText::new("Export failed")
-                    .size(10.0)
-                    .color(RED()),
-            );
-        }
+            if chip_button(ui, "Export", false, BLUE(), egui::Sense::click()).clicked() {
+                let bpm = params.bpm.value();
+                let pattern_length = params.pattern_length.value() as usize;
+                let swing = params.swing.value();
+                let groove_type = params.groove_type.value();
+                match export_midi_to_documents(
+                    pattern,
+                    &params.track_layout.state,
+                    bpm,
+                    pattern_length,
+                    swing,
+                    groove_type,
+                ) {
+                    Ok(path) => {
+                        nih_log!("MIDI exported to: {}", path.display());
+                        state.last_midi_export_path = Some(path.display().to_string());
+                        state.last_midi_export_error = None;
+                    }
+                    Err(e) => {
+                        nih_log!("MIDI export failed: {}", e);
+                        state.last_midi_export_path = None;
+                        state.last_midi_export_error = Some(e.to_string());
+                    }
+                }
+            }
+            if state.last_midi_export_error.is_some() {
+                ui.label(RichText::new("Export failed").size(10.0).color(RED()));
+            } else if state.last_midi_export_path.is_some() {
+                ui.label(RichText::new("Exported").size(10.0).color(INK3()));
+            }
+        });
     });
+
+    // Unsaved-changes confirmation (skeuo plate, foreground).
+    crate::ui::popups::draw_pattern_load_warning_if_any(
+        ui,
+        params,
+        pattern,
+        state,
+        load_pattern_request,
+    );
 }
 
 /// Capture the current pattern, plocks and fusions into the given pattern-bank slot.
@@ -369,6 +336,46 @@ pub fn load_pattern_for_ui(pattern_for_ui: &SharedPattern, pattern: &Pattern) {
     for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
         pattern_for_ui.store_fusions(inst, &pattern.fusions[inst]);
     }
+}
+
+/// Wipe the working grid (steps, sound/seq plocks, fusions) without touching
+/// any bank slot — used by Clr>Grid and when positioning on an empty slot.
+pub(crate) fn clear_current_grid(pattern: &SharedPattern, params: &DrumFlashParams) {
+    load_pattern_for_ui(pattern, &crate::sequencer::pattern::Pattern::empty());
+    params.plock_state.state.clear_all();
+    params.seq_plock_state.state.clear_all();
+    for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+        pattern.store_fusions(inst, &[]);
+    }
+}
+
+/// True when the working grid differs from the pattern stored in the loaded
+/// slot (steps or length). Drives the `P1*` marker and the unsaved-changes
+/// warning on slot switch.
+pub(crate) fn pattern_is_dirty(
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    state: &EditorUIState,
+) -> bool {
+    state.last_loaded_slot.map_or(false, |slot_idx| {
+        if let Ok(bank) = params.pattern_bank.bank.lock() {
+            let slot = &bank.slots[slot_idx];
+            if !slot.occupied {
+                return false;
+            }
+            let current_masks = pattern.step_masks();
+            if slot.step_masks != current_masks {
+                return true;
+            }
+            let current_len = params.pattern_length.value() as u8;
+            if slot.pattern_length != current_len {
+                return true;
+            }
+            false
+        } else {
+            false
+        }
+    })
 }
 
 pub fn load_pattern_for_ui_with_length(

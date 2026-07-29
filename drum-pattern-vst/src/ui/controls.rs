@@ -62,14 +62,23 @@ pub fn draw_track_length_control(
         changed || response.clicked() || response.dragged() || response.secondary_clicked();
 
     response.context_menu(|ui| {
+        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.set_min_width(150.0);
+        ui.set_max_width(150.0);
         if locked {
-            if ui.button("Follow pattern length").clicked() {
+            if crate::ui::menus::context_menu_button(ui, "Follow pattern length", INK(), true)
+                .clicked()
+            {
                 params.lane_length_locks.set_locked(instrument, false);
                 setter.set_parameter(length_param, master_length as i32);
                 ui.close_menu();
             }
         } else {
-            ui.label("Already follows pattern length");
+            ui.label(
+                RichText::new("Already follows pattern length")
+                    .font(f_sans_med(10.5))
+                    .color(INK3()),
+            );
         }
     });
 
@@ -288,105 +297,9 @@ pub fn algo_combo(ui: &mut egui::Ui, setter: &ParamSetter, param: &IntParam, alg
 }
 
 pub fn p_lock_mode_segmented(ui: &mut egui::Ui, selected: usize) -> usize {
-    text_segmented(
-        ui,
-        "plock_mode",
-        &[("Sound", PL_LINK()), ("Sequencer", SEQPL())],
-        selected,
-    )
+    crate::ui::skeuo::segmented(ui, "plock_mode", &["Sound", "Sequencer"], selected)
 }
 
 pub fn generator_song_segmented(ui: &mut egui::Ui, selected: usize) -> usize {
-    text_segmented(
-        ui,
-        "gen_song_mode",
-        &[("Generator", BLUE()), ("Song", PL_LINK())],
-        selected,
-    )
-}
-
-fn text_segmented(
-    ui: &mut egui::Ui,
-    id_salt: &'static str,
-    options: &[(&str, Color32)],
-    selected: usize,
-) -> usize {
-    let font = f_sans_sb(10.5);
-    let padding = 24.0; // 12 left + 12 right
-    let mut widths = Vec::with_capacity(options.len());
-    for (label, _) in options {
-        let tw = ui.fonts(|f| {
-            f.layout_no_wrap((*label).to_string(), font.clone(), INK())
-                .size()
-                .x
-        });
-        widths.push((tw + padding).max(56.0));
-    }
-    let total_w: f32 = widths.iter().sum();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(total_w, CTL_HEIGHT), egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, RADIUS_CTL, PANEL2());
-
-    let mut result = selected.min(options.len().saturating_sub(1));
-    let mut x = rect.left();
-    for (idx, (label, accent)) in options.iter().enumerate() {
-        let seg = egui::Rect::from_min_size(
-            egui::pos2(x, rect.top()),
-            Vec2::new(widths[idx], CTL_HEIGHT),
-        );
-        let active = idx == result;
-        let response = ui.interact(
-            seg,
-            ui.make_persistent_id((id_salt, idx)),
-            egui::Sense::click(),
-        );
-        if active {
-            crate::ui::widgets::keycap_tex(ui, seg.shrink(1.0), KeycapState::PressedBlue);
-        } else if response.hovered() {
-            painter.rect_filled(seg.shrink(1.0), 5.0, P_HOVER());
-            painter.rect_stroke(
-                seg.shrink(1.0),
-                5.0,
-                egui::Stroke::new(1.0, *accent),
-                egui::StrokeKind::Inside,
-            );
-        }
-        if idx > 0 {
-            painter.line_segment(
-                [
-                    egui::pos2(seg.left(), rect.top() + 3.0),
-                    egui::pos2(seg.left(), rect.bottom() - 3.0),
-                ],
-                egui::Stroke::new(1.0, LINE2()),
-            );
-        }
-        painter.text(
-            seg.center(),
-            egui::Align2::CENTER_CENTER,
-            *label,
-            font.clone(),
-            if active {
-                Color32::WHITE
-            } else if response.hovered() {
-                INK()
-            } else {
-                INK2()
-            },
-        );
-        if response.clicked() {
-            result = idx;
-            ui.ctx().request_repaint();
-        }
-        x += widths[idx];
-    }
-
-    // Draw the outer frame last so active/hover fills cannot visually eat it.
-    painter.rect_stroke(
-        rect,
-        6.0,
-        egui::Stroke::new(1.0, LINE2()),
-        egui::StrokeKind::Inside,
-    );
-
-    result
+    crate::ui::skeuo::segmented(ui, "gen_song_mode", &["Generator", "Song"], selected)
 }

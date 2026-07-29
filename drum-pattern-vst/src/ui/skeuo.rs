@@ -29,7 +29,7 @@
 
 use crate::ui::theme::*;
 use crate::ui::widgets::{
-    fade_line, grad3, inner_side_shadows, inner_top_shadow, soft_shadow, KeycapState,
+    fade_line, grad3, inner_side_shadows, inner_top_shadow, lerp_c, soft_shadow, KeycapState,
 };
 use nih_plug_egui::egui::{self, Color32};
 
@@ -44,17 +44,26 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
 // gradient + dark border + subtle relief liseré.
 // ============================================================
 pub fn keycap(ui: &egui::Ui, rect: egui::Rect, state: KeycapState) {
-    let p = ui.painter();
+    keycap_body(ui.painter(), rect, state, true);
+}
+
+/// Keycap body. `shadow` draws the soft drop shadow — turn it OFF when the keycap
+/// sits inside a recessed well (the recess already provides the depth, and the
+/// shadow would bleed square-ish past the well's rounded corners).
+fn keycap_body(p: &egui::Painter, rect: egui::Rect, state: KeycapState, shadow: bool) {
     let radius = 5.0_f32;
     let (ctop, cmid, cbot, border) = match state {
         KeycapState::Rest => (rgb(74, 75, 82), rgb(56, 57, 63), rgb(51, 52, 57), rgb(23, 23, 27)),
         KeycapState::PressedBlue => (rgb(47, 134, 196), rgb(30, 95, 146), rgb(26, 84, 128), rgb(13, 44, 68)),
         KeycapState::PressedAmber => (rgb(201, 122, 30), rgb(168, 100, 24), rgb(138, 78, 12), rgb(70, 40, 8)),
     };
-    soft_shadow(p, rect, radius, 1.5, 2.5, 38.0);
+    if shadow {
+        soft_shadow(p, rect, radius, 1.5, 2.5, 38.0);
+    }
     p.rect_filled(rect, radius, cmid);
-    // gradient mesh inset ≥ r×0.42 so its square corners never poke past the border
-    grad3(p, rect.shrink(2.0), ctop, cmid, cbot, 0.55);
+    // gradient mesh inset ≥ r×0.42 (=2.1) so its square corners never poke past
+    // the rounded border.
+    grad3(p, rect.shrink(2.2), ctop, cmid, cbot, 0.55);
     p.rect_stroke(rect, radius, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
     let pressed = matches!(state, KeycapState::PressedBlue | KeycapState::PressedAmber);
     let inset = radius + 1.0;
@@ -64,33 +73,135 @@ pub fn keycap(ui: &egui::Ui, rect: egui::Rect, state: KeycapState) {
 }
 
 // ============================================================
-// Pad — one step cell of the grid. Minimal FLAT look: a rounded rect in the
-// state colour + a thin rounded border. Keyed by the cell's fill colour.
+// LED — backlit indicator dot (radial glass + specular highlight). NO glow halo.
+// Blue when on, dark/faint when off. Used by the header toggle pills.
 // ============================================================
-pub fn pad(ui: &egui::Ui, rect: egui::Rect, fill: Color32) {
-    let p = ui.painter();
-    let r = 4.0;
-    let (base, border) = if fill == BLUE() {
-        (rgb(56, 150, 220), rgb(24, 86, 128))
-    } else if fill == PL_LINK() {
-        (rgb(228, 138, 40), rgb(115, 60, 10))
-    } else if fill == SEQPL() {
-        (rgb(158, 92, 222), rgb(74, 38, 128))
-    } else if fill == CELL_EMPTY_BEAT() {
-        (rgb(49, 50, 56), rgb(19, 19, 23))
-    } else if fill == CELL_PL_LINK_OFF() {
-        (rgb(50, 39, 24), rgb(74, 42, 4))
-    } else if fill == CELL_PL_SNAP_OFF() {
-        (rgb(50, 28, 24), rgb(74, 15, 8))
-    } else if fill == CELL_SEQPL_OFF() {
-        (rgb(44, 35, 54), rgb(44, 16, 80))
-    } else if fill == FUSION_FILL() {
-        (rgb(33, 55, 76), rgb(19, 19, 23))
+pub fn led(p: &egui::Painter, center: egui::Pos2, radius: f32, on: bool) {
+    let (cc, cm, ce) = if on {
+        (rgb(205, 240, 255), rgb(74, 182, 255), rgb(30, 110, 160))
     } else {
-        (rgb(43, 44, 49), rgb(19, 19, 23))
+        (rgb(104, 105, 113), rgb(74, 75, 82), rgb(50, 51, 56))
     };
-    p.rect_filled(rect, r, base);
-    p.rect_stroke(rect, r, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+    p.circle_filled(center, radius, ce); // AA silhouette under the (unAA) mesh
+    radial_circle(p, center, radius * 0.98, cc, cm, ce);
+    let spec = if on {
+        Color32::from_rgba_unmultiplied(255, 255, 255, 210)
+    } else {
+        Color32::from_rgba_unmultiplied(150, 151, 158, 110)
+    };
+    p.circle_filled(center - egui::vec2(radius * 0.28, radius * 0.32), radius * 0.30, spec);
+}
+
+/// Red play-position LED, incrusted in the top-right corner of the page button /
+/// song block that is currently playing. Same backlit glass as `led`, but red,
+/// no halo.
+pub fn play_led(p: &egui::Painter, center: egui::Pos2, radius: f32) {
+    let (cc, cm, ce) = (rgb(255, 210, 205), rgb(248, 96, 88), rgb(150, 34, 30));
+    p.circle_filled(center, radius, ce);
+    radial_circle(p, center, radius * 0.98, cc, cm, ce);
+    p.circle_filled(center - egui::vec2(radius * 0.26, radius * 0.30), radius * 0.30, Color32::from_rgba_unmultiplied(255, 255, 255, 205));
+}
+
+/// Smooth radial gradient on a circle: fan mesh (centre → mid@45% → edge).
+fn radial_circle(p: &egui::Painter, c: egui::Pos2, radius: f32, cc: Color32, cm: Color32, ce: Color32) {
+    let n = 28usize;
+    let mut m = egui::epaint::Mesh::default();
+    m.colored_vertex(c, cc);
+    let ang = |i: usize| std::f32::consts::TAU * i as f32 / n as f32;
+    for i in 0..n {
+        let a = ang(i);
+        m.colored_vertex(egui::pos2(c.x + a.cos() * radius * 0.45, c.y + a.sin() * radius * 0.45), cm);
+    }
+    for i in 0..n {
+        let a = ang(i);
+        m.colored_vertex(egui::pos2(c.x + a.cos() * radius, c.y + a.sin() * radius), ce);
+    }
+    let mid = |i: usize| 1 + i as u32;
+    let out = |i: usize| 1 + n as u32 + i as u32;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        m.add_triangle(0, mid(i), mid(j));
+        m.add_triangle(mid(i), out(i), out(j));
+        m.add_triangle(mid(i), out(j), mid(j));
+    }
+    p.add(egui::Shape::mesh(m));
+}
+
+// ============================================================
+// Segmented — the ONE renderer for every 2+ option switch (Seq Mode, Generator/
+// Song, Hz/Note, P-Lock mode). Recessed well track + the active option as a
+// pressed-blue keycap; inactive options are muted, clickable text. Segments size
+// to their label. Returns the (possibly newly-clicked) selected index.
+// ============================================================
+pub fn segmented(ui: &mut egui::Ui, id_salt: impl std::hash::Hash, labels: &[&str], selected: usize) -> usize {
+    segmented_impl(ui, id_salt, labels, selected, false)
+}
+
+/// Like [`segmented`] but every segment gets the SAME width (widest label) →
+/// symmetric halves (used by the header Seq switch).
+pub fn segmented_equal(ui: &mut egui::Ui, id_salt: impl std::hash::Hash, labels: &[&str], selected: usize) -> usize {
+    segmented_impl(ui, id_salt, labels, selected, true)
+}
+
+fn segmented_impl(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    labels: &[&str],
+    selected: usize,
+    equal: bool,
+) -> usize {
+    let font = f_sans_sb(11.0);
+    let h = CTL_HEIGHT;
+    let pad = 14.0;
+    let mut widths: Vec<f32> = labels
+        .iter()
+        .map(|l| {
+            let tw = ui.fonts(|f| f.layout_no_wrap((*l).to_string(), font.clone(), Color32::WHITE).size().x);
+            (tw + 2.0 * pad).max(52.0)
+        })
+        .collect();
+    if equal {
+        let m = widths.iter().cloned().fold(0.0_f32, f32::max);
+        for w in widths.iter_mut() {
+            *w = m;
+        }
+    }
+    let total: f32 = widths.iter().sum();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(total + 4.0, h), egui::Sense::hover());
+
+    // Recessed well track (dark rect + inner top shadow + dark border).
+    {
+        let p = ui.painter_at(rect);
+        p.rect_filled(rect, RADIUS_CTL, rgb(20, 21, 25));
+        inner_top_shadow(&p, rect, RADIUS_CTL, 4.0, 120);
+        p.rect_stroke(rect, RADIUS_CTL, egui::Stroke::new(1.0, rgb(11, 11, 14)), egui::StrokeKind::Inside);
+    }
+
+    let mut result = selected.min(labels.len().saturating_sub(1));
+    let mut cx = rect.left() + 2.0;
+    for (i, label) in labels.iter().enumerate() {
+        let seg = egui::Rect::from_min_size(egui::pos2(cx, rect.top() + 2.0), egui::vec2(widths[i], h - 4.0));
+        let resp = ui.interact(seg, ui.make_persistent_id((&id_salt, "seg", i)), egui::Sense::click());
+        let active = i == result;
+        if active {
+            // No drop shadow: the keycap sits inside the recessed well.
+            keycap_body(ui.painter(), seg, KeycapState::PressedBlue, false);
+        }
+        let color = if active {
+            rgb(234, 246, 255)
+        } else if resp.hovered() {
+            INK()
+        } else {
+            INK2()
+        };
+        ui.painter()
+            .text(seg.center(), egui::Align2::CENTER_CENTER, *label, font.clone(), color);
+        if resp.clicked() {
+            result = i;
+        }
+        cx += widths[i];
+    }
+    result
 }
 
 // ============================================================
@@ -181,4 +292,129 @@ pub fn lcd_bg(ui: &egui::Ui, rect: egui::Rect, radius: f32) {
         p.line_segment([egui::pos2(inner.left(), y), egui::pos2(inner.right(), y)], egui::Stroke::new(1.0, Color32::from_black_alpha(28)));
         y += 3.0;
     }
+}
+
+// ============================================================
+// Switch — on/off toggle. Recessed slot (dark → blue) + round metal cap that
+// slides. `t` is the animated 0→1 state (0 = off/left, 1 = on/right). No harsh
+// top line, no specular dot inside the cap.
+// ============================================================
+pub fn switch(ui: &egui::Ui, rect: egui::Rect, t: f32) {
+    let p = ui.painter();
+    let t = t.clamp(0.0, 1.0);
+    let rr = rect.height() * 0.5;
+    let track = lerp_c(rgb(19, 20, 24), rgb(38, 104, 156), t);
+    let border = lerp_c(rgb(9, 9, 12), rgb(18, 60, 92), t);
+    p.rect_filled(rect, rr, track);
+    p.rect_stroke(rect, rr, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+    let kr = rect.height() * 0.5 - 2.0;
+    let kx = (rect.left() + rr) + ((rect.right() - rr) - (rect.left() + rr)) * t;
+    let kc = egui::pos2(kx, rect.center().y);
+    p.circle_filled(kc + egui::vec2(0.0, 1.0), kr, Color32::from_black_alpha(90));
+    p.circle_filled(kc, kr, rgb(206, 208, 214));
+    radial_circle(p, kc, kr * 0.96, rgb(232, 234, 240), rgb(196, 198, 205), rgb(150, 152, 160));
+}
+
+// ============================================================
+// Tag — small M/S/T lane button (17×17, r3). Raised mini-keycap; when active it
+// takes the accent colour, otherwise a neutral grey. Caller allocates + senses.
+// ============================================================
+pub fn tag(ui: &egui::Ui, rect: egui::Rect, letter: &str, active: bool, accent: Color32, ink_on: Color32) {
+    let p = ui.painter();
+    let (top, bot, border, ink) = if active {
+        (lerp_c(accent, Color32::WHITE, 0.22), accent, lerp_c(accent, Color32::BLACK, 0.5), ink_on)
+    } else {
+        (rgb(66, 67, 74), rgb(52, 53, 58), rgb(23, 23, 27), rgb(150, 151, 158))
+    };
+    p.rect_filled(rect, 3.0, bot);
+    grad3(p, rect.shrink(1.4), top, lerp_c(top, bot, 0.5), bot, 0.55);
+    p.rect_stroke(rect, 3.0, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+    p.text(rect.center(), egui::Align2::CENTER_CENTER, letter, f_mono_sb(9.0), ink);
+}
+
+// ============================================================
+// Lane name — the lane's title button. A keycap (grey at rest, pressed-blue when
+// the lane is selected) with a left-aligned label. Caller allocates + senses.
+// ============================================================
+pub fn lane_name(ui: &egui::Ui, rect: egui::Rect, text: &str, selected: bool) {
+    let p = ui.painter();
+    // FLAT: no gradient/border at rest (a raised look reads as a permanent hover);
+    // only the selected lane is filled blue with a thin outline.
+    if selected {
+        p.rect_filled(rect, 5.0, rgb(42, 104, 156));
+        p.rect_stroke(rect, 5.0, egui::Stroke::new(1.0, rgb(60, 132, 186)), egui::StrokeKind::Inside);
+    } else {
+        p.rect_filled(rect, 5.0, rgb(52, 53, 59));
+    }
+    let tc = if selected { rgb(234, 246, 255) } else { rgb(201, 203, 211) };
+    // Tight left padding so the button doesn't leave much empty space L/R.
+    p.text(egui::pos2(rect.left() + 5.0, rect.center().y), egui::Align2::LEFT_CENTER, text, f_mono_sb(11.0), tc);
+}
+
+// ============================================================
+// Plate — raised panel as a single composite `Shape` (soft shadow + gradient +
+// border + top liseré). Returned (not painted) so a popup can reserve a shape
+// slot BEFORE its content and set the plate behind it. Used by the menu frames.
+// ============================================================
+pub fn plate_shape(rect: egui::Rect, radius: f32) -> egui::Shape {
+    let mut v: Vec<egui::Shape> = Vec::new();
+    // soft drop shadow — stacked rects, quadratic falloff
+    let steps = 10;
+    for i in (1..=steps).rev() {
+        let t = i as f32 / steps as f32;
+        let grow = 6.0 * t;
+        let a = (42.0 * (1.0 - t) * (1.0 - t)).round().clamp(0.0, 255.0) as u8;
+        v.push(egui::Shape::rect_filled(
+            rect.translate(egui::vec2(0.0, 2.0)).expand(grow),
+            radius + grow,
+            Color32::from_black_alpha(a),
+        ));
+    }
+    v.push(egui::Shape::rect_filled(rect, radius, rgb(37, 38, 43)));
+    v.push(grad3_mesh_shape(rect.shrink(2.5), rgb(47, 48, 54), rgb(41, 42, 47), rgb(37, 38, 43), 0.55));
+    v.push(egui::Shape::rect_stroke(rect, radius, egui::Stroke::new(1.0, rgb(20, 20, 24)), egui::StrokeKind::Inside));
+    // top liseré (center-peaked fade)
+    let inset = 10.0;
+    v.push(fade_line_mesh_shape(
+        egui::Rect::from_min_size(egui::pos2(rect.left() + inset, rect.top() + 1.5), egui::vec2((rect.width() - 2.0 * inset).max(0.0), 1.5)),
+        (255, 255, 255),
+        18,
+    ));
+    egui::Shape::Vec(v)
+}
+
+fn grad3_mesh_shape(rect: egui::Rect, ctop: Color32, cmid: Color32, cbot: Color32, mid_t: f32) -> egui::Shape {
+    let ym = rect.top() + rect.height() * mid_t;
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let mut m = egui::epaint::Mesh::default();
+    m.colored_vertex(egui::pos2(l, t), ctop);
+    m.colored_vertex(egui::pos2(r, t), ctop);
+    m.colored_vertex(egui::pos2(l, ym), cmid);
+    m.colored_vertex(egui::pos2(r, ym), cmid);
+    m.colored_vertex(egui::pos2(l, b), cbot);
+    m.colored_vertex(egui::pos2(r, b), cbot);
+    m.add_triangle(0, 1, 3);
+    m.add_triangle(0, 3, 2);
+    m.add_triangle(2, 3, 5);
+    m.add_triangle(2, 5, 4);
+    egui::Shape::mesh(m)
+}
+
+fn fade_line_mesh_shape(rect: egui::Rect, rgb3: (u8, u8, u8), peak: u8) -> egui::Shape {
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let cx = rect.center().x;
+    let c0 = Color32::from_rgba_unmultiplied(rgb3.0, rgb3.1, rgb3.2, 0);
+    let cc = Color32::from_rgba_unmultiplied(rgb3.0, rgb3.1, rgb3.2, peak);
+    let mut m = egui::epaint::Mesh::default();
+    m.colored_vertex(egui::pos2(l, t), c0);
+    m.colored_vertex(egui::pos2(cx, t), cc);
+    m.colored_vertex(egui::pos2(r, t), c0);
+    m.colored_vertex(egui::pos2(l, b), c0);
+    m.colored_vertex(egui::pos2(cx, b), cc);
+    m.colored_vertex(egui::pos2(r, b), c0);
+    m.add_triangle(0, 1, 4);
+    m.add_triangle(0, 4, 3);
+    m.add_triangle(1, 2, 5);
+    m.add_triangle(1, 5, 4);
+    egui::Shape::mesh(m)
 }

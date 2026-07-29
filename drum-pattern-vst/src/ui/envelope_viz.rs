@@ -8,7 +8,7 @@
 //! graph intentionally follows the designer mockup's simplified ADSR readout.
 
 use crate::ui::theme::*;
-use nih_plug_egui::egui::{Color32, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2};
+use nih_plug_egui::egui::{Color32, Pos2, Rect, Shape, Stroke, Vec2};
 
 // -- Amplitude envelope (AHDSR style) ----------------------------------------
 
@@ -36,11 +36,15 @@ pub fn draw_amp_envelope(
         rect.min + Vec2::new(pad_x, pad_y),
         rect.size() - Vec2::new(pad_x * 2.0, pad_y * 2.0),
     );
+    // Reserve a bottom strip for the A/D/R legend (letters no longer on the curve).
+    let legend_h = 14.0f32;
+    let base_y = graph.max.y - legend_h;
+    let top_y = graph.min.y;
 
     for i in 0..=4 {
         let x = graph.min.x + graph.width() * i as f32 / 4.0;
         painter.line_segment(
-            [Pos2::new(x, graph.min.y), Pos2::new(x, graph.max.y)],
+            [Pos2::new(x, top_y), Pos2::new(x, base_y)],
             Stroke::new(1.0, white_a(13)),
         );
     }
@@ -54,9 +58,7 @@ pub fn draw_amp_envelope(
         attack + decay_time
     };
 
-    let base_y = graph.max.y;
-    let top_y = graph.min.y;
-    let sustain_y = graph.min.y + graph.height() * 0.62;
+    let sustain_y = top_y + (base_y - top_y) * 0.62;
     let x_start = graph.min.x;
     let x_attack = graph.min.x + graph.width() * attack / total_time;
     let x_decay = if has_release {
@@ -87,59 +89,27 @@ pub fn draw_amp_envelope(
         );
     }
 
-    let label_color = white_a(150);
-    draw_env_label(
-        &painter,
-        graph,
-        "A",
-        Pos2::new(x_attack - 3.0, base_y - 3.0),
-        label_color,
-    );
-    draw_env_label(
-        &painter,
-        graph,
-        "D",
-        Pos2::new(x_attack + (x_decay - x_attack) * 0.55, sustain_y - 8.0),
-        label_color,
-    );
-    if has_release {
-        draw_env_label(
-            &painter,
-            graph,
-            "S",
-            Pos2::new(x_decay + 4.0, sustain_y - 4.0),
-            label_color,
+    // Bottom legend (coloured square + letter) — no letters on the curve itself.
+    let items: &[(Color32, &str)] = if has_release {
+        &[(AMBER(), "A"), (BLUE(), "D"), (SEQPL(), "R")]
+    } else {
+        &[(AMBER(), "A"), (BLUE(), "D")]
+    };
+    let ly = graph.max.y - legend_h * 0.5;
+    let mut lx = graph.min.x + 2.0;
+    for (col, letter) in items {
+        painter.rect_filled(Rect::from_min_size(Pos2::new(lx, ly - 4.0), Vec2::splat(8.0)), 1.0, *col);
+        painter.text(
+            Pos2::new(lx + 12.0, ly),
+            nih_plug_egui::egui::Align2::LEFT_CENTER,
+            *letter,
+            f_mono_med(9.0),
+            white_a(150),
         );
-        draw_env_label(
-            &painter,
-            graph,
-            "R",
-            Pos2::new(x_end - 12.0, base_y - 3.0),
-            label_color,
-        );
+        lx += 40.0;
     }
 
     response
-}
-
-fn draw_env_label(
-    painter: &nih_plug_egui::egui::Painter,
-    graph: Rect,
-    label: &str,
-    pos: Pos2,
-    color: Color32,
-) {
-    let pos = Pos2::new(
-        pos.x.clamp(graph.min.x + 2.0, graph.max.x - 10.0),
-        pos.y.clamp(graph.min.y + 10.0, graph.max.y - 2.0),
-    );
-    painter.text(
-        pos,
-        nih_plug_egui::egui::Align2::LEFT_BOTTOM,
-        label,
-        f_mono_med(10.0),
-        color,
-    );
 }
 
 fn draw_curve(

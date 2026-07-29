@@ -142,7 +142,8 @@ impl Voice for OpenHiHatVoice {
             return 0.0;
         }
 
-        let noise = self.noise.next();
+        let raw_noise = self.noise.next();
+        let noise = self.saturation.process_at(true, raw_noise);
         let peaked = self.peaking.process(noise);
         let filtered = self.filter.process(peaked);
         let shimmer = self.shimmer_filter.process(self.shimmer_noise.next())
@@ -152,7 +153,7 @@ impl Voice for OpenHiHatVoice {
         let env = self.envelope.next().max(0.01);
 
         let time = self.samples_elapsed as f32 / self.sample_rate;
-        let output = self.saturation.process(body)
+        let output = self.saturation.process_at(false, body)
             * env
             * self.settings.volume
             * self.analog_drift.level_multiplier;
@@ -175,8 +176,10 @@ impl Voice for OpenHiHatVoice {
             return (m, m);
         }
 
-        let noise_l = self.noise.next();
-        let noise_r = self.noise_r.next();
+        let raw_l = self.noise.next();
+        let raw_r = self.noise_r.next();
+        let noise_l = self.saturation.process_at(true, raw_l);
+        let noise_r = self.saturation.process_at(true, raw_r);
         let peaked_l = self.peaking.process(noise_l);
         let peaked_r = self.peaking_r.process(noise_r);
         let filtered_l = self.filter.process(peaked_l);
@@ -201,8 +204,8 @@ impl Voice for OpenHiHatVoice {
         }
 
         (
-            self.saturation.process(body_l) * vol,
-            self.saturation.process(body_r) * vol,
+            self.saturation.process_at(false, body_l) * vol,
+            self.saturation.process_at(false, body_r) * vol,
         )
     }
 

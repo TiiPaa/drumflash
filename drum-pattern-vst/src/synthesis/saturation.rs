@@ -86,6 +86,20 @@ impl SaturationConfig {
         mixed * self.output_gain
     }
 
+    /// Apply saturation only when this call site matches the configured stage.
+    /// `pre_stage = true` marks a call placed BEFORE the voice's filter,
+    /// `false` a call placed after it. With `pre_filter` off (default) the
+    /// drive happens post-filter; enabling it moves the drive in front of the
+    /// filter so the filter tames the generated harmonics.
+    #[inline]
+    pub fn process_at(&self, pre_stage: bool, x: f32) -> f32 {
+        if pre_stage == self.pre_filter {
+            self.process(x)
+        } else {
+            x
+        }
+    }
+
     /// Recalcule le gain de compensation à chaque changement de type ou d'amount.
     /// La compensation est définie pour que l'entrée de référence 0.5 donne
     /// approximativement 0.5 en sortie (wet), quelle que soit la drive.
@@ -263,6 +277,30 @@ mod tests {
             hard.abs() <= tape.abs(),
             "hard clip should be more limited than tape"
         );
+    }
+
+    #[test]
+    fn process_at_routes_by_stage() {
+        let mk = |pre_filter: bool| {
+            let mut cfg = SaturationConfig {
+                saturation_type: SaturationType::HardClip,
+                amount: 1.0,
+                mix: 1.0,
+                output_gain: 1.0,
+                pre_filter,
+                compensation_gain: 1.0,
+            };
+            cfg.update_compensation();
+            cfg
+        };
+        // Post-filter (default): only the post-stage call saturates.
+        let post = mk(false);
+        assert_eq!(post.process_at(true, 0.9), 0.9, "pre stage must pass through");
+        assert!(post.process_at(false, 0.9) != 0.9, "post stage must saturate");
+        // Pre-filter: only the pre-stage call saturates.
+        let pre = mk(true);
+        assert!(pre.process_at(true, 0.9) != 0.9, "pre stage must saturate");
+        assert_eq!(pre.process_at(false, 0.9), 0.9, "post stage must pass through");
     }
 
     #[test]

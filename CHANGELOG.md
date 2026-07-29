@@ -1,5 +1,243 @@
 # Changelog
 
+## 2026-07-29 — Logo : bas du logotype coupé (build 20260729-223750)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-223750`
+**Validation:** `cargo check` 0 warning, `build.ps1 -Install` OK.
+
+- L'uv du logotype excluait la **dernière ligne de pixels** du contenu (glyph y12..36 **inclus**, mais l'uv max était `36/48` → la ligne 36 était rognée, idem colonne 162). uv corrigée à `163/164, 37/48` ; affichage recalé en 1:1 sur le contenu réel 160×25 (était 159×24).
+
+## 2026-07-29 — Warning pattern : « Save & Load » + modal recentré (build 20260729-222818)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-222818`
+**Validation:** `cargo check` 0 warning, `build.ps1 -Install` OK.
+
+- Retouche [139] (sur retour utilisateur) : le modal d'avertissement pattern est **descendu au centre de l'écran** (était collé sous le header) et propose un troisième bouton **`Save & Load`** (bleu) : sauvegarde d'abord le pattern courant dans SON slot, puis bascule sur le slot cible. `Discard & Load Pn` (rouge) et `Cancel` inchangés.
+
+## 2026-07-29 — Warning pattern non sauvegardée + choke groups ×4 (build 20260729-174208)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-174208`
+**Validation:** `cargo check` 0 warning, `cargo test` OK (198+113+1), `build.ps1 -Install` OK.
+
+- **[139] Warning pattern non sauvegardée** : cliquer un slot P1-P8 alors que la grille courante a des modifications non sauvegardées (`P1*`) ouvre une plaque skeuo « The current pattern has unsaved changes. Switching to Pn will discard them. » avec `Discard & Load Pn` (rouge) / `Cancel`. Couvre le load d'un slot occupé, le reload du même slot et le positionnement sur un slot vide. Dirty check factorisé dans `pattern_is_dirty()`.
+- **[147] Choke groups ×4** : remplace le choke global HH→OH par **4 choke groups par slot**, assignables dans l'onglet Track (dropdown `Choke` : None/1/2/3/4, section Routing). Quand un slot déclenche, tous les autres slots actifs du même groupe sont silencés (`apply_choke_groups`, lecture lock-free du layout atomique — groupe packé dans les bits 4-6 du routing byte). Fonctionne pour le séquenceur interne ET les triggers MIDI externes, pour tous les instruments.
+- **Migration** : les sessions sans champ `choke_group` (sentinel serde `0xFF`) récupèrent le comportement historique — HiHat et OpenHiHat en **groupe 1**. Les presets 12 lanes / legacy 13 initialisent HH+OH au groupe 1. Le param legacy `hihat_chokes_oh` est **masqué** du DAW (conservé pour le chargement des vieilles sessions) et le toggle `Choke` du header est retiré. ⚠️ Les utilisateurs qui avaient DÉSACTIVÉ le choke HH→OH retrouvent le groupe 1 assigné — mettre `Choke: None` dans l'onglet Track pour revenir à l'ancien comportement.
+- Tests : `legacy_routing_without_choke_group_migrates_hats_to_group_1`, `routing_byte_packs_choke_group_and_output`, `atomic_layout_exposes_normalized_choke_groups`, `choke_group_silences_same_group_slots`.
+
+## 2026-07-29 — Clr : choix Grid / Slot + positionnement sur slot vide (build 20260729-150219)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-150219`
+**Validation:** `cargo check` 0 warning, `cargo test` OK (194+110+1), `build.ps1 -Install` OK.
+
+- **Clr repensé** (sur demande) : le premier clic arme la confirmation, qui propose désormais **trois keycaps** : `Grid` (bleu — vide la grille courante seule, le slot garde son pattern sauvegardé), `Slot` (rouge — vide la grille ET le slot de la bank, visible seulement si un slot est chargé), `X` (annuler).
+- **Positionnement sur un slot vide** : cliquer un slot P1-P8 vide s'y **positionne** (keycap bleu = slot courant) avec une grille fraîche vide — on peut commencer un nouveau pattern directement à cet emplacement, `Save` y écrira. Factorisé dans `clear_current_grid()`.
+
+## 2026-07-29 — Playhead : ring autour de toute la fusion (build 20260729-143825)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-143825`
+**Validation:** `cargo check` 0 warning, `cargo test` OK (194+110+1), `build.ps1 -Install` OK.
+
+- **[138]** Quand la tête de lecture entre dans un groupe fusionné, le ring blanc pulsé entoure désormais **tout le bloc fusionné** (dessiné sur le `block_rect` de la cellule de départ). Avant : chaque step individuel était entouré au fil du jeu, y compris les cellules internes invisibles. Le marqueur ne vit plus que sur la cellule de départ du groupe.
+
+## 2026-07-29 — Pattern Bank : keycap = occupé, creux = vide ; Clr vide le slot (build 20260729-140953)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-140953`
+**Validation:** `cargo check` 0 warning, `build.ps1 -Install` OK.
+
+- Retouche [142] (sur retour utilisateur) : pastille blanche supprimée. Nouvelle différenciation par le **langage de forme** : slot **occupé** = keycap relevé + label lumineux (`INK_KEYCAP`) ; slot **vide** = box plate en creux (fond `BG()` + bordure `LINE()`, label `FAINT`). Le slot chargé (bleu) reste inchangé.
+- **Clr vide désormais le slot de la bank** : confirmer `Clr` efface la grille/plocks/fusions courantes ET remet le slot d'origine (`last_loaded_slot`) à `PatternSlot::default()` → le slot redevient visuellement vide immédiatement. Tooltip mis à jour.
+
+## 2026-07-29 — Slots vides sans marqueur (build 20260729-135911)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-135911`
+**Validation:** `build.ps1 -Install` OK.
+
+- Retouche [142] : le fin contour fantôme des slots Pattern Bank vides (lu comme une « LED éteinte ») est retiré. Reste : pastille blanche sur les slots **occupés**, slots vides simplement assombris.
+
+## 2026-07-29 — Quick wins UI : champ Name aligné, lanes vides discrètes, slots pattern, volumes (build 20260729-100737)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-100737`
+**Validation:** `cargo check` 0 warning, `cargo test` OK (194+110+1), `build.ps1 -Install` OK.
+
+- **[140] Onglet Track — champ Name aligné** : le `TextEdit` (padding de frame egui) dépassait des dropdowns Type/Aux Out. Il est maintenant dessiné dans la même box keycap 146×26 (`keycap_tex` + `TextEdit` sans frame à l'intérieur) : bords droits alignés.
+- **[141] Lanes vides plus discrètes** : cellules en fond sombre **plat** (plus de pointillés — les pointillés restent réservés aux cellules hors longueur), chips Vol/M-S-T/Hum-Push-Len **sans bordure** et sans texte `--`, pastille `+N` assombrie (fond `BG()` + bordure `LINE()`, survol inchangé).
+- **[142] Slots Pattern Bank vides vs remplis** : slots occupés = **pastille blanche** en haut à droite du keycap ; slots vides = assombris + fin contour fantôme. Le slot chargé (bleu) reste inchangé.
+- **[143] Volumes par défaut** : Kick 0.8→**1.0**, 808 0.9→**1.0**, HiHat 0.3→**0.2**, OpenHH 0.4→**0.3** (registry `sound_settings_default` + `VoiceSettings::*`). N'affecte que les **nouvelles lanes / resets** — les sessions existantes gardent leurs valeurs sauvegardées.
+
+## 2026-07-29 — Stéréo restauré + refonte chaîne saturation (pre-filter réel, volume post-sat) (build 20260729-095139)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-095139`
+**Validation:** `cargo check` 0 warning, `cargo test` OK (194+110+1), `build.ps1 -Install` OK.
+
+- **[135] Stéréo disparu** : la checkbox `Stereo` avait été perdue des schémas `FULL_STD` (Snare, Perc1) et `HIHAT_STD` (HiHat) dans `instrument_registry.rs`. Restaurée ; tests `stereo_capable_voices_expose_the_stereo_checkbox` / `mono_voices_do_not_expose_the_stereo_checkbox` ajoutés.
+- **[136] Saturation Pre-Filter morte** : le flag `pre_filter` était écrit par toutes les voix mais **jamais lu** par `SaturationConfig::process()`. Nouveau helper `process_at(pre_stage, x)` : chaque voix appelle la saturation à deux points (avant son filtre, après) et le flag route l'un ou l'autre. Effet audible : pre = le filtre adoucit les harmoniques générées (drive devant), post = la saturation colore le signal filtré (défaut, comportement inchangé).
+- **Bug bonus découvert** : la saturation du **HiHat n'était pas câblée du tout** (settings + UI présents, zéro appel DSP). Câblée (mono + stéréo).
+- **B8** : toggle `Saturation Pre-Filter` ajouté (special index 8, param legacy `b8_sat_pre` pour le seed des vieilles sessions).
+- **[137] Volume post-saturation** : `settings.volume` déplacé **après** la saturation sur Kick, Snare, Tom1-3, Clap, Snare606, B8, Perc1 (avant : il alimentait le drive, donc baisser le volume changeait le caractère). Le drift de niveau analog reste pré-sat (fait partie du caractère du hit). OpenHH/Ride/Cymbal étaient déjà corrects.
+- **Attention au changement sonore** : avec saturation active, le niveau perçu peut différer des sessions précédentes (le volume ne drive plus). Sans saturation, rendu identique.
+- Tests : `process_at_routes_by_stage`, `test_kick_volume_is_post_saturation`, `test_snare_volume_is_post_saturation`, `test_hihat_saturation_is_wired`.
+
+## 2026-07-29 — [SK-cleanup] Zéro warning + sliders plock sur le track skeuo (build 20260729-090446)
+
+**Branche:** `skeuo-vector` · **Build:** `20260729-090446`
+**Validation:** `cargo check` 0 warning, `cargo test` OK (188+104+1), `build.ps1 -Install` OK.
+
+- **18 warnings éliminés** : imports inutilisés (`cargo fix`), code mort de l'ère textures/anciens essais de rendu supprimé — `skeuo::pad`, `widgets::radial_rect` / `soft_glow`, `envelope_viz::draw_env_label`, helper `theme::blue_glow`, constantes `RADIUS_TAG` / `RADIUS_PAD_TEX` / `KEYCAP_BORDER`, tokens de skin jamais lus (`panel3`, `danger_dim`, `danger_soft`, `handle`, `mute_fill`, `envelope_bg` retirés du struct `Theme` + des 3 skins), champs `TrackStyle.corner` / `handle_r` jamais lus.
+- **`LocalParamSlider` centralisé** : les sliders des menus P-lock / Morph / Seq P-lock ne dessinent plus leur propre fond/fill/bordure — ils passent désormais par **`skeuo::slider_track`** (sillon creusé + fill pilule bleue), même rendu que les sliders du Sound Editor, des lanes et du header. Le fond plein carré est remplacé par la groove encastrée dans ces menus.
+- Annulées à la demande : SK-2 (intégration `skeuo_theme.rs`) et SK-14 (patterns sur plaque dédiée) — retirées du TODO.
+
+## 2026-07-28 — Grid : suppression de tooltips (build 20260728-224103)
+
+**Branche:** `skeuo-vector` · **Build:** `20260728-224103`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- Retiré les `on_hover_text` du grid qui n'affichaient pas de paramètre : **grip** (« Drag to reorder lane »), **nom de lane** (nom complet de l'instrument), **lane vide** (« Choose an instrument for this slot »), **cellule vide** (« Empty slot - step N »). Les curseurs (`Grab` / `PointingHand`) sont conservés.
+- Puis, sur demande, retiré aussi les tooltips **Volume**, **M** (Mute), **S** (Solo) et **T** (Test) — passage d'une chaîne vide aux helpers `draw_mini_value_slider` / `draw_tag_*` (build 20260728-224103). Restent uniquement les tooltips des mini-sliders **Hum / Push / Len**.
+
+## 2026-07-28 — Couleur du panneau Lane Editor + biseau de jonction (build 20260728-175826)
+
+**Branche:** `skeuo-vector` · **Build:** `20260728-175826`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- Le panneau droit (Lane Editor) était resté peint à l'**ancien `PANEL()` flat** `rgb(20,20,25)` (quasi noir) → il ressortait comme un rectangle noir sur le châssis skeuo éclairci. Nouvelles constantes skin-indépendantes : `PANEL_SKEUO` `rgb(37,38,43)` (corps, = ton des plaques), `PANEL_SKEUO_HEADER` `rgb(44,45,51)` (bandeau titre + onglets inactifs), `PANEL_SKEUO_HOVER` `rgb(52,53,60)` (survol onglets). Appliqué au fond du panneau (`ui.rs`), au header et aux onglets Sound/Track (`sound_editor.rs`).
+- **Biseau de jonction gauche/droite** : l'ancien séparateur `vline` était peint AVANT le fond du panneau → recouvert (invisible une fois les deux surfaces au même gris skeuo). Refait en biseau dessiné en dernier : creux sombre `PANEL_BORDER` `rgb(18,18,21)` + liseré clair `rgb(58,59,66)` côté panneau.
+
+## 2026-07-28 — Menus contextuels egui à la norme skeuo (Lot 2 modals) (build 20260728-165711)
+
+**Branche:** `skeuo-vector` · **Build:** `20260728-165711`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **Frame des menus egui natifs relevé** (Visuals globales) : `window_fill` plaque-mid `rgb(41,42,47)`, `window_stroke` bordure sombre `rgb(20,20,24)`, `popup_shadow` ombre douce. Ne touche QUE les menus contextuels + tooltips (nos popups maison utilisent `Frame::NONE` + plaque peinte à la main).
+- **Nouveaux helpers `menus::context_menu_button` / `context_menu_separator`** : rangée **keycap pleine largeur** (label en accent, grisé + sans feedback quand `enabled=false`, chaînable `.on_hover_text`) et trait de séparation discret.
+- **4 menus clic-droit convertis** : nom de lane (Copy/Paste Lane, Paste Grid, Clear/Delete Lane avec confirmation en rouge, Randomize), lane vide (Paste Lane), longueur de lane (Follow pattern length), block Song (Copy/Paste/Duplicate/Clear). Fini le look « gris brut » egui — relief + keycaps partout.
+- **Largeur fixée à chaque menu** (`min`+`max` = largeur du plus long label) pour éviter que les keycaps ne s'étirent : lane 148, longueur 150, lane vide 118, Song 110 (build 20260728-165711).
+
+## 2026-07-28 — Popups « maison » en plaque skeuo (Lot 1 modals) (build 20260728-162504)
+
+**Branche:** `skeuo-vector` · **Build:** `20260728-162504`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Design validé en mockup local (`ui-lab/popup_frame.png`).
+
+- **Nouveau `skeuo::plate_shape`** : plaque en relief (ombre douce empilée + fond + dégradé mesh + bordure + liseré) renvoyée comme `Shape` composite ; posée via un **slot réservé** (`painter.add(Noop)` → `painter.set`) pour être peinte DERRIÈRE le contenu du popup une fois son rect connu.
+- **`menus.rs`** : `plock_menu_frame` / `page_menu_frame` → plaque skeuo (fini l'aplat `P_ACTIVE` + barre d'accent) ; header `×` → **✓ discret dessiné** (les changements plock sont live → « terminé », pas « annuler ») + fin trait d'accent ; `plock_menu_action_row` → **keycap** (label en accent, rouge pour destructif).
+- Corrige d'un coup : **Plock son / Morph / Séquenceur** (via plock_menu_frame), **Add Module** + **Menu de page** (via page_menu_frame), **⚙ Settings** (frame). **Warning preset de lane** repassé aussi en plaque + boutons `chip_button`.
+
+## 2026-07-28 — Logotype FLASH DRUM en bitmap baké, affiché 1:1 (build 20260728-155147)
+
+**Branche:** `skeuo-vector` · **Build:** `20260728-155147`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **Logotype du header = bitmap baké** (`assets/logotype.png`, 164×48, FLASH gris oblique + DRUM blanc droit), croppé sur son contenu (x3..162 / y12..36) et **affiché 1:1** (24px → 24pt) : egui n'ayant PAS de mipmaps, toute réduction d'une texture plus grande que sa taille écran crénèle — d'où l'affichage à sa taille native. `v0.1.0 · build` reste en Plex Mono live à droite.
+- **Abandon du texte oblique en mesh** (`skewed_text` retiré) : cisailler le galley tessellisé cassait l'anti-aliasing. Les 2 fontes condensées **retirées** du binaire.
+
+## 2026-07-28 — Lane Editor SK-16 + norme du bouton/menu Settings (Lot 3) (build 20260728-111256)
+
+**Branche:** `skeuo-vector` · **Build:** `20260728-111256`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **[SK-16] Mode Notes** : les boutons `-`/`+` du stepper de fréquence deviennent des **keycaps avec flèches ◂ ▸ peintes** (triangles, pas des glyphes).
+- **[SK-16] Graphe ADSR** : plus de lettres A/D/R **sur la courbe** → **légende en bas** (carré coloré + lettre, A ambre / D bleu / R violet), 14px réservés en bas du LCD.
+- **[SK-16] Dropdowns** (`styled_select`) : s'ouvrent **vers le haut** quand il n'y a pas la place en dessous (près du bord bas de la fenêtre).
+- **Norme Settings** : bouton **Settings** du header → keycap ; **× de fermeture** du menu → keycap.
+
+## 2026-07-28 — Generator 2 rangées + Header groupe Seq (Lot 2) (build 20260728-102242)
+
+**Branche:** `skeuo-vector` · **Build:** `20260728-102242`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Designs validés en mockups locaux (`ui-lab/generator2.png`, `ui-lab/header_seq.png`).
+
+- **[SK-15] Generator sur 2 rangées** : R1 `Type · A [style] · Mix · B [style]`, R2 `Density · Variation · GENERATE` (droite). Respire vs la rangée unique tassée.
+- **[SK-11] Header** : groupe **Seq** = segmented Internal/Ext MIDI (**moitiés symétriques** via nouveau `skeuo::segmented_equal`) + **MIDI Pat** collé juste après ; **Auto-Edit retiré du header** → déplacé dans le menu **⚙ Settings** (toggle skeuo, `draw_settings_popup_if_any` reçoit désormais `setter`).
+
+## 2026-07-28 — Switch + tags M/S/T + nom de lane en skeuo (Lot 1) (build 20260728-095822)
+
+**Branche:** `skeuo-vector` · **Build:** `20260728-095822`
+**Corrections post-test :** tag **M** en **rouge** actif (texte blanc, était ambre) ; **T** flashe ambre **au clic** aussi (plus seulement au MIDI externe) ; **nom de lane aplati** (dégradé doux + sans liseré → moins bombé).
+
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Designs validés en mockups locaux (`ui-lab/switches.png`, `ui-lab/tags_lane.png`).
+
+- **[SK-7] `skeuo::switch`** : glissière encastrée (sombre → bleue) + bouton rond métal qui glisse (animé), sans ligne foncée en haut ni reflet interne. `ToggleSwitch` (Stereo, Saturation Pre-Filter, Main Mix) routé dessus.
+- **[SK-10a] `skeuo::tag`** : tags M/S/T en mini-keycap relief, gris inactif / accent coloré actif (M rouge, S bleu, T ambre). `draw_tag_button_v2` routé dessus.
+- **[SK-10b] `skeuo::lane_name`** : nom de lane = keycap (gris repos / bleu sélectionné) texte à gauche. `draw_lane_name_v2` routé dessus.
+
+## 2026-07-27 — Renommage « Lane Editor » + bascule Sound/Track en onglets à ras (build 20260727-181804)
+
+**Branche:** `skeuo-vector` · **Build:** `20260727-181804`
+- **En-tête du panneau renommé « Sound Editor » → « Lane Editor »** (le contexte « Slot N – nom » reste).
+- **Bascule Sound | Track** repensée en **onglets à ras** : pleine largeur 50/50, h30, **sans radius**, hairline entre les deux + bord bas, **bleu plein** actif / **couleur plaque** inactif (s'éclaircit au survol). C'est le seul segmenté sans keycap (volontaire). L'onglet « Sound Editor » devient « Sound ».
+- Sélecteur d'instrument 14-keycaps **écarté** (décision : la sélection de lane via la grille suffit).
+
+## 2026-07-27 — Pattern Bank + section Fusion en skeuo (build 20260727-175112)
+
+**Branche:** `skeuo-vector` · **Build:** `20260727-175112`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Design validé en mockups locaux (`ui-lab/pattern_bank.png`, `ui-lab/fusion_section.png`).
+
+### Pattern Bank (ligne du bas)
+- **Save** et **Clr** passent de `egui::Button` bruts (fond plat clignotant) à des **keycaps** : Save armé = keycap bleu (`keycap_button`) ; Clr → `Sure?` rouge en confirmation (`chip_button`).
+- **Disposition revue** : slots P1-P8 **groupés** juste après le label, Save+Clr collés après les slots, **Export/Drag repoussés à droite** (`right_to_left`).
+
+### Section Fusion
+- Refonte du `draw_fusion_edit_box` : ancien `Frame` PANEL3 + mini-boutons egui `Del`/`×` → **strip en relief** (`fusion_strip_bg` : dégradé + bordure + liseré) avec **contenu centré**.
+- **Repos** : `FUSION` + touche **`Maj` ambre** + « + glisser pour fusionner » (ou « Sélectionne 2 cellules » en mode fusion).
+- **Édition** : `Fusion N–M` + `Steps` (DragValue) + `Morph: Off`/liste + **Del** (rouge) + **×** en keycaps compacts (h19, ne touchent plus les bords).
+
+## 2026-07-27 — Finitions blocs Song (build 20260727-163615)
+
+**Branche:** `skeuo-vector` · **Build:** `20260727-163615`
+- **LED des blocs Song** décalée vers l'intérieur (coin −11px) pour ne plus toucher le bord, comme la page-bar.
+- **Sélecteur de pattern des blocs** : nouveau `styled_select_centered` (code centré, **sans flèche** ▾) — juste `P1`/`--` centré ; le clic ouvre toujours le picker.
+- **Bouton `Clear All` du Song** passé à la norme keycap (`chip_button`) : label rouge en confirmation (`Confirm?`).
+
+## 2026-07-27 — LED de lecture incrustée (page-bar + blocs Song) (build 20260727-142106)
+
+**Branche:** `skeuo-vector` · **Build:** `20260727-142106`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Design validé en mockup local (`ui-lab/page_leds.png`).
+
+- **Nouveau `skeuo::play_led`** : LED rouge de position de lecture (verre radial + reflet, sans halo), à incruster dans le coin haut-droit.
+- **Page-bar** : la LED rouge passe de **sous** le bouton au **coin haut-droit** du bouton de page en lecture (grid.rs).
+- **Blocs du Song** : le bloc en cours de lecture n'est plus rempli en bleu → même LED rouge dans son coin haut-droit ; la sélection (bloc édité) garde sa bordure bleue.
+
+## 2026-07-27 — Boutons à LED du header en skeuo (build 20260727-124102)
+
+**Branche:** `skeuo-vector` · **Build:** `20260727-124102`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Design validé en mockup local (`ui-lab/led_buttons.png`) avant câblage.
+
+- **Nouveau `skeuo::led`** : pastille indicatrice rétroéclairée (verre radial en mesh éventail + reflet spéculaire), **sans halo lumineux** (retiré à la demande). Bleue allumée, sombre éteinte.
+- **`ToggleLED` (Choke / Auto-Edit / MIDI Pat)** repensé : **pilule keycap grise** (le fond ne change plus selon l'état) + `skeuo::led` à gauche + label. Désactivé (MIDI Pat en Ext MIDI) = touche grisée + LED éteinte + label estompé. Suppression de l'ancien fond plat teinté + halo bleu.
+
+## 2026-07-27 — Switches segmentés harmonisés au langage keycap (build 20260727-122735)
+
+**Branche:** `skeuo-vector` · **Build:** `20260727-122735`
+- **Ligne Frequency (Kick/808)** : le switch `Hz`/`Note` passe **avant** le slider (juste après le label, position fixe) au lieu d'être à droite — il ne saute plus quand on bascule Hz↔Note, et ça suit la maquette (switch puis slider ; valeur toujours alignée à droite).
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Design pré-validé au lab + montré à l'utilisateur (aperçu web du rendu egui réel) avant câblage.
+
+- **Nouveau renderer unique `skeuo::segmented`** : puits creusé (rect arrondi + ombre haute corner-safe + bordure, **sans dégradé mesh** → pas de coin carré qui dépasse) + option active en **keycap bleu sans ombre portée** (l'ombre baverait hors du puits) + options inactives en texte discret cliquable. Segments dimensionnés au texte.
+- **3 anciens renderers supprimés/remplacés** : `text_segmented` (controls.rs) → `p_lock_mode_segmented` (Sound/Sequencer) + `generator_song_segmented` (Generator/Song) appellent `skeuo::segmented` ; `led_segmented` (widgets.rs, LED bleue) supprimé → Seq Mode (Internal/Ext MIDI) dans header.rs ; `draw_note_freq_mode_toggle` (Hz/Note, aplat bleu) réduit à un appel `skeuo::segmented`.
+- **`keycap` refactorée** en `keycap_body(p, rect, state, shadow)` : `shadow=false` quand la touche est dans un puits ; mesh de dégradé insetté à 2.2 (≥ r×0.42) pour ne jamais dépasser le rayon.
+
+## 2026-07-27 — Grid en atlas bitmap + dropdowns skeuo + alignement onglets Sound/Track (build 20260727-112050)
+
+**Branche:** `skeuo-vector` · **Build:** `20260727-112050`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK. Alignement pré-validé dans le lab egui headless (scènes `sound_panel` / `track_panel`, sorties `ui-lab/`).
+
+### Alignement Sound / Track (comme la maquette `onglet01.png`)
+- **Bug racine : colonne de labels non fixe.** `editor_label` utilisait `allocate_ui_with_layout(138, …)` qui **rétrécit à la largeur du texte** → les débuts de sliders étaient en escalier. Fix : `allocate_exact_size(138)` + `painter.text` → colonne vraiment fixe, tous les contrôles démarrent au même x.
+- **Sliders pleine largeur** dans les sections sans graphe (valeurs/dropdowns/toggles calés à droite) ; sections à graphe (Envelope/Filter) gardent la colonne 340 pour loger le graphe.
+- **Dropdowns calés à droite** (Click/Noise/Saturation Type, Algorithm) via `right_to_left`.
+- **Onglet Track reconstruit** avec le même système de lignes (Name, Type, Main Mix, Aux Out, Channel, Note, Length) + en-têtes de section `editor_section_header`, au lieu de l'empilement vertical.
+
+### Changements
+- **Cellules du séquenceur = atlas bitmap du designer** (`assets/pads/atlas-pads.png` + `.json`, 69 sprites : 9 pas simples + 60 fusions N=2..16). Nouveau `src/ui/pads.rs` : parse le manifeste une fois (`OnceLock`), mappe (état + span de fusion) → sprite, blitte via UV. Appelé depuis `grid.rs::draw_step_cell_v2`. Overlays (playhead, chiffre de pulses) restent vectoriels par-dessus.
+- **Bleed opaque contourné** : l'atlas a été baké avec un fond **opaque** `(11,11,14)` (et non alpha transparent comme annoncé au README) → le bleed d'une cellule écrasait le bord droit de sa voisine (troncature de quelques px). Fix : on blitte **uniquement la zone utile** (`ew×eh`, bleed rogné) dans la cellule, sans chevauchement. Compromis : ombre/halo bakés dans le bleed perdus (re-baker en alpha pour les récupérer).
+- **Coins pads** : `Image::corner_radius(6)` — rogne légèrement dans le corps du pad pour casser les angles (les coins de l'atlas hors radius = fond sombre ≈ well, donc un petit radius était invisible).
+- **Dropdowns → skeuo** (`styled_select`) : onglet Track (kind, out), preset de lane, sélecteurs de pattern du Song.
+
+### Reste à faire
+- Alignement des items dans les onglets Sound / Track (cf. `screenshots/onglet01.png`).
+- Écrasement vertical léger des pads (cellules 21pt vs bake 26pt) — à trancher si gênant.
+- LED / switch / tags → `skeuo::*` (encore versions backup).
+- Nettoyer les ~13 warnings de code mort (textures/handles obsolètes).
+
+---
+
 ## 2026-07-26 — Skeuo VECTORIEL dans le plugin + module `skeuo.rs` centralisé (build 20260726-184543)
 
 **Branche:** `skeuo-vector` (repartie de `backup/skeuo-redesign`) · **Build:** `20260726-184543`

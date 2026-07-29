@@ -80,13 +80,17 @@ impl Kick808Voice {
                 settings.frequency.max(10.0),
             ),
             dc_blocker: dsp::DcBlocker::default(),
-            saturation: saturation::SaturationConfig {
-                saturation_type: saturation::SaturationType::None,
-                amount: 0.0,
-                mix: 1.0,
-                output_gain: 1.0,
-                pre_filter: false,
-                compensation_gain: 1.0,
+            saturation: {
+                let mut cfg = saturation::SaturationConfig {
+                    saturation_type: saturation::SaturationType::from(settings.saturation_type),
+                    amount: settings.saturation_amount,
+                    mix: settings.saturation_mix,
+                    output_gain: settings.saturation_output_gain,
+                    pre_filter: settings.saturation_pre_filter > 0.5,
+                    compensation_gain: 1.0,
+                };
+                cfg.update_compensation();
+                cfg
             },
             drift: dsp::AnalogDrift::new(0x8080_8080),
             active: false,
@@ -181,14 +185,15 @@ impl Voice for Kick808Voice {
         let freq = self.freq_smoother.process(target_freq);
         self.osc.set_freq(freq);
 
-        let raw = self.osc.next();
+        let osc_out = self.osc.next();
+        let raw = self.saturation.process_at(true, osc_out);
         let env = self.amp_env.next();
         if env <= 0.0 {
             self.active = false;
             return 0.0;
         }
 
-        let body = self.tone_filter.process(raw) * env * self.settings.volume * self.drift.level;
+        let body = self.tone_filter.process(raw) * env * self.drift.level;
 
         let click = if self.accent_amount() > 0.0 && self.click.is_active() {
             self.click_filter.process(self.click.next()) * self.accent_amount()
@@ -197,7 +202,8 @@ impl Voice for Kick808Voice {
         };
 
         let out = self.dc_blocker.process(body + click);
-        self.saturation.process(out)
+        // Volume post-saturation: the knob sets the final level, not the drive.
+        self.saturation.process_at(false, out) * self.settings.volume
     }
 
     fn is_active(&self) -> bool {
@@ -220,6 +226,7 @@ impl Voice for Kick808Voice {
         self.saturation.amount = self.settings.saturation_amount;
         self.saturation.mix = self.settings.saturation_mix;
         self.saturation.output_gain = self.settings.saturation_output_gain;
+        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
         self.saturation.update_compensation();
     }
 
@@ -249,6 +256,10 @@ impl Voice for Kick808Voice {
             7 => {
                 self.settings.saturation_output_gain = value;
                 self.saturation.output_gain = value;
+            }
+            8 => {
+                self.settings.saturation_pre_filter = value;
+                self.saturation.pre_filter = value > 0.5;
             }
             _ => {}
         }

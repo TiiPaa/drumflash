@@ -5,7 +5,7 @@ use crate::ui::editor_state::EditorUIState;
 use crate::ui::theme::*;
 use crate::DrumFlashParams;
 use nih_plug::prelude::*;
-use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
+use nih_plug_egui::egui::{self, Vec2};
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc,
@@ -43,28 +43,21 @@ pub fn draw_song_editor(
         }
 
         ui.add_space(8.0);
+        // Keycap norm (chip_button): red label while confirming.
         if state.song_clear_confirm {
-            let btn = egui::Button::new(RichText::new("Confirm?").size(10.0).color(Color32::WHITE))
-                .min_size(Vec2::new(70.0, 20.0))
-                .fill(DANGER_DIM())
-                .stroke(egui::Stroke::new(1.0, LINE2()))
-                .corner_radius(5.0);
-            if ui.add(btn).clicked() {
+            if crate::ui::controls::chip_button(ui, "Confirm?", true, RED(), egui::Sense::click())
+                .clicked()
+            {
                 for step in 0..SONG_BLOCKS {
                     bank.song.set_step(step, -1);
                     bank.song.set_repeat(step, 1);
                 }
                 state.song_clear_confirm = false;
             }
-        } else {
-            let btn = egui::Button::new(RichText::new("Clear All").size(10.0))
-                .min_size(Vec2::new(70.0, 20.0))
-                .fill(PANEL2())
-                .stroke(egui::Stroke::new(1.0, LINE2()))
-                .corner_radius(5.0);
-            if ui.add(btn).clicked() {
-                state.song_clear_confirm = true;
-            }
+        } else if crate::ui::controls::chip_button(ui, "Clear All", false, BLUE(), egui::Sense::click())
+            .clicked()
+        {
+            state.song_clear_confirm = true;
         }
     });
 
@@ -86,20 +79,10 @@ pub fn draw_song_editor(
             let occupied =
                 slot >= 0 && (slot as usize) < SLOT_COUNT && bank.slots[slot as usize].occupied;
 
-            let fill = if is_current {
-                BLUE()
-            } else if occupied {
-                PANEL2()
-            } else {
-                SONG_EMPTY()
-            };
-            let stroke_color = if is_selected {
-                BLUE()
-            } else if is_current {
-                BLUE()
-            } else {
-                LINE2()
-            };
+            // Playing block is signalled by a red play LED (top-right corner),
+            // like the page bar — not by a blue fill. Selection keeps a blue border.
+            let fill = if occupied { PANEL2() } else { SONG_EMPTY() };
+            let stroke_color = if is_selected { BLUE() } else { LINE2() };
 
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::new(cell_w, cell_h), egui::Sense::click());
@@ -123,26 +106,31 @@ pub fn draw_song_editor(
                     .layout(egui::Layout::top_down(egui::Align::Center)),
                 |ui| {
                     ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                        let mut slot = bank.song.steps[step_idx];
-                        let selected_text = if slot < 0 {
-                            "--".to_string()
-                        } else {
-                            format!("P{}", slot + 1)
-                        };
-                        egui::ComboBox::from_id_salt(format!("song_pattern_select_{}", step_idx))
-                            .selected_text(selected_text)
-                            .width(ui.available_width().max(20.0))
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut slot, -1, "--");
-                                for i in 0..SLOT_COUNT {
-                                    if bank.slots[i].occupied {
-                                        let text = format!("P{}", i + 1);
-                                        ui.selectable_value(&mut slot, i as i8, text);
-                                    }
-                                }
-                            });
-                        if slot != bank.song.steps[step_idx] {
-                            bank.song.set_step(step_idx, slot);
+                        // Skeuo dropdown (styled_select → skeuo::keycap). Options are
+                        // "--" plus each occupied slot; map the picked index back.
+                        let slot = bank.song.steps[step_idx];
+                        let mut labels: Vec<String> = vec!["--".to_string()];
+                        let mut values: Vec<i8> = vec![-1];
+                        for i in 0..SLOT_COUNT {
+                            if bank.slots[i].occupied {
+                                labels.push(format!("P{}", i + 1));
+                                values.push(i as i8);
+                            }
+                        }
+                        let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+                        let cur = values.iter().position(|v| *v == slot).unwrap_or(0);
+                        let w = ui.available_width().max(20.0);
+                        if let (_, Some(pick)) = crate::ui::widgets::styled_select_centered(
+                            ui,
+                            format!("song_pattern_select_{}", step_idx),
+                            cur,
+                            &refs,
+                            w,
+                        ) {
+                            let new_slot = values.get(pick).copied().unwrap_or(-1);
+                            if new_slot != bank.song.steps[step_idx] {
+                                bank.song.set_step(step_idx, new_slot);
+                            }
                         }
                     });
                 },
@@ -181,26 +169,38 @@ pub fn draw_song_editor(
                 },
             );
 
+            // Red play LED in the top-right corner when this block is playing
+            // (inset like the page bar, not hugging the edge).
+            if is_current {
+                crate::ui::skeuo::play_led(
+                    ui.painter(),
+                    egui::pos2(rect.right() - 11.0, rect.top() + 11.0),
+                    3.0,
+                );
+            }
+
             if response.clicked() {
                 state.song_selected_step = step_idx;
             }
             response.context_menu(|ui| {
-                if ui.button("Copy").clicked() {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.set_min_width(110.0);
+                ui.set_max_width(110.0);
+                use crate::ui::menus::context_menu_button;
+                if context_menu_button(ui, "Copy", INK(), true).clicked() {
                     state.song_clipboard =
                         Some((bank.song.steps[step_idx], bank.song.repeats[step_idx]));
                     ui.close_menu();
                 }
-                if ui
-                    .add_enabled(state.song_clipboard.is_some(), egui::Button::new("Paste"))
-                    .clicked()
-                {
+                let can_paste = state.song_clipboard.is_some();
+                if context_menu_button(ui, "Paste", INK(), can_paste).clicked() && can_paste {
                     if let Some((slot, repeat)) = state.song_clipboard {
                         bank.song.set_step(step_idx, slot);
                         bank.song.set_repeat(step_idx, repeat);
                     }
                     ui.close_menu();
                 }
-                if ui.button("Duplicate").clicked() {
+                if context_menu_button(ui, "Duplicate", INK(), true).clicked() {
                     let next = step_idx + 1;
                     if next < SONG_BLOCKS {
                         let slot = bank.song.steps[step_idx];
@@ -210,7 +210,7 @@ pub fn draw_song_editor(
                     }
                     ui.close_menu();
                 }
-                if ui.button("Clear").clicked() {
+                if context_menu_button(ui, "Clear", RED(), true).clicked() {
                     bank.song.set_step(step_idx, -1);
                     bank.song.set_repeat(step_idx, 1);
                     ui.close_menu();

@@ -19,6 +19,7 @@ pub struct Kick808Settings {
     pub saturation_amount: f32,
     pub saturation_mix: f32,
     pub saturation_output_gain: f32,
+    pub saturation_pre_filter: f32,
     pub algo: u8,
 }
 
@@ -42,6 +43,7 @@ impl From<VoiceSettings> for Kick808Settings {
             saturation_amount: v.special[5],
             saturation_mix: v.special[6],
             saturation_output_gain: v.special[7],
+            saturation_pre_filter: v.special[8],
             algo: v.algo,
         }
     }
@@ -58,6 +60,7 @@ impl From<Kick808Settings> for VoiceSettings {
         special[5] = k.saturation_amount;
         special[6] = k.saturation_mix;
         special[7] = k.saturation_output_gain;
+        special[8] = k.saturation_pre_filter;
         Self {
             frequency: k.frequency,
             attack: k.attack,
