@@ -143,7 +143,8 @@ impl Voice for CymbalVoice {
             return 0.0;
         }
 
-        let noise = self.next_noise_l();
+        let raw_noise = self.next_noise_l();
+        let noise = self.saturation.process_at(true, raw_noise);
         self.fm_phase += self.fm_increment();
         self.fm_phase -= self.fm_phase.floor();
         let fm =
@@ -158,7 +159,7 @@ impl Voice for CymbalVoice {
             .set_cutoff(modulated_cutoff.max(1000.0), self.sample_rate);
         let filtered = self.filter.process(noise);
 
-        self.saturation.process(filtered)
+        self.saturation.process_at(false, filtered)
             * env
             * self.settings.volume
             * self.analog_drift.level_multiplier
@@ -179,8 +180,10 @@ impl Voice for CymbalVoice {
             return (0.0, 0.0);
         }
 
-        let noise_l = self.next_noise_l();
-        let noise_r = self.next_noise_r();
+        let raw_l = self.next_noise_l();
+        let raw_r = self.next_noise_r();
+        let noise_l = self.saturation.process_at(true, raw_l);
+        let noise_r = self.saturation.process_at(true, raw_r);
 
         self.fm_phase += self.fm_increment();
         self.fm_phase -= self.fm_phase.floor();
@@ -193,8 +196,8 @@ impl Voice for CymbalVoice {
         let filtered_r = self.filter_r.process(noise_r);
         let vol = env * self.settings.volume * self.analog_drift.level_multiplier;
         (
-            self.saturation.process(filtered_l) * vol,
-            self.saturation.process(filtered_r) * vol,
+            self.saturation.process_at(false, filtered_l) * vol,
+            self.saturation.process_at(false, filtered_r) * vol,
         )
     }
 

@@ -3,7 +3,6 @@
 use crate::ui::controls::{enum_combo, toggle_led_param};
 use crate::ui::editor_state::EditorUIState;
 use crate::ui::theme::*;
-use crate::ui::widgets::led_segmented;
 use crate::{DrumFlashParams, BUILD_ID};
 use nih_plug::prelude::*;
 use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
@@ -150,18 +149,41 @@ pub fn draw_header_bar(
                 ui.set_height(content_rect.height());
                 ui.spacing_mut().item_spacing.x = 0.0;
 
-                // Brand
-                ui.label(
-                    RichText::new("FLASH DRUM")
-                        .font(f_sans_bold(15.0))
-                        .color(Color32::WHITE),
-                );
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID))
-                        .font(f_mono(9.5))
-                        .color(INK3()),
-                );
+                // Logotype = baked bitmap (FLASH grey + DRUM white, transparent),
+                // tight-cropped via uv; version stays live text after it.
+                {
+                    // logotype.png = 164×48 canvas, glyph content x3..162 / y12..36
+                    // INCLUSIVE — the uv max must cover the LAST content pixel
+                    // (+1), otherwise the bottom pixel row is cropped off.
+                    let uv = egui::Rect::from_min_max(
+                        egui::pos2(3.0 / 164.0, 12.0 / 48.0),
+                        egui::pos2(163.0 / 164.0, 37.0 / 48.0),
+                    );
+                    // Content = 160×25 px, displayed 1:1 (no mipmaps → any
+                    // rescale aliases).
+                    let logo_h = 25.0;
+                    let logo_w = 160.0;
+                    let ver = format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID);
+                    let ver_font = f_mono(9.5);
+                    let ver_w =
+                        ui.fonts(|f| f.layout_no_wrap(ver.clone(), ver_font.clone(), INK3()).size().x);
+                    let total = logo_w + 12.0 + ver_w;
+                    let (rect, _) = ui.allocate_exact_size(Vec2::new(total, logo_h), egui::Sense::hover());
+                    let img_rect = egui::Rect::from_min_size(
+                        egui::pos2(rect.left(), rect.center().y - logo_h * 0.5),
+                        Vec2::new(logo_w, logo_h),
+                    );
+                    egui::Image::new(egui::include_image!("../../assets/logotype.png"))
+                        .uv(uv)
+                        .paint_at(ui, img_rect);
+                    ui.painter().text(
+                        egui::pos2(rect.left() + logo_w + 12.0, rect.center().y + 1.0),
+                        egui::Align2::LEFT_CENTER,
+                        ver,
+                        ver_font,
+                        INK3(),
+                    );
+                }
 
                 header_vbar(ui);
 
@@ -174,12 +196,17 @@ pub fn draw_header_bar(
 
                 header_vbar(ui);
 
-                // Sequencer source: Internal sequencer vs external MIDI from the host.
+                // Sequencer source GROUP: Internal/Ext MIDI + MIDI Pat together.
                 ui.label(RichText::new("Seq").font(f_sans_sb(10.5)).color(INK3()));
                 ui.add_space(8.0);
                 let internal = params.use_internal_sequencer.value();
-                let sel =
-                    led_segmented(ui, &["Internal", "Ext MIDI"], if internal { 0 } else { 1 });
+                // Symmetric halves (segmented_equal).
+                let sel = crate::ui::skeuo::segmented_equal(
+                    ui,
+                    "seq_mode",
+                    &["Internal", "Ext MIDI"],
+                    if internal { 0 } else { 1 },
+                );
                 let want_internal = sel == 0;
                 if want_internal != internal {
                     setter.begin_set_parameter(&params.use_internal_sequencer);
@@ -192,14 +219,8 @@ pub fn draw_header_bar(
                         setter.end_set_parameter(&params.midi_pattern_switch);
                     }
                 }
-
-                header_vbar(ui);
-
-                // Toggles (LED pills)
-                toggle_led_param(ui, setter, &params.hihat_chokes_oh, "Choke", true);
                 ui.add_space(6.0);
-                toggle_led_param(ui, setter, &params.auto_edit, "Auto-Edit", true);
-                ui.add_space(6.0);
+                // MIDI Pat is part of the Seq group (internal-sequencer only).
                 let midi_pat_enabled = params.use_internal_sequencer.value();
                 toggle_led_param(
                     ui,
@@ -209,11 +230,20 @@ pub fn draw_header_bar(
                     midi_pat_enabled,
                 );
 
-                // Push the settings button to the right edge of the header.
-                ui.add_space((ui.available_width() - 60.0).max(0.0));
-                if ui
-                    .button(RichText::new("Settings").font(f_sans_med(10.5)).color(INK3()))
-                    .clicked()
+                // Choke moved to per-slot choke groups in the Track tab (the
+                // legacy global HH→OH param is hidden but still loaded).
+
+                // Push the settings keycap to the right edge of the header.
+                ui.add_space((ui.available_width() - 84.0).max(0.0));
+                if crate::ui::controls::keycap_button(
+                    ui,
+                    "Settings",
+                    80.0,
+                    crate::ui::widgets::KeycapState::Rest,
+                    true,
+                    f_sans_med(10.5),
+                )
+                .clicked()
                 {
                     state.settings_open = true;
                 }

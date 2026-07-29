@@ -182,6 +182,39 @@ impl TrackAudioOut {
 pub struct TrackRouting {
     pub main_on: bool,
     pub out_select: TrackAudioOut,
+    /// Choke group: 0 = none, 1..=4 = group index. When a slot triggers, every
+    /// other active slot in the SAME group is silenced (classic HH→OH choke,
+    /// generalized to all instruments).
+    /// `CHOKE_LEGACY` is a serde-only sentinel for sessions saved before this
+    /// field existed — never stored in the atomic layout.
+    #[serde(default = "default_choke_group")]
+    pub choke_group: u8,
+}
+
+pub const CHOKE_GROUP_COUNT: u8 = 4;
+/// Serde-only sentinel: field absent in old `track-layout-v1` blobs.
+pub const CHOKE_LEGACY: u8 = 0xFF;
+
+fn default_choke_group() -> u8 {
+    CHOKE_LEGACY
+}
+
+/// Resolve the effective choke group for a slot, migrating the legacy sentinel:
+/// sessions saved before choke groups existed get the former default behavior
+/// (HiHat + OpenHiHat choking each other via group 1).
+pub fn effective_choke_group(kind: TrackInstrumentKind, routing: &TrackRouting) -> u8 {
+    if routing.choke_group == CHOKE_LEGACY {
+        if matches!(
+            kind,
+            TrackInstrumentKind::HiHat | TrackInstrumentKind::OpenHiHat
+        ) {
+            1
+        } else {
+            0
+        }
+    } else {
+        routing.choke_group.min(CHOKE_GROUP_COUNT)
+    }
 }
 
 impl Default for TrackRouting {
@@ -189,6 +222,7 @@ impl Default for TrackRouting {
         Self {
             main_on: true,
             out_select: TrackAudioOut::Main,
+            choke_group: 0,
         }
     }
 }
@@ -283,6 +317,13 @@ impl TrackLayoutState {
         ];
         for (slot, kind) in slots.iter_mut().zip(kinds) {
             *slot = TrackSlot::active_with_kind(kind);
+            // Classic HH↔OH choke out of the box.
+            if matches!(
+                kind,
+                TrackInstrumentKind::HiHat | TrackInstrumentKind::OpenHiHat
+            ) {
+                slot.routing.choke_group = 1;
+            }
         }
         Self {
             slots,
@@ -310,13 +351,21 @@ impl TrackLayoutState {
             TrackInstrumentKind::Perc1,
         ];
         for (i, kind) in legacy_kinds.iter().enumerate() {
-            slots[i] = TrackSlot {
+            let mut slot = TrackSlot {
                 active: true,
                 name: format!("{} {}", kind.default_name(), occurrence_label(i, *kind)),
                 kind: *kind,
                 routing: TrackRouting::default(),
                 midi_note: crate::instrument_registry::INSTRUMENTS[i].midi_note,
             };
+            // Classic HH↔OH choke out of the box.
+            if matches!(
+                kind,
+                TrackInstrumentKind::HiHat | TrackInstrumentKind::OpenHiHat
+            ) {
+                slot.routing.choke_group = 1;
+            }
+            slots[i] = slot;
         }
         Self {
             slots,
@@ -429,7 +478,10 @@ impl AtomicTrackLayout {
                 0xFF
             };
             self.slot_kinds[i].store(kind_byte, Ordering::Relaxed);
-            let routing_byte = routing_byte(&slot.routing);
+            // Normalize the legacy sentinel here so the atomic layout only ever
+            // carries real group values (0..=4).
+            let choke = effective_choke_group(slot.kind, &slot.routing);
+            let routing_byte = routing_byte(slot.routing.main_on, slot.routing.out_select.index(), choke);
             self.slot_routing[i].store(routing_byte, Ordering::Relaxed);
             self.slot_midi_notes[i].store(slot.midi_note, Ordering::Relaxed);
         }
@@ -470,6 +522,14 @@ impl AtomicTrackLayout {
         self.slot_midi_notes[slot].load(Ordering::Relaxed)
     }
 
+    /// Choke group of a slot (0 = none, 1..=4). Lock-free, audio-thread safe.
+    pub fn choke_group_for_slot(&self, slot: usize) -> u8 {
+        if slot >= MAX_TRACKS {
+            return 0;
+        }
+        (self.slot_routing[slot].load(Ordering::Relaxed) >> 4) & 0x07
+    }
+
     pub fn global_midi_channel(&self) -> u8 {
         self.global_channel.load(Ordering::Relaxed)
     }
@@ -493,16 +553,18 @@ impl Default for AtomicTrackLayout {
     }
 }
 
-fn routing_byte(routing: &TrackRouting) -> u8 {
-    let main_bit = if routing.main_on { 0x80 } else { 0 };
-    let out_index = routing.out_select.index();
-    main_bit | (out_index & 0x7F)
+/// Routing byte layout: bit 7 = main_on, bits 4-6 = choke group (0..=4),
+/// bits 0-3 = aux output index (0..=14).
+fn routing_byte(main_on: bool, out_index: u8, choke_group: u8) -> u8 {
+    let main_bit = if main_on { 0x80 } else { 0 };
+    main_bit | ((choke_group & 0x07) << 4) | (out_index & 0x0F)
 }
 
 fn decode_routing(byte: u8) -> TrackRouting {
     TrackRouting {
         main_on: (byte & 0x80) != 0,
-        out_select: TrackAudioOut::from_index(byte & 0x7F),
+        out_select: TrackAudioOut::from_index(byte & 0x0F),
+        choke_group: (byte >> 4) & 0x07,
     }
 }
 
@@ -690,6 +752,62 @@ mod tests {
             assert_eq!(state.slots[0].kind, TrackInstrumentKind::Kick);
             assert_eq!(state.slots[1].kind, TrackInstrumentKind::Snare);
         });
+    }
+
+    #[test]
+    fn legacy_routing_without_choke_group_migrates_hats_to_group_1() {
+        // Old track-layout-v1 blobs have no choke_group field.
+        let legacy: TrackRouting =
+            serde_json::from_str(r#"{"main_on":true,"out_select":"Main"}"#).unwrap();
+        assert_eq!(legacy.choke_group, CHOKE_LEGACY);
+        assert_eq!(
+            effective_choke_group(TrackInstrumentKind::HiHat, &legacy),
+            1
+        );
+        assert_eq!(
+            effective_choke_group(TrackInstrumentKind::OpenHiHat, &legacy),
+            1
+        );
+        assert_eq!(effective_choke_group(TrackInstrumentKind::Kick, &legacy), 0);
+        // Explicit values are preserved (and clamped).
+        let explicit = TrackRouting {
+            main_on: true,
+            out_select: TrackAudioOut::Main,
+            choke_group: 3,
+        };
+        assert_eq!(effective_choke_group(TrackInstrumentKind::Kick, &explicit), 3);
+        let out_of_range = TrackRouting {
+            choke_group: 9,
+            ..explicit
+        };
+        assert_eq!(
+            effective_choke_group(TrackInstrumentKind::Kick, &out_of_range),
+            CHOKE_GROUP_COUNT
+        );
+    }
+
+    #[test]
+    fn routing_byte_packs_choke_group_and_output() {
+        let decoded = decode_routing(routing_byte(true, 14, 4));
+        assert!(decoded.main_on);
+        assert_eq!(decoded.out_select, TrackAudioOut::Out(14));
+        assert_eq!(decoded.choke_group, 4);
+
+        let decoded = decode_routing(routing_byte(false, 0, 0));
+        assert!(!decoded.main_on);
+        assert_eq!(decoded.out_select, TrackAudioOut::Main);
+        assert_eq!(decoded.choke_group, 0);
+    }
+
+    #[test]
+    fn atomic_layout_exposes_normalized_choke_groups() {
+        let mut layout = TrackLayoutState::modular_default_layout();
+        layout.slots[2].routing.choke_group = CHOKE_LEGACY; // force legacy path
+        let atomic = AtomicTrackLayout::from_state(&layout);
+        // HiHat slot migrates to group 1, the others to none.
+        assert_eq!(atomic.choke_group_for_slot(2), 1);
+        assert_eq!(atomic.choke_group_for_slot(0), 0);
+        assert_eq!(atomic.choke_group_for_slot(1), 0);
     }
 
     #[test]

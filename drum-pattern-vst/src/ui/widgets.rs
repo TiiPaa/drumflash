@@ -164,41 +164,6 @@ pub fn lerp_c(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
 }
 
-/// Smooth radial gradient in a rect: triangle fan from `hot` (0..1 rel) to the
-/// perimeter, mid ring at 45% — the backlit-pad look, no banding, fills exactly.
-pub fn radial_rect(p: &egui::Painter, rect: egui::Rect, cc: Color32, cm: Color32, ce: Color32, hot: (f32, f32)) {
-    let hs = egui::pos2(rect.left() + rect.width() * hot.0, rect.top() + rect.height() * hot.1);
-    let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()];
-    let k = 8;
-    let mut peri = Vec::with_capacity(4 * k);
-    for e in 0..4 {
-        let a = corners[e];
-        let b = corners[(e + 1) % 4];
-        for i in 0..k {
-            let t = i as f32 / k as f32;
-            peri.push(egui::pos2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
-        }
-    }
-    let n = peri.len();
-    let mut m = egui::epaint::Mesh::default();
-    m.colored_vertex(hs, cc);
-    for pt in &peri {
-        m.colored_vertex(egui::pos2(hs.x + (pt.x - hs.x) * 0.45, hs.y + (pt.y - hs.y) * 0.45), cm);
-    }
-    for pt in &peri {
-        m.colored_vertex(*pt, ce);
-    }
-    let mid = |i: usize| 1 + i as u32;
-    let out = |i: usize| 1 + n as u32 + i as u32;
-    for i in 0..n {
-        let j = (i + 1) % n;
-        m.add_triangle(0, mid(i), mid(j));
-        m.add_triangle(mid(i), out(i), out(j));
-        m.add_triangle(mid(i), out(j), mid(j));
-    }
-    p.add(egui::Shape::mesh(m));
-}
-
 /// Even highlight/shadow line: full `peak` across the middle, fading to 0 only
 /// near the ends (avoids the centre "point" a centre-peaked fade makes on pads).
 pub fn plateau_line(p: &egui::Painter, rect: egui::Rect, rgb: (u8, u8, u8), peak: u8) {
@@ -218,17 +183,6 @@ pub fn plateau_line(p: &egui::Painter, rect: egui::Rect, rgb: (u8, u8, u8), peak
         m.add_triangle(q, q + 5, q + 4);
     }
     p.add(egui::Shape::mesh(m));
-}
-
-/// Soft coloured glow behind a rect (stacked expanding fills, quadratic falloff).
-pub fn soft_glow(p: &egui::Painter, rect: egui::Rect, radius: f32, reach: f32, peak: f32, rgb: (u8, u8, u8)) {
-    let steps = 8;
-    for i in (1..=steps).rev() {
-        let t = i as f32 / steps as f32;
-        let grow = reach * t;
-        let a = peak * (1.0 - t) * (1.0 - t);
-        p.rect_filled(rect.expand(grow), radius + grow, Color32::from_rgba_unmultiplied(rgb.0, rgb.1, rgb.2, a.round().clamp(0.0, 255.0) as u8));
-    }
 }
 
 /// Thin relay to the single keycap renderer, [`crate::ui::skeuo::keycap`]. Kept
@@ -273,35 +227,13 @@ impl Widget for ToggleSwitch {
             ui.ctx().request_repaint();
         }
 
-        let on = self.on;
-        let painter = ui.painter_at(rect);
-        let r = rect.shrink(1.0);
-
-        // Animated on/off state (0.14s) — knob slides, colors fade.
+        // Animated on/off state (0.14s) — the skeuo switch slides + fades.
         let on_t = ui.ctx().animate_value_with_time(
             response.id.with("state"),
-            if on { 1.0 } else { 0.0 },
+            if self.on { 1.0 } else { 0.0 },
             0.14,
         );
-
-        // Fond
-        painter.rect_filled(r, 10.0, lerp_color(PANEL2(), blue_glow(64), on_t));
-
-        // Bordure
-        painter.rect_stroke(
-            r,
-            10.0,
-            egui::Stroke::new(1.0, lerp_color(LINE2(), BLUE(), on_t)),
-            StrokeKind::Inside,
-        );
-
-        // Pastille
-        let knob_radius = 6.0;
-        let knob_off_x = r.left() + 5.0 + knob_radius;
-        let knob_on_x = r.right() - 5.0 - knob_radius;
-        let knob_x = knob_off_x + (knob_on_x - knob_off_x) * on_t;
-        let knob_center = egui::Pos2::new(knob_x, r.center().y);
-        painter.circle_filled(knob_center, knob_radius, lerp_color(INK3(), BLUE(), on_t));
+        crate::ui::skeuo::switch(ui, rect, on_t);
 
         response
     }
@@ -344,44 +276,24 @@ impl Widget for ToggleLED {
             ui.ctx().request_repaint();
         }
 
+        // Keycap pill (grey key) — the background does NOT change with state; the
+        // backlit LED is what signals on/off, like a hardware indicator button.
+        crate::ui::skeuo::keycap(ui, rect, KeycapState::Rest);
         let painter = ui.painter_at(rect);
-        let hover = hover_t(ui.ctx(), response.id, response.hovered());
-        // Animated on/off state (0.14s) — LED color, halo, bg glow and border all
-        // lerp from the off values toward the on values.
-        let on_t = ui.ctx().animate_value_with_time(
-            response.id.with("state"),
-            if on && enabled { 1.0 } else { 0.0 },
-            0.14,
-        );
-        let bg = lerp_color(PANEL2(), blue_glow(64), on_t);
-        painter.rect_filled(rect, RADIUS_CTL, bg);
-        let off_border = lerp_color(LINE2(), BLUE(), hover * 0.6);
-        let stroke_color = lerp_color(off_border, BLUE(), on_t);
-        painter.rect_stroke(
-            rect,
-            6.0,
-            egui::Stroke::new(1.0, stroke_color),
-            StrokeKind::Inside,
-        );
-
-        // LED Ø7 (+ soft glow when on)
-        let led_center = egui::pos2(rect.left() + 12.0 + 3.5, rect.center().y);
-        if on_t > 0.01 {
-            painter.circle_filled(led_center, 5.5, blue_glow((90.0 * on_t) as u8));
+        if !enabled {
+            painter.rect_filled(rect, RADIUS_CTL, Color32::from_rgba_unmultiplied(34, 35, 40, 150));
         }
-        let led_color = if !enabled {
-            INK2()
-        } else {
-            lerp_color(FAINT(), BLUE(), on_t)
-        };
-        painter.circle_filled(led_center, 3.5, led_color);
+
+        // Backlit LED (no halo): blue when on, dark when off/disabled.
+        let led_center = egui::pos2(rect.left() + 12.0 + 3.5, rect.center().y);
+        crate::ui::skeuo::led(&painter, led_center, 3.5, on && enabled);
 
         let text_color = if !enabled {
             INK2()
         } else if on {
             INK()
         } else {
-            lerp_color(INK2(), INK(), hover)
+            INK2()
         };
         painter.text(
             egui::pos2(rect.left() + 12.0 + 7.0 + 7.0, rect.center().y),
@@ -404,6 +316,29 @@ pub fn styled_select(
     selected: usize,
     options: &[&str],
     width: f32,
+) -> (Response, Option<usize>) {
+    styled_select_impl(ui, id_salt, selected, options, width, false)
+}
+
+/// Like [`styled_select`] but the current value is centred and there is NO caret
+/// — for tight cells (song blocks) where just the code reads cleaner.
+pub fn styled_select_centered(
+    ui: &mut Ui,
+    id_salt: impl Hash,
+    selected: usize,
+    options: &[&str],
+    width: f32,
+) -> (Response, Option<usize>) {
+    styled_select_impl(ui, id_salt, selected, options, width, true)
+}
+
+fn styled_select_impl(
+    ui: &mut Ui,
+    id_salt: impl Hash,
+    selected: usize,
+    options: &[&str],
+    width: f32,
+    centered: bool,
 ) -> (Response, Option<usize>) {
     let width = width.max(48.0);
     let selected = selected.min(options.len().saturating_sub(1));
@@ -430,35 +365,48 @@ pub fn styled_select(
         );
     }
 
-    painter.text(
-        egui::pos2(rect.left() + 9.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        current,
-        f_mono_med(11.0),
-        INK(),
-    );
-    // Down-pointing triangle caret
-    let caret_size = 5.0;
-    let caret_center = egui::pos2(rect.right() - 11.0, rect.center().y + 0.5);
-    painter.add(egui::Shape::convex_polygon(
-        vec![
-            egui::pos2(
-                caret_center.x - caret_size,
-                caret_center.y - caret_size * 0.4,
-            ),
-            egui::pos2(
-                caret_center.x + caret_size,
-                caret_center.y - caret_size * 0.4,
-            ),
-            egui::pos2(caret_center.x, caret_center.y + caret_size * 0.9),
-        ],
-        INK3(),
-        egui::Stroke::NONE,
-    ));
+    if centered {
+        // Just the code, centred (no caret) — song blocks.
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            current,
+            f_mono_med(11.0),
+            INK(),
+        );
+    } else {
+        painter.text(
+            egui::pos2(rect.left() + 9.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            current,
+            f_mono_med(11.0),
+            INK(),
+        );
+        // Down-pointing triangle caret
+        let caret_size = 5.0;
+        let caret_center = egui::pos2(rect.right() - 11.0, rect.center().y + 0.5);
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                egui::pos2(caret_center.x - caret_size, caret_center.y - caret_size * 0.4),
+                egui::pos2(caret_center.x + caret_size, caret_center.y - caret_size * 0.4),
+                egui::pos2(caret_center.x, caret_center.y + caret_size * 0.9),
+            ],
+            INK3(),
+            egui::Stroke::NONE,
+        ));
+    }
 
     let mut picked = None;
     if popup_open {
-        let mut pos = rect.left_bottom() + Vec2::new(0.0, 4.0);
+        // Open downward by default, but flip ABOVE the box when there isn't room
+        // below (e.g. selectors near the bottom edge of the window).
+        let popup_h = options.len() as f32 * 24.0 + 2.0;
+        let screen = ui.ctx().screen_rect();
+        let mut pos = if rect.bottom() + 4.0 + popup_h <= screen.bottom() {
+            rect.left_bottom() + Vec2::new(0.0, 4.0)
+        } else {
+            rect.left_top() - Vec2::new(0.0, popup_h + 4.0)
+        };
         if let Some(to_global) = ui.ctx().layer_transform_to_global(ui.layer_id()) {
             pos = to_global * pos;
         }
@@ -518,83 +466,5 @@ pub fn styled_select(
     (response, picked)
 }
 
-// ============================================================
-// LED segmented control (header "clock source" style)
-// One r6 container, per-segment LED dot, blue-glow active fill.
-// ============================================================
-pub fn led_segmented(ui: &mut Ui, options: &[&str], selected: usize) -> usize {
-    let font = f_sans_sb(11.0);
-    let h = CTL_HEIGHT;
-    let seg_ws: Vec<f32> = options
-        .iter()
-        .map(|opt| {
-            let tw = ui.fonts(|f| {
-                f.layout_no_wrap((*opt).to_string(), font.clone(), INK())
-                    .size()
-                    .x
-            });
-            // padding 12 + LED 6 + gap 6 + text + padding 12
-            12.0 + 6.0 + 6.0 + tw + 12.0
-        })
-        .collect();
-    let total: f32 = seg_ws.iter().sum();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(total, h), Sense::hover());
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, RADIUS_CTL, PANEL2());
-
-    let mut result = selected;
-    let mut x = rect.left();
-    for (i, opt) in options.iter().enumerate() {
-        let w = seg_ws[i];
-        let seg = egui::Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(w, h));
-        let is_on = i == selected;
-        let resp = ui.interact(
-            seg,
-            ui.make_persistent_id(("ledseg", *opt, i)),
-            Sense::click(),
-        );
-
-        let on_t = ui.ctx().animate_value_with_time(
-            resp.id.with("state"),
-            if is_on { 1.0 } else { 0.0 },
-            0.14,
-        );
-
-        if on_t > 0.01 {
-            painter.rect_filled(seg.shrink(1.0), 0.0, blue_glow((64.0 * on_t) as u8));
-        }
-        if i > 0 {
-            painter.line_segment(
-                [
-                    egui::pos2(seg.left(), rect.top() + 1.0),
-                    egui::pos2(seg.left(), rect.bottom() - 1.0),
-                ],
-                egui::Stroke::new(1.0, LINE2()),
-            );
-        }
-        let led_center = egui::pos2(seg.left() + 12.0 + 3.0, seg.center().y);
-        if on_t > 0.01 {
-            painter.circle_filled(led_center, 5.0, blue_glow((90.0 * on_t) as u8));
-        }
-        painter.circle_filled(led_center, 3.0, lerp_color(FAINT(), BLUE(), on_t));
-        let seg_hover = hover_t(ui.ctx(), resp.id, resp.hovered());
-        let txt_color = if is_on {
-            INK()
-        } else {
-            lerp_color(INK2(), INK(), seg_hover)
-        };
-        painter.text(
-            egui::pos2(seg.left() + 12.0 + 6.0 + 6.0, seg.center().y),
-            egui::Align2::LEFT_CENTER,
-            *opt,
-            font.clone(),
-            txt_color,
-        );
-        if resp.clicked() {
-            result = i;
-        }
-        x += w;
-    }
-    painter.rect_stroke(rect, RADIUS_CTL, egui::Stroke::new(1.0, LINE2()), StrokeKind::Inside);
-    result
-}
+// (led_segmented removed — the header Seq Mode switch now uses skeuo::segmented,
+// the single keycap-based renderer for all segmented controls.)

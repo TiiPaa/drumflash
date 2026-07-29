@@ -194,8 +194,17 @@ pub fn create_editor(
             visuals.selection.bg_fill = BLUE();
             visuals.faint_bg_color = PANEL();
             visuals.extreme_bg_color = BG();
-            visuals.window_stroke = egui::Stroke::NONE;
-            visuals.popup_shadow = egui::epaint::Shadow::NONE;
+            // egui-native context menus + tooltips get a raised skeuo panel look
+            // (plate-mid fill, dark border, soft drop shadow). Our custom Area
+            // popups use Frame::NONE + a hand-painted plate, so they're unaffected.
+            visuals.window_fill = egui::Color32::from_rgb(41, 42, 47);
+            visuals.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(20, 20, 24));
+            visuals.popup_shadow = egui::epaint::Shadow {
+                offset: [0, 4],
+                blur: 14,
+                spread: 0,
+                color: egui::Color32::from_black_alpha(110),
+            };
             visuals.menu_corner_radius = egui::CornerRadius::same(RADIUS_PANEL as u8);
             visuals.widgets.noninteractive.bg_fill = BG();
 
@@ -273,12 +282,7 @@ pub fn create_editor(
                         Vec2::new(right_w, body_h),
                     );
 
-                    ui.painter().vline(
-                        left_rect.right(),
-                        body_rect.y_range(),
-                        egui::Stroke::new(1.0, LINE()),
-                    );
-                    ui.painter().rect_filled(right_rect, 0.0, PANEL());
+                    ui.painter().rect_filled(right_rect, 0.0, PANEL_SKEUO);
 
                     ui.allocate_new_ui(
                         egui::UiBuilder::new()
@@ -328,7 +332,7 @@ pub fn create_editor(
                             .max_rect(right_rect)
                             .layout(egui::Layout::top_down(egui::Align::Min)),
                         |ui| {
-                            ui.painter().rect_filled(ui.max_rect(), 0.0, PANEL());
+                            ui.painter().rect_filled(ui.max_rect(), 0.0, PANEL_SKEUO);
                             ui.set_width(right_w);
                             ui.set_height(body_h);
                             draw_sound_panel(
@@ -339,6 +343,20 @@ pub fn create_editor(
                                 state,
                             );
                         },
+                    );
+
+                    // Seam between the left column (recessed grid area) and the
+                    // raised Lane Editor panel — drawn LAST so it stays above the
+                    // panel fill: a dark crease + a 1px light highlight on the
+                    // panel side (skeuo bevel). A plain hairline was invisible now
+                    // that both surfaces share the same skeuo grey.
+                    let seam_x = right_rect.left();
+                    ui.painter()
+                        .vline(seam_x, body_rect.y_range(), egui::Stroke::new(1.0, PANEL_BORDER));
+                    ui.painter().vline(
+                        seam_x + 1.0,
+                        body_rect.y_range(),
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(58, 59, 66)),
                     );
 
                     // Custom plock popup to avoid egui context_menu chrome.
@@ -353,7 +371,7 @@ pub fn create_editor(
                     );
 
                     // Global settings popup (default analog, MIDI prefs, etc.).
-                    draw_settings_popup_if_any(ui, &params_for_ui, state);
+                    draw_settings_popup_if_any(ui, setter, &params_for_ui, state);
 
                     // Auto-save pattern edits to the current bank slot when Song Mode is active.
                     // This prevents edits from being lost when the song advances to the next pattern.

@@ -437,6 +437,7 @@ impl Sequencer {
         self.slot_voices = slot_voices;
     }
 
+    #[allow(dead_code)]
     pub fn slot_voices(&self) -> &[Option<usize>; MAX_TRACKS] {
         &self.slot_voices
     }

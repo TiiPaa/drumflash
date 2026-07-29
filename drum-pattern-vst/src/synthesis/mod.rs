@@ -184,7 +184,7 @@ impl VoiceSettings {
         Self {
             frequency: 60.0,
             decay: 0.5,
-            volume: 0.8,
+            volume: 1.0,
             filter_freq: 30.0,
             attack: 0.0015,
             release: 0.5,
@@ -230,7 +230,7 @@ impl VoiceSettings {
         Self {
             frequency: 8000.0,
             decay: 0.36,
-            volume: 0.3,
+            volume: 0.2,
             filter_freq: 5000.0,
             attack: 0.0003,
             release: 0.0,
@@ -253,7 +253,7 @@ impl VoiceSettings {
         Self {
             frequency: 6000.0,
             decay: 0.66,
-            volume: 0.4,
+            volume: 0.3,
             filter_freq: 8000.0,
             attack: 0.0003,
             release: 0.4,
@@ -440,7 +440,7 @@ impl VoiceSettings {
         Self {
             frequency: 50.0,
             decay: 0.4,
-            volume: 0.9,
+            volume: 1.0,
             filter_freq: 3000.0,
             attack: 0.0015,
             release: 0.0,

@@ -241,24 +241,24 @@ impl Voice for ClapVoice {
             return 0.0;
         }
 
-        let noise = self.noise.next();
+        let raw_noise = self.noise.next();
+        let noise = self.saturation.process_at(true, raw_noise);
         let hp = self.filter_hp.process(noise);
         let lp = self.filter_lp.process(hp);
-        let body =
-            lp * env * burst_intensity * self.settings.volume * self.analog_drift.level_multiplier;
+        let body = lp * env * burst_intensity * self.analog_drift.level_multiplier;
 
         // Snap transient: highpassed to keep only the "paper / dry slap" band.
         // Scaled by burst_intensity so echo-snaps are quieter than the main hit.
         let snap_signal = if self.snap.is_active() {
             self.snap_hp.process(self.snap.next())
-                * self.settings.volume
                 * burst_intensity
                 * self.analog_drift.level_multiplier
         } else {
             0.0
         };
 
-        self.saturation.process(body + snap_signal)
+        // Volume post-saturation: the knob sets the final level, not the drive.
+        self.saturation.process_at(false, body + snap_signal) * self.settings.volume
     }
 
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -293,26 +293,19 @@ impl Voice for ClapVoice {
             return (0.0, 0.0);
         }
 
-        let noise_l = self.noise.next();
-        let noise_r = self.noise_r.next();
+        let raw_l = self.noise.next();
+        let raw_r = self.noise_r.next();
+        let noise_l = self.saturation.process_at(true, raw_l);
+        let noise_r = self.saturation.process_at(true, raw_r);
         let hp_l = self.filter_hp.process(noise_l);
         let hp_r = self.filter_hp_r.process(noise_r);
         let lp_l = self.filter_lp.process(hp_l);
         let lp_r = self.filter_lp_r.process(hp_r);
-        let body_l = lp_l
-            * env
-            * burst_intensity
-            * self.settings.volume
-            * self.analog_drift.level_multiplier;
-        let body_r = lp_r
-            * env
-            * burst_intensity
-            * self.settings.volume
-            * self.analog_drift.level_multiplier;
+        let body_l = lp_l * env * burst_intensity * self.analog_drift.level_multiplier;
+        let body_r = lp_r * env * burst_intensity * self.analog_drift.level_multiplier;
 
         let snap_l = if self.snap.is_active() {
             self.snap_hp.process(self.snap.next())
-                * self.settings.volume
                 * burst_intensity
                 * self.analog_drift.level_multiplier
         } else {
@@ -320,16 +313,16 @@ impl Voice for ClapVoice {
         };
         let snap_r = if self.snap_r.is_active() {
             self.snap_hp_r.process(self.snap_r.next())
-                * self.settings.volume
                 * burst_intensity
                 * self.analog_drift.level_multiplier
         } else {
             0.0
         };
 
+        // Volume post-saturation: the knob sets the final level, not the drive.
         (
-            self.saturation.process(body_l + snap_l),
-            self.saturation.process(body_r + snap_r),
+            self.saturation.process_at(false, body_l + snap_l) * self.settings.volume,
+            self.saturation.process_at(false, body_r + snap_r) * self.settings.volume,
         )
     }
 
