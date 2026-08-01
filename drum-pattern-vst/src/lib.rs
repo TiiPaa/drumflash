@@ -96,6 +96,53 @@ fn compute_mix_gating(
     (effective_mutes, mix_gains)
 }
 
+/// Install a one-shot panic hook that appends the panic message + backtrace to
+/// `Documents/Flash Drum/panic.log`. Temporary diagnostic for the fresh-instance
+/// crash — a plugin panic aborts the host, so this captures the cause.
+fn install_panic_logger() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let mut path = std::env::var("USERPROFILE")
+                .map(|p| std::path::PathBuf::from(p).join("Documents"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("."));
+            path.push("Flash Drum");
+            let _ = std::fs::create_dir_all(&path);
+            path.push("panic.log");
+            let bt = std::backtrace::Backtrace::force_capture();
+            let msg = format!(
+                "=== Flash Drum panic ===\nbuild {}\n{}\n\nbacktrace:\n{}\n\n",
+                option_env!("DRUM_PATTERN_BUILD_ID").unwrap_or("?"),
+                info,
+                bt
+            );
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                let _ = f.write_all(msg.as_bytes());
+            }
+            default_hook(info);
+        }));
+    });
+}
+
+/// Temporary phase-trace to `Documents/Flash Drum/trace.log` — the last line
+/// written before a native crash localizes which phase died (initialize /
+/// process / first paint).
+pub(crate) fn diag_log(msg: &str) {
+    let mut path = std::env::var("USERPROFILE")
+        .map(|p| std::path::PathBuf::from(p).join("Documents"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    path.push("Flash Drum");
+    let _ = std::fs::create_dir_all(&path);
+    path.push("trace.log");
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{}", msg);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PatternBankActionResult {
     Applied,
@@ -222,7 +269,7 @@ pub struct DrumFlashVst {
     temp_plock_bytes: [u8; pattern_bank::MAX_PLOCK_BYTES],
     temp_seq_plock_bytes: [u8; pattern_bank::MAX_SEQ_PLOCK_BYTES],
     temp_fusion_bytes: [u8; pattern_bank::MAX_FUSION_BYTES],
-    /// Which slot the audio thread last successfully loaded (0-7), or u32::MAX if none.
+    /// Which slot the audio thread last successfully loaded (0-15), or u32::MAX if none.
     /// The UI thread reads this to keep last_loaded_slot in sync with reality.
     audio_last_loaded_slot: Arc<AtomicU32>,
     /// Pattern length used by the audio thread. Slot loads update this immediately;
@@ -233,7 +280,7 @@ pub struct DrumFlashVst {
     last_param_master_length: usize,
     /// Restart the sequencer at step 0 after a song-mode slot transition.
     pending_song_pattern_restart: bool,
-    /// Slot requested by an incoming MIDI pattern-switch note (0-7 for P1-P8).
+    /// Slot requested by an incoming MIDI pattern-switch note (0-15 for P1-P16).
     /// Applied at the next musical loop boundary to avoid glitches.
     pending_midi_pattern_slot: Option<usize>,
     /// Save/load requests retried when the pattern bank is temporarily locked by the UI.
@@ -289,7 +336,7 @@ pub struct DrumFlashParams {
     #[id = "int_seq"]
     pub use_internal_sequencer: BoolParam,
 
-    /// When true, the sequencer plays through the song sequence (P1-P8 chain).
+    /// When true, the sequencer plays through the song sequence (P1-P16 chain).
     /// When false, the current pattern loops normally.
     #[id = "song_mode"]
     pub song_mode: BoolParam,
@@ -2320,9 +2367,12 @@ impl Plugin for DrumFlashVst {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        install_panic_logger();
+        diag_log("editor:start");
         self.remember_current_pattern();
         let global_config = crate::config::GlobalConfig::load();
-        ui::create_editor(
+        diag_log("editor:before_create_editor");
+        let ed = ui::create_editor(
             self.params.clone(),
             self.current_step.clone(),
             self.current_steps.clone(),
@@ -2338,7 +2388,9 @@ impl Plugin for DrumFlashVst {
             self.pending_pattern_length.clone(),
             self.audio_last_loaded_slot.clone(),
             global_config,
-        )
+        );
+        diag_log("editor:end");
+        ed
     }
 
     fn initialize(
@@ -2347,6 +2399,8 @@ impl Plugin for DrumFlashVst {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
+        install_panic_logger();
+        diag_log("initialize:start");
         self.sample_rate = buffer_config.sample_rate;
         let track_layout = PersistentField::<crate::track::TrackLayoutState>::map(
             &self.params.track_layout,
@@ -2382,6 +2436,7 @@ impl Plugin for DrumFlashVst {
         }
 
         nih_log!("Flash Drum initialized at {} Hz", buffer_config.sample_rate);
+        diag_log("initialize:end");
         true
     }
 
@@ -2400,6 +2455,14 @@ impl Plugin for DrumFlashVst {
         aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        {
+            use std::sync::atomic::AtomicUsize;
+            static CALLS: AtomicUsize = AtomicUsize::new(0);
+            let n = CALLS.fetch_add(1, Ordering::Relaxed);
+            if n < 50 {
+                diag_log(&format!("process:call:{}:start", n));
+            }
+        }
         // Consume any UI-published song sequence snapshot without blocking.
         if let Some(new_song) = self.params.song_controller.consume_latest() {
             self.song_state = new_song;
@@ -2681,6 +2744,27 @@ impl Plugin for DrumFlashVst {
         let use_internal_sequencer = self.params.use_internal_sequencer.value();
         let mut next_event = context.next_event();
 
+        // Step-solo window for this block: union of every soloed seq-plock
+        // cell's span (a normal cell covers its own step; a fused cell covers
+        // its whole span). While the sequencer plays a step inside this window,
+        // only soloed lanes trigger there — every other lane is muted for those
+        // steps only. Independent of the lane-level `S` tag. RT-safe: bit ops +
+        // stack-buffered fusion reads, no allocation, computed once per block.
+        let solo_window: u64 = {
+            let seq = &self.params.seq_plock_state.state;
+            let pattern = &self.pattern;
+            let mut fusion_buf = [crate::sequencer::pattern::FusedGroup::default();
+                crate::sequencer::pattern::MAX_FUSIONS];
+            seq.solo_window(|inst, start| {
+                let n = pattern.load_fusions_into(inst, &mut fusion_buf);
+                fusion_buf[..n]
+                    .iter()
+                    .find(|g| g.start_cell as usize == start)
+                    .map(|g| (g.end_cell - g.start_cell + 1) as usize)
+                    .unwrap_or(1)
+            })
+        };
+
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
             // Process pending delayed triggers (stutter or fusion pulses).
             let mut i = 0;
@@ -2714,9 +2798,9 @@ impl Plugin for DrumFlashVst {
 
             if use_internal_sequencer {
                 // Process incoming MIDI pattern-switch notes in real-time.
-                // Notes C3..G3 (60-67) select pattern bank slots P1..P8.
-                // Only active when not in Song mode, so the two pattern-change
-                // mechanisms do not fight each other.
+                // Notes from C3 (60) upward select pattern bank slots P1..P16
+                // (60-75). Only active when not in Song mode, so the two
+                // pattern-change mechanisms do not fight each other.
                 while let Some(event) = next_event {
                     if event.timing() != sample_idx as u32 {
                         break;
@@ -2726,7 +2810,7 @@ impl Plugin for DrumFlashVst {
                         if self.params.midi_pattern_switch.value()
                             && !self.params.song_mode.value()
                             && note >= PATTERN_SWITCH_BASE
-                            && note < PATTERN_SWITCH_BASE + 8
+                            && note < PATTERN_SWITCH_BASE + pattern_bank::SLOT_COUNT as u8
                         {
                             self.pending_midi_pattern_slot =
                                 Some((note - PATTERN_SWITCH_BASE) as usize);
@@ -2747,6 +2831,16 @@ impl Plugin for DrumFlashVst {
                     };
                     if trigger.should_trigger {
                         let step = trigger.step;
+
+                        // Step-solo gating: if any soloed cell covers this step,
+                        // only soloed lanes may trigger here (this lane is muted
+                        // for this step unless it is itself soloed).
+                        if solo_window & (1u64 << step) != 0
+                            && !self.params.seq_plock_state.state.is_solo(slot_idx, step)
+                        {
+                            continue;
+                        }
+
                         let seq_params = self.params.seq_plock_state.state.get(slot_idx, step);
 
                         // Apply sequencer probability
@@ -3151,6 +3245,14 @@ impl Plugin for DrumFlashVst {
             }
         }
 
+        {
+            use std::sync::atomic::AtomicUsize;
+            static CALLS_END: AtomicUsize = AtomicUsize::new(0);
+            let n = CALLS_END.fetch_add(1, Ordering::Relaxed);
+            if n < 50 {
+                diag_log(&format!("process:call:{}:end", n));
+            }
+        }
         ProcessStatus::Normal
     }
 
@@ -3308,6 +3410,25 @@ mod tests {
     use super::*;
     use nih_plug::params::persist::{deserialize_field, PersistentField};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn fresh_plugin_and_params_default_construct_without_panic() {
+        // Reproduces the fresh-instance path: build the default params + plugin,
+        // then round-trip the persisted pattern bank + seq-plock snapshots the
+        // way a host does on add.
+        let params = DrumFlashParams::default();
+
+        // Pattern bank default snapshot round-trip (16 slots).
+        params.pattern_bank.refresh_snapshot();
+        let bank_bytes = params.pattern_bank.map(|b| b.clone());
+        params.pattern_bank.set(bank_bytes);
+
+        // Seq-plock default snapshot round-trip.
+        let seq_bytes = PersistentField::<Vec<u8>>::map(&params.seq_plock_state, |b| b.clone());
+        PersistentField::<Vec<u8>>::set(&params.seq_plock_state, seq_bytes);
+
+        let _plugin = DrumFlashVst::default();
+    }
 
     #[test]
     fn morphable_fields_are_non_empty_for_all_voices() {
