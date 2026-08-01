@@ -15,13 +15,17 @@
 
 ### Features moyennes (P2)
 - [ ] [144] **Snare : améliorer l'algo** — pas assez de corps (enrichir la synthèse : body oscillator, tuning, noise blend).
-- [ ] [145] **Plock séquenceur : solo paramétré** — à clarifier (solo par step ?).
+- [ ] **REPRENDRE ICI** [145] **Plock séquenceur : solo paramétré** — sémantique **finale = par-step / span de fusion** : le solo mute les autres lanes UNIQUEMENT pendant que la tête est sur la cellule soloée (1 step, ou toute la durée d'une fusion) ; hors fenêtre tout rejoue. Toggle **par cellule** ; désactiver clear le seq-plock si c'était le dernier param. Marqueur « S ». `SequencerPlockState::solo_window(fusion_span_len)` + gating `solo_window.bit(step) && !is_solo(slot,step)` ; persistance `solo_masks` appended rétro-compatible ; copy/paste + reorder de lane emportent le solo (build 20260802-002143, **à valider en S1 demain**).
+  - ⚠️ **Historique d'itérations** : per-step (171811, jugé trop subtil) → solo-de-lane-tout-le-pattern (174923/180017, rejeté « met en solo tout le temps ») → **retour au per-step/fusion-span** (002143). Bug « fantômes aléatoires » = seq-plocks vides résiduels après désactivation → corrigé par le clear-si-dernier.
+  - ⚠️ **2 DETTES À SOLDER avant de clore** :
+    1. **CRASH à l'instanciation sur projet vide** (pas sur projet existant) — apparu avec [145]/[149], crash **natif** (pas de panic Rust), meurt **après `process:first`, avant le 1er paint**. Actuellement **MASQUÉ** par le traçage diagnostic (I/O fichier sur les 50 premiers blocs audio). C'est une **race d'instanciation audio↔UI** à corriger proprement.
+    2. **Retirer tout le traçage diagnostic** : `diag_log` + appels (lib.rs editor/initialize/process, ui.rs paint), `install_panic_logger` — c'est une **violation temps-réel** (I/O sur le thread audio) à supprimer une fois le crash réglé. Bisect fait : la base commitée (20260801-201613) NE crashe PAS → le bug est bien dans [145]/[149].
 - [ ] [146] **Enveloppes exponentielles négatives** — pour des attaques plus claquantes (courbe d'attaque exp inversée, par voix ou global ?).
 - [x] [147] **Choke groups** — 4 choke groups assignables par slot dans l'onglet Track (dropdown None/1-4), tous instruments. Quand un slot trigger, les autres slots actifs du même groupe sont silencés (`apply_choke_groups`, lock-free via le routing byte atomique bits 4-6). Remplace le choke global HH→OH : param `hihat_chokes_oh` masqué (conservé pour les vieilles sessions), toggle header retiré, migration automatique HH/OH→groupe 1 (sentinel serde 0xFF), presets 12 lanes + legacy 13 avec HH/OH en groupe 1 (build 20260729-174208).
 - [ ] **REPRENDRE ICI** [148] **Presets de style pour le Generator** — au moins 10 (Latin, Bossa, Techno, ...).
 
 ### Grosses features (P2/P3)
-- [ ] [149] **16 patterns au lieu de 8** — extension Pattern Bank (persistance, UI slots, migration des sessions).
+- [x] [149] **16 patterns au lieu de 8** — `SLOT_COUNT 8→16`, migration `deserialize_with` tolérant (vieux blob 8-slots → P1-P8 préservés, P9-P16 vides, plus de perte silencieuse), UI 16 slots sur 1 rangée (26px), MIDI switch notes 60-75, 2 tests migration/round-trip (build 20260801-154337).
 - [ ] [150] **Gestion des presets dans un modal** — user presets de modèles de grid / patterns / songs.
 - [ ] [151] **Linker 2 lanes adjacentes** (steps du grid uniquement) pour du layering.
 - [ ] [152] **Instrument Ambiant** — voix jouant des bouts de samples d'ambiances noisy avec offset aléatoire (dépend de l'infra sampler [83] ?).

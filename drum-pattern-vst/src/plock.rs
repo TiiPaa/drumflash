@@ -566,6 +566,10 @@ pub struct SequencerStepParams {
     pub stutter_count: u8, // 1-16, default 1 = no stutter
     pub condition: StepCondition,
     pub microtiming_ms: f32, // -50.0 to +50.0, default 0.0
+    /// Step-scoped solo: while this cell (or its fusion span) plays, every
+    /// non-soloed lane is muted for those steps. Independent of the lane-level
+    /// `S` tag. Default false.
+    pub solo: bool,
 }
 
 impl Default for SequencerStepParams {
@@ -575,6 +579,7 @@ impl Default for SequencerStepParams {
             stutter_count: 1,
             condition: StepCondition::Always,
             microtiming_ms: 0.0,
+            solo: false,
         }
     }
 }
@@ -587,12 +592,17 @@ pub struct SequencerPlockState {
     pub stutters: Vec<Vec<AtomicU32>>,
     pub conditions: Vec<Vec<AtomicU32>>,
     pub microtimings: Vec<Vec<AtomicU32>>,
+    /// Per-instrument bitmask (1 bit per step) of step-scoped solos. Kept as a
+    /// bitmask rather than a per-cell value because solo is boolean and this
+    /// matches the compact `masks` representation.
+    pub solo_masks: [AtomicU64; INSTRUMENT_COUNT],
 }
 
 impl SequencerPlockState {
     pub fn new() -> Self {
         Self {
             masks: std::array::from_fn(|_| AtomicU64::new(0)),
+            solo_masks: std::array::from_fn(|_| AtomicU64::new(0)),
             probabilities: (0..INSTRUMENT_COUNT)
                 .map(|_| {
                     (0..STEP_COUNT)
@@ -664,6 +674,7 @@ impl SequencerPlockState {
             microtiming_ms: f32::from_bits(
                 self.microtimings[instrument][step].load(Ordering::Acquire),
             ),
+            solo: self.is_solo(instrument, step),
         })
     }
 
@@ -677,7 +688,34 @@ impl SequencerPlockState {
         self.conditions[instrument][step].store(params.condition as u32, Ordering::Release);
         self.microtimings[instrument][step]
             .store(params.microtiming_ms.to_bits(), Ordering::Release);
+        self.set_solo(instrument, step, params.solo);
         self.set_active(instrument, step, true);
+    }
+
+    /// Whether the cell at (instrument, step) has step-solo enabled.
+    pub fn is_solo(&self, instrument: usize, step: usize) -> bool {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return false;
+        }
+        (self.solo_masks[instrument].load(Ordering::Acquire) & (1u64 << step)) != 0
+    }
+
+    /// Set/clear the step-solo bit. Enabling it also marks the cell as an active
+    /// seq-plock so it persists and renders in the sequencer p-lock layer.
+    pub fn set_solo(&self, instrument: usize, step: usize, solo: bool) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        let mask = self.solo_masks[instrument].load(Ordering::Relaxed);
+        let new_mask = if solo {
+            mask | (1u64 << step)
+        } else {
+            mask & !(1u64 << step)
+        };
+        self.solo_masks[instrument].store(new_mask, Ordering::Release);
+        if solo {
+            self.set_active(instrument, step, true);
+        }
     }
 
     pub fn set_probability(&self, instrument: usize, step: usize, value: f32) {
@@ -713,6 +751,7 @@ impl SequencerPlockState {
     }
 
     pub fn clear(&self, instrument: usize, step: usize) {
+        self.set_solo(instrument, step, false);
         self.set_active(instrument, step, false);
     }
 
@@ -720,6 +759,7 @@ impl SequencerPlockState {
     pub fn clear_all(&self) {
         for inst in 0..INSTRUMENT_COUNT {
             self.masks[inst].store(0, Ordering::Relaxed);
+            self.solo_masks[inst].store(0, Ordering::Relaxed);
             for step in 0..STEP_COUNT {
                 self.probabilities[inst][step].store(f32::to_bits(1.0), Ordering::Relaxed);
                 self.stutters[inst][step].store(f32::to_bits(1.0), Ordering::Relaxed);
@@ -727,6 +767,34 @@ impl SequencerPlockState {
                 self.microtimings[inst][step].store(0, Ordering::Relaxed);
             }
         }
+    }
+
+    /// Union of the step-solo windows across all instruments, as a 64-bit mask
+    /// (bit S set = step S is inside some soloed cell's span). A normal soloed
+    /// cell covers its own step; a soloed fused cell covers its whole span, so
+    /// the mute of the other lanes lasts exactly as long as the playhead sits on
+    /// the soloed cell. `fusion_span_len(inst, start)` returns the number of
+    /// steps the cell starting at `start` occupies (1 if not a fusion start).
+    ///
+    /// Cheap enough to recompute per audio block (bit tests, no allocation).
+    pub fn solo_window(&self, mut fusion_span_len: impl FnMut(usize, usize) -> usize) -> u64 {
+        let mut window = 0u64;
+        for inst in 0..INSTRUMENT_COUNT {
+            let solos = self.solo_masks[inst].load(Ordering::Acquire);
+            if solos == 0 {
+                continue;
+            }
+            for step in 0..STEP_COUNT {
+                if (solos & (1u64 << step)) == 0 {
+                    continue;
+                }
+                let span = fusion_span_len(inst, step).max(1);
+                for s in step..(step + span).min(STEP_COUNT) {
+                    window |= 1u64 << s;
+                }
+            }
+        }
+        window
     }
 }
 
@@ -1143,5 +1211,55 @@ mod tests {
         assert_eq!(params.condition, StepCondition::NotFirst);
         assert_eq!(params.probability, 1.0);
         assert_eq!(params.stutter_count, 1);
+    }
+
+    #[test]
+    fn set_solo_marks_active_and_roundtrips() {
+        let state = SequencerPlockState::new();
+        assert!(!state.is_solo(0, 3));
+
+        state.set_solo(0, 3, true);
+        assert!(state.is_solo(0, 3));
+        // Enabling solo also makes the cell an active seq-plock.
+        assert!(state.is_active(0, 3));
+        let params = state.get(0, 3).expect("sequencer plock should exist");
+        assert!(params.solo);
+
+        state.set_solo(0, 3, false);
+        assert!(!state.is_solo(0, 3));
+    }
+
+    #[test]
+    fn solo_window_covers_step_and_fusion_span() {
+        let state = SequencerPlockState::new();
+        state.set_solo(0, 2, true); // normal cell → covers only step 2
+        state.set_solo(1, 5, true); // fused cell → covers steps 5,6,7
+
+        let window = state.solo_window(|inst, start| {
+            if inst == 1 && start == 5 {
+                3
+            } else {
+                1
+            }
+        });
+
+        assert_ne!(window & (1 << 2), 0); // normal solo
+        assert_ne!(window & (1 << 5), 0);
+        assert_ne!(window & (1 << 6), 0); // fusion span
+        assert_ne!(window & (1 << 7), 0);
+        assert_eq!(window & (1 << 3), 0); // untouched step
+        assert_eq!(window & (1 << 8), 0); // just past the fusion span
+
+        // No solos → empty window.
+        assert_eq!(SequencerPlockState::new().solo_window(|_, _| 1), 0);
+    }
+
+    #[test]
+    fn clear_resets_solo() {
+        let state = SequencerPlockState::new();
+        state.set_solo(2, 4, true);
+        assert!(state.is_solo(2, 4));
+        state.clear(2, 4);
+        assert!(!state.is_solo(2, 4));
     }
 }
