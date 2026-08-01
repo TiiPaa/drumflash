@@ -550,6 +550,11 @@ fn draw_legacy_slot_lane_v2(
                         .seq_plock_state
                         .state
                         .is_active(slot_idx, source_step);
+                let has_solo = !beyond_len
+                    && params
+                        .seq_plock_state
+                        .state
+                        .is_solo(slot_idx, source_step);
                 let selection_start = fusion_mode_active
                     && state.fusion_selection_start[slot_idx] == Some(global_step);
 
@@ -609,6 +614,23 @@ fn draw_legacy_slot_lane_v2(
                     fusion_span,
                     beyond_len,
                 );
+
+                // Step-solo marker: a small 'S' in the top-left corner of soloed
+                // seq-plock cells. Shown only in sequencer mode (matches when the
+                // violet seq-plock colouring is visible).
+                if state.sequencer_mode && has_solo {
+                    let r = response.rect;
+                    let c = egui::pos2(r.left() + 5.5, r.top() + 5.5);
+                    ui.painter()
+                        .circle_filled(c, 4.5, Color32::from_rgb(24, 16, 40));
+                    ui.painter().text(
+                        c,
+                        egui::Align2::CENTER_CENTER,
+                        "S",
+                        f_sans_sb(8.0),
+                        Color32::WHITE,
+                    );
+                }
 
                 // Start a long-press drag when the left button is held on an active,
                 // single, non-fused cell outside fusion mode.
@@ -1082,6 +1104,8 @@ fn apply_lane_reorder_move(
     let seq = &params.seq_plock_state.state;
     let old_seq_masks: [u64; crate::track::MAX_TRACKS] =
         std::array::from_fn(|slot| seq.masks[slot].load(Ordering::Relaxed));
+    let old_seq_solo_masks: [u64; crate::track::MAX_TRACKS] =
+        std::array::from_fn(|slot| seq.solo_masks[slot].load(Ordering::Relaxed));
     let old_seq_probabilities: Vec<Vec<u32>> = (0..crate::track::MAX_TRACKS)
         .map(|slot| {
             (0..crate::plock::STEP_COUNT)
@@ -1112,6 +1136,7 @@ fn apply_lane_reorder_move(
         .collect();
     for (new_idx, &old_idx) in order.iter().enumerate() {
         seq.masks[new_idx].store(old_seq_masks[old_idx], Ordering::Relaxed);
+        seq.solo_masks[new_idx].store(old_seq_solo_masks[old_idx], Ordering::Relaxed);
         for step in 0..crate::plock::STEP_COUNT {
             seq.probabilities[new_idx][step]
                 .store(old_seq_probabilities[old_idx][step], Ordering::Relaxed);

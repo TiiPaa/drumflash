@@ -54,6 +54,7 @@ pub struct LaneSoundPlocks {
 #[derive(Debug, Clone)]
 pub struct LaneSeqPlocks {
     pub mask: u64,
+    pub solo_mask: u64,
     pub probabilities: [u32; crate::plock::STEP_COUNT],
     pub stutters: [u32; crate::plock::STEP_COUNT],
     pub conditions: [u32; crate::plock::STEP_COUNT],
@@ -174,7 +175,7 @@ pub struct EditorUIState {
     /// Pending global lane preset. Requires explicit confirmation because it mutates the current pattern/layout.
     #[serde(default)]
     pub lane_preset_confirm: Option<LanePresetAction>,
-    /// Pending pattern-bank slot load (click on P1-P8) while the current
+    /// Pending pattern-bank slot load (click on P1-P16) while the current
     /// pattern has unsaved changes. Requires explicit confirmation.
     #[serde(skip)]
     pub pattern_load_confirm: Option<usize>,
@@ -527,6 +528,7 @@ pub fn clear_grid_sound_plocks(plock: &PlockState, slot: usize) {
 pub fn copy_lane_seq_plocks(seq: &crate::plock::SequencerPlockState, slot: usize) -> LaneSeqPlocks {
     LaneSeqPlocks {
         mask: seq.masks[slot].load(Ordering::Relaxed),
+        solo_mask: seq.solo_masks[slot].load(Ordering::Relaxed),
         probabilities: std::array::from_fn(|step| {
             seq.probabilities[slot][step].load(Ordering::Relaxed)
         }),
@@ -544,6 +546,7 @@ pub fn paste_lane_seq_plocks(
     data: &LaneSeqPlocks,
 ) {
     seq.masks[target_slot].store(data.mask, Ordering::Relaxed);
+    seq.solo_masks[target_slot].store(data.solo_mask, Ordering::Relaxed);
     for step in 0..crate::plock::STEP_COUNT {
         seq.probabilities[target_slot][step].store(data.probabilities[step], Ordering::Relaxed);
         seq.stutters[target_slot][step].store(data.stutters[step], Ordering::Relaxed);
@@ -557,6 +560,7 @@ pub fn clear_grid_seq_plocks(seq: &crate::plock::SequencerPlockState, slot: usiz
         return;
     }
     seq.masks[slot].store(0, Ordering::Relaxed);
+    seq.solo_masks[slot].store(0, Ordering::Relaxed);
     for step in 0..crate::plock::STEP_COUNT {
         seq.probabilities[slot][step].store(f32::to_bits(1.0), Ordering::Relaxed);
         seq.stutters[slot][step].store(f32::to_bits(1.0), Ordering::Relaxed);

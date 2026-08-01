@@ -1,4 +1,4 @@
-//! Pattern bank bar: Export/Drag chips, Save/Load slots P1-P8, Clear.
+//! Pattern bank bar: Export/Drag chips, Save/Load slots P1-P16, Clear.
 
 use crate::ui::controls::chip_button;
 use crate::ui::editor_state::EditorUIState;
@@ -32,8 +32,12 @@ pub fn draw_pattern_bank(
         // Determine if current pattern is dirty compared to last_loaded_slot
         let is_dirty = pattern_is_dirty(params, pattern, state);
 
-        // P1-P8 slots
-        for i in 0..8 {
+        // Tighter horizontal rhythm so the 16 P-slots fit on one row alongside
+        // the Save/Clr/Export/Drag keycaps.
+        ui.spacing_mut().item_spacing.x = 3.0;
+
+        // P1-P16 slots
+        for i in 0..crate::pattern_bank::SLOT_COUNT {
             let occupied = params
                 .pattern_bank
                 .bank
@@ -48,7 +52,7 @@ pub fn draw_pattern_bank(
                 format!("P{}", i + 1)
             };
 
-            let btn_size = Vec2::new(30.0, 26.0);
+            let btn_size = Vec2::new(26.0, 26.0);
             let kc_state = if is_loaded {
                 crate::ui::widgets::KeycapState::PressedBlue
             } else {
@@ -168,7 +172,7 @@ pub fn draw_pattern_bank(
             crate::ui::controls::keycap_button(ui, "Save", 46.0, save_state, true, f_mono_med(10.5))
                 .on_hover_text(
                     RichText::new(if state.save_mode_active {
-                        "Click a slot (P1-P8) to save the current pattern there"
+                        "Click a slot (P1-P16) to save the current pattern there"
                     } else {
                         "Activate save mode, then click a slot to store the current pattern"
                     })

@@ -1,4 +1,4 @@
-//! Pattern bank — stores up to 8 pattern slots.
+//! Pattern bank — stores up to 16 pattern slots.
 //!
 //! Kept simple: each slot stores raw serialized bytes that can be
 //! directly fed back into the plock / seq-plock / grid systems.
@@ -9,7 +9,7 @@ use crate::sequencer::pattern::{
 use std::sync::atomic::{AtomicPtr, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 
-pub const SLOT_COUNT: usize = 8;
+pub const SLOT_COUNT: usize = 16;
 
 /// Max serialized size for sound plock state.
 /// Uses actual constants so the buffer never under-allocates when FIELD_COUNT grows.
@@ -27,7 +27,8 @@ pub const MAX_SEQ_PLOCK_BYTES: usize = crate::sequencer::pattern::INSTRUMENT_COU
         * crate::sequencer::pattern::STEP_COUNT
         * 4
         * 4 // 4 fields per cell
-    + crate::sequencer::pattern::INSTRUMENT_COUNT * 8; // masks
+    + crate::sequencer::pattern::INSTRUMENT_COUNT * 8 // active masks
+    + crate::sequencer::pattern::INSTRUMENT_COUNT * 8; // solo masks (appended, backward-compatible)
 
 /// Max serialized size for fused groups.
 pub const MAX_FUSION_BYTES: usize = crate::sequencer::pattern::INSTRUMENT_COUNT
@@ -78,7 +79,7 @@ pub const SONG_BLOCKS: usize = 16;
 /// A song sequence — an ordered chain of pattern slots.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SongSequence {
-    /// Steps reference pattern slots (0-7 = P1-P8, -1 = empty/end).
+    /// Steps reference pattern slots (0-15 = P1-P16, -1 = empty/end).
     #[serde(with = "serde_arrays")]
     pub steps: [i8; 64],
     /// Number of active steps (1-SONG_BLOCKS).
@@ -139,11 +140,37 @@ impl SongSequence {
     }
 }
 
-/// Bank of 8 pattern slots + one song sequence.
+/// Bank of 16 pattern slots + one song sequence.
 #[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct PatternBank {
+    /// The saved pattern slots (P1-P16).
+    ///
+    /// Deserialized length-tolerantly: sessions saved with a smaller bank
+    /// (e.g. the legacy 8-slot `pattern-bank-v1`) fill the first N slots and
+    /// leave the rest empty, instead of failing the whole `from_slice` and
+    /// silently reloading an empty bank. A longer array (future growth) is
+    /// truncated to `SLOT_COUNT`.
+    #[serde(deserialize_with = "deserialize_slots_padded")]
     pub slots: [PatternSlot; SLOT_COUNT],
     pub song: SongSequence,
+}
+
+/// Length-tolerant deserializer for the `slots` array (see field docs).
+fn deserialize_slots_padded<'de, D>(
+    deserializer: D,
+) -> Result<[PatternSlot; SLOT_COUNT], D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let mut slots: Vec<PatternSlot> = Vec::deserialize(deserializer)?;
+    slots.truncate(SLOT_COUNT);
+    while slots.len() < SLOT_COUNT {
+        slots.push(PatternSlot::default());
+    }
+    slots
+        .try_into()
+        .map_err(|_| serde::de::Error::custom("pattern bank slots length normalization failed"))
 }
 
 impl PatternSlot {
@@ -216,6 +243,16 @@ impl PatternSlot {
         for inst in 0..INSTRUMENT_COUNT {
             self.seq_plock_bytes.extend_from_slice(
                 &seq_plock_state.masks[inst]
+                    .load(Ordering::Relaxed)
+                    .to_le_bytes(),
+            );
+        }
+        // Step-solo masks, APPENDED after the active masks so older blobs (which
+        // stop here) still parse; solos default to 0 when the trailing block is
+        // absent. See restore_from_buffers.
+        for inst in 0..INSTRUMENT_COUNT {
+            self.seq_plock_bytes.extend_from_slice(
+                &seq_plock_state.solo_masks[inst]
                     .load(Ordering::Relaxed)
                     .to_le_bytes(),
             );
@@ -417,6 +454,27 @@ impl PatternSlot {
                 offset += 8;
                 seq_plock_state.masks[inst].store(mask, Ordering::Release);
             }
+            // Optional trailing step-solo masks (absent in legacy blobs).
+            if self.seq_plock_bytes.len() >= offset + INSTRUMENT_COUNT * 8 {
+                for inst in 0..INSTRUMENT_COUNT {
+                    let solo = u64::from_le_bytes([
+                        self.seq_plock_bytes[offset],
+                        self.seq_plock_bytes[offset + 1],
+                        self.seq_plock_bytes[offset + 2],
+                        self.seq_plock_bytes[offset + 3],
+                        self.seq_plock_bytes[offset + 4],
+                        self.seq_plock_bytes[offset + 5],
+                        self.seq_plock_bytes[offset + 6],
+                        self.seq_plock_bytes[offset + 7],
+                    ]);
+                    offset += 8;
+                    seq_plock_state.solo_masks[inst].store(solo, Ordering::Release);
+                }
+            } else {
+                for inst in 0..INSTRUMENT_COUNT {
+                    seq_plock_state.solo_masks[inst].store(0, Ordering::Release);
+                }
+            }
         }
 
         // Deserialize fused groups.
@@ -564,6 +622,28 @@ pub fn restore_from_buffers(
             ]);
             offset += 8;
             seq_plock_state.masks[inst].store(mask, Ordering::Release);
+        }
+        // Step-solo masks: an OPTIONAL trailing block. Legacy `pattern-bank-v1`
+        // blobs stop after the active masks, so absence means "no solos".
+        if seq_plock_bytes.len() >= offset + INSTRUMENT_COUNT * 8 {
+            for inst in 0..INSTRUMENT_COUNT {
+                let solo = u64::from_le_bytes([
+                    seq_plock_bytes[offset],
+                    seq_plock_bytes[offset + 1],
+                    seq_plock_bytes[offset + 2],
+                    seq_plock_bytes[offset + 3],
+                    seq_plock_bytes[offset + 4],
+                    seq_plock_bytes[offset + 5],
+                    seq_plock_bytes[offset + 6],
+                    seq_plock_bytes[offset + 7],
+                ]);
+                offset += 8;
+                seq_plock_state.solo_masks[inst].store(solo, Ordering::Release);
+            }
+        } else {
+            for inst in 0..INSTRUMENT_COUNT {
+                seq_plock_state.solo_masks[inst].store(0, Ordering::Release);
+            }
         }
     }
 
@@ -817,6 +897,58 @@ mod tests {
     }
 
     #[test]
+    fn seq_plock_solo_survives_capture_restore() {
+        let pattern = SharedPattern::new(&Pattern::rock_pattern());
+        let plock = PlockState::new();
+        let seq_plock = SequencerPlockState::new();
+
+        seq_plock.set_solo(0, 5, true);
+        seq_plock.set_solo(3, 12, true);
+
+        let mut slot = PatternSlot::default();
+        slot.capture(&pattern, &plock, &seq_plock, 16);
+
+        // Wipe the live state, then restore from the slot.
+        seq_plock.set_solo(0, 5, false);
+        seq_plock.set_solo(3, 12, false);
+        slot.restore(&pattern, &plock, &seq_plock);
+
+        assert!(seq_plock.is_solo(0, 5));
+        assert!(seq_plock.is_solo(3, 12));
+        assert!(!seq_plock.is_solo(1, 5));
+    }
+
+    #[test]
+    fn seq_plock_legacy_blob_without_solo_defaults_false() {
+        // A seq-plock buffer written before step-solo existed: exactly the old
+        // size (4 fields per cell + active masks, no trailing solo block).
+        use crate::plock::{FIELD_COUNT, STEP_COUNT};
+        let _ = FIELD_COUNT;
+        let cell_count = INSTRUMENT_COUNT * STEP_COUNT;
+        let legacy_len = cell_count * 4 * 4 + INSTRUMENT_COUNT * 8;
+        let legacy_bytes = vec![0u8; legacy_len];
+
+        let seq_plock = SequencerPlockState::new();
+        // Pre-set a solo to prove the legacy restore clears it back to false.
+        seq_plock.set_solo(2, 8, true);
+
+        let pattern = SharedPattern::new(&Pattern::rock_pattern());
+        let plock = PlockState::new();
+        let step_masks = [0u16; STEP_COUNT];
+        restore_from_buffers(
+            &step_masks,
+            &[],
+            &legacy_bytes,
+            &[],
+            &pattern,
+            &plock,
+            &seq_plock,
+        );
+
+        assert!(!seq_plock.is_solo(2, 8)); // legacy blob → no solos
+    }
+
+    #[test]
     fn pattern_slot_preallocated_capacity_never_reallocates() {
         let slot = PatternSlot::default();
         assert!(slot.plock_bytes.capacity() >= MAX_PLOCK_BYTES);
@@ -892,6 +1024,50 @@ mod tests {
         let guard = restored.bank.lock().unwrap();
         assert_eq!(guard.song.repeat_at(0), 1);
         assert_eq!(guard.song.repeat_at(63), 1);
+    }
+
+    #[test]
+    fn pattern_bank_migrates_8_slot_blob_to_16() {
+        // A legacy 8-slot bank must load into the new 16-slot bank without
+        // failing `from_slice` (which would silently reload an empty bank and
+        // lose every saved pattern). The first 8 slots are preserved; P9-P16
+        // are padded empty.
+        let mut slot0 = PatternSlot::default();
+        slot0.occupied = true;
+        slot0.pattern_length = 32;
+        let mut slots: Vec<PatternSlot> = vec![PatternSlot::default(); 8];
+        slots[0] = slot0;
+        let blob = serde_json::json!({ "slots": slots, "song": SongSequence::new() });
+        let bytes = serde_json::to_vec(&blob).unwrap();
+
+        let restored = PersistentPatternBank::new();
+        restored.set(bytes);
+        let guard = restored.bank.lock().unwrap();
+        assert_eq!(guard.slots.len(), SLOT_COUNT); // padded to 16
+        assert!(guard.slots[0].occupied); // P1 preserved
+        assert_eq!(guard.slots[0].pattern_length, 32);
+        assert!(!guard.slots[7].occupied); // P8 preserved (empty)
+        assert!(!guard.slots[8].occupied); // P9 padded empty
+        assert!(!guard.slots[15].occupied); // P16 padded empty
+    }
+
+    #[test]
+    fn pattern_bank_roundtrips_16_slots() {
+        // A full 16-slot bank must serialize and deserialize identically.
+        let bank = PersistentPatternBank::new();
+        {
+            let mut guard = bank.bank.lock().unwrap();
+            guard.slots[15].occupied = true;
+            guard.slots[15].pattern_length = 48;
+        }
+        bank.refresh_snapshot();
+        let bytes = bank.map(|b| b.clone());
+        let restored = PersistentPatternBank::new();
+        restored.set(bytes);
+        let guard = restored.bank.lock().unwrap();
+        assert_eq!(guard.slots.len(), SLOT_COUNT);
+        assert!(guard.slots[15].occupied);
+        assert_eq!(guard.slots[15].pattern_length, 48);
     }
 
     #[test]
