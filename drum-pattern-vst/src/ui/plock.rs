@@ -1042,6 +1042,36 @@ fn draw_sequencer_plock_menu(
         });
         ui.add_space(8.0);
 
+        // Solo — mutes every other lane ONLY while the playhead sits on this
+        // cell (its step, or the whole span of a fused cell). Per-cell toggle;
+        // remove it by toggling the same cell off. Turning it off clears the
+        // whole seq-plock when solo was the only thing set, so a solo-only cell
+        // does not linger as an empty (paramless) seq-plock.
+        {
+            let solo_now = current.solo;
+            let solo_response = plock_menu_row(ui, "Solo", ACCENT, solo_now, None, |ui| {
+                ui.add(crate::ui::widgets::ToggleSwitch::new(solo_now))
+            });
+            if solo_response.clicked() {
+                if solo_now {
+                    seq_plock.set_solo(instrument, step, false);
+                    if let Some(p) = seq_plock.get(instrument, step) {
+                        let no_other_params = p.probability == 1.0
+                            && p.stutter_count == 1
+                            && p.condition == StepCondition::Always
+                            && p.microtiming_ms == 0.0;
+                        if no_other_params {
+                            seq_plock.clear(instrument, step);
+                        }
+                    }
+                } else {
+                    seq_plock.set_solo(instrument, step, true);
+                }
+                changed_this_frame = true;
+            }
+        }
+        ui.add_space(4.0);
+
         // Probability
         {
             let mut prob = current.probability;

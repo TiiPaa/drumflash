@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-08-02 — [145] Solo repassé en par-step/fusion + clear-si-dernier (WIP, build 20260802-002143)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-002143`
+**Validation:** `cargo test` OK, `build.ps1 -Install` OK. **À valider en Studio One (test prévu demain).**
+
+- **Sémantique du solo re-corrigée → par-step / span de fusion** (retour à la 1ʳᵉ version après un aller-retour). Le solo mute les autres lanes **uniquement pendant que la tête de lecture est sur la cellule soloée** (1 step, ou toute la durée d'une cellule fusionnée) ; hors de cette fenêtre tout rejoue. Pour soloer sur plusieurs steps → fusionner la cellule. Restauré `SequencerPlockState::solo_window(fusion_span_len)` + gating `solo_window.bit(step) && !is_solo(slot,step)` ; retiré `any_lane_soloed`/`lane_soloed`/`clear_lane_solo`. Toggle « Solo » **par cellule**.
+- **Fix « seq-plocks fantômes »** : désactiver un solo laissait la cellule en seq-plock actif vide (violette), qui s'accumulaient et semblaient apparaître « à des endroits aléatoires ». Désormais, couper le solo **efface le seq-plock** s'il ne reste aucun autre paramètre (proba/stutter/condition/micro).
+- ⚠️ **WIP — 2 dettes** : (1) un **crash à l'instanciation sur projet vide** (natif, pas un panic Rust ; meurt après le 1ᵉʳ process, avant le 1ᵉʳ paint) apparu avec [145]/[149], actuellement **masqué par un traçage diagnostic**. Bisect : la base commitée `20260801-201613` NE crashe pas → cause dans [145]/[149]. (2) **Traçage diagnostic** (`diag_log`, `install_panic_logger`, I/O sur le thread audio) **à retirer** une fois le crash réglé. Détails dans TODO.md [145].
+
+## 2026-08-01 — [145] Solo de lane retirable depuis n'importe quelle cellule (build 20260801-180017)
+
+**Branche:** `skeuo-vector` · **Build:** `20260801-180017`
+**Validation:** `cargo test` OK, `build.ps1 -Install` OK.
+
+- **Fix « impossible de retirer le solo »** : le solo étant par cellule mais l'effet sur toute la lane, retirer le solo depuis une autre cellule (toggle off) ajoutait en fait un 2ᵉ solo. Le toggle **« Solo (lane) »** reflète désormais l'état de la **lane** (`lane_soloed`) et non de la cellule ; le désactiver appelle `clear_lane_solo(slot)` qui efface **tous** les bits solo de la lane → retirable depuis n'importe quelle cellule.
+- Test `clear_lane_solo_removes_every_soloed_cell_in_the_lane`.
+
+## 2026-08-01 — [145] Solo de lane (seq-plocks) — solo pattern entier (build 20260801-174923)
+
+**Branche:** `skeuo-vector` · **Build:** `20260801-174923`
+**Validation:** `cargo test` 205 OK, `build.ps1 -Install` OK.
+
+- **Nouveau toggle Solo** dans les p-locks séquenceur, par cellule. Sémantique : **dès qu'une cellule est Solo, sa lane joue seule sur TOUT le pattern** — toutes les autres lanes sont muettes. Plusieurs cellules solo dans des lanes différentes → ces lanes jouent ensemble, le reste muet. Indépendant du tag S de lane. *(Première itération 20260801-171811 était un solo par step, jugé trop étroit ; refait en solo de lane pattern-entier.)*
+- **Modèle** (`plock.rs`) : `SequencerStepParams.solo` + `SequencerPlockState.solo_masks` (bitmask lock-free 1 bit/step). `set_solo`/`is_solo`, `lane_soloed(slot)` / `any_lane_soloed()`. Activer Solo marque la cellule seq-plock active.
+- **Audio** (`lib.rs`) : `any_solo` calculé une fois par bloc (RT-safe) ; gating au trigger : `if any_solo && !lane_soloed(slot) → skip`.
+- **Persistance** (`pattern_bank.rs`) : `solo_masks` **appended** en fin de `seq_plock_bytes` → vieux blob `pattern-bank-v1` rechargé tel quel avec solo=false (lecture conditionnée à la longueur). Les 2 chemins de restore mis à jour. Copy/paste lane + reorder de lane emportent le solo.
+- **UI** : toggle **Solo** dans le menu seq-plock (violet, après « Mode ») ; marqueur **« S »** en coin haut-gauche des cellules solo (mode séquenceur).
+- **Tests** : `lane_solo_marks_whole_lane_and_any_solo`, `set_solo_marks_active_and_roundtrips`, `clear_resets_solo`, `seq_plock_solo_survives_capture_restore`, `seq_plock_legacy_blob_without_solo_defaults_false`.
+
+## 2026-08-01 — [149] Pattern Bank étendue à 16 slots (build 20260801-154337)
+
+**Branche:** `skeuo-vector` · **Build:** `20260801-154337`
+**Validation:** `cargo test` 314 OK, `build.ps1 -Install` OK.
+
+- **`SLOT_COUNT: 8 → 16`** — la Pattern Bank passe de P1-P8 à P1-P16.
+- **Migration sans perte** : `PatternBank::slots` (`[PatternSlot; 16]`) reçoit un `deserialize_with` **tolérant en longueur**. Une vieille session `pattern-bank-v1` à 8 slots remplit P1-P8 et laisse P9-P16 vides, au lieu de l'échec `from_slice` actuel qui rechargeait un bank **vide** (perte silencieuse de tous les patterns sauvegardés). La clé JSON et le `VST3_CLASS_ID` sont inchangés.
+- **UI** (`ui/pattern_bank.rs`) : loop `0..8` → `0..SLOT_COUNT`, slots 30→26 px + espacement resserré (3 px) → 16 slots sur **une seule rangée** (hauteur inchangée, zones stables OK) ; Export/Drag restent collés à droite.
+- **MIDI pattern-switch** (`lib.rs`) : notes 60-75 (au lieu de 60-67) → P1-P16, via `SLOT_COUNT`.
+- Libellés « P1-P8 » → « P1-P16 » (UI + docstrings). `song.rs` utilisait déjà `SLOT_COUNT` → dropdown des blocks auto-adapté à 16.
+- **Tests** : `pattern_bank_migrates_8_slot_blob_to_16` (P1-P8 préservés, P9-P16 vides) + `pattern_bank_roundtrips_16_slots`.
+
 ## 2026-07-29 — Logo : bas du logotype coupé (build 20260729-223750)
 
 **Branche:** `skeuo-vector` · **Build:** `20260729-223750`

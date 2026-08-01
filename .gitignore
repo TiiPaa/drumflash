@@ -34,3 +34,6 @@ Thumbs.db
 
 # egui lab render previews (dev artifacts)
 /ui-lab/
+
+# Test audio exports
+wav/
