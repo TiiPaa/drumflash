@@ -227,13 +227,6 @@ pub fn create_editor(
             egui_ctx.set_visuals(visuals);
         },
         move |egui_ctx, setter, state| {
-            {
-                use std::sync::atomic::AtomicBool;
-                static FIRST_PAINT: AtomicBool = AtomicBool::new(true);
-                if FIRST_PAINT.swap(false, Ordering::Relaxed) {
-                    crate::diag_log("paint:first:start");
-                }
-            }
             #[cfg(target_os = "windows")]
             nih_plug_egui::set_keyboard_focus(egui_ctx.wants_keyboard_input());
 
@@ -394,13 +387,6 @@ pub fn create_editor(
                         state.pattern_dirty_slot = None;
                     }
                 });
-            {
-                use std::sync::atomic::AtomicBool;
-                static FIRST_PAINT_END: AtomicBool = AtomicBool::new(true);
-                if FIRST_PAINT_END.swap(false, Ordering::Relaxed) {
-                    crate::diag_log("paint:first:end");
-                }
-            }
         },
     )
 }

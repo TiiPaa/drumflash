@@ -634,11 +634,19 @@ fn draw_legacy_slot_lane_v2(
 
                 // Start a long-press drag when the left button is held on an active,
                 // single, non-fused cell outside fusion mode.
+                //
+                // Guard on the PRIMARY button + no open popup: `is_pointer_button_down_on`
+                // is also true on a right-click, so without this a right-click that opens
+                // the plock popup would start a phantom drag; then reading the menu (>0.5 s)
+                // activates it and clicking a popup control releases it, silently MOVING the
+                // step (and its solo/plock) to wherever the popup sits.
                 if !beyond_len
                     && active
                     && !fusion_mode_active
                     && fusion_group.is_none()
                     && response.is_pointer_button_down_on()
+                    && ui.input(|i| i.pointer.primary_down())
+                    && state.plock_popup.is_none()
                 {
                     if state.step_drag.is_none() {
                         let now = ui.ctx().input(|i| i.time);
