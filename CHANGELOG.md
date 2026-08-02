@@ -1,13 +1,13 @@
 # Changelog
 
-## 2026-08-02 — [145] Solo repassé en par-step/fusion + clear-si-dernier (WIP, build 20260802-002143)
+## 2026-08-02 — [145] Solo par-step/fusion finalisé + fix step-drag fantôme (build 20260802-133013)
 
-**Branche:** `skeuo-vector` · **Build:** `20260802-002143`
-**Validation:** `cargo test` OK, `build.ps1 -Install` OK. **À valider en Studio One (test prévu demain).**
+**Branche:** `skeuo-vector` · **Build:** `20260802-133013`
+**Validation:** `cargo test` 320 OK, `build.ps1 -Install` OK. **Validé en Studio One** (solo OK, plus de fantôme, plus de crash projet vide).
 
-- **Sémantique du solo re-corrigée → par-step / span de fusion** (retour à la 1ʳᵉ version après un aller-retour). Le solo mute les autres lanes **uniquement pendant que la tête de lecture est sur la cellule soloée** (1 step, ou toute la durée d'une cellule fusionnée) ; hors de cette fenêtre tout rejoue. Pour soloer sur plusieurs steps → fusionner la cellule. Restauré `SequencerPlockState::solo_window(fusion_span_len)` + gating `solo_window.bit(step) && !is_solo(slot,step)` ; retiré `any_lane_soloed`/`lane_soloed`/`clear_lane_solo`. Toggle « Solo » **par cellule**.
-- **Fix « seq-plocks fantômes »** : désactiver un solo laissait la cellule en seq-plock actif vide (violette), qui s'accumulaient et semblaient apparaître « à des endroits aléatoires ». Désormais, couper le solo **efface le seq-plock** s'il ne reste aucun autre paramètre (proba/stutter/condition/micro).
-- ⚠️ **WIP — 2 dettes** : (1) un **crash à l'instanciation sur projet vide** (natif, pas un panic Rust ; meurt après le 1ᵉʳ process, avant le 1ᵉʳ paint) apparu avec [145]/[149], actuellement **masqué par un traçage diagnostic**. Bisect : la base commitée `20260801-201613` NE crashe pas → cause dans [145]/[149]. (2) **Traçage diagnostic** (`diag_log`, `install_panic_logger`, I/O sur le thread audio) **à retirer** une fois le crash réglé. Détails dans TODO.md [145].
+- **Sémantique du solo finale = par-step / span de fusion** : le solo mute les autres lanes **uniquement pendant que la tête de lecture est sur la cellule soloée** (1 step, ou toute la durée d'une cellule fusionnée) ; hors de cette fenêtre tout rejoue. Pour soloer sur plusieurs steps → fusionner la cellule. `SequencerPlockState::solo_window(fusion_span_len)` + gating `solo_window.bit(step) && !is_solo(slot,step)`. Toggle « Solo » **par cellule** ; désactiver **efface le seq-plock** s'il ne reste aucun autre param (proba/stutter/condition/micro).
+- **Fix bug « plock fantôme à un endroit aléatoire »** (racine réelle, trouvée au trace) : le **clic-droit** qui ouvre le popup démarrait aussi un **step-drag** (`response.is_pointer_button_down_on()` est vrai pour n'importe quel bouton) ; lire le menu >0,5 s activait le drag, et cliquer un contrôle du popup le **relâchait** → **déplacement silencieux** du step (avec son solo/plock) vers la position du popup. Corrigé : le step-drag ne démarre que sur le bouton **primaire** et jamais quand `plock_popup.is_some()`. Le déplacement légitime (glisser gauche) emporte toujours correctement le solo (via `get`/`set`).
+- **Crash à l'instanciation sur projet vide** (apparu pendant le dev [145]/[149]) : **disparu** avec le retour au per-step + le fix du drag. **Traçage diagnostic entièrement retiré** (`diag_log`, `install_panic_logger`, compteurs process, marqueurs paint). Si le crash réapparaît → bisect [149] vs [145] (la base `20260801-201613` ne crashait pas).
 
 ## 2026-08-01 — [145] Solo de lane retirable depuis n'importe quelle cellule (build 20260801-180017)
 
