@@ -96,53 +96,6 @@ fn compute_mix_gating(
     (effective_mutes, mix_gains)
 }
 
-/// Install a one-shot panic hook that appends the panic message + backtrace to
-/// `Documents/Flash Drum/panic.log`. Temporary diagnostic for the fresh-instance
-/// crash — a plugin panic aborts the host, so this captures the cause.
-fn install_panic_logger() {
-    use std::sync::Once;
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        let default_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            let mut path = std::env::var("USERPROFILE")
-                .map(|p| std::path::PathBuf::from(p).join("Documents"))
-                .unwrap_or_else(|_| std::path::PathBuf::from("."));
-            path.push("Flash Drum");
-            let _ = std::fs::create_dir_all(&path);
-            path.push("panic.log");
-            let bt = std::backtrace::Backtrace::force_capture();
-            let msg = format!(
-                "=== Flash Drum panic ===\nbuild {}\n{}\n\nbacktrace:\n{}\n\n",
-                option_env!("DRUM_PATTERN_BUILD_ID").unwrap_or("?"),
-                info,
-                bt
-            );
-            use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-                let _ = f.write_all(msg.as_bytes());
-            }
-            default_hook(info);
-        }));
-    });
-}
-
-/// Temporary phase-trace to `Documents/Flash Drum/trace.log` — the last line
-/// written before a native crash localizes which phase died (initialize /
-/// process / first paint).
-pub(crate) fn diag_log(msg: &str) {
-    let mut path = std::env::var("USERPROFILE")
-        .map(|p| std::path::PathBuf::from(p).join("Documents"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    path.push("Flash Drum");
-    let _ = std::fs::create_dir_all(&path);
-    path.push("trace.log");
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "{}", msg);
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PatternBankActionResult {
     Applied,
@@ -2367,12 +2320,9 @@ impl Plugin for DrumFlashVst {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        install_panic_logger();
-        diag_log("editor:start");
         self.remember_current_pattern();
         let global_config = crate::config::GlobalConfig::load();
-        diag_log("editor:before_create_editor");
-        let ed = ui::create_editor(
+        ui::create_editor(
             self.params.clone(),
             self.current_step.clone(),
             self.current_steps.clone(),
@@ -2388,9 +2338,7 @@ impl Plugin for DrumFlashVst {
             self.pending_pattern_length.clone(),
             self.audio_last_loaded_slot.clone(),
             global_config,
-        );
-        diag_log("editor:end");
-        ed
+        )
     }
 
     fn initialize(
@@ -2399,8 +2347,6 @@ impl Plugin for DrumFlashVst {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        install_panic_logger();
-        diag_log("initialize:start");
         self.sample_rate = buffer_config.sample_rate;
         let track_layout = PersistentField::<crate::track::TrackLayoutState>::map(
             &self.params.track_layout,
@@ -2436,7 +2382,6 @@ impl Plugin for DrumFlashVst {
         }
 
         nih_log!("Flash Drum initialized at {} Hz", buffer_config.sample_rate);
-        diag_log("initialize:end");
         true
     }
 
@@ -2455,14 +2400,6 @@ impl Plugin for DrumFlashVst {
         aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        {
-            use std::sync::atomic::AtomicUsize;
-            static CALLS: AtomicUsize = AtomicUsize::new(0);
-            let n = CALLS.fetch_add(1, Ordering::Relaxed);
-            if n < 50 {
-                diag_log(&format!("process:call:{}:start", n));
-            }
-        }
         // Consume any UI-published song sequence snapshot without blocking.
         if let Some(new_song) = self.params.song_controller.consume_latest() {
             self.song_state = new_song;
@@ -3245,14 +3182,6 @@ impl Plugin for DrumFlashVst {
             }
         }
 
-        {
-            use std::sync::atomic::AtomicUsize;
-            static CALLS_END: AtomicUsize = AtomicUsize::new(0);
-            let n = CALLS_END.fetch_add(1, Ordering::Relaxed);
-            if n < 50 {
-                diag_log(&format!("process:call:{}:end", n));
-            }
-        }
         ProcessStatus::Normal
     }
 
