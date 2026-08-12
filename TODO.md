@@ -1,8 +1,19 @@
 ## Nouvelles tâches — session 2026-08-12 (notées à la passation)
 
-- [ ] [162] **Griser les enveloppes quand One-Shot est actif (samplers smp)** — sur BD6smp/SD6smp/CH6smp, en mode One-Shot l'ampli est bypassée → désactiver visuellement (griser) les contrôles + graphe d'enveloppe concernés. Lié à [155].
+> **Ordre de priorité revu (2026-08-12)** — quick wins d'abord, features ensuite, gros chantiers en fin.
+
+### P1 — Quick wins UI
+- [x] [164] **Caractère bizarre sur le bouton de reset du morphing** — glyphe « × » corrompu (« Ã— », UTF-8 relu en Windows-1252) remplacé par « X » ASCII (convention [73]) dans `plock.rs` (build 20260812-111741, à valider dans S1).
+- [ ] [162] **Griser les enveloppes quand One-Shot est actif (samplers smp)** — sur BD6smp/SD6smp/CH6smp, en mode One-Shot l'ampli est bypassée → désactiver visuellement (griser) les contrôles + graphe d'enveloppe concernés. ~~Lié à [155]~~ (annulé).
+- [x] [165] **Pouvoir déplacer une lane vide** — grip des lanes vides câblé comme les lanes actives (`lane_drag_source` + curseurs Grab/Grabbing) ; `apply_lane_reorder_move` est déjà slot-générique, rien d'autre à toucher (pas de sélection de track pour un slot inactif).
+
+### P2 — Features moyennes
+- [x] [160] **Graphe pour le Gate Shape (Buzz)** — `draw_buzz_gate_graph` sous l'enveloppe d'ampli (famille Env) : fenêtre fixe 60 ms (Rate visible), Smooth cosinus / Razor spike fidèles au DSP, plancher de Depth en pointillé, tag « GATE ».
+- [x] [161] **Remettre le microtiming par cellule dans le plock séquenceur** — nudge ±50 ms par cellule, appliqué DANS le séquenceur : `groove::step_start_beat` (inverse de `beat_to_step`), late-fire (nudge > 0, diffère tout le trigger) + early-fire avec peek de la cellule suivante (nudge < 0, `suppress_next` à la frontière, flag `early_next_loop` pour les conditions à la boucle) ; données copiées des atomics 1×/buffer (`set_microtimings`) ; UI row « Nudge » dans le menu seq-plock ; export MIDI décale les notes (clamp tick 0). Tests : ±25 ms sample-accurate, wrap, zéro, inverse groove, export MIDI. ⚠️ Limites : conditions First/NotFirst à la boucle avec push/pull ≠ 0 = approximatif ; collision même sample = report d'1 sample.
+
+### P2/P3 — Gros chantiers
+- [ ] [166] **REPRENDRE ICI** — **Mixer le stutter avec les cellules fusionnées** — étudier attentivement l'interaction stutter × fusion (actuellement exclusifs) : sémantique temporelle, rendu audio, export MIDI [158], UI/plocks. **Bien étudier le point avant de coder.**
 - [ ] [163] **Catégories d'instruments + changement de type via clic droit sur le nom de lane** — regrouper les kinds en catégories (BD, SD, HH, PERC, FX, OTHER) ; le menu clic-droit sur le nom de la lane doit aussi permettre de changer le type d'instrument.
-- [ ] [164] **Caractère bizarre sur le bouton de reset du morphing** — glyphe incorrect affiché sur le bouton reset morphing (à corriger).
 
 ---
 
@@ -11,7 +22,7 @@
 ### Régressions / bugs (P1)
 - [x] [153] **Étoile "non sauvegardé" fantôme** — le positionnement sur un slot vide (action UI-only) ne publiait pas le slot vers `audio_last_loaded_slot` ; la resync UI ramenait alors le slot sauvé + grille vidée → faux dirty. Fix : publier `audio_last_loaded_slot = i` sur slot vide (build 20260807-105334).
 - [x] [154] **Hold manquant dans le graphe d'enveloppe** — tracé A-H-D explicite : palier plat au sommet pendant le Hold (couleur dédiée) + légende « H », Hold intégré à l'échelle temporelle (build 20260807-111016).
-- [ ] [155] **REPRENDRE ICI** — **Attaque des instruments smp quasi inaudible + ne correspond pas au graphe** — sur BD6smp/SD6smp/CH6smp l'attack (passée en ms absolues) s'entend à peine et le graphe `draw_sample_amp_graph` dessine l'attack comme une fraction du sample → décalé. Aligner l'audible et le graphe (revoir la plage/échelle d'attack des samplers et le rendu du graphe).
+- [ ] ~~[155]~~ **ANNULÉ (2026-08-12)** — Attaque des instruments smp quasi inaudible + graphe décalé — annulé par l'utilisateur.
 
 ### Quick wins UI (P1/P2)
 - [x] [156] **Bouton "Save" à gauche des patterns** — Save déplacé avant la rangée de slots (build 20260807-123130).
@@ -20,8 +31,7 @@
 ### Features moyennes (P2)
 - [x] [158] **Export MIDI : inclure les notes des cellules fusionnées et des stutters** — fusion = `step_count` pulses uniformes sur le span ; stutter = N notes sur un pas ; réplique le séquenceur (les deux ne se combinent pas). `SequencerPlockState` passé à l'export. Tests fusion/stutter (build 20260807-140101).
 - [x] [159] **Enveloppes d'ampli en A-H-D bipolaire (Release retiré) sur toutes les voix** — réécriture interne de `DecayReleaseEnvelope` (A-H-D piloté par le temps, signatures conservées) ; `decay_curve`/`release_curve` réinterprétés en courbes **decay**/**attack** bipolaires (−1..1) ; Release retiré des tables + du graphe ; Buzz ampli migré vers `DecayReleaseEnvelope` ; bugs `with_attack_ms` (`Copy` no-op) et recréation d'env corrigés (open_hihat/cymbal). Persistance : clamp gracieux des vieilles valeurs à +1, sans migration (build 20260807-170048).
-- [ ] [160] **Graphe pour le Gate Shape (Buzz)** — afficher un tracé du gate (forme selon Rate/Depth/Shape, Smooth cosinus vs Razor spike) à côté des contrôles de gate.
-- [ ] [161] **Remettre le microtiming par cellule dans le plock séquenceur** — restaurer le décalage temporel (nudge) par cellule dans le plock de séquenceur.
+- [ ] [160]/[161] — déplacés dans la liste priorisée 2026-08-12 en haut du fichier.
 
 ---
 

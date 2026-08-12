@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-12 — [164]+[162]+[165]+[160]+[161] Batch de tâches (build 20260812-123906)
+
+**Branche:** `skeuo-vector` · **Build:** `20260812-123906`
+**Validation:** `cargo test` 265+1+166 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **[164] Glyphe du bouton reset morphing corrigé** — « × » corrompu (« Ã— », UTF-8 relu en Windows-1252) remplacé par « X » ASCII dans le popup Morph (`ui/plock.rs`), conforme à la convention [73] (ASCII only dans les labels).
+- **[162] Enveloppes grisées en One-Shot (voix smp)** — sur BD6smp/SD6smp/CH6smp, activer **One Shot** grise les sliders Attack/Decay/Decay Curve (`add_enabled_ui`, le switch One Shot reste actif car c'est un special param) et la ligne d'enveloppe du graphe passe en gris (`draw_sample_amp_graph`). Layout stable : on grise, on ne cache pas.
+- **[165] Drag d'une lane vide** — le grip des lanes inactives est câblé comme celui des lanes actives (`lane_drag_source` + curseurs Grab/Grabbing). `apply_lane_reorder_move` était déjà slot-générique → rien d'autre à toucher ; pas de sélection de track pour un slot inactif (pas d'onglet Sound Editor).
+- **[160] Graphe Gate Shape (Buzz)** — `draw_buzz_gate_graph` sous le graphe d'ampli (famille Env) : fenêtre temps **fixe 60 ms** (le Rate est visible : ~3 cycles à 55 Hz, peigne dense à 500 Hz), Smooth = cosinus surélevé `^(1+4·shape)`, Razor = rampe 0,3 ms + spike expo (mêmes constantes que `BuzzVoice`), plancher de Depth en ligne fine, tag « GATE » en coin pour distinguer les deux LCD empilés.
+- **[161] Microtiming par cellule (seq plock), ±50 ms complet** — jamais câblé au moteur auparavant (stockage/persistance seuls existaient). Le **séquenceur** décale désormais chaque trigger :
+  - `groove::step_start_beat(step, swing, groove)` : inverse exacte de `beat_to_step` (paires swing/shuffle/MPC) pour connaître l'heure des frontières de step.
+  - **Nudge positif** : le trigger est différé (`late_trigger`/`late_fire_beat`) → stutter/fusion pulses s'expandent depuis l'heure décalée, tout le train bouge d'un bloc.
+  - **Nudge négatif** : peek de la cellule du prochain boundary à chaque sample ; quand le temps restant ≤ −nudge, le trigger part en avance (`classify_cell`/`eval_trigger` partagés avec le chemin normal → masque, humanize, fusions, morphs identiques) ; le boundary réel avance l'état mais reste muet (`suppress_next`). Flag `early_next_loop` sur un early-fire qui croise le wrap → les conditions (First/NotFirst/…) sont évaluées avec `loop_count + 1` côté `lib.rs`.
+  - Données : `Sequencer::set_microtimings` copie les atomics seq-plock 1×/buffer (RT-safe) ; état microtiming purgé sur play/stop/reset/seek (`clear_microtiming_state`).
+  - **UI** : row « Nudge » (−50..+50 ms, reset double-clic à 0) dans le menu Seq Plock, entre Stutter et Condition.
+  - **Export MIDI** : les notes sont décalées du nudge (ms → ticks au tempo d'export, clamp tick 0).
+  - Tests : inverse `step_start_beat`↔`beat_to_step` (4 grooves × 5 swings × 16 steps), ±25 ms sample-accurate (±2 samples), early-fire au wrap + flag, zéro nudge = grille inchangée, export MIDI ±50 ms.
+  - ⚠️ Limites connues : conditions à la boucle avec push/pull ≠ 0 = approximatif (le wrap de `loop_count` suit la timeline non shiftée, préexistant) ; collision même sample late+transition = report d'1 sample plutôt qu'un hit perdu.
+
 ## 2026-08-12 — Passation : docs réorganisées + handoff (pas de build)
 
 - **`CLAUDE.md` devient la référence canonique unique pour tous les agents IA** (Claude/Codex/Kimi/…) : compteurs mis à jour (17 voix, 14 slots, plocks 46×14×64), enveloppe d'ampli A-H-D documentée, et absorption du détail unique d'`AGENTS.md` (patches du fork nih-plug, chaîne de saturation, choke groups, règle checklist « À tester dans Studio One », portabilité, règle « next »).
