@@ -1,9 +1,17 @@
+## Nouvelles tâches — session 2026-08-12 (notées à la passation)
+
+- [ ] [162] **Griser les enveloppes quand One-Shot est actif (samplers smp)** — sur BD6smp/SD6smp/CH6smp, en mode One-Shot l'ampli est bypassée → désactiver visuellement (griser) les contrôles + graphe d'enveloppe concernés. Lié à [155].
+- [ ] [163] **Catégories d'instruments + changement de type via clic droit sur le nom de lane** — regrouper les kinds en catégories (BD, SD, HH, PERC, FX, OTHER) ; le menu clic-droit sur le nom de la lane doit aussi permettre de changer le type d'instrument.
+- [ ] [164] **Caractère bizarre sur le bouton de reset du morphing** — glyphe incorrect affiché sur le bouton reset morphing (à corriger).
+
+---
+
 ## Nouvelles tâches — session 2026-08-07
 
 ### Régressions / bugs (P1)
 - [x] [153] **Étoile "non sauvegardé" fantôme** — le positionnement sur un slot vide (action UI-only) ne publiait pas le slot vers `audio_last_loaded_slot` ; la resync UI ramenait alors le slot sauvé + grille vidée → faux dirty. Fix : publier `audio_last_loaded_slot = i` sur slot vide (build 20260807-105334).
 - [x] [154] **Hold manquant dans le graphe d'enveloppe** — tracé A-H-D explicite : palier plat au sommet pendant le Hold (couleur dédiée) + légende « H », Hold intégré à l'échelle temporelle (build 20260807-111016).
-- [ ] [155] **Attaque des instruments smp quasi inaudible + ne correspond pas au graphe** — sur BD6smp/SD6smp/CH6smp l'attack (passée en ms absolues) s'entend à peine et le graphe `draw_sample_amp_graph` dessine l'attack comme une fraction du sample → décalé. Aligner l'audible et le graphe (revoir la plage/échelle d'attack des samplers et le rendu du graphe).
+- [ ] [155] **REPRENDRE ICI** — **Attaque des instruments smp quasi inaudible + ne correspond pas au graphe** — sur BD6smp/SD6smp/CH6smp l'attack (passée en ms absolues) s'entend à peine et le graphe `draw_sample_amp_graph` dessine l'attack comme une fraction du sample → décalé. Aligner l'audible et le graphe (revoir la plage/échelle d'attack des samplers et le rendu du graphe).
 
 ### Quick wins UI (P1/P2)
 - [x] [156] **Bouton "Save" à gauche des patterns** — Save déplacé avant la rangée de slots (build 20260807-123130).
