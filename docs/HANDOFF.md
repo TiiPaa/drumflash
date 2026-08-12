@@ -15,9 +15,9 @@
   - `wav/` is a scratch folder, **gitignored on purpose** — leave it.
 - **Deploy caveat:** Studio One locks the VST3 DLL — it must be closed before `build.ps1 -Install`. Run the build **plainly** (no `2>&1`/`2>$null` — PowerShell 5.1 turns cargo stderr into a fake `NativeCommandError`).
 
-## 2. In-flight — awaiting user validation
+## 2. Last completed — [159] validated
 
-### [159] Amp envelope → A-H-D bipolar (Release removed) — DONE, needs Studio One sign-off
+### [159] Amp envelope → A-H-D bipolar (Release removed) — DONE & validated in Studio One (2026-08-12)
 All voices' **amplitude** envelope went from decay+release to **Attack-Hold-Decay, no release**, with **independent bipolar concave/convex curves** on attack and decay (generalises the Buzz filter-env the user liked).
 
 - Core: **`DecayReleaseEnvelope` was rewritten internally** in `dsp.rs` (time-based A-H-D) keeping its public signatures, so the amp voices barely changed. `decay_curve` = bipolar **decay** curve; `release_curve` **repurposed** as bipolar **attack** curve; `set_release`/`release_time` = **no-op**. `shape_curve(e,c)` shared. `trigger()` ramps from current value (anti-click), `trigger_hard()` from zero (machine-gun/stutter).
@@ -26,15 +26,18 @@ All voices' **amplitude** envelope went from decay+release to **Attack-Hold-Deca
 - Buzz amp migrated `ExpDecayEnvelope` → `DecayReleaseEnvelope` (its Decay Curve is bipolar now too).
 - Bonus bug fixes: `open_hihat` recreated its envelope in `set_settings` (state reset → click on slider drag) → replaced by setters; `open_hihat`/`cymbal` discarded `with_attack_ms` results (`Copy` no-op) → `set_attack_ms`; cymbal's duplicated attack-drift cleaned.
 
-**⚠️ Known limitation (accepted in the plan):** per-voice **defaults were not retuned**. Old stiffness values (0.1–20) are read on the new −1..1 range and **clamp to +1**, so a *fresh* instance shows Attack/Decay Curve sliders **at max (convex)**. Sound stays punchy; if the user wants centered (0 = linear) defaults, retune `sound_settings_default` (pos 6 = decay_curve, pos 7 = release_curve/attack) per voice in `instrument_registry.rs` + `VoiceSettings::*()` in `synthesis/mod.rs`.
-
-**À tester dans Studio One (build 20260807-170048):** no Release slider anywhere; Attack Curve & Decay Curve move the graph (concave↔convex) *and* are audible; Hold still shows (regression [154]); no click on fast retrigger or slider-drag; old sessions reload close-sounding, no crash; Buzz still fine.
+**Known limitation (accepted by the user):** per-voice **defaults were not retuned**. Old stiffness values (0.1–20) are read on the new −1..1 range and **clamp to +1**, so a *fresh* instance shows Attack/Decay Curve sliders **at max (convex)**. The user is fine with this (sound stays punchy). If it ever needs centered (0 = linear) defaults, retune `sound_settings_default` (pos 6 = decay_curve, pos 7 = release_curve/attack) per voice in `instrument_registry.rs` + `VoiceSettings::*()` in `synthesis/mod.rs`.
 
 ## 3. Pending tasks (TODO.md)
+
+**Resume point (`REPRENDRE ICI`) = [155].** The user picks the next task — present the curated TODO list, don't auto-start.
 
 - **[155]** SMP voices (BD6/SD6/CH6smp) attack barely audible **and** mismatches `draw_sample_amp_graph` (attack drawn as a sample fraction). Align audible attack ↔ graph. *(Note: amp attack was already converted to absolute ms — `MAX_AMP_ATTACK_SECS = 0.08` — but the graph/range still don't line up.)*
 - **[160]** Draw a **Gate Shape** graph for Buzz (Smooth cosine tremolo vs Razor exp spike, driven by Rate/Depth/Shape) next to its gate controls.
 - **[161]** Restore **per-cell microtiming** (nudge) in the sequencer p-lock.
+- **[162]** Grey out the envelope controls/graph when **One-Shot** is on for smp voices (amp is bypassed then). Related to [155].
+- **[163]** Instrument **categories** (BD, SD, HH, PERC, FX, OTHER) + let the lane-name right-click menu also **change the instrument type**.
+- **[164]** Wrong glyph on the **morphing reset** button.
 - Backlog P2/P3: [144] [146] [150] [152] [69] [27] [56] [41] [84] [83cont] [94] [95] and **[BUG-LANE-DESYNC]**.
 
 Reminder: when the user says "next" / "on continue", **do not start coding** — present the curated unchecked-TODO list and let them pick.
@@ -82,4 +85,4 @@ Reminder: when the user says "next" / "on continue", **do not start coding** —
 
 ## 7. If you're picking this up
 
-1. Read `CLAUDE.md`. 2. Get [159] validated in Studio One (§2) — or retune default curves if the user dislikes max-convex defaults. 3. For the next feature, wait for the user's explicit pick from TODO. 4. Build+install and end every build report with the "À tester dans Studio One" checklist. 5. Consider proposing a commit of this large uncommitted session before starting new work.
+1. Read `CLAUDE.md`. 2. The whole session is **committed & pushed** (`skeuo-vector` @ latest); [159] is validated. 3. Resume at **[155]** but wait for the user's explicit pick from TODO before coding. 4. Build+install and end every build report with the "À tester dans Studio One" checklist.
