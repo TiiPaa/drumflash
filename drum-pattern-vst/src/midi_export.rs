@@ -120,6 +120,16 @@ fn export_pattern_to_midi_data(
         events.push((tick + dur.max(1), vec![0x89, note, 0]));
     };
 
+    // Per-cell microtiming (ms) → signed tick shift at the export tempo.
+    let nudge_ticks = |slot: usize, step: usize| -> i64 {
+        let ms = seq_plock
+            .get(slot, step)
+            .map(|p| p.microtiming_ms.clamp(-50.0, 50.0))
+            .unwrap_or(0.0);
+        (ms as f64 * bpm as f64 / 60000.0 * TICKS_PER_QUARTER as f64).round() as i64
+    };
+    let shifted = |base: u32, nudge: i64| -> u32 { (base as i64 + nudge).max(0) as u32 };
+
     for slot in 0..MAX_TRACKS {
         if !track_layout.is_active(slot) {
             continue;
@@ -140,6 +150,7 @@ fn export_pattern_to_midi_data(
                 let span = group.cell_span() as u32;
                 let total = (span * TICKS_PER_STEP).max(1);
                 let base = step_tick_offset(group.start_cell as usize, swing, groove_type);
+                let base = shifted(base, nudge_ticks(slot, group.start_cell as usize));
                 let dur = (total / pulses).saturating_sub(1).clamp(1, 10);
                 for k in 0..pulses {
                     let tick = base + (k as f32 * total as f32 / pulses as f32).round() as u32;
@@ -152,6 +163,7 @@ fn export_pattern_to_midi_data(
                     .map(|p| p.stutter_count.max(1))
                     .unwrap_or(1) as u32;
                 let base = step_tick_offset(step, swing, groove_type);
+                let base = shifted(base, nudge_ticks(slot, step));
                 let dur = (TICKS_PER_STEP / n).saturating_sub(1).clamp(1, 10);
                 for k in 0..n {
                     let tick =
@@ -225,9 +237,71 @@ mod tests {
             .count()
     }
 
+    /// Absolute ticks of every note-on (velocity 100) in an exported SMF0 file.
+    fn note_on_ticks(bytes: &[u8]) -> Vec<u32> {
+        let mut ticks = Vec::new();
+        let mut tick = 0u32;
+        let mut i = 22; // skip MThd header (14) + MTrk header (8)
+        while i < bytes.len() {
+            let mut delta = 0u32;
+            loop {
+                let b = bytes[i];
+                i += 1;
+                delta = (delta << 7) | (b & 0x7F) as u32;
+                if b & 0x80 == 0 {
+                    break;
+                }
+            }
+            tick += delta;
+            match bytes[i] {
+                status @ (0x99 | 0x89) => {
+                    if status == 0x99 && bytes[i + 2] == 100 {
+                        ticks.push(tick);
+                    }
+                    i += 3;
+                }
+                0xFF => {
+                    // Meta event: FF <type> <len> <data…>
+                    let len = bytes[i + 2] as usize;
+                    i += 3 + len;
+                }
+                _ => i += 1,
+            }
+        }
+        ticks
+    }
+
     #[test]
-    fn midi_export_expands_stutter_into_multiple_notes() {
-        let pattern = SharedPattern::new(&Pattern::empty());
+    fn midi_export_applies_microtiming_nudge() {
+        // Step 2, +50 ms at 120 BPM = 0.1 quarter = 48 ticks after the base
+        // tick (2 * 120 = 240) → 288; -50 ms → 192.
+        for (nudge_ms, expected_tick) in [(50.0f32, 288u32), (-50.0, 192)] {
+            let pattern = SharedPattern::new(&Pattern::empty());
+            pattern.set_step_mask(2, 1u16 << 0);
+            let layout = legacy_layout();
+            let seq = SequencerPlockState::new();
+            seq.set_microtiming(0, 2, nudge_ms);
+
+            let bytes = export_pattern_to_midi_bytes(
+                &pattern,
+                &layout,
+                120.0,
+                16,
+                0.0,
+                GrooveType::Straight,
+                &seq,
+            )
+            .expect("MIDI export should succeed");
+            assert_eq!(
+                note_on_ticks(&bytes),
+                vec![expected_tick],
+                "nudge {nudge_ms} ms should move the note-on to tick {expected_tick}"
+            );
+        }
+    }
+
+    #[test]
+    fn midi_export_expands_stutter_into_multiple_notes() {        let pattern = SharedPattern::new(&Pattern::empty());
         pattern.set_step_mask(0, 1u16 << 0); // Kick on step 0
         let layout = legacy_layout();
         let seq = SequencerPlockState::new();
