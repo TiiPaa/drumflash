@@ -1,4 +1,4 @@
-//! P-lock menus: sound plocks, fusion morph, sequencer plocks, popup.
+﻿//! P-lock menus: sound plocks, fusion morph, sequencer plocks, popup.
 
 use crate::plock::PlockState;
 use crate::sequencer::{
@@ -472,7 +472,7 @@ fn draw_morph_target_action_buttons(
             MorphDirection::Source => MorphDirection::Target,
         });
     }
-    if ui.small_button("×").clicked() {
+    if ui.small_button("Ã—").clicked() {
         delete = true;
     }
     if let Some(dir) = new_dir {
@@ -751,9 +751,9 @@ fn draw_fusion_morph_menu(
             }
         }
 
-        // Special params (continuous only — discrete params can't be morphed).
+        // Special params (continuous only â€” discrete params can't be morphed).
         // Also skip any special param whose plock field overlaps a standard field
-        // (e.g. special_index 4 → field 18 which is also Attack).
+        // (e.g. special_index 4 â†’ field 18 which is also Attack).
         let standard_field_indices: std::collections::HashSet<usize> = inst_def
             .standard_params
             .iter()
@@ -811,6 +811,69 @@ fn draw_fusion_morph_menu(
     });
 }
 
+/// Fusion group actions (Morphing / Edit Fusion Steps / Delete Fusion),
+/// shared by the sound-plock and sequencer-plock popup branches.
+fn draw_fusion_group_menu(
+    ui: &mut egui::Ui,
+    pattern: &SharedPattern,
+    params: &DrumFlashParams,
+    inst: usize,
+    idx: usize,
+    group: FusedGroup,
+    step: usize,
+    popup: &mut PlockPopup,
+    state: &mut EditorUIState,
+) {
+    plock_menu_frame(ui, PL_LINK(), |ui| {
+        if plock_menu_header(
+            ui,
+            &format!("Fusion {}-{}", group.start_cell + 1, group.end_cell + 1),
+            step,
+            PL_LINK(),
+        ) {
+            state.plock_popup = None;
+        }
+
+        let morph_active = group.morph_count > 0;
+        let morph_label = if morph_active {
+            let morphable =
+                crate::instrument_registry::morphable_fields(schema_voice_idx(params, inst));
+            let names: Vec<&str> = group.morph_targets[..group.morph_count as usize]
+                .iter()
+                .map(|t| {
+                    morphable
+                        .iter()
+                        .find(|f| f.field_index == t.field as usize)
+                        .map(|f| f.label)
+                        .unwrap_or("?")
+                })
+                .collect();
+            format!("Morphing ({})", names.join(", "))
+        } else {
+            "Morphing".to_string()
+        };
+        if plock_menu_action_row(ui, &morph_label, PL_LINK()).clicked() {
+            popup.morph_menu = true;
+            state.plock_popup = Some(*popup);
+        }
+        if plock_menu_action_row(ui, "Edit Fusion Steps", PL_LINK()).clicked() {
+            state.fusion_editing = Some((inst, idx));
+            state.fusion_edit_steps = group.step_count;
+            state.fusion_edit_focus_request = true;
+            state.plock_popup = None;
+        }
+        if plock_menu_action_row(ui, "Delete Fusion", DANGER()).clicked() {
+            let mut new_fusions = pattern.load_fusions(inst);
+            if idx < new_fusions.len() {
+                new_fusions.remove(idx);
+                pattern.store_fusions(inst, &new_fusions);
+            }
+            state.mark_pattern_dirty();
+            state.plock_popup = None;
+        }
+    });
+}
+
 pub fn draw_plock_popup(
     ctx: &egui::Context,
     setter: &ParamSetter,
@@ -844,27 +907,58 @@ pub fn draw_plock_popup(
                     let inst = popup.instrument;
                     let step = popup.step;
                     let fusions = pattern.load_fusions(inst);
-                    let fusion_group = fusions.iter().find(|g| {
-                        let start = g.start_cell;
-                        let end = g.end_cell;
-                        (start as usize) <= step && step <= (end as usize)
-                    });
                     let fusion_info = fusions.iter().enumerate().find(|(_, g)| {
                         (g.start_cell as usize) <= step && step <= (g.end_cell as usize)
                     });
 
                     if state.sequencer_mode {
-                        draw_sequencer_plock_menu(
-                            ui,
-                            pattern,
-                            params,
-                            setter,
-                            inst,
-                            step,
-                            popup.step_was_active,
-                            state,
-                            fusion_group.is_some(),
-                        );
+                        if let Some((idx, group)) = fusion_info {
+                            if popup.morph_menu {
+                                draw_fusion_morph_menu(
+                                    ui,
+                                    pattern,
+                                    sound_settings,
+                                    params,
+                                    setter,
+                                    inst,
+                                    idx,
+                                    step,
+                                    state,
+                                );
+                            } else {
+                                // Fused cell: fusion actions (morph/edit/delete)
+                                // on top, the seq-plock menu below â€” same as
+                                // the sound-plock branch.
+                                draw_fusion_group_menu(
+                                    ui, pattern, params, inst, idx, *group, step, &mut popup,
+                                    state,
+                                );
+                                ui.separator();
+                                draw_sequencer_plock_menu(
+                                    ui,
+                                    pattern,
+                                    params,
+                                    setter,
+                                    inst,
+                                    step,
+                                    popup.step_was_active,
+                                    state,
+                                    true,
+                                );
+                            }
+                        } else {
+                            draw_sequencer_plock_menu(
+                                ui,
+                                pattern,
+                                params,
+                                setter,
+                                inst,
+                                step,
+                                popup.step_was_active,
+                                state,
+                                false,
+                            );
+                        }
                     } else {
                         if let Some((idx, group)) = fusion_info {
                             if popup.morph_menu {
@@ -880,67 +974,10 @@ pub fn draw_plock_popup(
                                     state,
                                 );
                             } else {
-                                plock_menu_frame(ui, PL_LINK(), |ui| {
-                                    if plock_menu_header(
-                                        ui,
-                                        &format!(
-                                            "Fusion {}-{}",
-                                            group.start_cell + 1,
-                                            group.end_cell + 1
-                                        ),
-                                        step,
-                                        PL_LINK(),
-                                    ) {
-                                        state.plock_popup = None;
-                                    }
-
-                                    let morph_active = group.morph_count > 0;
-                                    let morph_label = if morph_active {
-                                        let morphable =
-                                            crate::instrument_registry::morphable_fields(
-                                                schema_voice_idx(params, inst),
-                                            );
-                                        let names: Vec<&str> = group.morph_targets
-                                            [..group.morph_count as usize]
-                                            .iter()
-                                            .map(|t| {
-                                                morphable
-                                                    .iter()
-                                                    .find(|f| f.field_index == t.field as usize)
-                                                    .map(|f| f.label)
-                                                    .unwrap_or("?")
-                                            })
-                                            .collect();
-                                        format!("Morphing ({})", names.join(", "))
-                                    } else {
-                                        "Morphing".to_string()
-                                    };
-                                    if plock_menu_action_row(ui, &morph_label, PL_LINK()).clicked() {
-                                        popup.morph_menu = true;
-                                        state.plock_popup = Some(popup);
-                                    }
-                                    if plock_menu_action_row(ui, "Edit Fusion Steps", PL_LINK())
-                                        .clicked()
-                                    {
-                                        state.fusion_editing = Some((inst, idx));
-                                        state.plock_popup = None;
-                                    }
-                                    if plock_menu_action_row(
-                                        ui,
-                                        "Delete Fusion",
-                                        DANGER(),
-                                    )
-                                    .clicked()
-                                    {
-                                        let mut new_fusions = fusions.clone();
-                                        if idx < new_fusions.len() {
-                                            new_fusions.remove(idx);
-                                            pattern.store_fusions(inst, &new_fusions);
-                                        }
-                                        state.mark_pattern_dirty();
-                                        state.plock_popup = None;
-                                    }
-                                });
+                                draw_fusion_group_menu(
+                                    ui, pattern, params, inst, idx, *group, step, &mut popup,
+                                    state,
+                                );
                                 ui.separator();
 
                                 // Also show the source-step plock menu below.
@@ -1042,7 +1079,7 @@ fn draw_sequencer_plock_menu(
         });
         ui.add_space(8.0);
 
-        // Solo — mutes every other lane ONLY while the playhead sits on this
+        // Solo â€” mutes every other lane ONLY while the playhead sits on this
         // cell (its step, or the whole span of a fused cell). Per-cell toggle;
         // remove it by toggling the same cell off. Turning it off clears the
         // whole seq-plock when solo was the only thing set, so a solo-only cell

@@ -123,7 +123,7 @@ impl Voice for OpenHiHatVoice {
         // Apply timing drift (±2 ms) to the amplitude envelope attack.
         let attack_drift_ms = (self.analog_drift.timing_offset * 2.0).clamp(-0.002, 0.002) * 1000.0;
         self.envelope
-            .with_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
+            .set_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
         self.envelope.trigger();
     }
 
@@ -260,14 +260,12 @@ impl Voice for OpenHiHatVoice {
             self.noise_r = dsp::NoiseSource::new(self.settings.noise_type, 13579);
         }
 
-        self.envelope = dsp::DecayReleaseEnvelope::new(
-            self.sample_rate,
-            self.settings.decay_curve,
-            self.settings.decay,
-            self.settings.release_curve,
-            self.settings.release,
-        )
-        .with_attack_ms(self.settings.attack * 1000.0);
+        // Never recreate the envelope in set_settings (that resets its running
+        // state and clicks mid-slider-drag) — drive it through setters instead.
+        self.envelope.set_decay(self.settings.decay);
+        self.envelope.set_decay_curve(self.settings.decay_curve);
+        self.envelope.set_release_curve(self.settings.release_curve);
+        self.envelope.set_attack_ms(self.settings.attack * 1000.0);
         self.envelope.set_hold(self.settings.hold);
         self.saturation.saturation_type =
             saturation::SaturationType::from(self.settings.saturation_type);

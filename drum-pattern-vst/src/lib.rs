@@ -2570,6 +2570,12 @@ impl Plugin for DrumFlashVst {
         }
         self.sequencer.set_slot_voices(slot_voices);
 
+        // Grid linking: resolve each slot's grid source (a linked lane plays the
+        // steps + fusions of the lane above it) once per buffer.
+        let grid_slots: [usize; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| self.params.track_layout.state.grid_slot(i));
+        self.sequencer.set_grid_slots(grid_slots);
+
         // Reinitialize synthesizer slots whose kind changed (added/removed/reassigned).
         for slot in 0..crate::track::MAX_TRACKS {
             let current_kind = self.params.track_layout.state.kind_for_slot(slot);

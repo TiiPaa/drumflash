@@ -15,6 +15,7 @@ pub fn export_midi_to_documents(
     pattern_length: usize,
     swing: f32,
     groove_type: crate::groove::GrooveType,
+    seq_plock: &crate::plock::SequencerPlockState,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let docs = std::env::var("USERPROFILE")
         .ok()
@@ -37,6 +38,7 @@ pub fn export_midi_to_documents(
         pattern_length,
         swing,
         groove_type,
+        seq_plock,
         &path,
     )?;
     Ok(path)
