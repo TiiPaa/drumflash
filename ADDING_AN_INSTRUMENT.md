@@ -1,402 +1,221 @@
 # Guide : Ajouter un nouvel instrument dans Flash Drum
 
-> Ce document décrit l'architecture du plugin et la procédure exacte pour ajouter une voix (instrument) de synthèse. Il est destiné à un agent externe qui doit appréhender rapidement le codebase.
+> Ce document décrit l'architecture **modulaire** actuelle du plugin et la
+> procédure exacte pour ajouter un instrument (kind). Référence vivante :
+> l'ajout du **BD606 multisample** (build 2026-08-02) a suivi exactement cette
+> checklist — sers-t'en comme exemple dans le code.
 
 ---
 
 ## 1. Architecture en 30 secondes
 
-**Stack :** Rust + `nih-plug` (framework VST3) + `egui` (UI intégrée).
+**Stack :** Rust + `nih-plug` (VST3) + `egui` (UI intégrée).
 
-**Flux audio :**
+**Il n'y a plus de voix fixes.** Le plugin expose un pool de **14 slots**
+(`MAX_TRACKS`, `src/track.rs`). Chaque slot a un **kind** d'instrument
+choisi par l'utilisateur (`TrackInstrumentKind`), ses propres réglages, son
+routing, sa note MIDI et sa ligne de pattern.
+
 ```
-DAW appelle process() → Sequencer déclenche les steps → DrumSynthesizer
-  → 14 slots modulaires adossés aux voix DrumVoiceKind → mix + 14 sorties stéréo aux
+DAW appelle process()
+  → AtomicTrackLayout diff → reinitialize_slot() si kind changé (sans alloc)
+  → Sequencer déclenche les steps (par slot)
+  → DrumSynthesizer : 1 voix pré-allouée par slot (DrumVoiceKind)
+  → mix + 14 sorties stéréo aux
 ```
 
-**Flux données UI → audio :**
-```
-UI modifie des atomics (SoundSettingsState) → bump_version()
-  → audio thread détecte le changement → set_voice_settings() sur chaque voix
-```
-
-**Règle d'or :** aucune allocation, aucun lock bloquant, aucun panic dans `process()`.
+**Règle d'or :** aucune allocation, aucun lock bloquant, aucun panic dans
+`process()`.
 
 ---
 
-## 2. Fichiers clés
+## 2. Les TROIS enums à synchroniser
+
+Ajouter un instrument = toucher **trois espaces d'index** distincts :
+
+| Enum | Fichier | Rôle |
+|------|---------|------|
+| `TrackInstrumentKind` | `src/track.rs` | Kind exposé à l'UI/track. **Sérialisé dans `track-layout-v1`** → ajouter les nouvelles variantes **à la fin** (indices stables). |
+| `DrumVoiceKind` | `src/synthesis/mod.rs` | Wrapper concret des voix DSP (enum, pas de dyn). |
+| `DrumVoice` (legacy) | `src/synthesis/mod.rs` | Espace d'index du registry `INSTRUMENTS` (garde Tom1/2/3 séparés). |
+
+Le pont entre eux : `TrackInstrumentKind::drum_voice_index()` → index
+`DrumVoice`/registry.
+
+---
+
+## 3. Fichiers clés
 
 | Fichier | Rôle |
 |---------|------|
-| `src/instrument_registry.rs` | **Source unique de vérité.** Définit les 13 instruments (nom, label, MIDI note, `standard_params`, `special_params`, defaults). |
-| `src/synthesis/mod.rs` | Enum `DrumVoice`, trait `Voice`, `DrumVoiceKind` (wrapper enum), `DrumSynthesizer`, `VoiceSettings`. |
-| `src/synthesis/<voice>.rs` | Implémentation du trait `Voice` pour un instrument (ex: `zap.rs`, `kick.rs`). |
-| `src/synthesis/settings/<voice>.rs` | **Typed settings struct** (`Perc2Settings`) + conversions `From/Into<VoiceSettings>`. |
-| `src/synthesis/dsp.rs` | Briques DSP réutilisables : `ExpDecayEnvelope`, `DecayReleaseEnvelope`, `OnePoleFilter`, `PitchEnvelope`, oscillateurs, etc. |
-| `src/synthesis/special_params.rs` | Définitions des algorithmes par instrument (`algos_for`) pour le sélecteur d'algo UI. |
-| `src/lib.rs` | Plugin principal. Contient `DrumFlashParams` (tous les paramètres nih-plug), `voice_settings_for()`, et la boucle `process()`. |
-| `src/ui.rs` | Grille de séquenceur, Sound Panel, plock menu. |
-| `src/sound_settings.rs` | `SoundSettingsState` + `InstrumentSettingsState` (atomiques partagées UI/audio). |
-| `src/plock.rs` | Stockage per-step des overrides (64 steps × 14 slots × 18 fields). |
+| `src/track.rs` | `TrackInstrumentKind`, `TrackSlot`, `TrackLayoutState`, `AtomicTrackLayout` (vue lock-free audio). |
+| `src/synthesis/mod.rs` | `DrumVoice`, `DrumVoiceKind`, trait `Voice`, `DrumSynthesizer`, `VoiceSettings`, `create_voice_for_kind()`. |
+| `src/synthesis/<voice>.rs` | Implémentation du trait `Voice` (ex: `bd606.rs`, `perc1.rs`). |
+| `src/synthesis/settings/<voice>.rs` | Typed settings struct + conversions `From/Into<VoiceSettings>`. |
+| `src/synthesis/dsp.rs` | Briques DSP : enveloppes, filtres, oscillateurs, smoothers, `AnalogDrift`, `DcBlocker`. |
+| `src/synthesis/sample_bank.rs` | Banque de samples embarqués (BD606) — pattern réutilisable pour d'autres multisamples. |
+| `src/synthesis/special_params.rs` | `algos_for` — définitions d'algorithmes par voix. |
+| `src/instrument_registry.rs` | **Source de vérité UI** : `INSTRUMENTS` (standard_params, special_params, defaults, `freq_display_ratio`). |
+| `src/sound_settings.rs` | `SoundSettingsState` — atomiques par slot (13 standards + `special[32]` + freq_mode), persistance `sound-settings-v2`. |
+| `src/lib.rs` | Plugin : `DrumFlashParams`, boucle `process()`, hot kind-change, seed migration. |
+| `src/ui/sound_editor.rs` | Onglet Track (dropdown **Type**) + Sound Panel (data-driven). |
+| `src/ui/popups.rs` | Popup "Add Module" (boucle sur `TrackInstrumentKind::COUNT` — automatique). |
+| `src/generator/mod.rs` | Remap des rôles du générateur vers les kinds de slots. |
 
 ---
 
-## 3. Checklist : ajouter un instrument
-
-Supposons qu'on ajoute un 14e instrument appelé **Perc2** (index 13).
+## 4. Checklist : ajouter un instrument (ex. « BD6smp », kind 11 / voice 13)
 
 ### Étape 1 — Typed settings
 
-Créer `src/synthesis/settings/perc2.rs` avec le struct typé et les conversions :
+Créer `src/synthesis/settings/bd606.rs` (modèle : `settings/perc1.rs`) :
 
-```rust
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Perc2Settings {
-    pub frequency: f32,
-    pub attack: f32,
-    pub decay: f32,
-    pub decay_curve: f32,
-    pub release: f32,
-    pub release_curve: f32,
-    pub volume: f32,
-    pub filter_freq: f32,
-    pub filter_env_amount: f32,
-    pub filter_env_decay: f32,
-    pub hold: f32,
-    pub analog: f32,
-    pub stereo: f32,
-    pub algo: u8,
-    // Ajoute ici les champs spéciaux (ex: sweep, bite...) qui remplacent special[0..]
-    // Pour la saturation, ajoute aussi :
-    // pub saturation_type: u8,
-    // pub saturation_amount: f32,
-    // pub saturation_mix: f32,
-    // pub saturation_output_gain: f32,
-    // pub saturation_pre_filter: f32,
-}
+- Struct typé avec les 13 champs standard + les champs spéciaux nommés.
+- `From<VoiceSettings>` et `From<Bd606Settings> for VoiceSettings` : les
+  spéciaux vivent dans `special[0..N]` (32 slots disponibles).
+- Test : `crate::settings_roundtrip_test!(bd606_settings_roundtrip, bd606, Bd606Settings);`
+- Déclarer `pub mod bd606;` dans `settings/mod.rs`.
 
-impl From<VoiceSettings> for Perc2Settings { ... }
-impl From<Perc2Settings> for VoiceSettings { ... }
-```
-
-> **Règle :** `VoiceSettings` reste le format de persistance (plock, presets, DAW state). La conversion vers le typed struct se fait dans `set_settings()` — zero-allocation, stack copy uniquement.
->
-> **Saturation :** si tu veux le pack saturation complet (5 params), mappe-les sur `special[1..6]` (laisser `special[0]` pour le premier paramètre spécial propre à l'instrument). Si tu n'as pas de paramètre spécial propre, tu peux utiliser `special[0..4]` pour la saturation (4 params : type, amount, mix, output_gain).
+> **Convention saturation pack** : 5 params mappés sur des `special[i]`
+> consécutifs (type = `sp_discrete`, amount, mix, output_gain, pre_filter =
+> `sp_discrete`). Voir BD606 : `special[4..8]`.
 
 ### Étape 2 — Voix de synthèse
 
-Créer `src/synthesis/perc2.rs` qui implémente le trait `Voice` :
+Créer `src/synthesis/bd606.rs` implémentant le trait `Voice` (modèle :
+`perc1.rs`). Points critiques :
 
-```rust
-use super::{dsp, saturation, settings::perc2::Perc2Settings, Voice, VoiceSettings};
+- **`set_settings`** : JAMAIS recréer les enveloppes — utiliser les setters
+  (`.set_decay()`, `.set_curve()`, `.set_attack_ms()`, `.set_hold()`…).
+- **`trigger()`** : ne pas reset de phase osc/filtre/RNG (continuité
+  analogique anti-click). L'enveloppe d'amp gère la rampe anti-click.
+- **Saturation** : uniquement via `saturation.process_at(pre_stage, x)` —
+  appelée deux fois (pré/post filtre), le flag `pre_filter` route.
+- **Volume post-saturation** : `settings.volume` multiplie APRÈS
+  `process_at(false, …)`.
 
-pub struct Perc2Voice {
-    settings: Perc2Settings,  // ← typed struct, pas VoiceSettings
-    saturation: saturation::SaturationConfig,
-    ...
-}
+### Étape 3 — `synthesis/mod.rs`
 
-impl Perc2Voice {
-    pub fn new(sample_rate: f32, settings: Perc2Settings) -> Self {
-        ...
-        saturation: saturation::SaturationConfig {
-            saturation_type: saturation::SaturationType::None,
-            amount: 0.0, mix: 1.0, output_gain: 1.0, pre_filter: false,
-        },
-        ...
-    }
-}
+1. `mod bd606;` + `pub use bd606::Bd606Voice;` + `pub use settings::bd606::Bd606Settings;`
+2. `DrumVoice::Bd606 = 13` + `COUNT` (13→14) + arm `from_index()`.
+3. `VoiceSettings::bd606()` — defaults identiques au `sound_settings_default`
+   du registry + defaults des spéciaux (ordre `special[i]`).
+4. `DrumVoiceKind::Bd606(Bd606Voice)` + l'arm dans les **9 matchs** du trait
+   (`trigger`, `trigger_hard`, `process_sample`, `process_sample_stereo`,
+   `is_active`, `reset`, `set_settings`, `set_algo`, `set_special_param`).
+5. Arm dans `create_voice_for_kind()`.
+6. **Si la voix utilise des données lourdes partagées** (samples) : pré-chauffer
+   dans `initialize_with_layout()` (voir `let _ = sample_bank::bank();`) car
+   `create_voice_for_kind()` peut être appelé depuis `process()` via
+   `reinitialize_slot()` — interdiction d'allouer à ce moment-là.
 
-impl Voice for Perc2Voice {
-    fn set_settings(&mut self, settings: VoiceSettings) {
-        self.settings = Perc2Settings::from(settings);
-        // Mettre à jour la saturation si présente :
-        self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
-        self.saturation.amount = self.settings.saturation_amount;
-        self.saturation.mix = self.settings.saturation_mix;
-        self.saturation.output_gain = self.settings.saturation_output_gain;
-        self.saturation.pre_filter = self.settings.saturation_pre_filter > 0.5;
-    }
-    fn set_special_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.settings.sweep = value,
-            // Saturation (mapper selon les special_index du registry)
-            1 => {
-                self.settings.saturation_type = value as u8;
-                self.saturation.saturation_type = saturation::SaturationType::from(self.settings.saturation_type);
-            }
-            2 => { self.settings.saturation_amount = value; self.saturation.amount = value; }
-            3 => { self.settings.saturation_mix = value; self.saturation.mix = value; }
-            4 => { self.settings.saturation_output_gain = value; self.saturation.output_gain = value; }
-            5 => { self.settings.saturation_pre_filter = value; self.saturation.pre_filter = value > 0.5; }
-            _ => {}
-        }
-    }
-    fn process_sample(&mut self) -> f32 {
-        let raw = ...; // ton DSP
-        self.saturation.process(raw)  // ← applique la saturation en sortie
-    }
-    // ... trigger, process_sample_stereo, is_active, reset, set_algo
-}
-```
+### Étape 4 — `track.rs` (`TrackInstrumentKind`)
 
-**Anti-pattern CRITIQUE à éviter dans `set_settings` :**
-- ❌ Ne **jamais** recréer les enveloppes (`ExpDecayEnvelope::new(...)`) dans `set_settings`. Cela réinitialise leur état interne à 0 et coupe le son ou le filtre à chaque mouvement de slider.
-- ✅ Utiliser les **setters** existants : `.set_decay()`, `.set_curve()`, `.set_release()`, `.set_hold()`.
-- ✅ Si une enveloppe n'a pas de setter pour un paramètre dont tu as besoin, ajoute-le dans `dsp.rs` plutôt que de recréer l'enveloppe.
+Ajouter la variante **à la fin** de l'enum (indice sérialisé !) + mettre à
+jour : `COUNT`, `from_index`, `default_label` (2 chars), `default_name`,
+`default_midi_note` (GM, éviter les collisions), `drum_voice_index`,
+`from_drum_voice_index`.
 
-### Étape 3 — Enregistrer la voix dans le système de synthèse
+### Étape 5 — Registry (`instrument_registry.rs`)
 
-Modifier `src/synthesis/mod.rs` :
+1. Table `BD606_STD` (ou réutiliser `FULL_STD`/`TOM_STD`/…) avec les
+   `StandardParamDef` voulus — le Sound Panel et le plock sont data-driven.
+2. Entrée `InstrumentDef` à l'index = `drum_voice_index()` : `name`, `label`,
+   `full_name`, `midi_note`, `algo_count`, `standard_params`,
+   `special_params` (`sp` = continu/morphable, `sp_discrete` = pas de morph),
+   `sound_settings_default` (**ordre strict** des 13 champs :
+   `[freq, decay, vol, filter_freq, attack, release, decay_curve,
+   release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]`),
+   `filter_type_label`, `freq_display_ratio`.
+3. Tests en bas du fichier : ajouter l'index à la liste mono OU stéréo.
 
-1. Ajouter `mod perc2;` en haut.
-2. Ajouter `pub use perc2::Perc2Voice;`
-3. Ajouter `pub use settings::perc2::Perc2Settings;`
-4. Ajouter `pub mod settings::perc2;` dans `src/synthesis/settings/mod.rs`.
-5. Ajouter `Perc2 = 13` dans l'enum `DrumVoice`.
-6. Mettre à jour `DrumVoice::COUNT` (ex: 14).
-7. Ajouter le match arm dans `DrumVoice::from_index()`.
-8. Ajouter `DrumVoiceKind::Perc2(Perc2Voice)` dans l'enum.
-9. Ajouter le match arm dans **toutes** les méthodes de `impl Voice for DrumVoiceKind`.
-10. Dans `DrumSynthesizer::new()`, pousser la nouvelle voix avec le typed settings :
-    ```rust
-    self.voices.push(DrumVoiceKind::Perc2(Perc2Voice::new(
-        sample_rate,
-        Perc2Settings::from(VoiceSettings::perc2()),
-    )));
-    ```
+### Étape 6 — `sound_settings.rs` : ne rien casser
 
-### Étape 4 — Registry
+La persistance `sound-settings-v2` est **versionnée par longueur de blob**.
+Les longueurs legacy sont gelées sur **13 voix** via `LEGACY_VOICE_COUNT`
+(ne JAMAIS utiliser `DrumVoice::COUNT` ici — il grandit avec les nouvelles
+voix et casserait la détection des anciens formats). Aucun changement de
+format nécessaire si les params tiennent dans `special[32]`.
 
-Modifier `src/instrument_registry.rs` :
+### Étape 7 — Listes hardcodées UI
 
-1. Ajouter une entrée `InstrumentDef` dans le tableau `INSTRUMENTS` (à l'index 13).
-2. Remplir : `index`, `name`, `label` (2-3 caractères max), `full_name`, `midi_note`, `algo_count`, `standard_params`, `special_params`, `sound_settings_default` (13 valeurs f32), `filter_type_label`, **`freq_display_ratio`**.
+- `ui/sound_editor.rs` : tableau `kinds` du dropdown **Type** (~ligne 334).
+- `ui/sound_editor.rs` : listes « analog fixed » `2|3|7|8|10|12` (~lignes 691
+  et 809) — ajouter l'index si le drift analogique standard ne s'applique pas.
+- `ui/sound_editor.rs` : `is_bass_drum` (`voice_idx == 0 || 11`, ~ligne 940) —
+  ajouter si le mode Hz/Notes a du sens.
+- `ui/plock.rs` : `matches!(voice_idx, 0 | 11)` (~lignes 179 et 604) — idem.
+- Popups « Add Module », plock menu, morph : **data-driven**, rien à faire.
 
-**`freq_display_ratio`** : ratio appliqué à la fréquence avant affichage en mode Notes (plock uniquement). Pour un Kick dont la fréquence de sustain est `0.3×` la valeur du slider, mettre `0.3`. Pour les autres instruments, mettre `1.0`.
+### Étape 8 — Générateur (`generator/mod.rs`)
 
-**Standard params :**
-Le Sound Panel est **data-driven**. Tu choisis un tableau prédéfini (`FULL_STD`, `KICK_STD`, `NO_HOLD_NO_FILTENV_STD`, `TOM_STD`, `SNARE606_STD`, `MINIMAL_STD`) selon les capacités de l'instrument, ou tu en crées un nouveau. Chaque `StandardParamDef` lie un `StandardField` à une famille (`Osc`, `Env`, `Filter`, `Output`).
+`remap_roles_to_slots()` mappe les slots vers les 13 rôles legacy via
+`drum_voice_index()`. Un nouvel index sans rôle resterait **silencieux** sur
+GENERATE → mapper explicitement vers un rôle existant (BD606 emprunte le
+rôle Kick) ou ajouter un rôle dans `generator/styles.rs`.
 
-**Special params :**
-Déclare chaque paramètre spécial (y compris la saturation) dans `special_params`. Exemple avec saturation :
-```rust
-special_params: &[
-    SpecialParamDef {
-        name: "perc2_sweep",
-        label: "Sweep",
-        default: 0.5,
-        min: 0.0,
-        max: 1.0,
-        special_index: 0,
-        family: ParamFamily::Osc,
-    },
-    // --- Saturation pack (optionnel) ---
-    SpecialParamDef {
-        name: "perc2_saturation_type",
-        label: "Saturation Type",
-        default: 0.0, min: 0.0, max: 5.0,
-        special_index: 1,
-        family: ParamFamily::Saturation,
-    },
-    SpecialParamDef {
-        name: "perc2_saturation_amount",
-        label: "Saturation Amount",
-        default: 0.0, min: 0.0, max: 1.0,
-        special_index: 2,
-        family: ParamFamily::Saturation,
-    },
-    SpecialParamDef {
-        name: "perc2_saturation_mix",
-        label: "Saturation Mix",
-        default: 1.0, min: 0.0, max: 1.0,
-        special_index: 3,
-        family: ParamFamily::Saturation,
-    },
-    SpecialParamDef {
-        name: "perc2_saturation_output_gain",
-        label: "Saturation Output Gain",
-        default: 1.0, min: 0.5, max: 2.0,
-        special_index: 4,
-        family: ParamFamily::Saturation,
-    },
-    SpecialParamDef {
-        name: "perc2_saturation_pre_filter",
-        label: "Saturation Pre-Filter",
-        default: 0.0, min: 0.0, max: 1.0,
-        special_index: 5,
-        family: ParamFamily::Saturation,
-    },
-],
-```
+### Étape 9 — Algorithmes (`synthesis/special_params.rs`)
 
-**`sound_settings_default` — ordre strict des 13 champs standard :**
-```
-[ frequency, decay, volume, filter_freq, attack, release, decay_curve,
-  release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo ]
-```
+Si `algo_count > 1` : ajouter la const `*_ALGOS` + l'arm dans `algos_for`
+(match exhaustif sur `DrumVoice`). Sinon une entrée « Standard ».
 
-> **Convention Analog :** sur les instruments où le slider Analog est opérationnel (drift analogique audible), la valeur par défaut est **`0.3`**. Sur les instruments où le drift est inactif ou fixé, la valeur reste **`1.0`**. Cela donne un comportement "propre" par défaut tout en préservant la fonctionnalité. Les instruments avec analog fixé sont : HiHat, OpenHiHat, Clap, Ride, Snare606, Perc1.
+### Étape 10 — Tests
 
-### Étape 5 — Plock field mapping
-
-Le menu plock est **data-driven** : il lit `instrument.standard_params` et affiche uniquement les champs déclarés. Chaque `StandardField` a un `plock_field_index()` qui mappe vers l'index interne du plock :
-
-| `StandardField` | Index plock | Valeur globale |
-|----------------|-------------|----------------|
-| `Freq` | 0 | `global.0` |
-| `Decay` | 1 | `global.1` |
-| `Volume` | 2 | `global.2` |
-| `FilterFreq` | 3 | `global.3` |
-| `Release` | 4 | `global.5` |
-| `DecayCurve` | 5 | `global.6` |
-| `ReleaseCurve` | 6 | `global.7` |
-| `Hold` | 7 | `global.8` |
-| `FilterEnvAmount` | 8 | `global.9` |
-| `FilterEnvDecay` | 9 | `global.10` |
-| `Analog` | 10 | `global.11` |
-| `Stereo` | 11 | `global.12` |
-| `Attack` | 18 | `global.4` |
-
-> **Important :** `Attack` est à l'index 18 (pas 4) pour éviter un conflit historique avec les special params. Ne pas modifier ce mapping sans mettre à jour `plock.rs`.
-
-### Étape 6 — Paramètres nih-plug
-
-Modifier `src/lib.rs` dans `DrumFlashParams` :
-
-1. Ajouter les paramètres `humanize_perc2`, `push_perc2`, `length_perc2`, `mute_perc2`, `mix_perc2`, `solo_perc2` (suivre le pattern existant).
-2. Ajouter l'algo param : `algo_perc2: IntParam`.
-3. **Si l'instrument est une bass drum** (fréquence de sustain différente du slider), ajouter un paramètre `freq_mode` :
-   > ⚠️ **OBSOLÈTE depuis ST-7 (build 20260705-122315)** — les étapes barrées
-   > ci-dessous datent de l'époque où specials et freq_mode étaient des
-   > paramètres nih-plug par voix. **Ils vivent maintenant PAR SLOT dans
-   > `SoundSettingsState` (`special[32]` + `freq_mode`), seedés depuis les
-   > `default` du registre.** Pour un nouvel instrument :
-   > - **AUCUN** `FloatParam`/`BoolParam` à déclarer pour les specials ni le mode Hz/Notes.
-   > - Il suffit de déclarer les `SpecialParamDef` (avec leurs `default`) dans le
-   >   registre et d'implémenter `set_special_param()` dans la voix.
-   > - Les params legacy par voix (`kick_click`, `freq_mode_kick`, …) et
-   >   `special_param()` ne servent plus qu'à la **migration des anciennes
-   >   sessions** — ne pas en ajouter, ne pas les lire ailleurs.
-   > - `voice_settings_for(slot_idx, voice_idx, …)` lit les specials via
-   >   `instruments[slot_idx].load_specials()` et l'algo via
-   >   `params.algos()[slot_idx]` (params positionnels par slot, range partagé
-   >   `max_algo_index()`), sans match par voix.
-
-### Étape 7 — voice_settings_for
-
-Plus rien à faire ici depuis ST-7 : les specials sont injectés depuis le stockage
-par slot et l'algo depuis `params.algos()[slot_idx]`. Vérifie seulement que
-`instrument_registry::max_algo_index()` couvre le `algo_count` du nouvel
-instrument (il est calculé depuis le registre, donc automatique).
-
-### Étape 8 — Constants diverses
-
-Dans `src/lib.rs` :
-
-1. `AUX_OUT_COUNT` reste aligné sur le pool de slots (`MAX_TRACKS = 14`), pas sur `DrumVoice::COUNT`.
-2. `OUTPUT_PORT_NAMES` reste générique (`Out 1..14`) tant qu'on ne change pas le nombre de slots.
-3. `MIDI_NOTE_MAP` — ajouter la note MIDI si le nouvel instrument doit être déclenché par note entrante legacy.
-
-### Étape 9 — Defaults de VoiceSettings
-
-Dans `src/synthesis/mod.rs` :
-1. Ajouter `pub fn perc2() -> Self` dans `impl VoiceSettings`.
-2. Vérifier que les valeurs par défaut correspondent à celles déclarées dans `instrument_registry.rs`.
-
-### Étape 10 — Special params / Algorithmes UI
-
-Dans `src/synthesis/special_params.rs`, ajouter la définition des algorithmes pour le nouvel instrument si `algo_count > 1`.
-
-### Étape 11 — Plock
-
-Le système de plock stocke 18 fields par step/instrument :
-
-| Fields | Contenu |
-|--------|---------|
-| 0-12   | sound settings standard (freq, decay, vol, filter_freq, attack, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo) |
-| 13     | algo |
-| 14-17  | special[0..3] (legacy, 4 slots — aujourd'hui on utilise `special[0..7]` via le VoiceSettings) |
-
-> **Note :** le plock stocke 18 fields, mais `VoiceSettings.special` contient 8 slots. Les special params de saturation (index 1-5) sont stockés dans `VoiceSettings.special[1..6]` et remontés dans le plock via le `special_param()` data-driven.
-
-Le plock menu (`draw_plock_menu` dans `ui.rs`) est **data-driven** : il lit `instrument.standard_params` et n'affiche que les champs déclarés pour cet instrument. Si le Kick n'a pas `Stereo` dans ses `standard_params`, le plock ne l'affichera pas. Les special params sont aussi data-driven via `instrument_registry::special_params(instrument)`.
-
-**Mode Notes dans le plock :**
-Si l'instrument est une bass drum (`freq_display_ratio != 1.0`), le plock affiche un checkbox "Notes". Quand activé :
-- La fréquence est affichée comme nom de note (ex: "C2")
-- Les boutons `+`/`-` changent par demi-ton
-- Le `freq_display_ratio` est appliqué : `note = freq_to_note(freq * ratio)` et `freq = note_to_freq(note) / ratio`
-
-### Étape 12 — UI Sound Panel
-
-Le Sound Panel (`draw_sound_panel` dans `ui.rs`) est **déjà data-driven** via `instrument_registry::INSTRUMENTS[].standard_params` et `special_params`. Si tu as correctement rempli le registry avec les bonnes `ParamFamily`, les sliders apparaîtront groupés par famille (OSC, ENV, FILTER, SAT, OUTPUT). Aucune modification de `ui.rs` n'est nécessaire pour la Sound Panel.
-
-**Mode Notes dans le Sound Panel :**
-Pour les bass drums (Kick, B8, etc.), un checkbox "Notes" apparaît à côté du slider Freq. Le comportement est identique au plock : conversion via `freq_display_ratio`, snap à la note juste au toggle, ajustement par demi-tons.
+- Roundtrip settings (macro, étape 1).
+- Tests voix : son produit, sortie finie, silence après decay, comportement
+  des spéciaux (modèle : tests de `bd606.rs` / `perc1.rs`).
+- `cargo test` complet vert (les tests `sound_settings.rs` itèrent sur
+  `TrackInstrumentKind::COUNT` — un default de freq ≤ 0 fera échouer).
 
 ---
 
-## 4. Pièges courants
+## 5. Cas particulier : instrument à samples (pattern BD606)
+
+- WAV embarqué via `include_bytes!` dans `src/synthesis/sample_bank.rs`,
+  décodé **une fois** dans un `OnceLock` global → `&'static SampleBank`.
+- Pré-chauffé dans `DrumSynthesizer::initialize_with_layout()` (non-RT) ;
+  sur le thread audio, `bank()` n'est qu'un load atomique.
+- **Pas de resampling au chargement** : la lecture à position fractionnaire
+  (interpolation linéaire) absorbe le ratio `source_rate / session_rate`.
+- Le fallback « fichier non parsable » produit des hits vides (voix inerte),
+  jamais de panic.
+- RNG de sélection (xorshift) seedé à la construction, **jamais reseedé au
+  trigger** (convention anti-click).
+
+---
+
+## 6. Pièges courants
 
 | Piège | Explication |
 |-------|-------------|
-| **Recréer les enveloppes dans `set_settings`** | C'est la cause du bug "le son revient à l'état initial quand je relâche le slider". Utilise toujours les setters. |
-| **Oublier de mettre à jour `DrumVoice::COUNT`** | Tous les tableaux de taille fixe (`[T; COUNT]`) planteront à la compilation ou pire, à l'exécution. |
-| **Oublier un match arm dans `DrumVoiceKind`** | Rust t'aidera (exhaustiveness check), mais vérifie bien toutes les méthodes du trait `Voice`. |
-| **Oublier `special_param()` dans `lib.rs`** | Le paramètre special apparaîtra dans l'UI mais sa valeur sera toujours 0 dans le moteur audio. **Impératif** : ajouter chaque `(instrument, special_index)` dans le `match`. |
-| **Hardcoder des comportements par index** | Évite `if instrument == 7` dans l'UI ou le plock. Préfère `instrument_registry::special_params(instrument)` et des boucles data-driven. |
-| **Oublier le typed settings struct** | Le compiler le rappellera (type mismatch), mais vérifie bien que `src/synthesis/settings/<voice>.rs` existe et est réexporté dans `settings/mod.rs`. |
-| **Mauvais ordre dans `sound_settings_default`** | L'ordre est strict : `[freq, decay, vol, filter_freq, attack, release, decay_curve, release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]`. |
-| **Saturation non branchée** | Si tu ajoutes des `SpecialParamDef` de type `Saturation` dans le registry mais que tu n'instancies pas les `FloatParam` correspondants dans `DrumFlashParams`, les sliders apparaîtront dans l'UI mais ne feront rien. Il faut aussi implémenter `set_special_param()` dans la voix pour mapper l'index vers `saturation::SaturationConfig`. |
-| **VST3 cache** | Studio One (et autres DAWs) mettent en cache le bundle VST3. Après un `build.ps1 -Install`, ferme complètement la DAW avant de rouvrir le plugin, sinon tu testes l'ancienne version. |
-| **`freq_display_ratio` oublié** | Si l'instrument est une bass drum et que tu mets `freq_display_ratio: 1.0`, le mode Notes affichera une note fausse (la fréquence du slider au lieu de la fréquence réelle de sustain). |
-| **Plock data-driven** | Le plock menu ne montre que les champs listés dans `instrument.standard_params`. Si tu retires un champ du tableau (ex: `Stereo` du Kick), il disparaît aussi du plock — c'est le comportement attendu. |
+| **Recréer les enveloppes dans `set_settings`** | Coupe le son à chaque mouvement de slider. Setters uniquement. |
+| **Variante `TrackInstrumentKind` insérée au milieu** | Les indices sont sérialisés dans `track-layout-v1` → toujours ajouter **à la fin**. |
+| **`DrumVoice::COUNT` utilisé pour la persistance** | Gelé à 13 via `LEGACY_VOICE_COUNT` dans `sound_settings.rs`. |
+| **Oublier un match `DrumVoiceKind`** | Le compilateur le rappelle (exhaustivité) — les 9 matchs + `create_voice_for_kind`. |
+| **Allocation dans `create_voice_for_kind`** | Appelé depuis `process()` via `reinitialize_slot` → données lourdes derrière un `OnceLock` pré-chauffé. |
+| **Nouvel instrument silencieux sur GENERATE** | Pas de rôle dans le générateur → mapper vers un rôle existant. |
+| **Listes UI hardcodées oubliées** | Dropdown Type, analog-fixed, is_bass_drum (Sound Panel + plock). |
+| **Mauvais ordre `sound_settings_default`** | Ordre strict des 13 champs (voir étape 5). |
+| **VST3 cache** | Fermer Studio One avant `build.ps1 -Install` (lock DLL). |
 
 ---
 
-## 5. Résumé visuel
-
-```
-Nouvel instrument "Perc2"
-│
-├─> src/synthesis/settings/perc2.rs (Perc2Settings : typed struct + From/Into<VoiceSettings>)
-│                                    ↳ Inclure saturation_type, saturation_amount, etc.
-├─> src/synthesis/perc2.rs          (trait Voice — typed settings, NE PAS recréer les env)
-│                                    ↳ saturation::SaturationConfig + process() en sortie
-│                                    ↳ set_special_param() : mapper index vers saturation
-├─> src/synthesis/mod.rs            (DrumVoice::Perc2, DrumVoiceKind::Perc2, COUNT, new())
-├─> src/synthesis/settings/mod.rs   (pub mod perc2; + pub use)
-├─> src/instrument_registry.rs      (entry INSTRUMENTS[13] avec standard_params + special_params)
-│                                    ↳ special_params incluant saturation (family=Saturation)
-│                                    ↳ freq_display_ratio: 1.0 (ou 0.3 pour bass drum)
-├─> src/instrument_registry.rs      (StandardField::plock_field_index() si nouveau champ)
-├─> src/lib.rs                      (DrumFlashParams : humanize/mute/mix/solo/algo/specials)
-│                                    ↳ FloatParam pour chaque special (saturation comprise)
-│                                    ↳ special_param() : match (13, 0..5)
-│                                    ↳ freq_mode_perc2: BoolParam (si bass drum)
-├─> src/lib.rs                      (voice_settings_for() algo arm — special auto-injectés)
-├─> src/lib.rs                      (MIDI_NOTE_MAP ; sorties aux = slots génériques Out 1..14)
-├─> src/synthesis/mod.rs            (VoiceSettings::perc2() default)
-├─> src/synthesis/special_params.rs (algos_for Perc2 si algo_count > 1)
-└─> src/ui.rs / src/plock.rs        (data-driven, mode Notes si freq_display_ratio != 1.0)
-```
-
----
-
-## 6. Build & Test
+## 7. Build & Test
 
 ```powershell
 cd drum-pattern-vst
+cargo test
 # Fermer Studio One avant l'install (lock DLL)
 .\build.ps1 -Install
 ```
 
 Puis dans Studio One : insérer le plugin, vérifier que :
-1. Le label apparaît dans la grille,
-2. Le Sound Panel affiche les bons sliders selon `standard_params`,
-3. Les special params apparaissent groupés par famille (OSC, ENV, FILTER, **SAT**, OUTPUT),
-4. Le son ne coupe pas quand on bouge un slider (pas de recréation d'enveloppes),
-5. Le plock menu permet de verrouiller les special params (y compris la saturation),
-6. Si la saturation est activée (type > 0, amount > 0), le son change réellement,
-7. Si `freq_display_ratio != 1.0`, le mode Notes dans Sound Panel et plock affiche la bonne note et les boutons `+`/`-` changent par demi-ton juste.
+1. Le nouveau kind apparaît dans le dropdown **Type** (onglet Track) et dans
+   le popup **Add Module** d'une lane vide,
+2. Le Sound Panel affiche les bons sliders groupés par famille,
+3. Le son ne coupe pas quand on bouge un slider,
+4. Le plock menu propose les standard + special params,
+5. Changement de kind à chaud pendant la lecture : pas de clic, pas de
+   silence bloqué,
+6. Sauvegarde/reload de la song : kind + réglages conservés,
+7. GENERATE écrit une ligne sur la lane du nouvel instrument.

@@ -35,5 +35,8 @@ Thumbs.db
 # egui lab render previews (dev artifacts)
 /ui-lab/
 
-# Test audio exports
-wav/
+# Scratch WAV sources (the shipped samples live in drum-pattern-vst/assets/)
+/wav/
+
+
+

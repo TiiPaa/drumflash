@@ -11,8 +11,9 @@ use crate::ui::header::header_param_slider;
 use crate::ui::pattern_bank::load_pattern_for_ui_with_length;
 use crate::ui::song::draw_song_editor;
 use crate::ui::theme::*;
+use crate::track::{TrackInstrumentKind, TrackLayoutState};
 use crate::DrumFlashParams;
-use nih_plug::prelude::*;
+use nih_plug::{params::persist::PersistentField, prelude::*};
 use nih_plug_egui::egui::{self, Vec2};
 use std::sync::{
     atomic::{AtomicBool, AtomicU32},
@@ -170,6 +171,45 @@ fn draw_preset_bar(
             load_pattern_for_ui_with_length(pattern, &Pattern::disco_pattern(), pattern_length);
             state.last_loaded_slot = None;
         }
+        // Style presets: install the matching kit (lanes) + load the fixed groove.
+        use TrackInstrumentKind as K;
+        let style_presets: [(&str, &[TrackInstrumentKind], fn() -> Pattern); 6] = [
+            (
+                "House",
+                &[K::Kick, K::Clap, K::HiHat, K::OpenHiHat, K::Perc1],
+                Pattern::house_pattern,
+            ),
+            (
+                "Dub",
+                &[K::Kick, K::Snare, K::HiHat, K::BassDrum808, K::Perc1],
+                Pattern::dub_pattern,
+            ),
+            (
+                "DnB",
+                &[K::Kick, K::Snare, K::HiHat, K::Snare606, K::BassDrum808],
+                Pattern::dnb_pattern,
+            ),
+            (
+                "Bossa",
+                &[K::Kick, K::Snare, K::Ride, K::HiHat, K::Perc1],
+                Pattern::bossa_pattern,
+            ),
+            (
+                "Afro",
+                &[K::Kick, K::Snare, K::HiHat, K::Ride, K::Tom, K::Perc1],
+                Pattern::afrobeat_pattern,
+            ),
+            (
+                "Break",
+                &[K::Kick, K::Snare, K::HiHat, K::Snare606, K::Ride],
+                Pattern::breakbeat_pattern,
+            ),
+        ];
+        for (label, kinds, make) in style_presets {
+            if compact_chip(ui, label, false).clicked() {
+                apply_style_preset(params, state, pattern, kinds, make(), pattern_length);
+            }
+        }
         ui.add_space(8.0);
         if chip_button(ui, "⟳ Random", true, PL_LINK(), egui::Sense::click()).clicked() {
             params.plock_state.state.clear_all();
@@ -179,6 +219,35 @@ fn draw_preset_bar(
             state.last_loaded_slot = None;
         }
     });
+}
+
+/// Install a style preset: replace the lane layout with `kinds` (reseeding each
+/// lane's sound to the kind's defaults) and load the deterministic `groove`.
+/// Destructive — like the per-lane Type change it goes through
+/// `PersistentField::set`, so the audio thread reinitialises the voices.
+fn apply_style_preset(
+    params: &DrumFlashParams,
+    state: &mut EditorUIState,
+    pattern: &SharedPattern,
+    kinds: &[TrackInstrumentKind],
+    groove: Pattern,
+    pattern_length: usize,
+) {
+    let layout = TrackLayoutState::from_kinds(kinds);
+    PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
+    let analog = state.global_config.default_analog;
+    for (slot, &kind) in kinds.iter().enumerate() {
+        params
+            .sound_settings
+            .state
+            .reset_slot_to_defaults(slot, kind, analog);
+    }
+    params.plock_state.state.clear_all();
+    params.seq_plock_state.state.clear_all();
+    crate::ui::grid::clear_all_fusions(pattern);
+    load_pattern_for_ui_with_length(pattern, &groove, pattern_length);
+    state.selected_instrument = 0;
+    state.last_loaded_slot = None;
 }
 
 fn draw_generator_bar(

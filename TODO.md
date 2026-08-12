@@ -1,3 +1,22 @@
+## Nouvelles tâches — session 2026-08-07
+
+### Régressions / bugs (P1)
+- [x] [153] **Étoile "non sauvegardé" fantôme** — le positionnement sur un slot vide (action UI-only) ne publiait pas le slot vers `audio_last_loaded_slot` ; la resync UI ramenait alors le slot sauvé + grille vidée → faux dirty. Fix : publier `audio_last_loaded_slot = i` sur slot vide (build 20260807-105334).
+- [x] [154] **Hold manquant dans le graphe d'enveloppe** — tracé A-H-D explicite : palier plat au sommet pendant le Hold (couleur dédiée) + légende « H », Hold intégré à l'échelle temporelle (build 20260807-111016).
+- [ ] [155] **Attaque des instruments smp quasi inaudible + ne correspond pas au graphe** — sur BD6smp/SD6smp/CH6smp l'attack (passée en ms absolues) s'entend à peine et le graphe `draw_sample_amp_graph` dessine l'attack comme une fraction du sample → décalé. Aligner l'audible et le graphe (revoir la plage/échelle d'attack des samplers et le rendu du graphe).
+
+### Quick wins UI (P1/P2)
+- [x] [156] **Bouton "Save" à gauche des patterns** — Save déplacé avant la rangée de slots (build 20260807-123130).
+- [x] [157] **Augmenter le max du Gate Rate (Buzz)** — 150 → 500 Hz (`GATE_RATE_MAX` + slider registry) (build 20260807-111951).
+
+### Features moyennes (P2)
+- [x] [158] **Export MIDI : inclure les notes des cellules fusionnées et des stutters** — fusion = `step_count` pulses uniformes sur le span ; stutter = N notes sur un pas ; réplique le séquenceur (les deux ne se combinent pas). `SequencerPlockState` passé à l'export. Tests fusion/stutter (build 20260807-140101).
+- [x] [159] **Enveloppes d'ampli en A-H-D bipolaire (Release retiré) sur toutes les voix** — réécriture interne de `DecayReleaseEnvelope` (A-H-D piloté par le temps, signatures conservées) ; `decay_curve`/`release_curve` réinterprétés en courbes **decay**/**attack** bipolaires (−1..1) ; Release retiré des tables + du graphe ; Buzz ampli migré vers `DecayReleaseEnvelope` ; bugs `with_attack_ms` (`Copy` no-op) et recréation d'env corrigés (open_hihat/cymbal). Persistance : clamp gracieux des vieilles valeurs à +1, sans migration (build 20260807-170048).
+- [ ] [160] **Graphe pour le Gate Shape (Buzz)** — afficher un tracé du gate (forme selon Rate/Depth/Shape, Smooth cosinus vs Razor spike) à côté des contrôles de gate.
+- [ ] [161] **Remettre le microtiming par cellule dans le plock séquenceur** — restaurer le décalage temporel (nudge) par cellule dans le plock de séquenceur.
+
+---
+
 ## Nouvelles tâches — session 2026-07-29
 
 ### Régressions / bugs (P1)
@@ -20,12 +39,12 @@
   - Le **crash à l'instanciation sur projet vide** (apparu pendant le dev de [145]/[149]) **a disparu** avec le retour au per-step + le fix du drag ; traçage diagnostic **retiré** (build 20260802-133013). ⚠️ Si le crash réapparaît : bisect [149] vs [145] (la base commitée `20260801-201613` ne crashait pas → race d'instanciation audio↔UI).
 - [ ] [146] **Enveloppes exponentielles négatives** — pour des attaques plus claquantes (courbe d'attaque exp inversée, par voix ou global ?).
 - [x] [147] **Choke groups** — 4 choke groups assignables par slot dans l'onglet Track (dropdown None/1-4), tous instruments. Quand un slot trigger, les autres slots actifs du même groupe sont silencés (`apply_choke_groups`, lock-free via le routing byte atomique bits 4-6). Remplace le choke global HH→OH : param `hihat_chokes_oh` masqué (conservé pour les vieilles sessions), toggle header retiré, migration automatique HH/OH→groupe 1 (sentinel serde 0xFF), presets 12 lanes + legacy 13 avec HH/OH en groupe 1 (build 20260729-174208).
-- [ ] **REPRENDRE ICI** [148] **Presets de style pour le Generator** — au moins 10 (Latin, Bossa, Techno, ...).
+- [x] [148] **Presets de style pour le Generator** — 16 styles au total. Les 10 initiaux (Rock, Funk, Techno, Hip-Hop, Jazz, Metal, Latin, Disco, Trap, Reggae) via [113] + 6 ajoutés : **Bossa Nova, House, Drum'n'Bass, Afrobeat, Dub, Breakbeat** (build 20260805-175817). Data-driven via `Style::variants()`. Extensible : d'autres genres (Samba, Cumbia, UK Garage, Soul/Motown, Punk, Downtempo…) sur simple ajout de `MusicalTemplate`.
 
 ### Grosses features (P2/P3)
 - [x] [149] **16 patterns au lieu de 8** — `SLOT_COUNT 8→16`, migration `deserialize_with` tolérant (vieux blob 8-slots → P1-P8 préservés, P9-P16 vides, plus de perte silencieuse), UI 16 slots sur 1 rangée (26px), MIDI switch notes 60-75, 2 tests migration/round-trip (build 20260801-154337).
 - [ ] [150] **Gestion des presets dans un modal** — user presets de modèles de grid / patterns / songs.
-- [ ] [151] **Linker 2 lanes adjacentes** (steps du grid uniquement) pour du layering.
+- [x] [151] **Linker 2 lanes adjacentes** (layering) — une lane linke celle du dessus et partage ses **steps + fusions** (son/plocks/routing indépendants). `TrackSlot.linked_up` + `AtomicTrackLayout.slot_linked`, helper `grid_slot()` (chaîne, rompt si maître inactif), audio `set_grid_slots`/bloc, UI affichage+édition bidirectionnelle redirigés, menu clic-droit Link/Unlink, indicateur barre+point. **À valider en S1 (build 20260804-105255).** Limites v1 : morph des fusions reste au maître ; reorder ne réajuste pas les liens.
 - [ ] [152] **Instrument Ambiant** — voix jouant des bouts de samples d'ambiances noisy avec offset aléatoire (dépend de l'infra sampler [83] ?).
 
 ---
@@ -508,12 +527,14 @@
 
 - [ ] [69] Creer un instrument percussif a base de wavetables — phase recherche et prototypage (Complexité: Élevée, 2-4 semaines, P3)
 - [ ] [27] Generation IA de patterns par style (rock, techno, rap, jazz, reggae, metal, funk, latin, disco, trap)
-- [ ] [83] **Instruments sampler TR-606 multisamplé (x4 layers)**
-  - Nouveau type de voix "Sampler" avec 4 variations par instrument (multisample)
-  - Sélection aléatoire du layer à chaque trigger pour simuler l'imperfection analogique
-  - Nécessite un système de chargement de samples WAV en mémoire préallouée
-  - Architecture : voix sampler hybride (peut coexister avec les voix de synthèse actuelles)
-  - **Complexité : Élevée, 3-4 semaines, P3**
+- [~] [83] **Instruments sampler TR-606 multisamplé** — **1er instrument livré : BD6smp (build 20260802-160117)**
+  - [x] Nouveau type de voix "Sampler" (multisample) — `synthesis/sample_bank.rs` + `synthesis/bd606.rs`
+  - [x] Sélection aléatoire du layer à chaque trigger (sans répétition immédiate) pour simuler l'imperfection analogique
+  - [x] Chargement de samples WAV embarqués (`include_bytes!` + `OnceLock`, zéro alloc audio thread)
+  - [~] Étendre aux autres instruments de la 606 (SD, HH, …) — même infra, il suffit d'ajouter les WAV
+    - [x] SD6smp (Snare 606)
+    - [x] CH6smp (Closed Hi-hat 606, note MIDI 42) — build 20260804-170126, `wav/CH.wav` → `assets/ch606.wav`
+    - [ ] OH (Open Hi-hat), Cymbal, … restants
 - [ ] [84] **Instruments sampler Yamaha RX11**
   - Même architecture sampler que [83] avec le kit RX11
   - 4 layers par son pour l'effet analog random
@@ -537,7 +558,6 @@
   - Créer les paramètres spécifiques et l'interface utilisateur
   - Intégrer dans le système de mixage et de sortie audio
 
-- [ ] [57] Créer un séquencer modulaire avec instruments dynamiques (Complexité: Élevée, 4-6 semaines) — **EN COURS V1.5 (voir tâches MG-*)**
   - Refonte majeure de l'architecture du séquencer
   - Système de tracks fixes à 14 slots, actives visibles dans l'UI
   - Gestion de l'ajout/suppression d'instruments à chaud
@@ -793,7 +813,6 @@
   - Actions : Copy Page, Paste Page, Clear Page.
   - Warnings de confirmation avant Paste (écrase la page cible) et Clear (supprime grille + plocks + fusions de la page).
   - Build `20260623-124600`.
-- [ ] [100z] Animations .14s (hover/toggle) — basse priorité.
 - [x] [100aa] ~~Nettoyage final : adopter `StyledButton` (hover chrome), retirer `design_system.rs`/`SegmentedControl` non câblés, remplacer `allocate_ui_at_rect` (déprécié) par `allocate_new_ui`~~ — **OBSOLÈTE (2026-07-21)** : `allocate_ui_at_rect` déjà remplacé (build précédente), `design_system.rs`/`SegmentedControl` déjà supprimés ; seul `StyledButton` resterait (helper bouton partagé, peu prioritaire).
 - [x] [100ab] Dropdown Algo dynamique dans le menu p-lock (plage selon algo_count, nom affiché, masquage si 1 algo) - build 20260624-171823.
 - [x] [100ac] Morphing par pulse sur les cellules fusionnees (select Morph + slider End, interpolation lineaire, params continus + special params continus, persistence DAW pattern-v3 + pattern bank) - build 20260629-160624.
@@ -808,11 +827,10 @@
 
 ## Investigation & Features (A prioriser)
 
-- [ ] [93] **Son tres ecourte interessant quand on maintient un slider OSC appuye** (P2, Audio/Design)
-  - Quand on laisse un slider d'OSC appuye (sur n'importe quel instrument), un son tres court et interessant sort des Toms et HiHats
-  - Probablement du aux re-triggers continus lors du changement de parametre
-  - **Action :** expliquer le mecanisme et reproduire de facon controlee (effet design intentionnel ?)
-  - Complexite : Moyenne
+- [x] [93] **Son tres ecourte interessant quand on maintient un slider** (P2, Audio/Design) — mécanisme identifié + transformé en instrument (build 20260806-161402)
+  - **Mécanisme** : nécessite une voix qui « ring » (pattern en lecture). Bouger un slider ré-applique `set_settings` à chaque frame ; sur l'Open-Hat ça **recrée l'enveloppe** → la queue est hachée ~60 Hz. Pas de preview au drag ; artefact anti-clic (famille du clic kick).
+  - **Livré comme feature** : nouvel instrument **Buzz** (percussion tonale + bruit réglable + gate/retrigger d'enveloppe à taux réglable) qui reproduit l'effet délibérément (Gate Rate/Depth/Shape, modes Smooth/Razor). Voir CHANGELOG.
+  - (Le fix anti-clic de l'Open-Hat lui-même — pour ne PLUS l'avoir involontairement — reste optionnel/non fait, à la demande de l'utilisateur.)
 
 - [ ] [94] **Ajouter un parametre pitch LFO sur les Toms** (P2, Synthese)
   - Intensite, Rate, Type de LFO (sine/triangle/square/saw), arrivee progressive

@@ -1,19 +1,13 @@
-- gestion des presets : a faire dans un modal avec gestion des user presets de modele de grid / pattern / songs
-- plock sequenceur : solo paramétré
-- Snare : Améliorer l'algo, la snare n'a pas assez de corps 
-- hi hat trop fort
-- BD pas assez fort
-- le paramètre stéréo à disparu des instruments pouvant être stéréo
-- différencier les slot pattern vide des slots remplis
-- s'assurer que le volume est post saturation
-- Remplacer le choke actuel par une gestion par choke group dans l'onglet track disponible pour tous les instruments. Prévoir 4 choke groups.
-- dans l'onglet track, aligner le champ Name avec la longueur des dropdowns Type et Aux Out
-- Prévoir 16 patterns au lieu de 8
-- revoir le design des lanes vides (plus discret)
-- ajouter des presets de style (Latin, Bossa, Techno...), au moins 10.
-- ajouter des env exponentiel negatif pour des attaques plus claquantes.
-- Possibilité de linker 2 lanes (juste les steps du grid). Prérequis : être à côté. Pour faire du layering
-- prévoir un instruments de type ambiant avec des bouts de samples d'ambiances noisy et possibilité de mettre un offset aléatoire.
-- Saturation pre filter ne semble pas fonctionner
-- Warning lorsque l'on change de pattern et que la pattern courante n'est pas sauvegardée
-- visuel : quand la tête de lecture passe sur une cellule fusionnée il faut entourer toute la cellule fusionnée, actuellement ça entoure toujours les steps individuels
+- pouvoir aussi déplacer une lane vide
+- bug avec l'attaque des instruments smp : je ne l'entend pas
+- revoir l'enveloppe de la snare, le decay curve est étrange, il faut pouvoir couper net
+- mixer le stutter avec les cellules fusionnées
+- les notes midi des cellules fusionnées et des stutters doivent être inclus dans les exports midi
+- mettre le bouton "Save" à gauche des patterns
+- quand on save un pattern et qu'on sélectionne un autre pattern (vide) le premier apparait avec une étoile alors qu'il n'a pas été modifié
+- il manque le Hold dans le graph de l'env de instrument qui ont un hold (ex Snare)
+- virer le paramètre release de tous les instrument (+ graph)
+- toujours un pb d'attaque sur le instruments smp : quasi inaudible et ne correspond pas à la représentation graphique
+- augmenter le max gate rate du buzz
+- afficher un graphe pour le gate shape
+- Remettre le microtiming par celulle dans le plock sequencer

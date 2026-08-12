@@ -4,7 +4,7 @@
 //! active slots are visible in the UI. Each active slot holds an instrument
 //! kind, its own sound settings, routing, MIDI note and pattern data.
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
 pub const MAX_TRACKS: usize = 14;
@@ -24,10 +24,14 @@ pub enum TrackInstrumentKind {
     Snare606 = 8,
     BassDrum808 = 9,
     Perc1 = 10,
+    Bd6smp = 11,
+    Sd6smp = 12,
+    Ch6smp = 13,
+    Buzz = 14,
 }
 
 impl TrackInstrumentKind {
-    pub const COUNT: usize = 11;
+    pub const COUNT: usize = 15;
 
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
@@ -42,6 +46,10 @@ impl TrackInstrumentKind {
             8 => Some(Self::Snare606),
             9 => Some(Self::BassDrum808),
             10 => Some(Self::Perc1),
+            11 => Some(Self::Bd6smp),
+            12 => Some(Self::Sd6smp),
+            13 => Some(Self::Ch6smp),
+            14 => Some(Self::Buzz),
             _ => None,
         }
     }
@@ -63,6 +71,10 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Snare606 => "S6",
             TrackInstrumentKind::BassDrum808 => "B8",
             TrackInstrumentKind::Perc1 => "P1",
+            TrackInstrumentKind::Bd6smp => "B6",
+            TrackInstrumentKind::Sd6smp => "s6",
+            TrackInstrumentKind::Ch6smp => "c6",
+            TrackInstrumentKind::Buzz => "Bz",
         }
     }
 
@@ -79,6 +91,10 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Snare606 => "Snare 606",
             TrackInstrumentKind::BassDrum808 => "808 Kick",
             TrackInstrumentKind::Perc1 => "Perc1",
+            TrackInstrumentKind::Bd6smp => "BD6smp",
+            TrackInstrumentKind::Sd6smp => "SD6smp",
+            TrackInstrumentKind::Ch6smp => "CH6smp",
+            TrackInstrumentKind::Buzz => "Buzz",
         }
     }
 
@@ -96,6 +112,10 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Snare606 => 40,
             TrackInstrumentKind::BassDrum808 => 35,
             TrackInstrumentKind::Perc1 => 37,
+            TrackInstrumentKind::Bd6smp => 41,
+            TrackInstrumentKind::Sd6smp => 40,
+            TrackInstrumentKind::Ch6smp => 42,
+            TrackInstrumentKind::Buzz => 44,
         }
     }
 
@@ -116,6 +136,10 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Snare606 => 10,
             TrackInstrumentKind::BassDrum808 => 11,
             TrackInstrumentKind::Perc1 => 12,
+            TrackInstrumentKind::Bd6smp => 13,
+            TrackInstrumentKind::Sd6smp => 14,
+            TrackInstrumentKind::Ch6smp => 15,
+            TrackInstrumentKind::Buzz => 16,
         }
     }
 
@@ -133,6 +157,10 @@ impl TrackInstrumentKind {
             10 => Some(Self::Snare606),
             11 => Some(Self::BassDrum808),
             12 => Some(Self::Perc1),
+            13 => Some(Self::Bd6smp),
+            14 => Some(Self::Sd6smp),
+            15 => Some(Self::Ch6smp),
+            16 => Some(Self::Buzz),
             _ => None,
         }
     }
@@ -235,6 +263,12 @@ pub struct TrackSlot {
     pub kind: TrackInstrumentKind,
     pub routing: TrackRouting,
     pub midi_note: u8,
+    /// When true, this lane shares the GRID (step on/off + fusions) of the lane
+    /// directly above it (slot index - 1) for layering — its own sound, plocks,
+    /// routing, MIDI note stay independent. Only meaningful when the lane above
+    /// is active. `#[serde(default)]` so older `track-layout-v1` blobs load.
+    #[serde(default)]
+    pub linked_up: bool,
 }
 
 impl TrackSlot {
@@ -245,6 +279,7 @@ impl TrackSlot {
             kind: TrackInstrumentKind::Kick,
             routing: TrackRouting::default(),
             midi_note: TrackInstrumentKind::Kick.default_midi_note(),
+            linked_up: false,
         }
     }
 
@@ -255,6 +290,7 @@ impl TrackSlot {
             kind,
             routing: TrackRouting::default(),
             midi_note: kind.default_midi_note(),
+            linked_up: false,
         }
     }
 }
@@ -269,6 +305,42 @@ pub struct TrackLayoutState {
 }
 
 impl TrackLayoutState {
+    /// Resolve the slot whose GRID (steps + fusions) a lane actually plays and
+    /// edits. A `linked_up` lane mirrors the active lane directly above it; the
+    /// chain is followed upward (C→B→A) so stacked links all share the top
+    /// lane's grid. Returns the input slot when it is not linked (or its master
+    /// is inactive).
+    pub fn grid_slot(&self, mut slot: usize) -> usize {
+        let mut guard = 0;
+        while slot > 0
+            && slot < MAX_TRACKS
+            && self.slots[slot].linked_up
+            && self.slots[slot - 1].active
+            && guard < MAX_TRACKS
+        {
+            slot -= 1;
+            guard += 1;
+        }
+        slot
+    }
+
+    /// Whether `slot` can be linked to the lane above (both must be active and
+    /// there must be a lane above).
+    pub fn can_link_up(&self, slot: usize) -> bool {
+        slot > 0
+            && slot < MAX_TRACKS
+            && self.slots[slot].active
+            && self.slots[slot - 1].active
+    }
+
+    /// Whether `slot` currently mirrors the lane above (link active + master active).
+    pub fn is_linked_up(&self, slot: usize) -> bool {
+        slot > 0
+            && slot < MAX_TRACKS
+            && self.slots[slot].linked_up
+            && self.slots[slot - 1].active
+    }
+
     pub fn default_layout() -> Self {
         // Product decision 2026-07-04: new instances start with the modular
         // 4-lane template (BD/SD/HH/Tom). Legacy 13-voice sessions keep their
@@ -332,6 +404,29 @@ impl TrackLayoutState {
         }
     }
 
+    /// Build a layout that activates slots `0..kinds.len()` with the given
+    /// instrument kinds (remaining slots inactive). Used by the style-preset
+    /// chips to install an appropriate kit. HiHat/OpenHiHat get choke group 1
+    /// like the classic 12-lane preset. Extra kinds beyond `MAX_TRACKS` are
+    /// ignored.
+    pub fn from_kinds(kinds: &[TrackInstrumentKind]) -> Self {
+        let mut slots: [TrackSlot; MAX_TRACKS] = std::array::from_fn(|_| TrackSlot::inactive());
+        for (slot, &kind) in slots.iter_mut().zip(kinds.iter()) {
+            *slot = TrackSlot::active_with_kind(kind);
+            if matches!(
+                kind,
+                TrackInstrumentKind::HiHat | TrackInstrumentKind::OpenHiHat
+            ) {
+                slot.routing.choke_group = 1;
+            }
+        }
+        Self {
+            slots,
+            global_midi_channel: 10,
+            global_base_note: 36,
+        }
+    }
+
     /// Migrate a legacy 13-voice session into 14 slots.
     pub fn from_legacy_13() -> Self {
         let mut slots: [TrackSlot; MAX_TRACKS] = std::array::from_fn(|_| TrackSlot::inactive());
@@ -357,6 +452,7 @@ impl TrackLayoutState {
                 kind: *kind,
                 routing: TrackRouting::default(),
                 midi_note: crate::instrument_registry::INSTRUMENTS[i].midi_note,
+                linked_up: false,
             };
             // Classic HH↔OH choke out of the box.
             if matches!(
@@ -447,6 +543,9 @@ pub struct AtomicTrackLayout {
     pub slot_kinds: [AtomicU8; MAX_TRACKS],
     pub slot_routing: [AtomicU8; MAX_TRACKS],
     pub slot_midi_notes: [AtomicU8; MAX_TRACKS],
+    /// Grid-link flag per slot (mirrors the lane above). Read by the audio
+    /// thread to resolve which slot's steps/fusions a lane plays.
+    pub slot_linked: [AtomicBool; MAX_TRACKS],
     pub global_channel: AtomicU8,
     pub global_base_note: AtomicU8,
     pub version: std::sync::atomic::AtomicU64,
@@ -458,10 +557,28 @@ impl AtomicTrackLayout {
             slot_kinds: std::array::from_fn(|_| AtomicU8::new(0xFF)),
             slot_routing: std::array::from_fn(|_| AtomicU8::new(0)),
             slot_midi_notes: std::array::from_fn(|_| AtomicU8::new(0)),
+            slot_linked: std::array::from_fn(|_| AtomicBool::new(false)),
             global_channel: AtomicU8::new(10),
             global_base_note: AtomicU8::new(36),
             version: std::sync::atomic::AtomicU64::new(0),
         })
+    }
+
+    /// Resolve the slot whose grid (steps + fusions) `slot` actually plays,
+    /// following `linked_up` chains upward to the active master. RT-safe (atomic
+    /// reads only). Mirror of `TrackLayoutState::grid_slot` for the audio thread.
+    pub fn grid_slot(&self, mut slot: usize) -> usize {
+        let mut guard = 0;
+        while slot > 0
+            && slot < MAX_TRACKS
+            && self.slot_linked[slot].load(Ordering::Relaxed)
+            && self.slot_kinds[slot - 1].load(Ordering::Relaxed) != 0xFF
+            && guard < MAX_TRACKS
+        {
+            slot -= 1;
+            guard += 1;
+        }
+        slot
     }
 
     pub fn from_state(state: &TrackLayoutState) -> Arc<Self> {
@@ -481,9 +598,11 @@ impl AtomicTrackLayout {
             // Normalize the legacy sentinel here so the atomic layout only ever
             // carries real group values (0..=4).
             let choke = effective_choke_group(slot.kind, &slot.routing);
-            let routing_byte = routing_byte(slot.routing.main_on, slot.routing.out_select.index(), choke);
+            let routing_byte =
+                routing_byte(slot.routing.main_on, slot.routing.out_select.index(), choke);
             self.slot_routing[i].store(routing_byte, Ordering::Relaxed);
             self.slot_midi_notes[i].store(slot.midi_note, Ordering::Relaxed);
+            self.slot_linked[i].store(slot.linked_up, Ordering::Relaxed);
         }
         self.global_channel
             .store(state.global_midi_channel.clamp(1, 16), Ordering::Relaxed);
@@ -546,6 +665,7 @@ impl Default for AtomicTrackLayout {
             slot_kinds: std::array::from_fn(|_| AtomicU8::new(0xFF)),
             slot_routing: std::array::from_fn(|_| AtomicU8::new(0)),
             slot_midi_notes: std::array::from_fn(|_| AtomicU8::new(0)),
+            slot_linked: std::array::from_fn(|_| AtomicBool::new(false)),
             global_channel: AtomicU8::new(10),
             global_base_note: AtomicU8::new(36),
             version: std::sync::atomic::AtomicU64::new(0),
@@ -635,6 +755,7 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
                 kind,
                 routing: self.state.routing_for_slot(i),
                 midi_note: self.state.slot_midi_notes[i].load(Ordering::Relaxed),
+                linked_up: self.state.slot_linked[i].load(Ordering::Relaxed),
             }
         });
         let state = TrackLayoutState {
@@ -650,6 +771,45 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
 mod tests {
     use super::*;
     use nih_plug::params::persist::PersistentField;
+
+    #[test]
+    fn grid_slot_resolves_link_chain_to_active_master() {
+        let mut layout = TrackLayoutState::default_layout(); // 4 active lanes 0..=3
+        // No links → identity.
+        assert_eq!(layout.grid_slot(2), 2);
+        assert!(!layout.is_linked_up(2));
+        assert!(layout.can_link_up(2)); // slot 1 & 2 both active
+
+        // Link 2→1.
+        layout.slots[2].linked_up = true;
+        assert_eq!(layout.grid_slot(2), 1);
+        assert!(layout.is_linked_up(2));
+
+        // Chain 3→2→1: slot 3 links to 2 which links to 1 → resolves to 1.
+        layout.slots[3].linked_up = true;
+        assert_eq!(layout.grid_slot(3), 1);
+
+        // Break the chain if the master goes inactive: deactivate slot 1 →
+        // slot 2's link is void → grid_slot(2) == 2, and the chain from 3 stops.
+        layout.slots[1].active = false;
+        assert_eq!(layout.grid_slot(2), 2);
+        assert!(!layout.is_linked_up(2));
+
+        // Slot 0 can never link up (no lane above).
+        assert!(!layout.can_link_up(0));
+        assert_eq!(layout.grid_slot(0), 0);
+    }
+
+    #[test]
+    fn linked_up_defaults_false_and_survives_layout_roundtrip() {
+        let mut layout = TrackLayoutState::default_layout();
+        layout.slots[2].linked_up = true;
+        let atomic = AtomicTrackLayout::from_state(&layout);
+        assert!(atomic.slot_linked[2].load(Ordering::Relaxed));
+        assert_eq!(atomic.grid_slot(2), 1);
+        // Inactive slots default to not-linked.
+        assert!(!atomic.slot_linked[9].load(Ordering::Relaxed));
+    }
 
     #[test]
     fn default_layout_is_modular_four_lanes() {
@@ -775,7 +935,10 @@ mod tests {
             out_select: TrackAudioOut::Main,
             choke_group: 3,
         };
-        assert_eq!(effective_choke_group(TrackInstrumentKind::Kick, &explicit), 3);
+        assert_eq!(
+            effective_choke_group(TrackInstrumentKind::Kick, &explicit),
+            3
+        );
         let out_of_range = TrackRouting {
             choke_group: 9,
             ..explicit

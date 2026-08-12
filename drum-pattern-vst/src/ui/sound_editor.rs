@@ -1,14 +1,17 @@
 //! Sound Editor: tabbed Sound/Track panel, editor rows, lane layout presets.
 
-use crate::sound_settings::SoundSettingsState;
 use crate::sequencer::SharedPattern;
+use crate::sound_settings::SoundSettingsState;
 use crate::synthesis::{self, DrumVoice, VoiceSettings};
 use crate::track::{TrackInstrumentKind, TrackLayoutState};
 use crate::ui::controls::{algo_combo, draw_track_length_control};
 use crate::ui::editor_state::{
-    select_legacy_track, schema_voice_idx, EditorUIState, LanePresetAction, SoundEditorTab,
+    schema_voice_idx, select_legacy_track, EditorUIState, LanePresetAction, SoundEditorTab,
 };
-use crate::ui::envelope_viz::{draw_amp_envelope, draw_filter_envelope};
+use crate::ui::envelope_viz::{
+    draw_amp_envelope, draw_buzz_filter_envelope, draw_filter_envelope, draw_sample_amp_graph,
+    draw_sample_filter_graph,
+};
 use crate::ui::fmt::{freq_to_note, note_name, note_to_freq};
 use crate::ui::pattern_bank::load_pattern_for_ui;
 use crate::ui::slider;
@@ -81,6 +84,29 @@ pub fn draw_editor_slider_track(
     )
 }
 
+/// Same track with a quantisation step (e.g. 1.0 for integer semitones).
+fn draw_editor_slider_track_stepped(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    default: f32,
+    logarithmic: bool,
+    track_w: f32,
+    step: f32,
+) -> egui::Response {
+    slider::draw_track(
+        ui,
+        value,
+        min,
+        max,
+        default,
+        logarithmic,
+        track_w.max(60.0),
+        slider::TrackStyle::editor().with_step(step),
+    )
+}
+
 fn draw_note_freq_mode_toggle(
     ui: &mut egui::Ui,
     id_salt: impl std::hash::Hash,
@@ -101,16 +127,26 @@ fn draw_note_step_button(ui: &mut egui::Ui, left: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(24.0, 22.0), egui::Sense::click());
     crate::ui::skeuo::keycap(ui, rect, crate::ui::widgets::KeycapState::Rest);
     if resp.is_pointer_button_down_on() {
-        ui.painter().rect_filled(rect, 5.0, Color32::from_black_alpha(60));
+        ui.painter()
+            .rect_filled(rect, 5.0, Color32::from_black_alpha(60));
     }
     let c = rect.center();
     let s = 4.0;
     let tri = if left {
-        vec![egui::pos2(c.x + s * 0.4, c.y - s), egui::pos2(c.x + s * 0.4, c.y + s), egui::pos2(c.x - s * 0.6, c.y)]
+        vec![
+            egui::pos2(c.x + s * 0.4, c.y - s),
+            egui::pos2(c.x + s * 0.4, c.y + s),
+            egui::pos2(c.x - s * 0.6, c.y),
+        ]
     } else {
-        vec![egui::pos2(c.x - s * 0.4, c.y - s), egui::pos2(c.x - s * 0.4, c.y + s), egui::pos2(c.x + s * 0.6, c.y)]
+        vec![
+            egui::pos2(c.x - s * 0.4, c.y - s),
+            egui::pos2(c.x - s * 0.4, c.y + s),
+            egui::pos2(c.x + s * 0.6, c.y),
+        ]
     };
-    ui.painter().add(egui::Shape::convex_polygon(tri, INK(), egui::Stroke::NONE));
+    ui.painter()
+        .add(egui::Shape::convex_polygon(tri, INK(), egui::Stroke::NONE));
     resp
 }
 
@@ -169,7 +205,8 @@ fn draw_editor_frequency_row(
             }
         } else {
             let track_w = (ui.available_width() - EDITOR_VALUE_W - 8.0).max(60.0);
-            row_response = draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w);
+            row_response =
+                draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w);
             value_changed = row_response.changed();
             ui.allocate_ui_with_layout(
                 Vec2::new(EDITOR_VALUE_W, 22.0),
@@ -203,13 +240,32 @@ pub fn draw_editor_slider_row(
     logarithmic: bool,
     suffix: Option<&str>,
 ) -> egui::Response {
+    draw_editor_slider_row_full(ui, label, value, min, max, default, logarithmic, suffix, 0.0)
+}
+
+/// Full editor slider row with an optional quantisation step (0 = continuous).
+pub fn draw_editor_slider_row_full(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    default: f32,
+    logarithmic: bool,
+    suffix: Option<&str>,
+    step: f32,
+) -> egui::Response {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         editor_label(ui, label);
 
         // Track flexes to fill the fixed-width params column.
         let track_w = (ui.available_width() - EDITOR_VALUE_W - 8.0).max(60.0);
-        let response = draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w);
+        let response = if step > 0.0 {
+            draw_editor_slider_track_stepped(ui, value, min, max, default, logarithmic, track_w, step)
+        } else {
+            draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w)
+        };
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
@@ -343,6 +399,10 @@ fn draw_track_tab(
         TrackInstrumentKind::Snare606,
         TrackInstrumentKind::BassDrum808,
         TrackInstrumentKind::Perc1,
+        TrackInstrumentKind::Bd6smp,
+        TrackInstrumentKind::Sd6smp,
+        TrackInstrumentKind::Ch6smp,
+        TrackInstrumentKind::Buzz,
     ];
     let current_kind = slot.kind;
     let kind_labels: Vec<&str> = kinds.iter().map(|k| k.default_name()).collect();
@@ -351,9 +411,13 @@ fn draw_track_tab(
         ui.spacing_mut().item_spacing.x = 8.0;
         editor_label(ui, "Type");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let (_, Some(i)) =
-                crate::ui::widgets::styled_select(ui, "track_kind", cur_kind_idx, &kind_labels, 146.0)
-            {
+            if let (_, Some(i)) = crate::ui::widgets::styled_select(
+                ui,
+                "track_kind",
+                cur_kind_idx,
+                &kind_labels,
+                146.0,
+            ) {
                 let kind = kinds[i];
                 if kind != current_kind {
                     let label = kind.default_name();
@@ -364,7 +428,11 @@ fn draw_track_tab(
                     changed = true;
                     // New kind → new voice: seed the slot's settings from the new
                     // instrument's defaults (the audio thread reinitializes it).
-                    sound_settings.reset_slot_to_defaults(slot_idx, kind, state.global_config.default_analog);
+                    sound_settings.reset_slot_to_defaults(
+                        slot_idx,
+                        kind,
+                        state.global_config.default_analog,
+                    );
                     state.selected_instrument = slot_idx;
                 }
             }
@@ -390,16 +458,26 @@ fn draw_track_tab(
     // Aux Out (dropdown)
     let current_out = slot.routing.out_select.index();
     let out_labels: Vec<String> = (0..=crate::track::MAX_TRACKS)
-        .map(|i| if i == 0 { "No Aux".to_string() } else { format!("Out {}", i) })
+        .map(|i| {
+            if i == 0 {
+                "No Aux".to_string()
+            } else {
+                format!("Out {}", i)
+            }
+        })
         .collect();
     let out_refs: Vec<&str> = out_labels.iter().map(|s| s.as_str()).collect();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         editor_label(ui, "Aux Out");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let (_, Some(i)) =
-                crate::ui::widgets::styled_select(ui, "track_out", current_out as usize, &out_refs, 146.0)
-            {
+            if let (_, Some(i)) = crate::ui::widgets::styled_select(
+                ui,
+                "track_out",
+                current_out as usize,
+                &out_refs,
+                146.0,
+            ) {
                 if i as u8 != current_out {
                     new_state.assign_slot_output_exclusive(
                         slot_idx,
@@ -413,15 +491,22 @@ fn draw_track_tab(
 
     // Choke group (dropdown) — when this slot triggers, every other active
     // slot in the same group is silenced (classic HH→OH, generalized).
-    let current_choke = slot.routing.choke_group.min(crate::track::CHOKE_GROUP_COUNT) as usize;
+    let current_choke = slot
+        .routing
+        .choke_group
+        .min(crate::track::CHOKE_GROUP_COUNT) as usize;
     let choke_labels = ["None", "1", "2", "3", "4"];
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         editor_label(ui, "Choke");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let (_, Some(i)) =
-                crate::ui::widgets::styled_select(ui, "track_choke", current_choke, &choke_labels, 146.0)
-            {
+            if let (_, Some(i)) = crate::ui::widgets::styled_select(
+                ui,
+                "track_choke",
+                current_choke,
+                &choke_labels,
+                146.0,
+            ) {
                 if i != current_choke {
                     new_state.slots[slot_idx].routing.choke_group = i as u8;
                     changed = true;
@@ -503,7 +588,11 @@ pub fn apply_lane_layout_preset(
 
     for (slot_idx, slot) in layout.slots.iter().enumerate() {
         if slot.active {
-            sound_settings.reset_slot_to_defaults(slot_idx, slot.kind, state.global_config.default_analog);
+            sound_settings.reset_slot_to_defaults(
+                slot_idx,
+                slot.kind,
+                state.global_config.default_analog,
+            );
         }
     }
 
@@ -556,7 +645,8 @@ pub fn draw_sound_panel(
     let header_rect = ui
         .allocate_exact_size(Vec2::new(ui.available_width(), 42.0), egui::Sense::hover())
         .0;
-    ui.painter().rect_filled(header_rect, 0.0, PANEL_SKEUO_HEADER);
+    ui.painter()
+        .rect_filled(header_rect, 0.0, PANEL_SKEUO_HEADER);
     ui.painter().hline(
         header_rect.x_range(),
         header_rect.bottom(),
@@ -600,8 +690,16 @@ pub fn draw_sound_panel(
         .0;
     let half = tabs_rect.width() * 0.5;
     for (idx, (tab, label, hover_txt)) in [
-        (SoundEditorTab::Sound, "Sound", "Synthesis settings of the selected lane"),
-        (SoundEditorTab::Track, "Track", "Instrument type, MIDI note, routing, length"),
+        (
+            SoundEditorTab::Sound,
+            "Sound",
+            "Synthesis settings of the selected lane",
+        ),
+        (
+            SoundEditorTab::Track,
+            "Track",
+            "Instrument type, MIDI note, routing, length",
+        ),
     ]
     .into_iter()
     .enumerate()
@@ -612,7 +710,11 @@ pub fn draw_sound_panel(
         );
         let selected = state.sound_editor_tab == tab;
         let resp = ui
-            .interact(seg, ui.make_persistent_id(("lane_editor_tab", idx)), egui::Sense::click())
+            .interact(
+                seg,
+                ui.make_persistent_id(("lane_editor_tab", idx)),
+                egui::Sense::click(),
+            )
             .on_hover_text(hover_txt);
         let fill = if selected {
             BLUE()
@@ -634,10 +736,16 @@ pub fn draw_sound_panel(
         }
     }
     // Hairline between the two tabs + bottom border of the toggle band.
-    ui.painter()
-        .vline(tabs_rect.center().x, tabs_rect.y_range(), egui::Stroke::new(1.0, LINE()));
-    ui.painter()
-        .hline(tabs_rect.x_range(), tabs_rect.bottom(), egui::Stroke::new(1.0, LINE()));
+    ui.painter().vline(
+        tabs_rect.center().x,
+        tabs_rect.y_range(),
+        egui::Stroke::new(1.0, LINE()),
+    );
+    ui.painter().hline(
+        tabs_rect.x_range(),
+        tabs_rect.bottom(),
+        egui::Stroke::new(1.0, LINE()),
+    );
 
     let inst = &sound_settings.instruments[state.selected_instrument];
     let (
@@ -656,6 +764,31 @@ pub fn draw_sound_panel(
         mut stereo,
     ) = inst.load();
     let mut changed = false;
+
+    // One-shot migration for sampler builds that persisted pitch in Hz.
+    // The voice also understands the legacy marker, so audio is correct even
+    // before the Sound tab is opened; opening it commits the semitone value.
+    if matches!(voice_idx, 13 | 14 | 15) && inst.special_value(10) < 0.5 {
+        let legacy_root = if voice_idx == 13 {
+            60.0
+        } else if voice_idx == 14 {
+            200.0
+        } else {
+            8000.0
+        };
+        freq = if freq > 0.0 {
+            (12.0 * (freq / legacy_root).log2()).clamp(-24.0, 24.0)
+        } else {
+            0.0
+        };
+        inst.frequency.store(freq.to_bits(), Ordering::Relaxed);
+        inst.set_special(10, 1.0);
+        // The old blob has no End parameter (reads 0) — restore full length.
+        if inst.special_value(11) <= 0.0 {
+            inst.set_special(11, 1.0);
+        }
+        changed = true;
+    }
 
     let scroll_height = ui.available_height().max(120.0);
     egui::ScrollArea::vertical()
@@ -688,9 +821,9 @@ pub fn draw_sound_panel(
                     }
                     let algo = params.algos()[state.selected_instrument].value() as u8;
                     // Skip Analog for instruments that don't use it
-                    let standards = if matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12)
+                    let standards = if matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12 | 13 | 14 | 15)
                     {
-                        // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap - use 0.0 as placeholder
+                        // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap, BD606, SD606 - use 0.0 as placeholder
                         [
                             freq,
                             decay,
@@ -808,7 +941,7 @@ pub fn draw_sound_panel(
                                 // Skip Analog for instruments that don't use it
                                 let is_analog_fixed = matches!(
                                     dump_voice,
-                                    2 | 3 | 7 | 8 | 10 | 12 // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap
+                                    2 | 3 | 7 | 8 | 10 | 12 | 13 | 14 | 15 // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap, BD606, SD606
                                 );
                                 if !is_analog_fixed {
                                     store_field(
@@ -932,7 +1065,11 @@ pub fn draw_sound_panel(
                             ui.horizontal(|ui| {
                                 let label_text = if def.field == crate::instrument_registry::StandardField::FilterFreq {
                                     let ft = crate::instrument_registry::filter_type_label(voice_idx);
-                                    format!("{} ({})", def.label, ft)
+                                    if ft.is_empty() {
+                                        def.label.to_string()
+                                    } else {
+                                        format!("{} ({})", def.label, ft)
+                                    }
                                 } else {
                                     def.label.to_string()
                                 };
@@ -989,22 +1126,32 @@ pub fn draw_sound_panel(
                                             crate::instrument_registry::StandardField::Analog => &mut analog,
                                             crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                         };
-                                        let default_value = match field {
-                                            crate::instrument_registry::StandardField::Freq => VoiceSettings::default().frequency,
-                                            crate::instrument_registry::StandardField::Decay => VoiceSettings::default().decay,
-                                            crate::instrument_registry::StandardField::Volume => VoiceSettings::default().volume,
-                                            crate::instrument_registry::StandardField::FilterFreq => VoiceSettings::default().filter_freq,
-                                            crate::instrument_registry::StandardField::Attack => VoiceSettings::default().attack,
-                                            crate::instrument_registry::StandardField::Release => VoiceSettings::default().release,
-                                            crate::instrument_registry::StandardField::DecayCurve => VoiceSettings::default().decay_curve,
-                                            crate::instrument_registry::StandardField::ReleaseCurve => VoiceSettings::default().release_curve,
-                                            crate::instrument_registry::StandardField::Hold => VoiceSettings::default().hold,
-                                            crate::instrument_registry::StandardField::FilterEnvAmount => VoiceSettings::default().filter_env_amount,
-                                            crate::instrument_registry::StandardField::FilterEnvDecay => VoiceSettings::default().filter_env_decay,
-                                            crate::instrument_registry::StandardField::Analog => VoiceSettings::default().analog,
-                                            crate::instrument_registry::StandardField::Stereo => VoiceSettings::default().stereo,
+                                        let default_value = if matches!(voice_idx, 13 | 14 | 15) {
+                                            instrument.sound_settings_default[field as usize]
+                                        } else {
+                                            match field {
+                                                crate::instrument_registry::StandardField::Freq => VoiceSettings::default().frequency,
+                                                crate::instrument_registry::StandardField::Decay => VoiceSettings::default().decay,
+                                                crate::instrument_registry::StandardField::Volume => VoiceSettings::default().volume,
+                                                crate::instrument_registry::StandardField::FilterFreq => VoiceSettings::default().filter_freq,
+                                                crate::instrument_registry::StandardField::Attack => VoiceSettings::default().attack,
+                                                crate::instrument_registry::StandardField::Release => VoiceSettings::default().release,
+                                                crate::instrument_registry::StandardField::DecayCurve => VoiceSettings::default().decay_curve,
+                                                crate::instrument_registry::StandardField::ReleaseCurve => VoiceSettings::default().release_curve,
+                                                crate::instrument_registry::StandardField::Hold => VoiceSettings::default().hold,
+                                                crate::instrument_registry::StandardField::FilterEnvAmount => VoiceSettings::default().filter_env_amount,
+                                                crate::instrument_registry::StandardField::FilterEnvDecay => VoiceSettings::default().filter_env_decay,
+                                                crate::instrument_registry::StandardField::Analog => VoiceSettings::default().analog,
+                                                crate::instrument_registry::StandardField::Stereo => VoiceSettings::default().stereo,
+                                            }
                                         };
-                                        if draw_editor_slider_row(
+                                        // Relative-pitch voices: the Pitch slider
+                                        // steps by 1 semitone (Pitch Fine covers
+                                        // the cents).
+                                        let smp_pitch = field
+                                            == crate::instrument_registry::StandardField::Freq
+                                            && matches!(voice_idx, 13 | 14 | 15);
+                                        if draw_editor_slider_row_full(
                                             ui,
                                             &label_text,
                                             value,
@@ -1013,6 +1160,7 @@ pub fn draw_sound_panel(
                                             default_value,
                                             *logarithmic,
                                             *suffix,
+                                            if smp_pitch { 1.0 } else { 0.0 },
                                         )
                                         .changed()
                                         {
@@ -1033,16 +1181,63 @@ pub fn draw_sound_panel(
                                 }
                             }
                         });
+                        // Multisample voices: Pitch Fine lives directly under
+                        // the Pitch slider (it tunes the same parameter).
+                        if def.field == crate::instrument_registry::StandardField::Freq
+                            && matches!(voice_idx, 13 | 14 | 15)
+                        {
+                            let mut fine = inst.special_value(9);
+                            if draw_editor_slider_row(
+                                ui,
+                                "Pitch Fine",
+                                &mut fine,
+                                -100.0,
+                                100.0,
+                                0.0,
+                                false,
+                                None,
+                            )
+                            .changed()
+                            {
+                                inst.set_special(9, fine);
+                                sound_settings.bump_version();
+                            }
+                        }
                     }
 
                     // Special params for this family — stored PER SLOT so two
                     // slots of the same kind stay independent.
                     for def in special_defs.iter().filter(|d| d.family == family) {
+                        // Pitch Fine is rendered directly under the Pitch slider.
+                        if def.name.ends_with("_fine_tune") {
+                            continue;
+                        }
+                        // Multisample voices (*606): the Sample list only makes
+                        // sense in fixed-sample mode — grey it out (don't hide
+                        // it, to keep the layout stable) while Analog Mode
+                        // (random multisample) is on.
+                        let sample_disabled =
+                            def.name.ends_with("_sample") && inst.special_value(0) > 0.5;
+                        ui.add_enabled_ui(!sample_disabled, |ui| {
                         ui.horizontal(|ui| {
                             let current = inst.special_value(def.special_index);
                             let mut new_value = None;
+                            // Multisample voices: Analog Mode / One Shot as switches
+                            if def.name.ends_with("_analog_mode") || def.name.ends_with("_one_shot") {
+                                let mut value = current;
+                                if draw_editor_switch_row(ui, def.label, &mut value).changed() {
+                                    new_value = Some(value);
+                                }
+                            // Multisample voices: Sample select 1..8 (stored 1-based)
+                            } else if def.name.ends_with("_sample") {
+                                let sample_names = ["1", "2", "3", "4", "5", "6", "7", "8"];
+                                let current_idx = (current.round() as usize).clamp(1, 8) - 1;
+                                editor_label(ui, def.label);
+                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &sample_names) {
+                                    new_value = Some(idx as f32 + 1.0);
+                                }
                             // Boolean toggle for on/off switches (min=0, max=1)
-                            if def.min == 0.0 && def.max == 1.0 && def.label.to_lowercase().contains("pre-filter") {
+                            } else if def.min == 0.0 && def.max == 1.0 && def.label.to_lowercase().contains("pre-filter") {
                                 let mut value = current;
                                 if draw_editor_switch_row(ui, def.label, &mut value).changed() {
                                     new_value = Some(value);
@@ -1071,6 +1266,22 @@ pub fn draw_sound_panel(
                                 if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
+                            // Buzz oscillator waveform: show select with names
+                            } else if def.name.ends_with("_wave") {
+                                let type_names = ["Sine", "Square", "Saw"];
+                                let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
+                                editor_label(ui, def.label);
+                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
+                                    new_value = Some(idx as f32);
+                                }
+                            // Buzz filter type: LP / HP / BP select
+                            } else if def.name.ends_with("_filter_type") {
+                                let type_names = ["LP", "HP", "BP"];
+                                let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
+                                editor_label(ui, def.label);
+                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
+                                    new_value = Some(idx as f32);
+                                }
                                 } else {
                                 let mut value = current;
                                 let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
@@ -1093,6 +1304,7 @@ pub fn draw_sound_panel(
                                 inst.set_special(def.special_index, value);
                                 sound_settings.bump_version();
                             }
+                        });
                         });
                     }
 
@@ -1120,10 +1332,44 @@ pub fn draw_sound_panel(
                 if has_graph {
                     ui.add_space(16.0);
                 }
+                let sample_graph = if matches!(voice_idx, 13 | 14 | 15) {
+                    let bank = if voice_idx == 13 {
+                        crate::synthesis::sample_bank::bd606()
+                    } else if voice_idx == 14 {
+                        crate::synthesis::sample_bank::sd606()
+                    } else {
+                        crate::synthesis::sample_bank::ch606()
+                    };
+                    let hit_idx = (inst.special_value(1).round() as usize).clamp(1, 8) - 1;
+                    // Legacy sessions (pitch marker unset) predate End: full length.
+                    let end = if inst.special_value(10) < 0.5 {
+                        1.0
+                    } else {
+                        inst.special_value(11)
+                    };
+                    Some((&bank.hits[hit_idx][..], inst.special_value(3), end))
+                } else {
+                    None
+                };
+
                 match family {
                     crate::instrument_registry::ParamFamily::Env => {
-                        let has_release = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::Release);
-                        draw_amp_envelope(ui, attack, decay, decay_curve, hold, release, release_curve, has_release);
+                        if let Some((hit, start, end)) = sample_graph {
+                            draw_sample_amp_graph(
+                                ui,
+                                hit,
+                                start,
+                                end,
+                                attack,
+                                decay,
+                                decay_curve,
+                                inst.special_value(2) > 0.5,
+                            );
+                        } else {
+                            // A-H-D bipolar: `release_curve` is repurposed as the
+                            // attack curve; `decay_curve` shapes the decay.
+                            draw_amp_envelope(ui, attack, release_curve, hold, decay, decay_curve);
+                        }
                     }
                     crate::instrument_registry::ParamFamily::Filter => {
                         let has_filter_env = standard_defs.iter().any(|d| d.field == crate::instrument_registry::StandardField::FilterEnvAmount);
@@ -1131,7 +1377,33 @@ pub fn draw_sound_panel(
                             let filter_curve = crate::synthesis::DrumVoice::from_index(voice_idx)
                                 .and_then(|v| v.filter_env_curve())
                                 .unwrap_or(decay_curve);
-                            draw_filter_envelope(ui, filter_curve, filter_env_decay);
+                            if let Some((hit, start, end)) = sample_graph {
+                                draw_sample_filter_graph(
+                                    ui,
+                                    hit,
+                                    start,
+                                    end,
+                                    filt,
+                                    filter_env_amount,
+                                    filter_env_decay,
+                                    filter_curve,
+                                );
+                            } else if voice_idx == 16 {
+                                // Buzz: A-H-D filter envelope (attack/hold/decay
+                                // + bipolar curve) sweeping the cutoff.
+                                draw_buzz_filter_envelope(
+                                    ui,
+                                    filt,
+                                    filter_env_amount,
+                                    inst.special_value(12), // Filter Attack
+                                    inst.special_value(13), // Filter Hold
+                                    filter_env_decay,
+                                    inst.special_value(16), // Filter Atk Curve
+                                    inst.special_value(15), // Filter Dec Curve
+                                );
+                            } else {
+                                draw_filter_envelope(ui, filter_curve, filter_env_decay);
+                            }
                         }
                     }
                     _ => {}

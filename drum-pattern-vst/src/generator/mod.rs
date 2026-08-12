@@ -137,7 +137,16 @@ fn remap_roles_to_slots(
             continue;
         };
 
-        let base_voice = kind.drum_voice_index();
+        // The 606 multisample voices have no generator roles of their own:
+        // they borrow the Kick / Snare roles so GENERATE still writes a line
+        // on their lanes.
+        let base_voice = match kind {
+            TrackInstrumentKind::Bd6smp => 0,
+            TrackInstrumentKind::Sd6smp => 1,
+            TrackInstrumentKind::Ch6smp => 2, // borrow the HiHat role
+            TrackInstrumentKind::Buzz => 12, // borrow the Perc1 role
+            _ => kind.drum_voice_index(),
+        };
         let duplicate_index = assigned_per_voice[base_voice];
         assigned_per_voice[base_voice] += 1;
 
@@ -230,6 +239,12 @@ mod tests {
             Style::Disco,
             Style::Trap,
             Style::Reggae,
+            Style::BossaNova,
+            Style::House,
+            Style::DrumAndBass,
+            Style::Afrobeat,
+            Style::Dub,
+            Style::Breakbeat,
         ];
         let mut signatures = std::collections::HashSet::new();
         for style in all_styles {

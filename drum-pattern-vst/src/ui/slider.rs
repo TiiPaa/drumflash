@@ -43,6 +43,9 @@ pub struct TrackStyle {
     /// Draw a striped fader cap at the value (full sliders) vs a plain fill bar
     /// (tiny Vol/Hum/Push mini-sliders).
     pub cap: bool,
+    /// Quantisation step (0 = continuous). The dragged value snaps to
+    /// multiples of this step, e.g. 1.0 for integer semitones.
+    pub step: f32,
 }
 
 impl TrackStyle {
@@ -52,6 +55,7 @@ impl TrackStyle {
             track_h: 6.0,
             fill: BLUE(),
             cap: true,
+            step: 0.0,
         }
     }
 
@@ -61,7 +65,13 @@ impl TrackStyle {
             track_h: 6.0,
             fill: BLUE(),
             cap: false,
+            step: 0.0,
         }
+    }
+
+    pub fn with_step(mut self, step: f32) -> Self {
+        self.step = step;
+        self
     }
 }
 
@@ -83,6 +93,10 @@ pub fn draw_track(
         if response.clicked() || response.dragged() {
             let norm = egui::emath::remap_clamp(pos.x, rect.x_range(), 0.0..=1.0);
             *value = denormalize_value(norm, min, max, logarithmic).clamp(min, max);
+            if style.step > 0.0 {
+                *value = (*value / style.step).round() * style.step;
+                *value = value.clamp(min, max);
+            }
             response.mark_changed();
         }
     }

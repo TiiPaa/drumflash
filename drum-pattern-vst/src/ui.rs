@@ -314,6 +314,7 @@ pub fn create_editor(
                                 &pattern_for_ui,
                                 &save_pattern_request,
                                 &load_pattern_request,
+                                &audio_last_loaded_slot_for_ui,
                             );
                             draw_bottom_panel(
                                 ui,

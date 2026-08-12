@@ -60,6 +60,20 @@ pub const BASSDRUM808_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 
 pub const PERC1_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Sine" }, AlgoDef { name: "Saw" }];
 
+// ── BD606 (multisample) ─────────────────────────────────────────────────────
+
+pub const BD606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
+
+// ── SD606 (multisample) ─────────────────────────────────────────────────────
+
+pub const SD606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
+pub const CH606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
+
+// ── Buzz (tonal perc + gate) ────────────────────────────────────────────────
+
+/// Gate retrigger mode: Smooth = ramp from current, Razor = snap from zero.
+pub const BUZZ_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Smooth" }, AlgoDef { name: "Razor" }];
+
 // ── Registry helpers ────────────────────────────────────────────────────────
 
 use super::DrumVoice;
@@ -80,5 +94,9 @@ pub fn algos_for(voice: DrumVoice) -> &'static [AlgoDef] {
         DrumVoice::Snare606 => SNARE606_ALGOS,
         DrumVoice::BassDrum808 => BASSDRUM808_ALGOS,
         DrumVoice::Perc1 => PERC1_ALGOS,
+        DrumVoice::Bd606 => BD606_ALGOS,
+        DrumVoice::Sd606 => SD606_ALGOS,
+        DrumVoice::Ch606 => CH606_ALGOS,
+        DrumVoice::Buzz => BUZZ_ALGOS,
     }
 }
