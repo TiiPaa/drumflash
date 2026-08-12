@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-12 — Passation : docs réorganisées + handoff (pas de build)
+
+- **`CLAUDE.md` devient la référence canonique unique pour tous les agents IA** (Claude/Codex/Kimi/…) : compteurs mis à jour (17 voix, 14 slots, plocks 46×14×64), enveloppe d'ampli A-H-D documentée, et absorption du détail unique d'`AGENTS.md` (patches du fork nih-plug, chaîne de saturation, choke groups, règle checklist « À tester dans Studio One », portabilité, règle « next »).
+- **`AGENTS.md` réduit à une redirection** vers `CLAUDE.md` (fini la duplication périmée). Cross-refs `README.md` / `drum-pattern-vst/README.md` mis à jour.
+- **`docs/HANDOFF.md` ajouté** : état de session pour un autre agent dev (arbre git, tâches, gotchas, carte des fichiers).
+- **[159] validé** dans Studio One. 3 nouvelles idées notées → TODO [162]/[163]/[164]. Point de reprise : **[155]**.
+
 ## 2026-08-07 — [159] Enveloppe d'ampli A-H-D bipolaire (retrait du Release) sur toutes les voix (build 20260807-170048)
 
 **Branche:** `skeuo-vector` · **Build:** `20260807-170048`
