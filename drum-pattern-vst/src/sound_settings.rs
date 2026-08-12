@@ -54,6 +54,10 @@ pub struct InstrumentSettingsState {
 /// (standard fields only — the v3 format appends specials + freq_mode).
 pub const FIELDS_PER_INSTRUMENT: usize = crate::instrument_registry::SOUND_SETTINGS_FIELD_COUNT;
 const LEGACY_FIELDS_PER_INSTRUMENT: usize = 12;
+/// Frozen at 13: legacy persisted blobs predate the BD606 voice and their
+/// length-keyed versioning must keep matching the old 13-voice layouts.
+/// Do NOT replace with `DrumVoice::COUNT` (which grows with new voices).
+const LEGACY_VOICE_COUNT: usize = 13;
 /// v3 stride: standards + specials + freq_mode.
 pub const FIELDS_PER_INSTRUMENT_V3: usize = FIELDS_PER_INSTRUMENT + SPECIAL_SLOT_COUNT + 1;
 
@@ -127,6 +131,11 @@ impl InstrumentSettingsState {
         }
         for def in crate::instrument_registry::special_params(voice_idx) {
             self.set_special(def.special_index, def.default);
+        }
+        if matches!(voice_idx, 13 | 14 | 15) {
+            // Multisample pitch is stored as relative semitones. Earlier
+            // sampler builds used Hz and persist with this marker at zero.
+            self.set_special(10, 1.0);
         }
         self.set_freq_mode(false);
     }
@@ -227,7 +236,7 @@ impl SoundSettingsState {
         let voice_for_slot = |i: usize| -> usize {
             if i < MAX_TRACKS && layout.slots[i].active {
                 layout.slots[i].kind.drum_voice_index()
-            } else if i < crate::synthesis::DrumVoice::COUNT {
+            } else if i < LEGACY_VOICE_COUNT {
                 i
             } else {
                 0
@@ -237,9 +246,7 @@ impl SoundSettingsState {
         let instruments: [InstrumentSettingsState; MAX_TRACKS] = std::array::from_fn(|i| {
             let [f, d, v, fl, at, r, dc, rc, h, fea, fed, _a, s] =
                 crate::instrument_registry::INSTRUMENTS[voice_for_slot(i)].sound_settings_default;
-            InstrumentSettingsState::new(
-                f, d, v, fl, at, r, dc, rc, h, fea, fed, default_analog, s,
-            )
+            InstrumentSettingsState::new(f, d, v, fl, at, r, dc, rc, h, fea, fed, default_analog, s)
         });
         for (i, inst) in instruments.iter().enumerate() {
             inst.reset_specials_for_voice(voice_for_slot(i));
@@ -368,17 +375,14 @@ impl SoundSettingsState {
         // from the legacy per-voice nih-plug params after the state restore.
         self.needs_param_seed.store(true, Ordering::Release);
 
-        let legacy_12_len = crate::synthesis::DrumVoice::COUNT * LEGACY_FIELDS_PER_INSTRUMENT;
-        let legacy_13_len = crate::synthesis::DrumVoice::COUNT * FIELDS_PER_INSTRUMENT;
+        let legacy_12_len = LEGACY_VOICE_COUNT * LEGACY_FIELDS_PER_INSTRUMENT;
+        let legacy_13_len = LEGACY_VOICE_COUNT * FIELDS_PER_INSTRUMENT;
         let current_len = MAX_TRACKS * FIELDS_PER_INSTRUMENT;
 
         let (stride, source_count) = if values.len() == legacy_12_len {
-            (
-                LEGACY_FIELDS_PER_INSTRUMENT,
-                crate::synthesis::DrumVoice::COUNT,
-            )
+            (LEGACY_FIELDS_PER_INSTRUMENT, LEGACY_VOICE_COUNT)
         } else if values.len() == legacy_13_len {
-            (FIELDS_PER_INSTRUMENT, crate::synthesis::DrumVoice::COUNT)
+            (FIELDS_PER_INSTRUMENT, LEGACY_VOICE_COUNT)
         } else if values.len() == current_len {
             (FIELDS_PER_INSTRUMENT, MAX_TRACKS)
         } else {
@@ -390,7 +394,7 @@ impl SoundSettingsState {
         };
 
         for (i, inst) in self.instruments.iter().enumerate() {
-            let legacy_defaults = if i < crate::synthesis::DrumVoice::COUNT {
+            let legacy_defaults = if i < LEGACY_VOICE_COUNT {
                 crate::instrument_registry::INSTRUMENTS[i].sound_settings_default
             } else {
                 crate::instrument_registry::INSTRUMENTS[0].sound_settings_default
@@ -556,32 +560,41 @@ mod tests {
 
     /// Regression for [105]: every instrument kind must initialise its global
     /// Frequency to a strictly positive value so the plock sound menu never
-    /// defaults to 0 Hz.
+    /// defaults to 0 Hz. Voices whose Freq slider is a RELATIVE pitch
+    /// (semitones, range spanning 0) are exempt: 0 is their neutral value.
     #[test]
     fn default_frequency_is_nonzero_for_every_instrument_kind() {
-        use crate::instrument_registry::INSTRUMENTS;
+        use crate::instrument_registry::{ParamWidget, StandardField, INSTRUMENTS};
 
         for kind_idx in 0..TrackInstrumentKind::COUNT {
             let kind = TrackInstrumentKind::from_index(kind_idx).unwrap();
             let voice_idx = kind.drum_voice_index();
             let expected = INSTRUMENTS[voice_idx].sound_settings_default[0];
-            assert!(
-                expected > 0.0,
-                "{:?} default frequency must be > 0, got {}",
-                kind,
-                expected
-            );
+            let relative_pitch = INSTRUMENTS[voice_idx].standard_params.iter().any(|d| {
+                d.field == StandardField::Freq
+                    && matches!(d.widget, ParamWidget::Slider { min, .. } if min < 0.0)
+            });
+            if !relative_pitch {
+                assert!(
+                    expected > 0.0,
+                    "{:?} default frequency must be > 0, got {}",
+                    kind,
+                    expected
+                );
+            }
 
             let mut layout = TrackLayoutState::default_layout();
             layout.slots[0] = TrackSlot::active_with_kind(kind);
             let state = SoundSettingsState::new(&layout);
             let (freq, ..) = state.instruments[0].load();
-            assert!(
-                freq > 0.0,
-                "{:?} slot frequency must be > 0, got {}",
-                kind,
-                freq
-            );
+            if !relative_pitch {
+                assert!(
+                    freq > 0.0,
+                    "{:?} slot frequency must be > 0, got {}",
+                    kind,
+                    freq
+                );
+            }
             assert!(
                 (freq - expected).abs() < 1e-6,
                 "{:?} slot frequency {} does not match registry default {}",
@@ -633,5 +646,15 @@ mod tests {
             freq0,
             freq1
         );
+    }
+
+    #[test]
+    fn multisample_defaults_mark_relative_pitch_format() {
+        let mut layout = TrackLayoutState::modular_default_layout();
+        layout.slots[0] = TrackSlot::active_with_kind(TrackInstrumentKind::Bd6smp);
+        layout.slots[1] = TrackSlot::active_with_kind(TrackInstrumentKind::Sd6smp);
+        let state = SoundSettingsState::new(&layout);
+        assert_eq!(state.instruments[0].special_value(10), 1.0);
+        assert_eq!(state.instruments[1].special_value(10), 1.0);
     }
 }

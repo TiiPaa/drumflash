@@ -1,5 +1,7 @@
 //! Audio synthesis module for drum sounds
 
+mod bd606;
+mod buzz;
 mod clap;
 mod cymbal;
 mod dsp;
@@ -9,7 +11,10 @@ mod kick_808;
 mod open_hihat;
 mod perc1;
 mod ride;
+pub mod sample_bank;
+mod ch606;
 mod saturation;
+mod sd606;
 mod settings;
 mod snare;
 mod snare606;
@@ -22,6 +27,9 @@ mod tom;
 #[allow(unused_imports)]
 pub use special_params::{algos_for, AlgoDef};
 
+pub use bd606::Bd606Voice;
+pub use buzz::BuzzVoice;
+pub use ch606::Ch606Voice;
 pub use clap::ClapVoice;
 pub use cymbal::CymbalVoice;
 pub use hihat::HiHatVoice;
@@ -30,6 +38,10 @@ pub use kick_808::Kick808Voice;
 pub use open_hihat::OpenHiHatVoice;
 pub use perc1::Perc1Voice;
 pub use ride::RideVoice;
+pub use sd606::Sd606Voice;
+pub use settings::bd606::Bd606Settings;
+pub use settings::buzz::BuzzSettings;
+pub use settings::ch606::Ch606Settings;
 pub use settings::clap::ClapSettings;
 pub use settings::cymbal::CymbalSettings;
 pub use settings::hihat::HiHatSettings;
@@ -38,6 +50,7 @@ pub use settings::kick_808::Kick808Settings;
 pub use settings::open_hihat::OpenHiHatSettings;
 pub use settings::perc1::Perc1Settings;
 pub use settings::ride::RideSettings;
+pub use settings::sd606::Sd606Settings;
 pub use settings::snare::SnareSettings;
 pub use settings::snare606::Snare606Settings;
 pub use settings::tom::TomSettings;
@@ -62,11 +75,15 @@ pub enum DrumVoice {
     Snare606 = 10,
     BassDrum808 = 11,
     Perc1 = 12,
+    Bd606 = 13,
+    Sd606 = 14,
+    Ch606 = 15,
+    Buzz = 16,
 }
 
 #[allow(dead_code)]
 impl DrumVoice {
-    pub const COUNT: usize = 13;
+    pub const COUNT: usize = 17;
 
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
@@ -83,6 +100,10 @@ impl DrumVoice {
             10 => Some(Self::Snare606),
             11 => Some(Self::BassDrum808),
             12 => Some(Self::Perc1),
+            13 => Some(Self::Bd606),
+            14 => Some(Self::Sd606),
+            15 => Some(Self::Ch606),
+            16 => Some(Self::Buzz),
             _ => None,
         }
     }
@@ -489,6 +510,118 @@ impl VoiceSettings {
             ],
         }
     }
+
+    pub fn bd606() -> Self {
+        Self {
+            frequency: 0.0,
+            decay: 0.4,
+            volume: 1.0,
+            filter_freq: 20000.0,
+            attack: 0.002,
+            release: 0.0,
+            decay_curve: 4.0,
+            release_curve: 3.0,
+            hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.15,
+            analog: 1.0,
+            stereo: 0.0,
+            algo: 0,
+            // special[0] = Analog Mode (1 = random multisample, 0 = fixed sample)
+            // special[1] = Sample index (1..=8, used when Analog Mode is off)
+            // special[2] = One Shot (1 = play to sample end, bypass amp env)
+            // special[3] = Start offset (fraction of the sample length, 0..1)
+            // special[10] = Pitch format (1 = relative semitones, 0 = legacy Hz)
+            // special[11] = End (fraction of the sample length, default 1)
+            special: [
+                1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        }
+    }
+
+    pub fn sd606() -> Self {
+        Self {
+            frequency: 0.0,
+            decay: 0.3,
+            volume: 0.8,
+            filter_freq: 20000.0,
+            attack: 0.002,
+            release: 0.0,
+            decay_curve: 4.0,
+            release_curve: 3.0,
+            hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.15,
+            analog: 1.0,
+            stereo: 0.0,
+            algo: 0,
+            // special[0] = Analog Mode (1 = random multisample, 0 = fixed sample)
+            // special[1] = Sample index (1..=8, used when Analog Mode is off)
+            // special[2] = One Shot (1 = play to sample end, bypass amp env)
+            // special[3] = Start offset (fraction of the sample length, 0..1)
+            // special[10] = Pitch format (1 = relative semitones, 0 = legacy Hz)
+            // special[11] = End (fraction of the sample length, default 1)
+            special: [
+                1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        }
+    }
+
+    pub fn ch606() -> Self {
+        // TR-606 closed hi-hat sampler: same sampler engine as sd606, tighter
+        // amp decay + a touch lower level (hats sit under the kit).
+        Self {
+            frequency: 0.0,
+            decay: 0.2,
+            volume: 0.6,
+            filter_freq: 20000.0,
+            attack: 0.001,
+            release: 0.0,
+            decay_curve: 4.0,
+            release_curve: 3.0,
+            hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.15,
+            analog: 1.0,
+            stereo: 0.0,
+            algo: 0,
+            special: [
+                1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        }
+    }
+
+    pub fn buzz() -> Self {
+        // Tonal percussion + adjustable noise, chopped by a fast amplitude gate.
+        // Mirror of the registry `sound_settings_default` + special defaults.
+        Self {
+            frequency: 200.0,
+            decay: 0.5,
+            volume: 1.3,
+            filter_freq: 1200.0,
+            attack: 0.0005,
+            release: 0.2,
+            decay_curve: 4.0,
+            release_curve: 3.0,
+            hold: 0.0,
+            filter_env_amount: 0.6,
+            filter_env_decay: 0.12,
+            analog: 0.5,
+            stereo: 1.0,
+            algo: 0,
+            // [0 gate_rate, 1 gate_depth, 2 gate_shape, 3 noise_amount,
+            //  4 noise_type, 5 pitch_sweep, 6 sat_type, 7 sat_amount, 8 sat_mix,
+            //  9 sat_gain, 10 sat_pre, 11 wave, 12 filt_attack, 13 filt_hold,
+            //  14 filt_type, 15 filt_dec_curve, 16 filt_atk_curve, …]
+            special: [
+                55.0, 0.85, 0.55, 0.3, 0.0, 0.3, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        }
+    }
 }
 
 pub trait Voice: Send + Sync {
@@ -531,6 +664,10 @@ pub enum DrumVoiceKind {
     Snare606(Snare606Voice),
     BassDrum808(Kick808Voice),
     Perc1(Perc1Voice),
+    Bd606(Bd606Voice),
+    Sd606(Sd606Voice),
+    Ch606(Ch606Voice),
+    Buzz(BuzzVoice),
 }
 
 impl Voice for DrumVoiceKind {
@@ -547,6 +684,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.trigger(),
             DrumVoiceKind::BassDrum808(v) => v.trigger(),
             DrumVoiceKind::Perc1(v) => v.trigger(),
+            DrumVoiceKind::Bd606(v) => v.trigger(),
+            DrumVoiceKind::Sd606(v) => v.trigger(),
+            DrumVoiceKind::Ch606(v) => v.trigger(),
+            DrumVoiceKind::Buzz(v) => v.trigger(),
         }
     }
 
@@ -563,6 +704,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.trigger_hard(),
             DrumVoiceKind::BassDrum808(v) => v.trigger_hard(),
             DrumVoiceKind::Perc1(v) => v.trigger_hard(),
+            DrumVoiceKind::Bd606(v) => v.trigger_hard(),
+            DrumVoiceKind::Sd606(v) => v.trigger_hard(),
+            DrumVoiceKind::Ch606(v) => v.trigger_hard(),
+            DrumVoiceKind::Buzz(v) => v.trigger_hard(),
         }
     }
 
@@ -579,6 +724,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.process_sample(),
             DrumVoiceKind::BassDrum808(v) => v.process_sample(),
             DrumVoiceKind::Perc1(v) => v.process_sample(),
+            DrumVoiceKind::Bd606(v) => v.process_sample(),
+            DrumVoiceKind::Sd606(v) => v.process_sample(),
+            DrumVoiceKind::Ch606(v) => v.process_sample(),
+            DrumVoiceKind::Buzz(v) => v.process_sample(),
         }
     }
 
@@ -595,6 +744,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.process_sample_stereo(),
             DrumVoiceKind::BassDrum808(v) => v.process_sample_stereo(),
             DrumVoiceKind::Perc1(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Bd606(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Sd606(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Ch606(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Buzz(v) => v.process_sample_stereo(),
         }
     }
 
@@ -611,6 +764,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.is_active(),
             DrumVoiceKind::BassDrum808(v) => v.is_active(),
             DrumVoiceKind::Perc1(v) => v.is_active(),
+            DrumVoiceKind::Bd606(v) => v.is_active(),
+            DrumVoiceKind::Sd606(v) => v.is_active(),
+            DrumVoiceKind::Ch606(v) => v.is_active(),
+            DrumVoiceKind::Buzz(v) => v.is_active(),
         }
     }
 
@@ -627,6 +784,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.reset(),
             DrumVoiceKind::BassDrum808(v) => v.reset(),
             DrumVoiceKind::Perc1(v) => v.reset(),
+            DrumVoiceKind::Bd606(v) => v.reset(),
+            DrumVoiceKind::Sd606(v) => v.reset(),
+            DrumVoiceKind::Ch606(v) => v.reset(),
+            DrumVoiceKind::Buzz(v) => v.reset(),
         }
     }
 
@@ -643,6 +804,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.set_settings(settings),
             DrumVoiceKind::BassDrum808(v) => v.set_settings(settings),
             DrumVoiceKind::Perc1(v) => v.set_settings(settings),
+            DrumVoiceKind::Bd606(v) => v.set_settings(settings),
+            DrumVoiceKind::Sd606(v) => v.set_settings(settings),
+            DrumVoiceKind::Ch606(v) => v.set_settings(settings),
+            DrumVoiceKind::Buzz(v) => v.set_settings(settings),
         }
     }
 
@@ -659,6 +824,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.set_algo(algo),
             DrumVoiceKind::BassDrum808(v) => v.set_algo(algo),
             DrumVoiceKind::Perc1(v) => v.set_algo(algo),
+            DrumVoiceKind::Bd606(v) => v.set_algo(algo),
+            DrumVoiceKind::Sd606(v) => v.set_algo(algo),
+            DrumVoiceKind::Ch606(v) => v.set_algo(algo),
+            DrumVoiceKind::Buzz(v) => v.set_algo(algo),
         }
     }
 
@@ -675,6 +844,10 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Snare606(v) => v.set_special_param(index, value),
             DrumVoiceKind::BassDrum808(v) => v.set_special_param(index, value),
             DrumVoiceKind::Perc1(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Bd606(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Sd606(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Ch606(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Buzz(v) => v.set_special_param(index, value),
         }
     }
 }
@@ -729,6 +902,22 @@ fn create_voice_for_kind(
             sample_rate,
             Perc1Settings::from(VoiceSettings::perc1()),
         )),
+        K::Bd6smp => DrumVoiceKind::Bd606(Bd606Voice::new(
+            sample_rate,
+            Bd606Settings::from(VoiceSettings::bd606()),
+        )),
+        K::Sd6smp => DrumVoiceKind::Sd606(Sd606Voice::new(
+            sample_rate,
+            Sd606Settings::from(VoiceSettings::sd606()),
+        )),
+        K::Ch6smp => DrumVoiceKind::Ch606(Ch606Voice::new(
+            sample_rate,
+            Ch606Settings::from(VoiceSettings::ch606()),
+        )),
+        K::Buzz => DrumVoiceKind::Buzz(BuzzVoice::new(
+            sample_rate,
+            BuzzSettings::from(VoiceSettings::buzz()),
+        )),
     }
 }
 
@@ -776,13 +965,24 @@ impl DrumSynthesizer {
             *smoother = dsp::OnePoleSmoother::new(sample_rate, VELOCITY_SMOOTH_MS, 1.0);
         }
 
+        // Pre-warm the embedded multisample banks here (non-RT) so a later
+        // kind change to a multisample voice on the audio thread never
+        // allocates.
+        let _ = sample_bank::bd606();
+        let _ = sample_bank::sd606();
+        let _ = sample_bank::ch606();
+
         // Preallocate a voice for every slot so the audio thread never has to
         // allocate when a slot is activated or its instrument changes. Inactive
         // slots keep a placeholder voice and are gated out by `active`.
         for (i, slot) in layout.slots.iter().enumerate() {
             let placeholder_kind = crate::track::TrackInstrumentKind::from_drum_voice_index(i)
                 .unwrap_or(crate::track::TrackInstrumentKind::Perc1);
-            let kind = if slot.active { slot.kind } else { placeholder_kind };
+            let kind = if slot.active {
+                slot.kind
+            } else {
+                placeholder_kind
+            };
             self.voices[i] = Some(Box::new(create_voice_for_kind(kind, sample_rate)));
             self.active[i] = slot.active;
         }
@@ -928,6 +1128,39 @@ mod tests {
             sum += outputs[voice_idx][0].abs() + outputs[voice_idx][1].abs();
         }
         sum
+    }
+
+    #[test]
+    fn bd606_fine_tune_changes_playback_rate_through_synthesizer() {
+        let duration = |fine: f32| -> usize {
+            let mut layout = crate::track::TrackLayoutState::empty_layout();
+            layout.slots[0] = crate::track::TrackSlot::active_with_kind(
+                crate::track::TrackInstrumentKind::Bd6smp,
+            );
+            let mut synth = DrumSynthesizer::new();
+            synth.initialize_with_layout(44100.0, &layout);
+            let mut settings = VoiceSettings::bd606();
+            settings.special[2] = 1.0; // one shot: duration = hit length / rate
+            settings.special[9] = fine;
+            synth.set_voice_settings(0, settings);
+            synth.trigger(0, 1.0);
+            let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
+            let mut last_nonzero = 0usize;
+            for n in 0..44100 * 4 {
+                synth.process_voice_samples_stereo(&mut outputs);
+                if outputs[0][0].abs() > 1e-6 {
+                    last_nonzero = n;
+                }
+            }
+            last_nonzero
+        };
+
+        let flat = duration(-100.0);
+        let sharp = duration(100.0);
+        assert!(
+            flat > sharp + 1000,
+            "fine -100 should play clearly longer than +100 (flat={flat}, sharp={sharp})"
+        );
     }
 
     #[test]
@@ -1499,4 +1732,3 @@ mod tests {
         assert!(out > 0.0, "reactivated slot should play again");
     }
 }
-

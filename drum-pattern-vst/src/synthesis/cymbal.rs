@@ -119,11 +119,7 @@ impl Voice for CymbalVoice {
         // Apply timing drift (±5 ms) to the amplitude envelope attack.
         let attack_drift_ms = (self.analog_drift.timing_offset * 2.0).clamp(-0.005, 0.005) * 1000.0;
         self.amp_env
-            .with_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
-        // Apply timing drift (±2 ms) to the amplitude envelope attack.
-        let attack_drift_ms = (self.analog_drift.timing_offset * 2.0).clamp(-0.002, 0.002) * 1000.0;
-        self.amp_env
-            .with_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
+            .set_attack_ms(self.settings.attack * 1000.0 + attack_drift_ms);
         self.amp_env.trigger();
     }
 

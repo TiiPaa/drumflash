@@ -17,7 +17,7 @@ cd "E:\Dev\Projets\Drum Flash\drum-pattern-vst"
 
 ## Documentation
 
-- **`AGENTS.md`** — Architecture détaillée, build/test, contraintes temps réel
+- **`CLAUDE.md`** — Référence canonique pour tous les agents IA : architecture, invariants, build/test, contraintes temps réel (`AGENTS.md` y redirige)
 - **`TODO.md`** — Tâches en cours et backlog
 - **`CHANGELOG.md`** — Historique des builds
 - **`ADDING_AN_INSTRUMENT.md`** — Procédure d'ajout d'une voix de synthèse

@@ -1,5 +1,356 @@
 # Changelog
 
+## 2026-08-07 — [159] Enveloppe d'ampli A-H-D bipolaire (retrait du Release) sur toutes les voix (build 20260807-170048)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-170048`
+**Validation:** `cargo test` 259+1+161 OK, `build.ps1 -Install` OK.
+
+- **L'enveloppe d'AMPLITUDE de toutes les voix passe d'un modèle decay+release à un A-H-D (Attack-Hold-Decay) sans release**, avec des **courbes bipolaires concave/convexe indépendantes sur l'attaque et le decay** (comme l'env de filtre du Buzz). Généralise le retour positif de l'utilisateur sur le Buzz.
+  - **Réécriture interne de `DecayReleaseEnvelope`** (`dsp.rs`) en A-H-D piloté par le temps, **signatures publiques conservées** → les 14 voix ne changent quasiment pas. `decay_curve` = courbe **decay** bipolaire ; `release_curve` **réutilisé** comme courbe **attack** bipolaire ; `set_release`/`release_time` = **no-op**. `shape_curve(e,c)` partagée : `c≥0 → e^(1+3c)` (convexe), `c<0 → 1-(1-e)^(1-3c)` (concave).
+  - **Anti-clic préservé** : `trigger()` rampe depuis la valeur courante (queue vivante) ; `trigger_hard()` repart de zéro (machine-gun/stutter). Tests anti-clic kick/perc1 verts.
+  - **Registry** : slider **Release retiré** de toutes les tables ; **« Release Curve » → « Attack Curve »** (−1..1) ; **« Decay Curve »** en −1..1. `morphable_fields` suit (plages dérivées des tables).
+  - **Graphe** (`draw_amp_envelope`) : A-H-D bipolaire (attaque + decay façonnées par `shape_curve`), plateau Hold, plus de segment/légende Release.
+  - **Buzz** : son ampli passe de `ExpDecayEnvelope` à `DecayReleaseEnvelope` (courbe de decay désormais bipolaire, cohérent avec le reste ; retrigger machine-gun conservé via `trigger_hard`).
+  - **Bugs corrigés au passage** : `open_hihat` recréait son env dans `set_settings` (reset d'état → clic au drag de slider) → remplacé par des setters ; `open_hihat`/`cymbal` jetaient le résultat de `with_attack_ms` (`Copy` no-op) → `set_attack_ms` ; drift d'attaque dupliqué du cymbal nettoyé.
+- **Persistance (dégradation gracieuse, sans migration)** : blobs positionnels inchangés → aucune casse. Les anciennes valeurs de courbe (0.1–20) relues sur −1..1 sont **clampées à +1** (max convexe ≈ decay exponentiel raide d'avant). Les défauts par voix ne sont pas retouchés → nouvelles instances = courbes max-convexes (sliders au max) ; à affiner par voix si besoin.
+
+## 2026-08-07 — [158] Export MIDI : fusions + stutters inclus (build 20260807-140101)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-140101`
+**Validation:** `cargo test` 259+161 OK, `build.ps1 -Install` OK.
+
+- **L'export/drag MIDI inclut désormais les notes des cellules fusionnées et des stutters** (avant : 1 note par step actif, fusions/stutters ignorés). Réplique la logique du séquenceur audio.
+  - **Fusion** : la cellule START d'un groupe émet `step_count` notes réparties uniformément sur toute la durée du span (`cell_span()` pas de 1/16, PPQ 480 → 120 ticks/step) ; les cellules couvertes n'émettent rien.
+  - **Stutter** : une cellule non fusionnée avec un p-lock séquenceur `stutter_count = N` émet N notes réparties sur un pas. Fusion et stutter ne se combinent jamais (comme l'audio).
+  - Durée de note-off raccourcie (`min(10, spacing-1)`) pour éviter le chevauchement des sous-notes rapprochées.
+- `export_pattern_to_midi[_data|_bytes]` + `export_midi_to_documents` prennent un `&SequencerPlockState` ; call sites Export/Drag passent `params.seq_plock_state.state`. Tests `midi_export_expands_stutter_into_multiple_notes` + `midi_export_expands_fusion_into_pulses`.
+
+## 2026-08-07 — [156] Bouton "Save" à gauche des patterns (build 20260807-123130)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-123130`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- Le keycap **Save** est déplacé **avant** la rangée de slots (`Patterns  [Save]  P1…P16  [Clr]  …Export/Drag`). Comportement inchangé (armer puis cliquer un slot).
+
+## 2026-08-07 — Pas de fausse alerte sur projet rouvert déjà sauvé dans un slot (build 20260807-121446)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-121446`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **Nuance** : projet sauvé avec le pattern courant stocké dans P3, quitté puis rouvert → `last_loaded = None` (association runtime perdue) mais la grille **correspond** à P3. Le test précédent (`None + non-vide = dirty`) déclenchait une **fausse alerte** au changement de slot alors que le pattern était bien sauvegardé.
+- **Correctif** : sur `None`, dirty **seulement si** la grille a du contenu **ET** ne correspond à **aucun** slot occupé (mêmes `step_masks` + longueur). Un projet rouvert dont le pattern était sauvé dans un Pn matche ce slot → non dirty → pas d'alerte.
+
+## 2026-08-07 — Warning "unsaved" aussi pour un projet chargé sans slot (build 20260807-115649)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-115649`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **Suite** : un projet rouvert avec un pattern de travail non associé à un slot a `last_loaded = None` (l'atomique `audio_last_loaded_slot` n'est pas persistée) ; `pattern_is_dirty` renvoyait `false` sur `None` → pas de warning au changement de slot.
+- **Correctif** : `None` + grille non-vide = dirty (travail non sauvé sans slot). Le warning « unsaved changes » s'affiche au changement de slot ; aucune étoile (aucun slot n'est marqué chargé). Grille vide → toujours pas dirty.
+
+## 2026-08-07 — Fix régression : warning "unsaved" restauré pour un nouveau pattern (build 20260807-114735)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-114735`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **Régression du fix [153]** : avant, se positionner sur un slot vide laissait (par bug) `last_loaded` sur le slot occupé précédent → un pattern construit de zéro était comparé à ce slot → jugé dirty → warning au changement. Le fix [153] a corrigé `last_loaded` (pointe bien le slot vide), mais `pattern_is_dirty` retournait `false` dès que le slot n'était pas occupé → **plus aucun warning** pour un nouveau pattern non sauvé.
+- **Correctif** : `pattern_is_dirty` considère désormais un slot **vide avec une grille non-vide** comme dirty (travail non sauvé) → le warning « unsaved changes » réapparaît proprement au changement de slot, et une étoile marque le slot vide en cours de construction. Grille vide → toujours pas dirty (donc [153] préservé : après save + sélection d'un slot vide, la grille est vidée → aucune étoile fantôme).
+
+## 2026-08-07 — [157] Buzz : max Gate Rate 150 → 500 Hz (build 20260807-111951)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-111951`
+**Validation:** `build.ps1 -Install` OK.
+
+- **Gate Rate max relevé de 150 à 500 Hz** (`GATE_RATE_MAX` + max du slider registry) — buzz plus aigus, jusqu'à un caractère AM/tonal. Le clamp audio reste aligné sur la constante.
+
+## 2026-08-07 — [154] Hold visible dans le graphe d'enveloppe (build 20260807-111016)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-111016`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **Bug** : `draw_amp_envelope` recevait `hold` mais le repliait dans `decay_time` — aucun palier de maintien n'était dessiné, donc les instruments avec un Hold (Snare, etc.) ne le voyaient pas dans le graphe.
+- **Correctif** : tracé A-H-D explicite — rampe d'attaque ↗, **palier plat au sommet pendant le Hold** (couleur teal dédiée), puis decay ↘. Le Hold compte dans l'échelle temporelle (`total = attack + hold + decay [+ release]`). Légende « H » ajoutée quand un Hold est réglé.
+
+## 2026-08-07 — [153] Fix étoile "non sauvegardé" fantôme (build 20260807-105334)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-105334`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **Bug** : sauver un pattern puis sélectionner un slot **vide** faisait réapparaître le pattern sauvé avec une étoile (dirty) alors qu'il n'avait pas été modifié.
+- **Cause** : l'UI resynchronise `state.last_loaded_slot` **depuis** `audio_last_loaded_slot` à chaque frame (ui.rs). Se positionner sur un slot vide est une action **UI-only** (pas de requête de load) qui vidait la grille + posait `last_loaded_slot` localement, mais **sans** publier le slot vers l'audio → au frame suivant la sync ramenait le slot sauvé, et la grille étant vidée ≠ pattern sauvé → `is_dirty` vrai → étoile fantôme.
+- **Correctif** : le positionnement sur slot vide publie maintenant `audio_last_loaded_slot = i` (l'atomique n'est qu'un hint lu par l'UI — l'audio ne l'écrit que sur save/load, jamais ne le lit pour sa logique). La sync est cohérente → plus d'étoile fantôme.
+
+## 2026-08-07 — Buzz : retrigger machine-gun de l'enveloppe d'ampli (build 20260807-093254)
+
+**Branche:** `skeuo-vector` · **Build:** `20260807-093254`
+**Validation:** `cargo test` buzz OK, `build.ps1 -Install` OK.
+
+- **Fix « sur cellules consécutives, l'env de volume n'est plus prise en compte »** : le retrigger de l'ampli utilisait `trigger_at_peak` (rampe depuis la valeur courante, anti-clic), donc une queue en cours « absorbait » la nouvelle enveloppe → l'A-H-D de volume ne se ré-articulait pas pleinement par cellule.
+- **Correctif** : ampli passé en **retrigger machine-gun** (`trigger_from_zero`) dans `trigger()` et `trigger_hard()` → chaque cellule redémarre **toute** l'enveloppe A-H-D de volume depuis zéro (comportement standard des boîtes à rythme). Déviation volontaire de la convention anti-clic (la rampe d'attaque ≥0.3 ms adoucit le redémarrage).
+
+## 2026-08-06 — Buzz : le gate se resynchronise à chaque hit (build 20260806-203401)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-203401`
+**Validation:** `cargo test` buzz OK, `build.ps1 -Install` OK.
+
+- **Fix « l'attaque de volume n'est pas triggée à chaque cellule »** : l'enveloppe d'ampli se ré-attaquait bien (vérifié en test : queue 0.10 → 1.52 après re-trigger), mais le **gate** ne réinitialisait sa phase qu'au cold-start (anti-clic osc). Sur des hits qui se chevauchent, chaque cellule attrapait donc le gate free-run à une phase aléatoire → pas d'attaque de volume gatée cohérente par cellule.
+- **Correctif** : `gate_phase` remis à 0 + `gate_env` ré-articulé à **chaque** trigger (chaque cellule démarre sur un pic de gate = burst d'amplitude identique et net). La phase de l'oscillateur tonal reste réinitialisée **au cold-start uniquement** (anti-clic de la partie tonale).
+
+## 2026-08-06 — Buzz : courbes filtre attack/decay dissociées (build 20260806-201745)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-201745`
+**Validation:** `cargo test` 257+161 OK, `build.ps1 -Install` OK.
+
+- **Filter Atk Curve + Filter Dec Curve** (au lieu d'un unique « Filter Curve ») : la montée et la descente de l'enveloppe de filtre se façonnent indépendamment, chacune bipolaire -1..+1.
+- **Enveloppe de filtre passée en AHD manuelle** (compteur de temps depuis le trigger) au lieu d'un `ExpDecayEnvelope` — nécessaire pour connaître la phase (attack vs decay) et appliquer la bonne courbe. Bases **linéaires** façonnées par `shape_curve` bipolaire (0 = linéaire, +1 = convexe, -1 = concave). Défaut Dec Curve = 0.6 (garde le punch), Atk Curve = 0.
+- Specials : `buzz_filter_curve` (index 15) renommé « Filter Dec Curve » ; nouveau `buzz_filter_atk_curve` (index 16). Graphe `draw_buzz_filter_envelope` mis à jour pour les deux courbes.
+
+## 2026-08-06 — Buzz : graphe de l'enveloppe de filtre reflète l'AHD réelle (build 20260806-200700)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-200700`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK (changement UI pur).
+
+- **Fix graphe filtre statique** : `draw_filter_envelope` ne dessinait qu'une décroissance exponentielle simple (curve = decay_curve de l'ampli, car `filter_env_curve()` = None pour Buzz), ignorant Filter Attack / Hold / Filter Curve / amount. Nouveau tracé dédié **`draw_buzz_filter_envelope`** qui reproduit exactement le DSP : rampe d'attaque → hold → decay (raideur interne 4.0) avec la **courbe bipolaire** appliquée, et le cutoff balayé **exponentiellement** (base → base·(20000/base)^(env·amount) → base), axe Y en Hz log + ligne du cutoff au repos. Le graphe réagit désormais à Filter Attack, Hold, Decay, Curve et Filter Env.
+
+## 2026-08-06 — Buzz : Filter Curve bipolaire (concave ↔ convexe) (build 20260806-172100)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-172100`
+**Validation:** `cargo test` 257+161 OK, `build.ps1 -Install` OK.
+
+- **Nouveau contrôle « Filter Curve »** (special index 15, famille Filter, bipolaire **-1 → +1**, défaut 0). Façonne le contour du decay de l'enveloppe de filtre : **-1 = concave** (le filtre tient puis chute vite), **0 = naturel** (exp), **+1 = convexe** (chute rapide puis lente = snappy). Implémenté par une transformation puissance bipolaire de la sortie de l'env (`e^(1+3c)` côté +, `1-(1-e)^(1-3c)` côté -), l'`ExpDecayEnvelope` ne faisant que de la raideur convexe.
+
+## 2026-08-06 — Buzz : env filtre exponentielle + vrai sélecteur LP/HP/BP (build 20260806-171049)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-171049`
+**Validation:** `cargo test` 257+161 OK, `build.ps1 -Install` OK.
+
+Retours utilisateur :
+- **Env de filtre repensée (percussive)** : le mapping additif (`base + env·amount·12 kHz`) était peu intuitif et, avec Filter Attack à 2 ms, le filtre s'ouvrait *après* le transitoire. Désormais **balayage exponentiel** `cutoff = base·(20000/base)^(env·amount)` (0 = base, 1 = base→20 kHz→base) + **Filter Attack défaut = 0** (instantané). À amount plein + Filter au minimum → filtre percussif franc (20 Hz→20 kHz→20 Hz). Défauts revus : base 1200 Hz, amount 0.6, decay 0.12 s.
+- **Vrai sélecteur Filter Type** : le special `buzz_filter_type` s'affichait en slider (le dropdown n'avait pas été câblé) → branche dropdown **LP / HP / BP** ajoutée dans `sound_editor`.
+- **« (LP) » retiré** à côté du slider Filter : `filter_type_label` de Buzz vidé, et le label n'ajoute plus le suffixe quand il est vide (le type est maintenant piloté par le dropdown).
+
+## 2026-08-06 — Buzz : ampli AHD (sans release) + enveloppe AHD de filtre + type LP/HP/BP (build 20260806-170024)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-170024`
+**Validation:** `cargo test` 257+161 OK, `build.ps1 -Install` OK.
+
+- **Ampli en AHD** : l'enveloppe d'ampli passe de decay+release à **Attack-Hold-Decay pure** (`ExpDecayEnvelope`) — le **Release est retiré**. Nouvelle table de params standard `BUZZ_STD` (sans Release / Release Curve).
+- **Enveloppe AHD de filtre** : le cutoff est balayé par sa propre enveloppe A-H-D. Contrôles : **Filter Env** (amount) + **Filter Decay** (standard, section Filter) ; **Filter Attack** + **Filter Hold** (specials index 12/13, famille Filter). Modulation additive `cutoff = base + env·amount·12 kHz`.
+- **Type de filtre** : nouveau dropdown **Filter Type** (special index 14) → **LP / HP / BP**. Le filtre de base passe d'un one-pole 6 dB à un **Biquad 2 pôles** ; ajout de `Biquad::set_lowpass` / `set_highpass` (RBJ) à `dsp.rs` (Q 0.9 LP/HP, 2.5 BP). Recalcul des coefficients par sample (négligeable pour une voix).
+- Défauts : Filter Env amount 0.4, Filter Decay 0.15 s, Filter Attack 2 ms (l'effet est audible d'emblée).
+- Tests ajoutés : `filter_type_changes_the_output` ; garde `output_stays_finite_and_stops` OK avec l'ampli sans release.
+
+## 2026-08-06 — Buzz : waveform Sine/Square/Saw + fixes gate/sweep/volume (build 20260806-164108)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-164108`
+**Validation:** `cargo test` 256+160 OK, `build.ps1 -Install` OK.
+
+Retours utilisateur sur la voix Buzz :
+- **Waveform Sine/Square/Saw** : oscillateur tonal passé à un accumulateur de phase manuel + sélecteur `Wave` (dropdown, special index 11, famille Osc). Square/Saw = plus riche/buzzant (aliasing naïf assumé pour le grain lo-fi).
+- **Smooth vs Razor désormais audibles** : le modèle « fraction de période » rendait les deux identiques (l'enveloppe retombait à ~0 chaque cycle). Redéfinis : **Smooth = trémolo cosinus** (montée/descente douce, Shape resserre le pulse) ; **Razor = spike exponentiel** re-déclenché de zéro chaque cycle (chop franc). Test `smooth_and_razor_differ`.
+- **Pitch Sweep audible** : le sweep n'était re-déclenché qu'au *cold-start* → inaudible quand les queues se chevauchent en lecture. Désormais **re-déclenché à chaque trigger** (comme Perc1), profondeur portée à ~2 octaves, absorbé par le smoother de fréquence (anti-clic).
+- **Volume** : défaut monté de 0.6 → **1.3** (le gate abaisse le niveau perçu).
+- Tests ajoutés : `smooth_and_razor_differ`, `waveform_changes_the_source`.
+
+## 2026-08-06 — Nouvel instrument « Buzz » : percussion tonale + gate rapide (build 20260806-161402)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-161402`
+**Validation:** `cargo test` 254+158 OK, `build.ps1 -Install` OK. Issu de l'investigation [93].
+
+- **Nouvelle voix de synthèse « Buzz »** (15e kind, index voix 16, note MIDI 44) : percussion **tonale** (oscillateur sinus pitché + Pitch Sweep percussif) + **couche de bruit réglable** (montant + couleur White/Pink/Brown/Blue), le tout haché par un **gate/retrigger d'enveloppe rapide** — l'effet observé en [93] rendu délibéré et contrôlable.
+- **Module gate** : un phasor à taux réglable (`Gate Rate` 1–150 Hz) ré-articule une `ExpDecayEnvelope` **courte** qui multiplie l'amplitude (reproduit l'« effondrement d'enveloppe »). `Gate Depth` = dry/wet, `Gate Shape` = durée/courbe du decay relatif à la période, `algo` Smooth (ramp) / Razor (from-zero). Chemin : source → gate → LP → amp env → saturation → DC → volume ; stéréo à phase de gate partagée.
+- **Anti-clic** respecté : phase osc/gate reset au cold-start uniquement, enveloppes via setters (jamais recréées) dans `set_settings`, Freq/cutoff/depth lissés (`OnePoleSmoother`), `DcBlocker` en sortie, taux plafonné 150 Hz.
+- **Contrôles data-driven** (registry) : Gate Rate/Depth/Shape (Env), Noise/Noise Type/Pitch Sweep (Osc), pack Saturation. `FULL_STD` en params standard, `filter_type_label "LP"`.
+- Fichiers : `synthesis/buzz.rs` + `synthesis/settings/buzz.rs` (nouveaux) ; `DrumVoice::Buzz`, `TrackInstrumentKind::Buzz`, `TrackLayoutState::from_kinds`-compatible, `BUZZ_ALGOS`, entrée registry index 16, remap generator (emprunte le rôle Perc1), dropdown Type. **Aucune édition de `lib.rs`** (archi par slot).
+- **Tests** : `buzz_settings_roundtrip`, `produces_sound_on_trigger`, `output_stays_finite_and_stops`, `gate_depth_modulates_the_output`.
+
+## 2026-08-06 — Generator : anchors intouchables (fix four-on-the-floor) (build 20260806-124254)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-124254`
+**Validation:** `cargo test` 250+154 OK, `build.ps1 -Install` OK.
+
+- **Fix « House/House n'a pas de rythme house »** : le kick était bien en anchors `[0,4,8,12]`, mais la règle de cohérence kick/snare de `generate_from_template` **retirait le kick** partout où le snare tombait aussi (temps 2 & 4) → il ne restait que 0 & 8. Les frappes fondatrices (anchors) étaient détruites.
+- **Correctif** : les **anchors sont désormais sacrées**. `generate_from_template` traque un `is_anchor[inst][step]` ; les 3 règles de cohérence (kick/snare stacking, closed/open hat, suppression densité) ne touchent plus que les frappes **candidates** (probabilistes), jamais les anchors. Si kick ET snare sont anchors sur le même step (four-on-the-floor sous le backbeat) → les deux sont conservés.
+- Bénéficie à **tous** les styles four-on-the-floor (House, Disco, Techno) et rend chaque template fidèle à sa définition ; strictement plus conservateur (ne peut qu'ajouter des frappes voulues, jamais en retirer).
+- **Test** : `four_on_the_floor_kick_survives_backbeat_overlap` (House → kick présent sur 0/4/8/12).
+
+## 2026-08-06 — Presets de style : kit de lanes adéquat + grooves authentiques (build 20260806-102824)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-102824`
+**Validation:** `cargo test` 249+154 OK, `build.ps1 -Install` OK.
+
+- **Les 6 chips de preset (House/Dub/DnB/Bossa/Afro/Break) installent désormais un KIT de lanes adéquat** en plus de charger le groove — avant, les grooves plaquaient sur les 4 lanes par défaut et « ne ressemblaient pas ». Action **destructive** (remplace lanes + sons + grille), via `PersistentField::set(track_layout)` + `reset_slot_to_defaults` par lane (même chemin que le changement de Type d'un slot ; l'audio réinitialise les voix).
+- **Kits + grooves authentiques** (par genre) :
+  - **House** : Kick · Clap · HiHat · OpenHat · Perc — 4-on-floor, clap 2&4, open-hat contretemps, perc syncopée.
+  - **Dub** : Kick · Snare(rim) · HiHat · 808 · Perc — one-drop (temps 3), 808 sub sur 1&3, skank offbeat.
+  - **DnB** : Kick · Snare · HiHat · Snare606 · 808 — two-step, ghost snares 606, sub qui suit le kick.
+  - **Bossa** : Kick · Snare(cross-stick) · Ride · HiHat · Perc — surdo, clave 3-2, ride comping, pedal hat 2&4, shaker.
+  - **Afro** : Kick · Snare(rim) · HiHat · Ride(bell) · Tom(conga) · Perc — kick syncopé, cloche, congas, shaker.
+  - **Break** : Kick · Snare · HiHat · Snare606 · Ride — kick cassé, hats 16èmes funky, ghost snares.
+- Nouveau `TrackLayoutState::from_kinds(&[kinds])` (active slots 0..n, choke 1 sur HH/OH) ; grooves `pattern.rs` réécrits pour l'ordre de lane de chaque kit ; test `new_style_presets_are_well_formed` mis à jour (hits ≥ 8, lanes dans la taille du kit).
+- Rock/Funk/Disco/⟳ Random inchangés (grille seule).
+
+## 2026-08-06 — Presets fixes pour les 6 nouveaux styles (build 20260806-091408)
+
+**Branche:** `skeuo-vector` · **Build:** `20260806-091408`
+**Validation:** `cargo test` 249+154 OK, `build.ps1 -Install` OK.
+
+- **6 chips de preset fixe** ajoutés à la rangée **« Presets »** du bottom panel (à côté de Rock / Funk / Disco) : **Bossa, House, DnB, Afro, Dub, Break**. Comme les presets existants, ce sont des grooves **déterministes** (toujours identiques, contrairement à GENERATE qui tire un seed aléatoire).
+- Nouveaux constructeurs `Pattern::{bossa,house,dnb,afrobeat,dub,breakbeat}_pattern()` dans `sequencer/pattern.rs` : grooves signature répétés par bar, n'utilisant que les **4 lanes cœur** (0 Kick, 1 Snare, 2 HiHat, 3 Open HH) — comme Rock/Funk/Disco — pour sonner sur le layout par défaut sans dépendre des slots aux.
+  - House = four-on-the-floor + open-hat offbeat · DnB = kick two-step + snare 2&4 + ghosts · Dub = one-drop (beat 3) + skank offbeat · Bossa = surdo + cross-stick clave · Afrobeat = kick syncopé + hats busy · Breakbeat = kick cassé + hats funky.
+- **Test** : `new_style_presets_are_well_formed` (kick + hats présents, uniquement lanes 0-3).
+
+## 2026-08-05 — [148] Generator : +6 styles (16 au total) (build 20260805-175817)
+
+**Branche:** `skeuo-vector` · **Build:** `20260805-175817`
+**Validation:** `cargo test` 248+153 OK, `build.ps1 -Install` OK.
+
+- **6 nouveaux styles** ajoutés à la palette du Generator (dropdowns Style A / B) → **16 styles** au total : **Bossa Nova, House, Drum'n'Bass, Afrobeat, Dub, Breakbeat** (en plus de Rock, Funk, Techno, Hip-Hop, Jazz, Metal, Latin, Disco, Trap, Reggae).
+- Chaque style = un `MusicalTemplate` (rôles rythmiques des 14 instruments : anchors / candidates / prob / exclusions + plage BPM), écrit d'après le rythme caractéristique du genre : four-on-the-floor + open-hat offbeat (House), one-drop + gros sub (Dub), amen/ghost-snares (DnB, Breakbeat), clave 3-2 cross-stick (Bossa), tresillo + bell + percussions (Afrobeat).
+- **Zéro édition UI** : les dropdowns sont pilotés par `Style::variants()`, ajouter un variant suffit.
+- **Persistance** : nouveaux variants ajoutés à la fin de l'enum → indices 0-9 (styles existants) inchangés, les vieilles sessions rechargent leur style correctement.
+- **Tests** : `every_style_template_is_well_formed` (garde : steps dans la page 0-15, prob ∈ [0,1], BPM sain, sur les 16 styles) ; les 6 nouveaux ajoutés à `hihat_roles_are_style_specific`.
+
+## 2026-08-04 — Fix cellule fantôme après un tap rapide (step-drag) (build 20260804-224719)
+
+**Branche:** `skeuo-vector` · **Build:** `20260804-224719`
+**Validation:** `cargo check` OK, `build.ps1 -Install` OK.
+
+- **Bug** : après un clic bref sur une cellule active, une cellule « fantôme » avec marqueur jaune apparaissait parfois et suivait la souris.
+- **Cause** : le déplacement de cellule est un *long-press* (~0,5 s). Le traitement du **relâchement** (`any_released`) était imbriqué dans `if drag.active` — donc un appui **relâché avant le seuil de 0,5 s** ne nettoyait jamais `state.step_drag`. Le compteur de temps continuait aux frames suivants et le drag « s'activait » ~0,5 s **après** le relâchement (bouton déjà relevé) → cellule fantôme qui suit le curseur jusqu'au prochain clic.
+- **Fix** : le test de relâchement est sorti de `if drag.active`. Un relâchement termine **toujours** le geste : s'il n'a jamais franchi le seuil (tap rapide) il annule proprement le drag en attente et retombe sur un clic/toggle normal ; s'il était actif il applique le déplacement comme avant.
+
+## 2026-08-04 — Samplers 606 : Attack en millisecondes absolues (build 20260804-174450)
+
+**Branche:** `skeuo-vector` · **Build:** `20260804-174450`
+**Validation:** `cargo test` 247+153 OK, `build.ps1 -Install` OK.
+
+- **Fix Attack inutilisable sur les samples courts** (signalé sur CH6smp) : l'Attack des samplers 606 était une **fraction de la durée du sample** (`attack × played_secs`). Sur un charleston fermé (transitoire ~3,5 ms), même une petite fraction montait pendant que le sample était déjà éteint → au lieu d'un fondu d'attaque musical, ça **écrasait/effaçait** le son (fraction 0,1 → 50 ms → pic ÷5 ; 0,5 → 250 ms → quasi silence).
+- **Nouveau modèle** : Attack = temps de montée **ABSOLU**, `attack × MAX_AMP_ATTACK_SECS` (**80 ms** plein-échelle), indépendant de la longueur du sample. Défaut 0,001 → ~0,08 ms (plein transitoire, inchangé). Appliqué aux **3 samplers** (BD6smp/SD6smp/CH6smp) pour rester cohérent.
+- **Non touché** : le **Decay** et le **Filter Decay** restent des fractions de la durée jouée (ils suivent le sample, ce qui a du sens ; seule l'attaque posait problème).
+- ⚠️ **Compat sessions** : les valeurs Attack **non par défaut** sauvegardées sur BD6smp/SD6smp sont réinterprétées (0–1 → 0–80 ms au lieu de 0–durée). Voix ajoutées le 2026-08-02, impact minime.
+- **Tests** : `amp_decay_tracks_length_attack_is_absolute` (×3) — prouve que le decay suit le pitch/longueur mais que l'attack reste absolu.
+
+## 2026-08-04 — CH6smp : sampler Closed Hi-hat TR-606 (build 20260804-170126)
+
+**Branche:** `skeuo-vector` · **Build:** `20260804-170126`
+**Validation:** `cargo test` 153 OK (dont `ch606::output_stays_finite_and_stops`), `build.ps1 -Install` OK.
+
+- **Nouvelle voix `CH6smp`** (14e slot) : sampler à pitch relatif calqué sur `bd606`/`sd606`, alimenté par `wav/CH.wav` (copié en `assets/ch606.wav`, embarqué via `include_bytes!`).
+  - Enum : `DrumVoice::Ch606` (index 15, `COUNT = 16`) + `TrackInstrumentKind::Ch6smp` (index 13, `COUNT = 14`).
+  - **Note MIDI 42** (Closed Hi-hat GM), label `c6`, rôle générateur = **HiHat**.
+  - Registre : 16e `InstrumentDef` (`SMP606_STD` + specials `ch606_*`, `algo_count = 1`, `filter_type_label "LP"`, root legacy 8000 Hz).
+  - Banque d'échantillons : `sample_bank::ch606()` (`OnceLock`, 8 hits), pré-chauffée au `new()` du synthé ; graine RNG distincte (`0x6060_0003`).
+  - UI (`sound_editor`) : la voix apparaît dans le dropdown Type, hérite du graphe waveform + End/Start/pitch des voix smp (sites `13|14` → `13|14|15`, sélection de banque 3-way).
+  - `reset_specials_for_voice` : marqueur pitch (`special[10] = 1.0`) posé pour la voix 15 comme pour 13/14.
+- **Tests** : `synthesis::ch606::tests::output_stays_finite_and_stops`.
+
+## 2026-08-04 — [151] Linker 2 lanes adjacentes (layering) (build 20260804-121207)
+
+**Branche:** `skeuo-vector` · **Build:** `20260804-121207` (fixes) · initial `20260804-105255`
+**Validation:** `cargo test` 377 OK, `build.ps1 -Install` OK. **Validé en S1** (fonctionne).
+
+**Fixes 121207 :**
+- **Indicateur de lien** refait : la ligne+point qui dépassait de la poignée (effet « bug GUI ») remplacée par une **bande d'accent bleue 2px** propre sur le bord gauche de la lane.
+- **Rafraîchissement après suppression de fusion** : l'éditeur est réactif (pas de repaint continu à l'arrêt) → supprimer une fusion (bouton « Del ») laissait la cellule affichée fusionnée. Ajout de `mark_pattern_dirty()` + `ctx().request_repaint()` sur le « Del » et sur les éditions de grille (toggle step/fusion).
+
+- **Layering** : une lane peut « linker » celle **juste au-dessus** → elle partage ses **steps + fusions** (même rythme) tout en gardant **son propre son, plocks, algo, routing, note MIDI, mute/solo, Hum/Push/Len**.
+- **Modèle** : nouveau champ `TrackSlot.linked_up` (`#[serde(default)]` → migration transparente) + `AtomicTrackLayout.slot_linked` (lu par l'audio). Helper central **`grid_slot(slot)`** qui remonte la chaîne de liens jusqu'au maître actif (C→B→A) ; le lien se **rompt** si le maître devient inactif. Adjacence garantie (« lien vers le haut »).
+- **Audio** (`sequencer`) : nouveau `set_grid_slots` (calculé/bloc depuis le layout atomique) ; les lectures de step + fusion passent par `grid_slots[slot]` (mute/timing restent par lane).
+- **UI** (`grid.rs`) : la lane linkée **affiche et édite** les steps/fusions du maître (édition bidirectionnelle) ; menu clic-droit **« Link steps to lane above » / « Unlink steps »** ; indicateur visuel (barre + point bleu dans la poignée).
+- **Tests** : `grid_slot_resolves_link_chain_to_active_master`, `linked_up_defaults_false_and_survives_layout_roundtrip`.
+- ⚠️ **Limites v1** : le **morph** des fusions reste appliqué au maître (la lane linkée joue le rythme fusionné avec son propre son statique) ; le reorder de lane ne réajuste pas les liens.
+
+## 2026-08-02 — [83] Pitch Fine sous Pitch + fix fusion : actions restaurées en mode Sequencer P-Lock (build 20260802-212008)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-212008`
+**Validation:** `cargo test` 377 OK, `build.ps1 -Install` OK.
+
+- **Pitch Fine déplacé directement sous le slider Pitch** dans la section OSC des voix smp (était après Sample/Start) ; retiré de la boucle des special params pour ces voix.
+- **Fix régression fusions (depuis [145])** : en mode **Sequencer P-Lock**, le clic droit sur une cellule fusionnée n'affichait que le menu seq (solo/proba/stutter/…) — **Morphing / Edit Fusion Steps / Delete Fusion étaient devenus inaccessibles** (ils n'existaient plus qu'en mode Sound). Le bloc fusion est extrait en helper `draw_fusion_group_menu` et affiché **au-dessus du menu seq** dans les deux modes ; le sous-menu Morph y est aussi accessible (`popup.morph_menu` honoré en mode Sequencer).
+- **Test d'intégration** : `bd606_fine_tune_changes_playback_rate_through_synthesizer` (prouve que Pitch Fine agit sur la vitesse de lecture via DrumSynthesizer — l'effet s'entend au **prochain trigger**, pas sur le hit en cours).
+
+## 2026-08-02 — [83] Fix pitch smp : snapping par pas de 1 DANS le widget slider (build 20260802-204021)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-204021`
+**Validation:** `cargo test` 375 OK, `build.ps1 -Install` OK.
+
+- Le snapping par pas de 1 semitone de la build précédente était appliqué **après** le dessin du slider → pendant le drag, l'affichage restait fractionnaire et le pas de 1 était invisible. Le pas est maintenant géré **dans le widget track** (`TrackStyle.step` + `with_step`, utilisé via `draw_editor_slider_row_full`) : la valeur ET l'affichage snappent à l'entier en temps réel pendant le drag. Comportement continu inchangé pour tous les autres sliders (`step = 0.0`).
+- Rappel : **Pitch Fine** (±100 = ±1 semitone) et **End** sont dans la section OSC du Sound Panel (sous Sample/Start), déjà présents depuis la build `20260802-202744`.
+
+## 2026-08-02 — [83] Lanes smp : pitch par pas de 1, param End, graphes waveform croppés (build 20260802-202744)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-202744`
+**Validation:** `cargo test` 375 OK, `build.ps1 -Install` OK.
+
+- **Pitch par pas de 1 semitone** : le slider Pitch des voix smp snappe à l'entier (le special **Pitch Fine** couvre les cents, ±100 = ±1 semitone ; label renommé pour clarifier qu'il s'applique au pitch).
+- **Nouveau paramètre End** (`special[11]`, fraction 0..1, défaut 1.0) : la lecture du sample s'arrête à End, symétrique de Start. Les anciennes sessions (blob sans End, `special[11] = 0`) jouent le sample entier — garde-fou legacy côté voix via le marqueur pitch + seeding à 1.0 lors de la migration UI.
+- **Graphes waveform rework** (`ui/envelope_viz.rs`) : la waveform est **croppée sur [Start, End]** (les parties offsetées ne sont plus dessinées du tout), barres plus larges et plus lumineuses (64 colonnes, stroke 2). Les courbes amp/filtre sont mappées sur l'axe de la région jouée.
+- **Fix courbe env filter tronquée** : après le sweep, la courbe est **tenue au cutoff** jusqu'au bord droit — la fin de la courbe reste visible (elle s'arrêtait net en plein graphe). Idem amp : la courbe atterrit visiblement sur la baseline.
+- **Tests** : `end_truncates_playback` (×2 voix), `legacy_settings_without_end_play_the_full_sample`, roundtrips settings couvrant le nouveau champ.
+
+## 2026-08-02 — [83] Lanes smp : pitch relatif ±24 + fine, graphes waveform, env 100 % relatives (build 20260802-200054)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-200054`
+**Validation:** `cargo test` 369 OK, `build.ps1 -Install` OK.
+
+- **Pitch relatif** sur BD6smp/SD6smp : le slider devient **-24/+24 semitones** (0 = pitch natif) + nouveau special **Fine** (-100/+100 cents, `special[9]`). Le mode Hz/Notes est retiré pour ces voix (listes `is_bass_drum` revenues à Kick/B8).
+- **Env amp entièrement relative** : **Release et Release Curve retirés** des tables smp ; **Attack** et **Decay** sont désormais des fractions 0..1 de la **durée jouée** (longueur du sample ÷ pitch, recalculées à chaque trigger), comme Filter Decay déjà.
+- **Graphes waveform** (`ui/envelope_viz.rs`) : les sections Envelope et Filter des lanes smp affichent la **waveform du sample sélectionné** (normalisée) avec la zone **Start** grisée + ligne amber, et la courbe superposée — env amp bleue (ligne pleine en One Shot), sweep filtre orange + ligne de cutoff. Les autres voix gardent les graphes ADSR/classiques.
+- **Migration du pitch Hz → semitones** (sessions des builds d'hier) : marqueur `special[10]` (1 = format relatif, 0 = legacy Hz, caché dans les 32 specials sans changer le blob `sound-settings-v2`). La voix **comprend** l'ancien format (ratio = freq/60 Hz BD, /200 Hz SD) → le son reste correct même sans ouvrir l'UI ; l'ouverture du Sound Panel **commit** la conversion en semitones. Nouvelles lanes et resets seedés à 1.
+- **Reset sliders smp** : le double-clic revient aux defaults du registry (`0.0` semitone) et plus au `60 Hz` générique.
+- **Tests** : `fine_tune_adds_cents_to_relative_pitch`, `amp_times_track_the_played_sample_length` (×2 voix), `legacy_hz_pitch_keeps_native_rate` (×2), `multisample_defaults_mark_relative_pitch_format`, test `default_frequency_is_nonzero` devenu data-driven (exempte les pitch relatifs à range négative).
+
+## 2026-08-02 — [83] Nouvel instrument SD6smp : SD 606 multisamplée ×8 (build 20260802-165023)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-165023`
+**Validation:** `cargo test` 358 OK, `build.ps1 -Install` OK.
+
+- **2ᵉ instrument multisample** : `TrackInstrumentKind::Sd6smp` (label grille `s6`). 8 coups de la SD d'une TR-606 embarqués (`assets/sd606.wav`, float32 mono 44,1 kHz, 4 s = 8 × 0,5 s). Même moteur de lecture que BD6smp : Analog Mode (random sans répétition / sample fixe 1-8), Pitch (200 Hz = natif, plage 50-1000), env amp, env filtre relative à la durée jouée, One Shot, Start relatif, pack saturation.
+- **Sample bank généralisée** (`sample_bank.rs`) : `bd606()` / `sd606()` (deux `OnceLock`), décodeur partagé `load_bank(bytes)` — ajouter un prochain instrument = 1 WAV + 1 accesseur.
+- **Enregistrement** : `DrumVoice::Sd606 = 14` (COUNT 15), `DrumVoiceKind::Sd606` (9 matchs + `create_voice_for_kind`), `TrackInstrumentKind::Sd6smp = 12` (COUNT 13, fin d'enum), registry `INSTRUMENTS[14]` (note MIDI 40). Persistance `sound-settings-v2` inchangée.
+- **Générateur** : la lane SD6smp emprunte le rôle Snare.
+- **UI** : les rendus spéciaux multisample (switch Analog Mode / One Shot, liste Sample grisée quand Analog ON) sont généralisés par suffixe de nom (`_analog_mode`, `_one_shot`, `_sample`) → automatiques pour les prochains instruments 606.
+- **Tests** : décodage bank SD (8 hits de 22050 samples), roundtrip settings, voix (son, finie, silence final), sample fixe bit-identique, random sans répétition (×64), Start relatif, Filter Decay relatif (0,25 s natif / 0,125 s à l'octave), registry mono.
+
+## 2026-08-02 — [83] BD6smp : Sample grisé (pas masqué), Start & Filter Decay relatifs au sample (build 20260802-163241)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-163241`
+**Validation:** `cargo test` 342 OK, `build.ps1 -Install` OK.
+
+- **Sample grisé au lieu de masqué** quand Analog Mode est ON (`add_enabled_ui(false)`) → le bas du Sound Panel ne se décale plus au toggle.
+- **Start relatif à la longueur du sample** : le paramètre devient une fraction 0..1 du coup sélectionné (était 0-0,5 s absolus) — 0,5 = démarrage au milieu du sample, quel que soit le pitch.
+- **Filter Decay relatif à la longueur du sample** : le paramètre devient une fraction 0,01..1 de la **durée jouée** (longueur du sample ÷ pitch, recalculée à chaque trigger) — le balayage filtre suit le hit à tout pitch. Défaut 0,15.
+- **Tests** : `start_offset_is_a_fraction_of_the_sample_length` (lecture démarre bien au milieu du hit), `filter_decay_tracks_the_played_sample_length` (0,5 × 1 s à pitch natif, 0,25 s à l'octave).
+
+## 2026-08-02 — [83] BD6smp : Analog Mode en switch + liste Sample conditionnelle (build 20260802-161718)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-161718`
+**Validation:** `cargo test` 338 OK, `build.ps1 -Install` OK.
+
+- **Analog Mode** et **One Shot** rendus comme des **switches** (étaient des sliders 0-1) dans le Sound Panel.
+- **Sample** rendu comme une **liste 1-8** (était un slider) et **masqué tant qu'Analog Mode est ON** — il n'a de sens qu'en mode sample fixe. La valeur reste persistée quand la liste est cachée.
+
+## 2026-08-02 — [83] Nouvel instrument BD6smp : BD 606 multisamplée ×8 (build 20260802-160117)
+
+**Branche:** `skeuo-vector` · **Build:** `20260802-160117`
+**Validation:** `cargo test` 338 OK, `build.ps1 -Install` OK.
+
+- **Premier instrument à base de multisample** : `TrackInstrumentKind::Bd6smp` (label grille `B6`). 8 coups de la BD d'une TR-606 embarqués (`assets/bd606.wav`, float32 mono 44,1 kHz, 8 s = 8 × 1 s) pour reproduire la variabilité analogique hit-to-hit.
+- **Sample bank** (`synthesis/sample_bank.rs`) : WAV embarqué via `include_bytes!`, décodé une fois dans un `OnceLock` global (pré-chauffé dans `initialize_with_layout`, zéro alloc sur le thread audio), split égal 8 × 44 100 samples. **Pas de resampling au chargement** : la lecture à position fractionnaire (interpolation linéaire) absorbe le ratio source/session.
+- **Paramètres** (Sound Panel, data-driven) :
+  - **Analog Mode** (special, défaut ON) : ON = tirage aléatoire **sans répétition immédiate** parmi les 8 coups (RNG xorshift seedé à la construction, jamais reseedé au trigger) ; OFF = toujours le même coup, choisi par **Sample** (1-8).
+  - **Pitch** (slider Freq, 20-500 Hz, 60 Hz = pitch natif) = vitesse de lecture ; mode Hz/Notes actif (bass drum).
+  - **Env amp** standard (Attack/Decay/Curve/Release) — contournée en mode **One Shot** (joue le sample entier).
+  - **Env filtre** additive sur LP one-pole (Filter/Filter Env/Filter Decay).
+  - **Start** (offset 0-0,5 s), **pack saturation** complet (5 params, routage `process_at`, volume post-sat).
+- **Enregistrement** : `DrumVoice::Bd606 = 13` (COUNT 14) + `DrumVoiceKind::Bd606` (9 matchs + `create_voice_for_kind`) + `TrackInstrumentKind::Bd6smp = 11` (COUNT 12, ajouté **en fin d'enum** pour la compat `track-layout-v1`) + entrée registry `INSTRUMENTS[13]` (note MIDI 41).
+- **Persistance intacte** : les longueurs legacy de `sound-settings-v2` sont gelées sur 13 voix via la nouvelle const `LEGACY_VOICE_COUNT` (ne plus jamais utiliser `DrumVoice::COUNT` là — il grandit désormais).
+- **Générateur** : la lane BD6smp emprunte le rôle Kick (sinon silencieuse sur GENERATE).
+- **UI** : dropdown Type (Track tab) + popup Add Module ; listes analog-fixed et is_bass_drum (Sound Panel + plock) étendues à l'index 13.
+- **Doc** : `ADDING_AN_INSTRUMENT.md` réécrit pour l'architecture **modulaire** réelle (3 enums, `reinitialize_slot`, persistance par slot) — l'ancienne version décrivait encore les voix fixes.
+- **Tests** : décodage bank (8 hits non vides, attaques présentes), roundtrip settings, voix (son produit, finie, silence final), sample fixe bit-identique, random sans répétition (×64), pitch raccourcit la durée, one-shot ignore l'env amp, registry mono.
+
 ## 2026-08-02 — [145] Solo par-step/fusion finalisé + fix step-drag fantôme (build 20260802-133013)
 
 **Branche:** `skeuo-vector` · **Build:** `20260802-133013`
