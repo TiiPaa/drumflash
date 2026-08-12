@@ -8,7 +8,7 @@
 //! graph intentionally follows the designer mockup's simplified ADSR readout.
 
 use crate::ui::theme::*;
-use nih_plug_egui::egui::{Color32, Pos2, Rect, Shape, Stroke, Vec2};
+use nih_plug_egui::egui::{Align2, Color32, Pos2, Rect, Shape, Stroke, Vec2};
 
 // -- Amplitude envelope (AHDSR style) ----------------------------------------
 
@@ -247,6 +247,92 @@ pub fn draw_buzz_filter_envelope(
     response
 }
 
+// -- Buzz gate shape ----------------------------------------------------------
+
+/// Gate shape graph for the Buzz voice: the amplitude gate over a FIXED 60 ms
+/// time window (so the Rate is visible: ~3 cycles at the 55 Hz default, a
+/// dense comb at 500 Hz), mirroring the DSP — Smooth = raised-cosine tremolo
+/// (Shape narrows the pulse), Razor = sharp exponential spike retriggered from
+/// zero each cycle. Depth sets the floor: `gate_mod = 1 - depth·(1 - g)`.
+pub fn draw_buzz_gate_graph(
+    ui: &mut nih_plug_egui::egui::Ui,
+    razor: bool,
+    rate: f32,
+    depth: f32,
+    shape: f32,
+) -> nih_plug_egui::egui::Response {
+    let w = ui.available_width().max(120.0);
+    let desired_size = Vec2::new(w, 72.0);
+    let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    crate::ui::skeuo::lcd_bg(ui, rect, RADIUS_PAD as f32);
+
+    let pad = 8.0f32;
+    let graph = Rect::from_min_size(
+        rect.min + Vec2::new(pad, pad),
+        rect.size() - Vec2::new(pad * 2.0, pad * 2.0),
+    );
+
+    let rate = rate.clamp(1.0, 500.0);
+    let depth = depth.clamp(0.0, 1.0);
+    let shape = shape.clamp(0.0, 1.0);
+    let period = 1.0 / rate;
+    let span = 0.06f32; // fixed time window (seconds)
+
+    // Razor spike: same constants as `BuzzVoice` (0.3 ms attack ramp, decay
+    // length + curve relative to the gate period).
+    let razor_attack = 0.0003f32;
+    let razor_decay = (period * 0.8 * 0.05f32.powf(shape)).max(0.0002);
+    let razor_curve = 3.0 + 9.0 * shape;
+
+    let top_y = graph.min.y;
+    let base_y = graph.max.y;
+    const POINTS: usize = 240;
+    let mut points: Vec<Pos2> = Vec::with_capacity(POINTS + 1);
+    for i in 0..=POINTS {
+        let t = span * (i as f32 / POINTS as f32);
+        let g = if razor {
+            let tc = t % period;
+            if tc < razor_attack {
+                tc / razor_attack
+            } else {
+                (-razor_curve * (tc - razor_attack) / razor_decay).exp()
+            }
+        } else {
+            let raw = 0.5 + 0.5 * (t / period * std::f32::consts::TAU).cos();
+            raw.powf(1.0 + shape * 4.0)
+        };
+        let gate_mod = 1.0 - depth * (1.0 - g);
+        let x = graph.min.x + graph.width() * (i as f32 / POINTS as f32);
+        let y = base_y - (base_y - top_y) * gate_mod.clamp(0.0, 1.0);
+        points.push(Pos2::new(x, y));
+    }
+    painter.add(Shape::line(points, Stroke::new(2.0, BLUE())));
+
+    // Depth floor: the level the gate chops down to.
+    if depth > 0.001 && depth < 0.999 {
+        let floor_y = base_y - (base_y - top_y) * (1.0 - depth);
+        painter.line_segment(
+            [
+                Pos2::new(graph.min.x, floor_y),
+                Pos2::new(graph.max.x, floor_y),
+            ],
+            Stroke::new(1.0, white_a(50)),
+        );
+    }
+
+    // Corner tag so the two stacked LCDs (amp env above) stay identifiable.
+    painter.text(
+        Pos2::new(graph.min.x + 2.0, graph.min.y + 1.0),
+        Align2::LEFT_TOP,
+        "GATE",
+        f_sans_sb(9.0),
+        white_a(110),
+    );
+
+    response
+}
+
 // -- Multisample graphs (BD6smp / SD6smp) -------------------------------------
 
 /// Depth of the additive filter envelope, mirrors the voices' constant.
@@ -343,9 +429,10 @@ pub fn draw_sample_amp_graph(
     let decay = decay_frac.clamp(0.01, 1.0);
 
     if one_shot {
+        // Amp envelope is bypassed: flat full-level line, greyed out.
         painter.line_segment(
             [Pos2::new(graph.min.x, top_y), Pos2::new(graph.max.x, top_y)],
-            Stroke::new(2.0, BLUE()),
+            Stroke::new(2.0, white_a(60)),
         );
     } else {
         const POINTS: usize = 80;

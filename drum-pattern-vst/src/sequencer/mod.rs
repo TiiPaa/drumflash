@@ -15,6 +15,9 @@ use crate::groove::{self, GrooveType};
 pub use pattern::{FusedGroup, MorphTarget, Pattern, SharedPattern, MAX_FUSIONS};
 
 const MAX_TRACKS: usize = crate::track::MAX_TRACKS;
+/// Mirrors `plock::STEP_COUNT` (kept literal: `test_standalone` compiles this
+/// module without the `plock` module).
+const SEQ_STEP_COUNT: usize = 64;
 
 /// Per-instrument state.
 #[derive(Clone, Copy, Debug)]
@@ -33,6 +36,17 @@ pub struct TrackState {
     pub step_counter: usize,
     /// Simple LCG RNG state for deterministic per-track randomness.
     rng_state: u32,
+    /// Microtiming late-fire: the current cell's trigger, deferred by a
+    /// positive nudge; emitted once the shifted beat passes `late_fire_beat`.
+    pub late_trigger: Option<TriggerResult>,
+    pub late_fire_beat: f64,
+    /// Set when the next boundary's cell was already fired early (negative
+    /// microtiming): the normal transition still advances the state but must
+    /// stay silent for that cell.
+    pub suppress_next: bool,
+    /// Set once the next boundary's cell has been fired early, so the early
+    /// check does not re-fire on every remaining sample before the boundary.
+    pub early_fired: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -90,6 +104,10 @@ impl Default for TrackState {
             humanize_amount: 0.0,
             step_counter: 0,
             rng_state: 0xACE1_0000,
+            late_trigger: None,
+            late_fire_beat: 0.0,
+            suppress_next: false,
+            early_fired: false,
         }
     }
 }
@@ -98,6 +116,48 @@ impl TrackState {
     fn next_rand(&mut self) -> f32 {
         self.rng_state = self.rng_state.wrapping_mul(1103515245).wrapping_add(12345);
         ((self.rng_state >> 16) & 0x7FFF) as f32 / 32767.0
+    }
+
+    /// Drop any pending microtiming state (seek/stop/reset): a late trigger
+    /// scheduled before the jump must not fire after it.
+    fn clear_microtiming_state(&mut self) {
+        self.late_trigger = None;
+        self.suppress_next = false;
+        self.early_fired = false;
+    }
+}
+
+/// What a cell does when the playhead reaches it.
+enum CellFire {
+    /// Covered by a fused cell starting earlier: no independent trigger.
+    Covered,
+    /// Emits a trigger (a plain cell or the start of a fused cell).
+    Fire {
+        source_step: usize,
+        fusion_pulse_count: u8,
+        fusion_span_cells: u8,
+        morph_count: u8,
+        morph_targets: [MorphTarget; 4],
+    },
+}
+
+fn classify_cell(fusions: &FusionTrack, step: usize) -> CellFire {
+    match fusions.containing(step) {
+        Some(group) if group.is_start(step) => CellFire::Fire {
+            source_step: group.start_cell as usize,
+            fusion_pulse_count: group.step_count.clamp(1, 64),
+            fusion_span_cells: group.cell_span().min(64) as u8,
+            morph_count: group.morph_count,
+            morph_targets: group.morph_targets,
+        },
+        Some(_) => CellFire::Covered,
+        None => CellFire::Fire {
+            source_step: step,
+            fusion_pulse_count: 1,
+            fusion_span_cells: 1,
+            morph_count: 0,
+            morph_targets: [MorphTarget::default(); 4],
+        },
     }
 }
 
@@ -124,6 +184,9 @@ pub struct Sequencer {
     /// steps + fusions (layering). Identity by default; refreshed each buffer
     /// from the track layout via `set_grid_slots`.
     grid_slots: [usize; MAX_TRACKS],
+    /// Per-cell microtiming (ms, -50..+50), indexed by (slot, source step) like
+    /// the sequencer plocks. Copied from the atomics once per buffer.
+    microtimings: [[f32; SEQ_STEP_COUNT]; MAX_TRACKS],
 }
 
 /// Per-instrument trigger result.
@@ -141,6 +204,10 @@ pub struct TriggerResult {
     pub morph_count: u8,
     /// Morphing targets. Only the first `morph_count` entries are valid.
     pub morph_targets: [MorphTarget; 4],
+    /// This trigger fired EARLY (negative microtiming) across the pattern wrap:
+    /// it belongs to the NEXT loop, so step conditions must be evaluated with
+    /// `loop_count + 1`.
+    pub early_next_loop: bool,
 }
 
 impl Default for TriggerResult {
@@ -153,6 +220,7 @@ impl Default for TriggerResult {
             fusion_span_cells: 1,
             morph_count: 0,
             morph_targets: [MorphTarget::default(); 4],
+            early_next_loop: false,
         }
     }
 }
@@ -178,6 +246,7 @@ impl Sequencer {
             slot_voices: [None; MAX_TRACKS],
             fusions: [FusionTrack::default(); MAX_TRACKS],
             grid_slots: std::array::from_fn(|i| i),
+            microtimings: [[0.0; SEQ_STEP_COUNT]; MAX_TRACKS],
         }
     }
 
@@ -185,6 +254,15 @@ impl Sequencer {
     /// buffer from the audio thread. Identity = no linking.
     pub fn set_grid_slots(&mut self, grid_slots: [usize; MAX_TRACKS]) {
         self.grid_slots = grid_slots;
+    }
+
+    /// Copy the per-cell microtiming (ms) from the seq-plock atomics. Call once
+    /// per audio buffer, never per sample.
+    pub fn set_microtimings(
+        &mut self,
+        microtimings: [[f32; SEQ_STEP_COUNT]; MAX_TRACKS],
+    ) {
+        self.microtimings = microtimings;
     }
 
     /// Copy fusion groups from SharedPattern into fixed local arrays.
@@ -246,81 +324,179 @@ impl Sequencer {
             // Re-compute master step for this track's shifted timeline.
             let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
 
-            // Trigger on master step transition.
+            // Grid source: a linked lane plays the steps + fusions of the
+            // lane above it (layering); identity otherwise.
+            let grid = self.grid_slots[slot];
+
+            // 1) Microtiming late-fire: a positively nudged cell whose delayed
+            // fire time has arrived.
+            if let Some(late) = track.late_trigger {
+                if shifted_beat >= track.late_fire_beat {
+                    track.late_trigger = None;
+                    triggers[slot] = late;
+                }
+            }
+
+            // 2) Trigger on master step transition.
             // Using shifted_master (not current_step) fixes the track_length=1 bug
             // where current_step never changes (always 0).
             if shifted_master != track.previous_shifted_master {
                 // True polyrhythm: each track advances its own independent counter.
                 track.step_counter = track.step_counter.wrapping_add(1);
                 let current_step = track.step_counter % track.track_length.max(1);
+                track.previous_shifted_master = shifted_master;
+                track.previous_step = current_step;
+                track.early_fired = false;
 
-                // Grid source: a linked lane plays the steps + fusions of the
-                // lane above it (layering); identity otherwise.
-                let grid = self.grid_slots[slot];
-                let fusion = self.fusions[grid].containing(current_step);
-                let (
+                if track.suppress_next {
+                    // This cell already fired early (negative microtiming).
+                    track.suppress_next = false;
+                } else if let CellFire::Fire {
                     source_step,
                     fusion_pulse_count,
                     fusion_span_cells,
                     morph_count,
                     morph_targets,
-                ) = match fusion {
-                    Some(group) if group.is_start(current_step) => {
-                        let mut targets = [MorphTarget::default(); 4];
-                        for i in 0..group.morph_count as usize {
-                            targets[i] = group.morph_targets[i];
+                } = classify_cell(&self.fusions[grid], current_step)
+                {
+                    let trig = Self::eval_trigger(
+                        &self.pattern,
+                        self.mutes[slot],
+                        track,
+                        source_step,
+                        fusion_pulse_count,
+                        fusion_span_cells,
+                        morph_count,
+                        morph_targets,
+                        grid,
+                    );
+                    if trig.should_trigger {
+                        let micro = self.microtimings[slot][source_step];
+                        if micro > 0.0 {
+                            // Positive nudge: defer the whole trigger (its
+                            // stutter/fusion pulses expand from the delayed
+                            // fire time in the audio engine).
+                            let micro_beats = micro as f64 * bpm as f64 / 60000.0;
+                            track.late_trigger = Some(trig);
+                            track.late_fire_beat = shifted_beat + micro_beats;
+                        } else if triggers[slot].should_trigger {
+                            // Rare collision with a late fire this very sample:
+                            // defer this trigger by one sample instead of
+                            // dropping a hit.
+                            track.late_trigger = Some(trig);
+                            track.late_fire_beat = shifted_beat;
+                        } else {
+                            triggers[slot] = trig;
                         }
-                        (
-                            group.start_cell as usize,
-                            group.step_count.clamp(1, 64),
-                            group.cell_span().min(64) as u8,
-                            group.morph_count,
-                            targets,
-                        )
                     }
-                    Some(_) => {
-                        // Covered cells do not trigger independently. The start cell
-                        // schedules all pulses for the fused region.
-                        track.previous_shifted_master = shifted_master;
-                        track.previous_step = current_step;
-                        continue;
+                }
+            }
+
+            // 3) Microtiming early-fire: the NEXT boundary's cell has a
+            // negative nudge — fire it up to 50 ms before its step boundary.
+            if !track.early_fired && !track.suppress_next {
+                let next_step = track.step_counter.wrapping_add(1) % track.track_length.max(1);
+                if let CellFire::Fire { source_step, .. } =
+                    classify_cell(&self.fusions[grid], next_step)
+                {
+                    let micro = self.microtimings[slot][source_step];
+                    if micro < 0.0 {
+                        let next_master = shifted_master + 1;
+                        let (delta_beats, crosses_wrap) = if next_master < self.master_length {
+                            (
+                                groove::step_start_beat(next_master, swing, groove_type)
+                                    - shifted_beat,
+                                false,
+                            )
+                        } else {
+                            (master_beat_length - shifted_beat, true)
+                        };
+                        let delta_ms = delta_beats / bpm as f64 * 60000.0;
+                        if delta_ms <= -(micro as f64) {
+                            if let CellFire::Fire {
+                                source_step,
+                                fusion_pulse_count,
+                                fusion_span_cells,
+                                morph_count,
+                                morph_targets,
+                            } = classify_cell(&self.fusions[grid], next_step)
+                            {
+                                let mut trig = Self::eval_trigger(
+                                    &self.pattern,
+                                    self.mutes[slot],
+                                    track,
+                                    source_step,
+                                    fusion_pulse_count,
+                                    fusion_span_cells,
+                                    morph_count,
+                                    morph_targets,
+                                    grid,
+                                );
+                                if trig.should_trigger {
+                                    trig.early_next_loop = crosses_wrap;
+                                    if triggers[slot].should_trigger {
+                                        // Same-sample collision: one sample
+                                        // late beats a dropped hit.
+                                        track.late_trigger = Some(trig);
+                                        track.late_fire_beat = shifted_beat;
+                                    } else {
+                                        triggers[slot] = trig;
+                                    }
+                                    track.early_fired = true;
+                                    track.suppress_next = true;
+                                }
+                            }
+                        }
                     }
-                    None => (current_step, 1, 1, 0, [MorphTarget::default(); 4]),
-                };
-
-                let step_mask = self.pattern.load_step_mask(source_step);
-                let active = (step_mask & (1 << grid)) != 0 && !self.mutes[slot];
-
-                let velocity = if active {
-                    if track.humanize_amount > 0.0 {
-                        let r = track.next_rand();
-                        (0.8 + (r - 0.5) * track.humanize_amount).clamp(0.1, 1.0)
-                    } else {
-                        0.8
-                    }
-                } else {
-                    0.0
-                };
-
-                triggers[slot] = TriggerResult {
-                    should_trigger: active,
-                    velocity,
-                    step: source_step,
-                    fusion_pulse_count,
-                    fusion_span_cells,
-                    morph_count,
-                    morph_targets,
-                };
-                track.previous_shifted_master = shifted_master;
-                track.previous_step = current_step;
+                }
             }
         }
 
         triggers
     }
 
-    pub fn sync_to_host(&mut self, position_beats: f64, bpm: f32, _sample_rate: f32) {
-        let master_beat_length = self.master_length as f64 * 0.25;
+    /// Evaluate the trigger for a firing cell: mask + mute gate, humanized
+    /// velocity. Shared by the on-boundary path and the microtiming
+    /// early/late paths so all three produce identical triggers.
+    #[allow(clippy::too_many_arguments)]
+    fn eval_trigger(
+        pattern: &SharedPattern,
+        muted: bool,
+        track: &mut TrackState,
+        source_step: usize,
+        fusion_pulse_count: u8,
+        fusion_span_cells: u8,
+        morph_count: u8,
+        morph_targets: [MorphTarget; 4],
+        grid: usize,
+    ) -> TriggerResult {
+        let step_mask = pattern.load_step_mask(source_step);
+        let active = (step_mask & (1 << grid)) != 0 && !muted;
+
+        let velocity = if active {
+            if track.humanize_amount > 0.0 {
+                let r = track.next_rand();
+                (0.8 + (r - 0.5) * track.humanize_amount).clamp(0.1, 1.0)
+            } else {
+                0.8
+            }
+        } else {
+            0.0
+        };
+
+        TriggerResult {
+            should_trigger: active,
+            velocity,
+            step: source_step,
+            fusion_pulse_count,
+            fusion_span_cells,
+            morph_count,
+            morph_targets,
+            early_next_loop: false,
+        }
+    }
+
+    pub fn sync_to_host(&mut self, position_beats: f64, bpm: f32, _sample_rate: f32) {        let master_beat_length = self.master_length as f64 * 0.25;
         self.beat_position = position_beats.rem_euclid(master_beat_length);
         // Keep loop_count in sync with the host's absolute timeline so
         // step conditions (1st loop, 2/2, etc.) work when driven by DAW transport.
@@ -339,6 +515,7 @@ impl Sequencer {
             let shifted_steps = ((position_beats - push_pull_beats) / 0.25).floor() as i64;
             track.step_counter = shifted_steps as usize;
             track.previous_step = track.step_counter % track.track_length.max(1);
+            track.clear_microtiming_state();
         }
     }
 
@@ -350,6 +527,7 @@ impl Sequencer {
             track.previous_step = max_step;
             track.previous_shifted_master = max_step;
             track.step_counter = 0;
+            track.clear_microtiming_state();
         }
         self.is_playing = false;
     }
@@ -362,6 +540,7 @@ impl Sequencer {
             track.previous_step = max_step; // Force trigger on next step 0
             track.previous_shifted_master = max_step;
             track.step_counter = track.track_length.wrapping_sub(1);
+            track.clear_microtiming_state();
         }
     }
 
@@ -373,6 +552,7 @@ impl Sequencer {
             track.previous_step = max_step;
             track.previous_shifted_master = max_step;
             track.step_counter = track.track_length.wrapping_sub(1);
+            track.clear_microtiming_state();
         }
     }
 
@@ -417,6 +597,7 @@ impl Sequencer {
             track.previous_shifted_master = master_step;
             track.step_counter = master_step;
             track.previous_step = track.step_counter % track.track_length.max(1);
+            track.clear_microtiming_state();
         }
     }
 
@@ -938,6 +1119,146 @@ mod tests {
         assert_eq!(hits[0].fusion_pulse_count, 3);
         assert_eq!(hits[0].fusion_span_cells, 4);
         assert!(hits[0].is_fusion());
+    }
+
+    // -- Microtiming (per-cell nudge) -----------------------------------------
+
+    /// Collect (sample_idx, trigger) for slot 0 over `total_samples`.
+    fn collect_slot0_hits(
+        seq: &mut Sequencer,
+        bpm: f32,
+        sample_rate: f32,
+        total_samples: usize,
+    ) -> Vec<(usize, TriggerResult)> {
+        let mut hits = Vec::new();
+        for sample_idx in 0..total_samples {
+            let triggers = seq.process_sample(bpm, sample_rate, 0.0, GrooveType::Straight);
+            if triggers[0].should_trigger {
+                hits.push((sample_idx, triggers[0]));
+            }
+        }
+        hits
+    }
+
+    fn one_cell_pattern(step: usize) -> Arc<SharedPattern> {
+        let shared_pattern = SharedPattern::new(&Pattern::empty());
+        shared_pattern.set_step_mask(step, 0b1);
+        shared_pattern
+    }
+
+    fn microtiming_grid(step: usize, ms: f32) -> [[f32; SEQ_STEP_COUNT]; MAX_TRACKS] {
+        let mut grid = [[0.0; SEQ_STEP_COUNT]; MAX_TRACKS];
+        grid[0][step] = ms;
+        grid
+    }
+
+    #[test]
+    fn test_microtiming_positive_delays_trigger() {
+        let sample_rate = 44100.0;
+        let bpm = 120.0;
+        let samples_per_step = 60.0 / bpm / 4.0 * sample_rate; // 5512.5
+
+        let baseline = {
+            let mut seq = Sequencer::new(one_cell_pattern(1));
+            seq.play();
+            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 3.0) as usize)
+        };
+        let nudged = {
+            let mut seq = Sequencer::new(one_cell_pattern(1));
+            seq.set_microtimings(microtiming_grid(1, 25.0));
+            seq.play();
+            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 3.0) as usize)
+        };
+
+        assert_eq!(baseline.len(), 1);
+        assert_eq!(nudged.len(), 1, "positive nudge must not double-fire");
+        let expected_shift = 0.025 * sample_rate as f64; // 25 ms
+        let shift = nudged[0].0 as f64 - baseline[0].0 as f64;
+        assert!(
+            (shift - expected_shift).abs() <= 2.0,
+            "trigger should be ~25 ms late (shift = {shift} samples, expected {expected_shift})"
+        );
+        assert_eq!(nudged[0].1.step, 1);
+        assert!(!nudged[0].1.early_next_loop);
+    }
+
+    #[test]
+    fn test_microtiming_negative_fires_early() {
+        let sample_rate = 44100.0;
+        let bpm = 120.0;
+        let samples_per_step = 60.0 / bpm / 4.0 * sample_rate;
+
+        let baseline = {
+            let mut seq = Sequencer::new(one_cell_pattern(5));
+            seq.play();
+            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 7.0) as usize)
+        };
+        let nudged = {
+            let mut seq = Sequencer::new(one_cell_pattern(5));
+            seq.set_microtimings(microtiming_grid(5, -25.0));
+            seq.play();
+            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 7.0) as usize)
+        };
+
+        assert_eq!(baseline.len(), 1);
+        assert_eq!(nudged.len(), 1, "negative nudge must not double-fire");
+        let expected_shift = 0.025 * sample_rate as f64;
+        let shift = baseline[0].0 as f64 - nudged[0].0 as f64;
+        assert!(
+            (shift - expected_shift).abs() <= 2.0,
+            "trigger should be ~25 ms early (shift = {shift} samples, expected {expected_shift})"
+        );
+        assert_eq!(nudged[0].1.step, 5);
+    }
+
+    #[test]
+    fn test_microtiming_negative_across_wrap_flags_next_loop() {
+        let sample_rate = 44100.0;
+        let bpm = 120.0;
+        let samples_per_bar = (60.0 / bpm * 4.0 * sample_rate) as usize; // 88200
+
+        // Step 0 nudged early: the SECOND loop's step 0 must fire ~25 ms before
+        // the wrap and report early_next_loop so conditions use loop_count + 1.
+        let mut seq = Sequencer::new(one_cell_pattern(0));
+        seq.set_microtimings(microtiming_grid(0, -25.0));
+        seq.play();
+        let hits = collect_slot0_hits(&mut seq, bpm, sample_rate, samples_per_bar + 100);
+
+        assert_eq!(hits.len(), 2, "one hit per loop (start + early wrap)");
+        let early = hits[1];
+        let expected = samples_per_bar as f64 - 0.025 * sample_rate as f64;
+        assert!(
+            (early.0 as f64 - expected).abs() <= 3.0,
+            "loop-1 step 0 should fire ~25 ms before the wrap (at {}, expected ~{expected})",
+            early.0
+        );
+        assert!(
+            early.1.early_next_loop,
+            "early fire across the wrap must flag early_next_loop"
+        );
+    }
+
+    #[test]
+    fn test_microtiming_zero_keeps_grid() {
+        let sample_rate = 44100.0;
+        let bpm = 120.0;
+        let samples_per_step = 60.0 / bpm / 4.0 * sample_rate;
+
+        let baseline = {
+            let mut seq = Sequencer::new(one_cell_pattern(3));
+            seq.play();
+            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 5.0) as usize)
+        };
+        let zeroed = {
+            let mut seq = Sequencer::new(one_cell_pattern(3));
+            seq.set_microtimings(microtiming_grid(3, 0.0));
+            seq.play();
+            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 5.0) as usize)
+        };
+
+        assert_eq!(baseline.len(), 1);
+        assert_eq!(zeroed.len(), 1);
+        assert_eq!(baseline[0].0, zeroed[0].0, "zero nudge must not move the hit");
     }
 }
 
