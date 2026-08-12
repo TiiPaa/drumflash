@@ -22,12 +22,35 @@ pub fn draw_pattern_bank(
     pattern: &SharedPattern,
     save_pattern_request: &Arc<AtomicU32>,
     load_pattern_request: &Arc<AtomicU32>,
+    audio_last_loaded_slot: &Arc<AtomicU32>,
 ) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Patterns").strong().size(12.0).color(INK()));
         ui.add_space(8.0);
 
-        // (Save/Clr keycaps + Export/Drag are drawn AFTER the slots — see below.)
+        // Save (keycap; armed = pressed blue) — to the LEFT of the slots. Click,
+        // then click a slot to store. (Clr + Export/Drag stay after the slots.)
+        let save_state = if state.save_mode_active {
+            crate::ui::widgets::KeycapState::PressedBlue
+        } else {
+            crate::ui::widgets::KeycapState::Rest
+        };
+        let save_response =
+            crate::ui::controls::keycap_button(ui, "Save", 46.0, save_state, true, f_mono_med(10.5))
+                .on_hover_text(
+                    RichText::new(if state.save_mode_active {
+                        "Click a slot (P1-P16) to save the current pattern there"
+                    } else {
+                        "Activate save mode, then click a slot to store the current pattern"
+                    })
+                    .size(11.0)
+                    .monospace(),
+                );
+        if save_response.clicked() {
+            state.save_mode_active = !state.save_mode_active;
+            state.clear_confirm_mode = false;
+        }
+        ui.add_space(8.0);
 
         // Determine if current pattern is dirty compared to last_loaded_slot
         let is_dirty = pattern_is_dirty(params, pattern, state);
@@ -141,6 +164,13 @@ pub fn draw_pattern_bank(
                     // build a new pattern (Save will store into this slot).
                     clear_current_grid(pattern, params);
                     state.last_loaded_slot = Some(i);
+                    // The audio thread owns `audio_last_loaded_slot` and the UI
+                    // re-syncs `last_loaded_slot` from it every frame. Positioning
+                    // on an empty slot is a UI-only action (no load request), so we
+                    // must publish it here — otherwise the next-frame sync reverts
+                    // to the previously saved/loaded slot and, since the grid was
+                    // just cleared, flags THAT slot dirty (phantom "*").
+                    audio_last_loaded_slot.store(i as u32, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             if response.secondary_clicked() {
@@ -161,28 +191,6 @@ pub fn draw_pattern_bank(
         }
 
         ui.add_space(10.0);
-
-        // Save (keycap; armed = pressed blue). Click, then click a slot to store.
-        let save_state = if state.save_mode_active {
-            crate::ui::widgets::KeycapState::PressedBlue
-        } else {
-            crate::ui::widgets::KeycapState::Rest
-        };
-        let save_response =
-            crate::ui::controls::keycap_button(ui, "Save", 46.0, save_state, true, f_mono_med(10.5))
-                .on_hover_text(
-                    RichText::new(if state.save_mode_active {
-                        "Click a slot (P1-P16) to save the current pattern there"
-                    } else {
-                        "Activate save mode, then click a slot to store the current pattern"
-                    })
-                    .size(11.0)
-                    .monospace(),
-                );
-        if save_response.clicked() {
-            state.save_mode_active = !state.save_mode_active;
-            state.clear_confirm_mode = false;
-        }
 
         // Clr (keycap; two-step — the confirm phase offers a choice: clear the
         // current GRID only, or clear the grid AND empty the bank SLOT).
@@ -253,6 +261,7 @@ pub fn draw_pattern_bank(
                     pattern_length,
                     swing,
                     groove_type,
+                    &params.seq_plock_state.state,
                 )
                 .and_then(|path| start_external_midi_drag(&path).map(|_| path))
                 {
@@ -280,6 +289,7 @@ pub fn draw_pattern_bank(
                     pattern_length,
                     swing,
                     groove_type,
+                    &params.seq_plock_state.state,
                 ) {
                     Ok(path) => {
                         nih_log!("MIDI exported to: {}", path.display());
@@ -361,25 +371,48 @@ pub(crate) fn pattern_is_dirty(
     pattern: &SharedPattern,
     state: &EditorUIState,
 ) -> bool {
-    state.last_loaded_slot.map_or(false, |slot_idx| {
-        if let Ok(bank) = params.pattern_bank.bank.lock() {
-            let slot = &bank.slots[slot_idx];
-            if !slot.occupied {
+    let current_masks = pattern.step_masks();
+    let grid_has_content = current_masks.iter().any(|&m| m != 0);
+    let current_len = params.pattern_length.value() as u8;
+    match state.last_loaded_slot {
+        // No slot association (e.g. a project reopened, or a freshly generated
+        // pattern): unsaved ONLY if the grid has content AND doesn't already
+        // match a stored slot. A reopened project whose pattern was saved to
+        // some Pn before quitting matches that slot → NOT dirty (no false alert).
+        None => {
+            if !grid_has_content {
                 return false;
             }
-            let current_masks = pattern.step_masks();
-            if slot.step_masks != current_masks {
-                return true;
+            if let Ok(bank) = params.pattern_bank.bank.lock() {
+                let saved_somewhere = bank.slots.iter().any(|s| {
+                    s.occupied
+                        && s.step_masks == current_masks
+                        && s.pattern_length == current_len
+                });
+                !saved_somewhere
+            } else {
+                false
             }
-            let current_len = params.pattern_length.value() as u8;
-            if slot.pattern_length != current_len {
-                return true;
-            }
-            false
-        } else {
-            false
         }
-    })
+        Some(slot_idx) => {
+            if let Ok(bank) = params.pattern_bank.bank.lock() {
+                let slot = &bank.slots[slot_idx];
+                if !slot.occupied {
+                    // Positioned on an EMPTY slot: dirty if the grid has content.
+                    return grid_has_content;
+                }
+                if slot.step_masks != current_masks {
+                    return true;
+                }
+                if slot.pattern_length != current_len {
+                    return true;
+                }
+                false
+            } else {
+                false
+            }
+        }
+    }
 }
 
 pub fn load_pattern_for_ui_with_length(

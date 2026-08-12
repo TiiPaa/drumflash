@@ -17,7 +17,6 @@ cd "E:\Dev\Projets\Drum Flash\drum-pattern-vst"
 
 ## Documentation
 
-- **`AGENTS.md`** — Architecture détaillée, build/test, contraintes temps réel
 - **`TODO.md`** — Tâches en cours et backlog
 - **`CHANGELOG.md`** — Historique des builds
 - **`ADDING_AN_INSTRUMENT.md`** — Procédure d'ajout d'une voix de synthèse

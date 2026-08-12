@@ -120,6 +120,10 @@ pub struct Sequencer {
     slot_voices: [Option<usize>; MAX_TRACKS],
     /// Per-instrument fused cell groups (Step Fusion), copied from SharedPattern once per buffer.
     fusions: [FusionTrack; MAX_TRACKS],
+    /// Per-slot grid source: a lane linked to the one above plays that lane's
+    /// steps + fusions (layering). Identity by default; refreshed each buffer
+    /// from the track layout via `set_grid_slots`.
+    grid_slots: [usize; MAX_TRACKS],
 }
 
 /// Per-instrument trigger result.
@@ -173,7 +177,14 @@ impl Sequencer {
             loop_count: 0,
             slot_voices: [None; MAX_TRACKS],
             fusions: [FusionTrack::default(); MAX_TRACKS],
+            grid_slots: std::array::from_fn(|i| i),
         }
+    }
+
+    /// Set the per-slot grid source (for lane linking / layering). Call once per
+    /// buffer from the audio thread. Identity = no linking.
+    pub fn set_grid_slots(&mut self, grid_slots: [usize; MAX_TRACKS]) {
+        self.grid_slots = grid_slots;
     }
 
     /// Copy fusion groups from SharedPattern into fixed local arrays.
@@ -243,7 +254,10 @@ impl Sequencer {
                 track.step_counter = track.step_counter.wrapping_add(1);
                 let current_step = track.step_counter % track.track_length.max(1);
 
-                let fusion = self.fusions[slot].containing(current_step);
+                // Grid source: a linked lane plays the steps + fusions of the
+                // lane above it (layering); identity otherwise.
+                let grid = self.grid_slots[slot];
+                let fusion = self.fusions[grid].containing(current_step);
                 let (
                     source_step,
                     fusion_pulse_count,
@@ -275,7 +289,7 @@ impl Sequencer {
                 };
 
                 let step_mask = self.pattern.load_step_mask(source_step);
-                let active = (step_mask & (1 << slot)) != 0 && !self.mutes[slot];
+                let active = (step_mask & (1 << grid)) != 0 && !self.mutes[slot];
 
                 let velocity = if active {
                     if track.humanize_amount > 0.0 {

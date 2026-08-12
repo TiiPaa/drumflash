@@ -286,7 +286,10 @@ fn draw_legacy_slot_lane_v2(
     extra_w: f32,
     gap: f32,
     cell_w: f32,
-    fusion_editing_started_this_frame: &mut bool,
+    // No longer written since fusion editing moved to the right-click menu;
+    // kept in the signature to avoid churning the call site. Always false now,
+    // so the outside-click close guard simply always runs.
+    _fusion_editing_started_this_frame: &mut bool,
 ) -> egui::Response {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
@@ -305,6 +308,32 @@ fn draw_legacy_slot_lane_v2(
         let selected = state.selected_track_slot == slot_idx;
         let layout_state =
             PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+
+        // Grid linking (layering): a lane linked to the one above SHOWS and EDITS
+        // that lane's steps + fusions. All pattern step/fusion reads and writes
+        // below go through `grid_idx`; sound, plocks, tags and routing stay on the
+        // real `slot_idx` so they remain independent per lane.
+        let grid_idx = layout_state.grid_slot(slot_idx);
+        let is_linked = grid_idx != slot_idx;
+        let linked_fusions_storage;
+        let fusions: &[FusedGroup] = if is_linked {
+            linked_fusions_storage = pattern.load_fusions(grid_idx);
+            &linked_fusions_storage
+        } else {
+            fusions
+        };
+
+        // Link indicator: a clean 2px accent stripe on the lane's left edge,
+        // marking that its grid mirrors the lane above (layering).
+        if is_linked {
+            let r = grip_response.rect;
+            let bar = egui::Rect::from_min_max(
+                egui::pos2(r.left(), r.top()),
+                egui::pos2(r.left() + 2.0, r.bottom()),
+            );
+            ui.painter().rect_filled(bar, 1.0, BLUE());
+        }
+
         let slot_name = {
             let name = if layout_state.slots[slot_idx].name.is_empty() {
                 crate::instrument_registry::INSTRUMENTS[voice_idx]
@@ -356,6 +385,18 @@ fn draw_legacy_slot_lane_v2(
                 state.lane_clear_grid_confirm = None;
                 state.lane_delete_confirm = None;
                 ui.close_menu();
+            }
+            // Grid link (layering): mirror the steps + fusions of the lane above.
+            if layout_state.slots[slot_idx].linked_up {
+                if context_menu_button(ui, "Unlink steps", INK(), true).clicked() {
+                    set_lane_linked_up(params, slot_idx, false);
+                    ui.close_menu();
+                }
+            } else if layout_state.can_link_up(slot_idx) {
+                if context_menu_button(ui, "Link steps to lane above", INK(), true).clicked() {
+                    set_lane_linked_up(params, slot_idx, true);
+                    ui.close_menu();
+                }
             }
             context_menu_separator(ui);
             let confirm_clear_grid = state.lane_clear_grid_confirm == Some(slot_idx);
@@ -494,19 +535,22 @@ fn draw_legacy_slot_lane_v2(
                                     as usize;
                             drag.current_target = target;
                         }
-                        if ui.input(|i| i.pointer.any_released()) {
-                            if drag.source_step != drag.current_target {
-                                move_step_with_plocks(
-                                    pattern,
-                                    plock,
-                                    params,
-                                    slot_idx,
-                                    drag.source_step,
-                                    drag.current_target,
-                                );
+                    }
+                    // Release ends the gesture whether or not the 0.5 s long-press
+                    // threshold was reached. A quick tap (drag never activated) MUST
+                    // clear the pending drag here — otherwise it keeps counting and
+                    // "activates" later, while the button is already up, spawning a
+                    // ghost cell that follows the cursor. A non-active release then
+                    // falls through to a normal click (toggle).
+                    if ui.input(|i| i.pointer.any_released()) {
+                        let (was_active, from, to) =
+                            (drag.active, drag.source_step, drag.current_target);
+                        state.step_drag = None;
+                        if was_active {
+                            if from != to {
+                                move_step_with_plocks(pattern, plock, params, slot_idx, from, to);
                                 state.mark_pattern_dirty();
                             }
-                            state.step_drag = None;
                             drag_just_completed = true;
                         }
                     }
@@ -526,7 +570,7 @@ fn draw_legacy_slot_lane_v2(
                     .unwrap_or(false);
                 let is_fusion_mid = fusion_group.is_some() && !is_fusion_start;
 
-                let active = !beyond_len && pattern.is_active(source_step, slot_idx);
+                let active = !beyond_len && pattern.is_active(source_step, grid_idx);
                 // Inside a fused group, the playhead marker lives on the START
                 // cell only — it rings the whole fused block, not the steps.
                 let is_current = if let Some(group) = fusion_group {
@@ -561,9 +605,16 @@ fn draw_legacy_slot_lane_v2(
                 let is_editing = state
                     .fusion_editing
                     .map(|(ei, eidx)| {
-                        ei == slot_idx && fusion_info.map(|(idx, _)| idx == eidx).unwrap_or(false)
+                        // Fusions belong to the grid owner (`grid_idx`), so a
+                        // linked lane and its master both reflect the same edit.
+                        ei == grid_idx && fusion_info.map(|(idx, _)| idx == eidx).unwrap_or(false)
                     })
                     .unwrap_or(false);
+                // Keep animating the edit-pulse while a fusion is being edited
+                // (the reactive editor would otherwise freeze the pulse).
+                if is_editing {
+                    ui.ctx().request_repaint();
+                }
 
                 let is_drag_source = state.step_drag.as_ref().map_or(false, |d| {
                     d.active && d.slot == slot_idx && d.source_step == global_step
@@ -613,6 +664,8 @@ fn draw_legacy_slot_lane_v2(
                     is_fusion_mid,
                     fusion_span,
                     beyond_len,
+                    active,
+                    is_editing,
                 );
 
                 // Step-solo marker: a small 'S' in the top-left corner of soloed
@@ -689,21 +742,16 @@ fn draw_legacy_slot_lane_v2(
                     );
                 }
 
-                if !beyond_len && !suppress_click && response.double_clicked() {
-                    if let Some((idx, _)) = fusion_info {
-                        select_legacy_track(state, slot_idx);
-                        state.fusion_editing = Some((slot_idx, idx));
-                        state.fusion_edit_focus_request = true;
-                        state.fusion_edit_steps = fusion_group.map(|g| g.step_count).unwrap_or(1);
-                        *fusion_editing_started_this_frame = true;
-                    }
-                } else if !beyond_len && !suppress_click && response.clicked_by(egui::PointerButton::Primary) && fusion_mode_active {
+                // Fusion editing is done via the right-click menu (Edit Fusion
+                // Steps / Delete Fusion), not a double-click — simpler and avoids
+                // the toggle-vs-edit conflict on the same cell.
+                if !beyond_len && !suppress_click && response.clicked_by(egui::PointerButton::Primary) && fusion_mode_active {
                     select_legacy_track(state, slot_idx);
                     handle_fusion_shift_click(
                         pattern,
                         params,
                         plock,
-                        slot_idx,
+                        grid_idx,
                         global_step,
                         master_length,
                         fusions,
@@ -721,11 +769,14 @@ fn draw_legacy_slot_lane_v2(
                     }
 
                     if let Some(group) = fusion_group {
-                        toggle_fusion_for_ui(pattern, group, slot_idx);
+                        toggle_fusion_for_ui(pattern, group, grid_idx);
                     } else {
-                        toggle_step_for_ui(pattern, global_step, slot_idx);
+                        toggle_step_for_ui(pattern, global_step, grid_idx);
                     }
                     state.mark_pattern_dirty();
+                    // Reactive editor: force a redraw so the toggle (esp. the
+                    // fused-block on/off dim) shows immediately when stopped.
+                    ui.ctx().request_repaint();
                     if params.auto_edit.value() {
                         select_legacy_track(state, slot_idx);
                     }
@@ -854,6 +905,8 @@ fn draw_empty_slot_lane_v2(
                     false,
                     None,
                     true,
+                    false,
+                    false,
                 );
             }
         });
@@ -1241,6 +1294,17 @@ pub fn activate_slot(
 }
 
 /// Deactivate an active slot so it becomes an empty lane again.
+/// Set/clear the grid-link flag on a lane (mirrors the lane above for layering).
+fn set_lane_linked_up(params: &DrumFlashParams, slot_idx: usize, linked: bool) {
+    if slot_idx >= crate::track::MAX_TRACKS {
+        return;
+    }
+    let mut new_state =
+        PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+    new_state.slots[slot_idx].linked_up = linked;
+    PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+}
+
 /// Triggered from the lane title context menu.
 fn deactivate_slot(params: &DrumFlashParams, state: &mut EditorUIState, slot_idx: usize) {
     if slot_idx >= crate::track::MAX_TRACKS {
@@ -1584,6 +1648,10 @@ fn draw_step_cell_v2(
     is_fusion_mid: bool,
     fusion_span: Option<usize>,
     dashed_border: bool,
+    // Fused-block state (the atlas sprite is always the lit "hit" variant, so
+    // muted/editing states are shown by overlays below).
+    fusion_active: bool,
+    fusion_editing: bool,
 ) -> egui::Response {
     let sense = if enabled {
         egui::Sense::click()
@@ -1622,6 +1690,27 @@ fn draw_step_cell_v2(
             // Step cell = designer baked bitmap atlas (state + fusion length,
             // bleed-corrected). Overlays (playhead ring, pulse count) drawn below.
             crate::ui::pads::draw_pad(ui, block_rect, fill, fusion_span, enabled);
+            // Fused-block state overlays (the sprite is always the lit "hit"
+            // variant, so muted/editing states can't come from the sprite).
+            if fusion_span.is_some() {
+                if fusion_editing {
+                    // Editing: a bright outline that BLINKS on/off (~1 Hz) around
+                    // the whole block.
+                    let t = ui.ctx().input(|i| i.time) as f32;
+                    if (t * 6.0).sin() > 0.0 {
+                        ui.painter().rect_stroke(
+                            block_rect,
+                            egui::epaint::CornerRadius::same(4),
+                            egui::Stroke::new(2.0, Color32::from_rgb(140, 190, 255)),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                } else if !fusion_active {
+                    // Muted (toggled off): a dark overlay dims the whole block.
+                    ui.painter()
+                        .rect_filled(block_rect, 4.0, Color32::from_black_alpha(165));
+                }
+            }
             // Hover: a subtle white outline that fades in (state-agnostic, so it
             // never tints an orange/red pad blue).
             if hover > 0.01 {
@@ -2243,6 +2332,10 @@ fn draw_fusion_edit_box(
                         pattern_for_ui.store_fusions(instrument, &new_fusions);
                     }
                     state.fusion_editing = None;
+                    state.mark_pattern_dirty();
+                    // Reactive editor: force a redraw so the cell (which was drawn
+                    // earlier this frame with the now-deleted fusion) refreshes.
+                    ui.ctx().request_repaint();
                 }
                 ui.add_space(g);
                 if fusion_key(ui, xw, "×", KeycapState::Rest, INK(), egui::Sense::click()).clicked() {

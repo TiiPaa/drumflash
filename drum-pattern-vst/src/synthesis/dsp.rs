@@ -272,6 +272,39 @@ impl Biquad {
         self.a2 = (1.0 - alpha) / a0;
     }
 
+    /// Configure as a 2-pole low-pass (RBJ cookbook). `q` sets the resonance
+    /// (0.707 ≈ Butterworth, higher = a peak at the cutoff).
+    pub fn set_lowpass(&mut self, freq: f32, q: f32, sample_rate: f32) {
+        let f = freq.clamp(10.0, sample_rate * 0.45);
+        let q = q.max(0.1);
+        let w0 = 2.0 * std::f32::consts::PI * f / sample_rate;
+        let cos_w0 = w0.cos();
+        let sin_w0 = w0.sin();
+        let alpha = sin_w0 / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        self.b0 = ((1.0 - cos_w0) * 0.5) / a0;
+        self.b1 = (1.0 - cos_w0) / a0;
+        self.b2 = ((1.0 - cos_w0) * 0.5) / a0;
+        self.a1 = (-2.0 * cos_w0) / a0;
+        self.a2 = (1.0 - alpha) / a0;
+    }
+
+    /// Configure as a 2-pole high-pass (RBJ cookbook).
+    pub fn set_highpass(&mut self, freq: f32, q: f32, sample_rate: f32) {
+        let f = freq.clamp(10.0, sample_rate * 0.45);
+        let q = q.max(0.1);
+        let w0 = 2.0 * std::f32::consts::PI * f / sample_rate;
+        let cos_w0 = w0.cos();
+        let sin_w0 = w0.sin();
+        let alpha = sin_w0 / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        self.b0 = ((1.0 + cos_w0) * 0.5) / a0;
+        self.b1 = -(1.0 + cos_w0) / a0;
+        self.b2 = ((1.0 + cos_w0) * 0.5) / a0;
+        self.a1 = (-2.0 * cos_w0) / a0;
+        self.a2 = (1.0 - alpha) / a0;
+    }
+
     /// Configure as a peaking EQ (RBJ cookbook). `freq` in Hz, `q` is the
     /// bandwidth, `gain_db` is the boost/cut in dB (positive = boost).
     pub fn set_peaking(&mut self, freq: f32, q: f32, gain_db: f32, sample_rate: f32) {
@@ -382,6 +415,7 @@ impl ExpDecayEnvelope {
         self
     }
 
+    #[allow(dead_code)] // reusable primitive; amp voices now use DecayReleaseEnvelope
     pub fn set_attack_ms(&mut self, ms: f32) {
         self.attack_time = ms.max(0.0) / 1000.0;
         // If attack was shortened to zero while a ramp is still in progress,
@@ -394,6 +428,7 @@ impl ExpDecayEnvelope {
 
     /// Set the hold time in seconds. After the attack ramp completes, the
     /// envelope stays at its peak for `hold_seconds` before the decay starts.
+    #[allow(dead_code)] // reusable primitive; amp voices now use DecayReleaseEnvelope
     pub fn set_hold(&mut self, hold_seconds: f32) {
         self.hold_time = hold_seconds.max(0.0);
     }
@@ -469,6 +504,7 @@ impl ExpDecayEnvelope {
 
     /// Returns the envelope's current value without ticking the decay. Useful for
     /// chaining envelopes that need to observe each other's state at trigger time.
+    #[allow(dead_code)] // reusable primitive; amp voices now use DecayReleaseEnvelope
     pub fn current(&self) -> f32 {
         self.value
     }
@@ -545,119 +581,161 @@ impl ExpDecayEnvelope {
 /// Both internal envelopes are persistent on retrigger
 /// (`trigger_from_current`), which preserves continuity when a step lands
 /// during a ringing tail.
+/// Bipolar curve shaping of a normalised progress `e` in [0,1].
+/// `curve` -1 = concave (slow → fast), 0 = linear, +1 = convex (fast → slow).
+#[inline]
+pub fn shape_curve(e: f32, curve: f32) -> f32 {
+    let e = e.clamp(0.0, 1.0);
+    let c = curve.clamp(-1.0, 1.0);
+    if c >= 0.0 {
+        e.powf(1.0 + c * 3.0)
+    } else {
+        1.0 - (1.0 - e).powf(1.0 - c * 3.0)
+    }
+}
+
+/// Amplitude envelope: **Attack-Hold-Decay** with independent BIPOLAR curve
+/// shaping on the attack and the decay (no release stage). Time-based; the
+/// attack ramps from the value captured at trigger time so retriggering during
+/// a ringing tail never jumps in one sample (anti-click).
+///
+/// API is kept identical to the previous decay+release version so the voices
+/// don't change: the `decay_curve` param/`set_decay_curve` is the bipolar DECAY
+/// curve, the `release_curve` param/`set_release_curve` is repurposed as the
+/// bipolar ATTACK curve, and `release_time`/`set_release` are ignored.
 #[derive(Clone, Copy, Debug)]
 pub struct DecayReleaseEnvelope {
-    decay: ExpDecayEnvelope,
-    release: ExpDecayEnvelope,
-    /// Shelf level the release envelope plateaus at (and decays from).
-    /// 0.3 = release takes over once the decay has fallen to 30 % of peak.
-    release_shelf: f32,
+    sample_rate: f32,
+    attack_time: f32,
+    atk_curve: f32,
+    hold_time: f32,
+    decay_time: f32,
+    dec_curve: f32,
+    value: f32,
+    time: f32,
+    /// Value captured at trigger time — the attack ramps up from here.
+    attack_start_value: f32,
+    threshold: f32,
+    active: bool,
 }
 
 impl DecayReleaseEnvelope {
-    /// Minimum release time. A value of 0 from the UI is clamped to this so
-    /// the recursive coefficient stays well-defined; the resulting tail is
-    /// only a handful of samples, perceptually equivalent to "no release".
-    pub const MIN_RELEASE_SECONDS: f32 = 0.001;
-    /// Default shelf level — tuned so 808-style sub tails sound natural.
-    pub const DEFAULT_RELEASE_SHELF: f32 = 0.3;
+    const MIN_ATTACK_S: f32 = 0.0001;
 
+    /// `decay_curve` = bipolar decay curve, `release_curve` = bipolar attack
+    /// curve, `_release_time` ignored.
     pub fn new(
         sample_rate: f32,
         decay_curve: f32,
         decay_time: f32,
         release_curve: f32,
-        release_time: f32,
+        _release_time: f32,
     ) -> Self {
         Self {
-            decay: ExpDecayEnvelope::new(sample_rate, decay_curve, decay_time),
-            release: ExpDecayEnvelope::new(
-                sample_rate,
-                release_curve,
-                release_time.max(Self::MIN_RELEASE_SECONDS),
-            ),
-            release_shelf: Self::DEFAULT_RELEASE_SHELF,
+            sample_rate,
+            attack_time: Self::MIN_ATTACK_S,
+            atk_curve: release_curve,
+            hold_time: 0.0,
+            decay_time: decay_time.max(0.001),
+            dec_curve: decay_curve,
+            value: 0.0,
+            time: 1.0e9, // idle until first trigger
+            attack_start_value: 0.0,
+            threshold: 0.001,
+            active: false,
         }
     }
 
     pub fn with_attack_ms(mut self, ms: f32) -> Self {
-        // Apply the same attack ramp to both stages so the release shelf rises
-        // smoothly toward its target instead of jumping in one sample — that
-        // jump (0 → 0.3 at every trigger) was creating an audible click on
-        // cold starts independent of any tail ringing.
-        self.decay = self.decay.with_attack_ms(ms);
-        self.release = self.release.with_attack_ms(ms);
+        self.attack_time = (ms.max(0.0) / 1000.0).max(Self::MIN_ATTACK_S);
         self
     }
 
     pub fn set_attack_ms(&mut self, ms: f32) {
-        self.decay.set_attack_ms(ms);
-        self.release.set_attack_ms(ms);
+        self.attack_time = (ms.max(0.0) / 1000.0).max(Self::MIN_ATTACK_S);
     }
 
+    /// Retrigger ramping from the current value (anti-click on a ringing tail).
     pub fn trigger(&mut self) {
-        self.decay.trigger();
-        // Release stage ramps from its current value up to the shelf level
-        // through the attack ramp. If a tail is already ringing above the
-        // shelf, trigger_at_peak keeps it (attack_start_value = current value)
-        // and the ramp will pull it back toward the shelf.
-        self.release.trigger_at_peak(self.release_shelf);
+        self.attack_start_value = self.value.clamp(0.0, 1.0);
+        self.time = 0.0;
+        self.active = true;
     }
 
-    /// Hard machine-gun retrigger: both decay and release stages restart
-    /// from zero with full attack ramps.
+    /// Machine-gun retrigger: restart the whole envelope from zero.
     pub fn trigger_hard(&mut self) {
-        self.decay.trigger_from_zero(1.0);
-        self.release.trigger_from_zero(self.release_shelf);
+        self.attack_start_value = 0.0;
+        self.value = 0.0;
+        self.time = 0.0;
+        self.active = true;
     }
 
     #[inline]
     pub fn next(&mut self) -> f32 {
-        let d = self.decay.next();
-        let r = self.release.next();
-        if d > r {
-            d
-        } else {
-            r
+        if !self.active {
+            return 0.0;
         }
+        // Advance first so the first sample after trigger() is one step into the
+        // ramp (strictly > 0), never the start point itself.
+        self.time += 1.0 / self.sample_rate;
+        let a = self.attack_time.max(Self::MIN_ATTACK_S);
+        let h = self.hold_time.max(0.0);
+        let d = self.decay_time.max(0.001);
+        let t = self.time;
+        let v = if t < a {
+            let p = shape_curve(t / a, self.atk_curve);
+            self.attack_start_value + (1.0 - self.attack_start_value) * p
+        } else if t < a + h {
+            1.0
+        } else {
+            let p = ((t - a - h) / d).clamp(0.0, 1.0);
+            shape_curve(1.0 - p, self.dec_curve)
+        };
+        let v = v.clamp(0.0, 1.0);
+        // Only end during the decay tail (never during attack/hold).
+        if t >= a + h && v <= self.threshold {
+            self.value = 0.0;
+            self.active = false;
+            return 0.0;
+        }
+        self.value = v;
+        v
     }
 
     pub fn is_active(&self) -> bool {
-        self.decay.is_active() || self.release.is_active()
+        self.active
     }
 
     pub fn reset(&mut self) {
-        self.decay.reset();
-        self.release.reset();
+        self.value = 0.0;
+        self.time = 1.0e9;
+        self.attack_start_value = 0.0;
+        self.active = false;
     }
 
     pub fn set_decay(&mut self, decay_time: f32) {
-        self.decay.set_decay(decay_time);
+        self.decay_time = decay_time.max(0.001);
     }
 
-    pub fn set_release(&mut self, release_time: f32) {
-        self.release
-            .set_decay(release_time.max(Self::MIN_RELEASE_SECONDS));
-    }
+    /// No-op — the envelope has no release stage anymore.
+    pub fn set_release(&mut self, _release_time: f32) {}
 
     pub fn set_decay_curve(&mut self, curve: f32) {
-        self.decay.set_curve(curve);
+        self.dec_curve = curve;
     }
 
+    /// Repurposed: sets the bipolar ATTACK curve.
     pub fn set_release_curve(&mut self, curve: f32) {
-        self.release.set_curve(curve);
+        self.atk_curve = curve;
     }
 
-    /// Set the hold time (seconds) on the decay stage only — the release stage
-    /// has no hold semantics. The envelope output stays at peak for
-    /// `hold_seconds` after the attack ramp before the decay starts.
     pub fn set_hold(&mut self, hold_seconds: f32) {
-        self.decay.set_hold(hold_seconds);
+        self.hold_time = hold_seconds.max(0.0);
     }
 
     #[allow(dead_code)]
     pub fn current(&self) -> f32 {
-        self.decay.current().max(self.release.current())
+        self.value
     }
 }
 

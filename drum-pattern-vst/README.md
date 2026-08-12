@@ -31,7 +31,6 @@ cargo run --bin test_standalone
 
 ## Documentation
 
-- **`../AGENTS.md`** — architecture complète, contraintes temps réel, anti-click, persistence
 - **`../CHANGELOG.md`** — historique des builds
 - **`../TODO.md`** — tâches en cours
 - **`STUDIO_ONE_MULTI_OUT.md`** — notes techniques du patch multi-out

@@ -524,6 +524,160 @@ impl Pattern {
         pattern
     }
 
+    // ── Fixed canonical grooves for the newer generator styles ──────────────
+    // Deterministic (unlike GENERATE). Each is authored for the matching kit
+    // installed by the style-preset chip (`TrackLayoutState::from_kinds`); the
+    // lane indices below MUST match that kit's slot order.
+
+    /// Kit: 0 Kick · 1 Snare(cross-stick) · 2 Ride · 3 HiHat · 4 Perc1.
+    pub fn bossa_pattern() -> Self {
+        let mut pattern = Self::empty();
+        pattern.name = "Bossa".to_string();
+        for bar in 0..(STEP_COUNT / 16) {
+            let o = bar * 16;
+            for s in [0, 6, 8, 14] {
+                pattern.steps[o + s].instruments[0] = true; // surdo kick
+            }
+            for s in [3, 6, 10, 12] {
+                pattern.steps[o + s].instruments[1] = true; // cross-stick 3-2 clave
+            }
+            for s in [0, 2, 4, 6, 8, 10, 12, 14] {
+                pattern.steps[o + s].instruments[2] = true; // ride comping (8ths)
+            }
+            for s in [4, 12] {
+                pattern.steps[o + s].instruments[3] = true; // pedal hat on 2 & 4
+            }
+            for s in [2, 6, 10, 14] {
+                pattern.steps[o + s].instruments[4] = true; // shaker offbeats
+            }
+        }
+        pattern
+    }
+
+    /// Kit: 0 Kick · 1 Clap · 2 HiHat · 3 OpenHiHat · 4 Perc1.
+    pub fn house_pattern() -> Self {
+        let mut pattern = Self::empty();
+        pattern.name = "House".to_string();
+        for bar in 0..(STEP_COUNT / 16) {
+            let o = bar * 16;
+            for s in [0, 4, 8, 12] {
+                pattern.steps[o + s].instruments[0] = true; // four-on-the-floor
+            }
+            for s in [4, 12] {
+                pattern.steps[o + s].instruments[1] = true; // clap backbeat
+            }
+            for s in [0, 4, 8, 12] {
+                pattern.steps[o + s].instruments[2] = true; // closed hat on the beat
+            }
+            for s in [2, 6, 10, 14] {
+                pattern.steps[o + s].instruments[3] = true; // open hat on the offbeat
+            }
+            for s in [3, 7, 11, 15] {
+                pattern.steps[o + s].instruments[4] = true; // syncopated perc
+            }
+        }
+        pattern
+    }
+
+    /// Kit: 0 Kick · 1 Snare · 2 HiHat · 3 Snare606(ghosts) · 4 BassDrum808.
+    pub fn dnb_pattern() -> Self {
+        let mut pattern = Self::empty();
+        pattern.name = "DnB".to_string();
+        for bar in 0..(STEP_COUNT / 16) {
+            let o = bar * 16;
+            for s in [0, 10] {
+                pattern.steps[o + s].instruments[0] = true; // two-step kick
+            }
+            for s in [4, 12] {
+                pattern.steps[o + s].instruments[1] = true; // snare 2 & 4
+            }
+            for s in [0, 2, 4, 6, 8, 10, 12, 14] {
+                pattern.steps[o + s].instruments[2] = true; // 8th ride
+            }
+            for s in [3, 7, 11, 15] {
+                pattern.steps[o + s].instruments[3] = true; // ghost snares (606)
+            }
+            for s in [0, 10] {
+                pattern.steps[o + s].instruments[4] = true; // sub follows the kick
+            }
+        }
+        pattern
+    }
+
+    /// Kit: 0 Kick · 1 Snare(rim) · 2 HiHat · 3 Ride(bell) · 4 Tom(conga) · 5 Perc1.
+    pub fn afrobeat_pattern() -> Self {
+        let mut pattern = Self::empty();
+        pattern.name = "Afrobeat".to_string();
+        for bar in 0..(STEP_COUNT / 16) {
+            let o = bar * 16;
+            for s in [0, 6, 8, 14] {
+                pattern.steps[o + s].instruments[0] = true; // syncopated kick
+            }
+            for s in [4, 10, 12] {
+                pattern.steps[o + s].instruments[1] = true; // rim/snare accents
+            }
+            for s in [0, 2, 4, 6, 8, 10, 12, 14] {
+                pattern.steps[o + s].instruments[2] = true; // busy 8ths
+            }
+            for s in [0, 3, 6, 8, 11, 14] {
+                pattern.steps[o + s].instruments[3] = true; // bell pattern
+            }
+            for s in [3, 7, 11, 15] {
+                pattern.steps[o + s].instruments[4] = true; // congas
+            }
+            for s in [2, 6, 10, 14] {
+                pattern.steps[o + s].instruments[5] = true; // shaker offbeats
+            }
+        }
+        pattern
+    }
+
+    /// Kit: 0 Kick · 1 Snare(rim) · 2 HiHat · 3 BassDrum808 · 4 Perc1.
+    pub fn dub_pattern() -> Self {
+        let mut pattern = Self::empty();
+        pattern.name = "Dub".to_string();
+        for bar in 0..(STEP_COUNT / 16) {
+            let o = bar * 16;
+            pattern.steps[o + 8].instruments[0] = true; // one-drop kick on beat 3
+            pattern.steps[o + 8].instruments[1] = true; // one-drop rim on beat 3
+            for s in [2, 6, 10, 14] {
+                pattern.steps[o + s].instruments[2] = true; // offbeat skank
+            }
+            for s in [0, 8] {
+                pattern.steps[o + s].instruments[3] = true; // deep 808 sub
+            }
+            for s in [6, 14] {
+                pattern.steps[o + s].instruments[4] = true; // sparse perc echoes
+            }
+        }
+        pattern
+    }
+
+    /// Kit: 0 Kick · 1 Snare · 2 HiHat · 3 Snare606(ghosts) · 4 Ride.
+    pub fn breakbeat_pattern() -> Self {
+        let mut pattern = Self::empty();
+        pattern.name = "Breakbeat".to_string();
+        for bar in 0..(STEP_COUNT / 16) {
+            let o = bar * 16;
+            for s in [0, 6, 10] {
+                pattern.steps[o + s].instruments[0] = true; // broken kick
+            }
+            for s in [4, 12] {
+                pattern.steps[o + s].instruments[1] = true; // snare 2 & 4
+            }
+            for s in [0, 2, 3, 4, 6, 8, 10, 11, 12, 14] {
+                pattern.steps[o + s].instruments[2] = true; // busy funky hats
+            }
+            for s in [3, 7, 11, 15] {
+                pattern.steps[o + s].instruments[3] = true; // ghost snares (606)
+            }
+            for s in [0, 8] {
+                pattern.steps[o + s].instruments[4] = true; // ride accents
+            }
+        }
+        pattern
+    }
+
     pub fn get_step(&self, index: usize) -> &Step {
         &self.steps[index % STEP_COUNT]
     }
@@ -784,6 +938,41 @@ impl SharedPattern {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_style_presets_are_well_formed() {
+        // (groove, kit size) — the groove must only touch lanes inside its kit.
+        let cases = [
+            (Pattern::bossa_pattern(), 5),
+            (Pattern::house_pattern(), 5),
+            (Pattern::dnb_pattern(), 5),
+            (Pattern::afrobeat_pattern(), 6),
+            (Pattern::dub_pattern(), 5),
+            (Pattern::breakbeat_pattern(), 5),
+        ];
+        for (pat, kit_size) in cases {
+            let kick = (0..16).any(|s| pat.steps[s].instruments[0]);
+            let hits: usize = pat
+                .steps
+                .iter()
+                .map(|s| s.instruments.iter().filter(|&&on| on).count())
+                .sum();
+            assert!(kick, "{} preset has no kick on lane 0", pat.name);
+            assert!(hits >= 8, "{} preset is too sparse ({hits} hits)", pat.name);
+            // Every hit must fall inside the kit's active lanes.
+            for step in &pat.steps {
+                for (lane, &on) in step.instruments.iter().enumerate() {
+                    assert!(
+                        !on || lane < kit_size,
+                        "{} preset uses lane {} beyond its {}-lane kit",
+                        pat.name,
+                        lane,
+                        kit_size
+                    );
+                }
+            }
+        }
+    }
 
     fn make_group(morph_targets: &[(usize, f32)], step_count: u8) -> FusedGroup {
         let mut group = FusedGroup {

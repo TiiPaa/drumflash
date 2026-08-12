@@ -2,6 +2,7 @@
 
 use crate::{
     groove::GrooveType,
+    plock::SequencerPlockState,
     sequencer::SharedPattern,
     track::{AtomicTrackLayout, MAX_TRACKS},
 };
@@ -69,6 +70,7 @@ pub fn export_pattern_to_midi(
     pattern_length: usize,
     swing: f32,
     groove_type: GrooveType,
+    seq_plock: &SequencerPlockState,
     path: &Path,
 ) -> std::io::Result<()> {
     std::fs::write(
@@ -80,6 +82,7 @@ pub fn export_pattern_to_midi(
             pattern_length,
             swing,
             groove_type,
+            seq_plock,
         ),
     )
 }
@@ -91,6 +94,7 @@ fn export_pattern_to_midi_data(
     pattern_length: usize,
     swing: f32,
     groove_type: GrooveType,
+    seq_plock: &SequencerPlockState,
 ) -> Vec<u8> {
     let microseconds_per_quarter = (60_000_000.0 / bpm).round() as u32;
     let steps = pattern_length.clamp(1, 64);
@@ -110,17 +114,50 @@ fn export_pattern_to_midi_data(
         ],
     ));
 
-    for step in 0..steps {
-        let mask = pattern.load_step_mask(step);
-        for slot in 0..MAX_TRACKS {
-            if !track_layout.is_active(slot) {
-                continue;
-            }
-            if (mask & (1u16 << slot)) != 0 {
-                let tick = step_tick_offset(step, swing, groove_type);
-                let note = track_layout.midi_note_for_slot(slot);
-                events.push((tick, vec![0x99, note, 100]));
-                events.push((tick + 10, vec![0x89, note, 0]));
+    // Emit a note-on/off pair at `tick`, note-off after `dur` ticks.
+    let emit = |events: &mut Vec<(u32, Vec<u8>)>, tick: u32, dur: u32, note: u8| {
+        events.push((tick, vec![0x99, note, 100]));
+        events.push((tick + dur.max(1), vec![0x89, note, 0]));
+    };
+
+    for slot in 0..MAX_TRACKS {
+        if !track_layout.is_active(slot) {
+            continue;
+        }
+        let note = track_layout.midi_note_for_slot(slot);
+        let fusions = pattern.load_fusions(slot);
+        for step in 0..steps {
+            let bit = (pattern.load_step_mask(step) & (1u16 << slot)) != 0;
+
+            // A cell covered by a fusion plays nothing on its own; only the
+            // fusion's START cell emits (matching the sequencer).
+            if let Some(group) = fusions.iter().find(|g| g.contains(step)) {
+                if !group.is_start(step) || !bit {
+                    continue;
+                }
+                // `step_count` pulses evenly spaced over the whole fused span.
+                let pulses = (group.step_count.max(1)) as u32;
+                let span = group.cell_span() as u32;
+                let total = (span * TICKS_PER_STEP).max(1);
+                let base = step_tick_offset(group.start_cell as usize, swing, groove_type);
+                let dur = (total / pulses).saturating_sub(1).clamp(1, 10);
+                for k in 0..pulses {
+                    let tick = base + (k as f32 * total as f32 / pulses as f32).round() as u32;
+                    emit(&mut events, tick, dur, note);
+                }
+            } else if bit {
+                // Normal cell: sequencer-plock stutter retriggers over one step.
+                let n = seq_plock
+                    .get(slot, step)
+                    .map(|p| p.stutter_count.max(1))
+                    .unwrap_or(1) as u32;
+                let base = step_tick_offset(step, swing, groove_type);
+                let dur = (TICKS_PER_STEP / n).saturating_sub(1).clamp(1, 10);
+                for k in 0..n {
+                    let tick =
+                        base + (k as f32 * TICKS_PER_STEP as f32 / n as f32).round() as u32;
+                    emit(&mut events, tick, dur, note);
+                }
             }
         }
     }
@@ -156,6 +193,7 @@ pub fn export_pattern_to_midi_bytes(
     pattern_length: usize,
     swing: f32,
     groove_type: GrooveType,
+    seq_plock: &SequencerPlockState,
 ) -> std::io::Result<Vec<u8>> {
     Ok(export_pattern_to_midi_data(
         pattern,
@@ -164,6 +202,7 @@ pub fn export_pattern_to_midi_bytes(
         pattern_length,
         swing,
         groove_type,
+        seq_plock,
     ))
 }
 
@@ -179,6 +218,73 @@ mod tests {
         AtomicTrackLayout::from_state(&TrackLayoutState::from_legacy_13())
     }
 
+    fn count_note_ons(bytes: &[u8], note: u8) -> usize {
+        bytes
+            .windows(3)
+            .filter(|w| w[0] == 0x99 && w[1] == note && w[2] == 100)
+            .count()
+    }
+
+    #[test]
+    fn midi_export_expands_stutter_into_multiple_notes() {
+        let pattern = SharedPattern::new(&Pattern::empty());
+        pattern.set_step_mask(0, 1u16 << 0); // Kick on step 0
+        let layout = legacy_layout();
+        let seq = SequencerPlockState::new();
+        seq.set_stutter(0, 0, 4); // 4 retriggers on the kick step
+
+        let bytes = export_pattern_to_midi_bytes(
+            &pattern,
+            &layout,
+            120.0,
+            16,
+            0.0,
+            GrooveType::Straight,
+            &seq,
+        )
+        .expect("MIDI export should succeed");
+        assert_eq!(
+            count_note_ons(&bytes, 36),
+            4,
+            "stutter=4 should emit 4 kick note-ons"
+        );
+    }
+
+    #[test]
+    fn midi_export_expands_fusion_into_pulses() {
+        use crate::sequencer::pattern::{FusedGroup, MorphTarget};
+        let pattern = SharedPattern::new(&Pattern::empty());
+        pattern.set_step_mask(0, 1u16 << 0); // Kick on the fusion start cell
+        pattern.store_fusions(
+            0,
+            &[FusedGroup {
+                start_cell: 0,
+                end_cell: 1,
+                step_count: 3,
+                morph_count: 0,
+                morph_targets: [MorphTarget::default(); 4],
+            }],
+        );
+        let layout = legacy_layout();
+        let seq = SequencerPlockState::new();
+
+        let bytes = export_pattern_to_midi_bytes(
+            &pattern,
+            &layout,
+            120.0,
+            16,
+            0.0,
+            GrooveType::Straight,
+            &seq,
+        )
+        .expect("MIDI export should succeed");
+        assert_eq!(
+            count_note_ons(&bytes, 36),
+            3,
+            "fusion step_count=3 should emit 3 kick pulses"
+        );
+    }
+
     #[test]
     fn midi_export_uses_slot_midi_note_including_fourteenth_slot() {
         let mut layout_state = TrackLayoutState::default_layout();
@@ -191,7 +297,7 @@ mod tests {
         pattern.set_step_mask(0, 1u16 << 13);
 
         let bytes =
-            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight)
+            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight, &SequencerPlockState::new())
                 .expect("MIDI export should succeed");
 
         assert!(
@@ -212,7 +318,7 @@ mod tests {
         let layout = legacy_layout();
 
         let bytes =
-            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight)
+            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight, &SequencerPlockState::new())
                 .expect("MIDI export should succeed");
 
         assert!(
@@ -233,7 +339,15 @@ mod tests {
         let layout = legacy_layout();
 
         let bytes =
-            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 64, 0.0, GrooveType::Straight)
+            export_pattern_to_midi_bytes(
+                &pattern,
+                &layout,
+                120.0,
+                64,
+                0.0,
+                GrooveType::Straight,
+                &SequencerPlockState::new(),
+            )
                 .expect("MIDI export should succeed");
 
         // Kick note = 36, Snare note = 38
@@ -255,10 +369,18 @@ mod tests {
         let layout = legacy_layout();
 
         let straight =
-            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight)
+            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight, &SequencerPlockState::new())
                 .expect("MIDI export should succeed");
         let swung =
-            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.5, GrooveType::Swing16)
+            export_pattern_to_midi_bytes(
+                &pattern,
+                &layout,
+                120.0,
+                16,
+                0.5,
+                GrooveType::Swing16,
+                &SequencerPlockState::new(),
+            )
                 .expect("MIDI export should succeed");
 
         // Straight step 1 is at tick 120; with +50 % swing16 ratio = 2/3,
