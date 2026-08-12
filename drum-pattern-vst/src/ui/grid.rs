@@ -863,7 +863,17 @@ fn draw_empty_slot_lane_v2(
         ui.spacing_mut().item_spacing.x = gap;
         ui.set_height(LANE_H);
 
-        draw_seq_grip_v2(ui, grip_w, LANE_H);
+        // Empty lanes are draggable too: moving one just reorders slot data
+        // (`apply_lane_reorder_move` is slot-generic). No track selection here —
+        // an inactive slot has no Sound Editor tab to select.
+        let grip_response =
+            draw_seq_grip_v2(ui, grip_w, LANE_H).on_hover_cursor(egui::CursorIcon::Grab);
+        if grip_response.is_pointer_button_down_on() || grip_response.drag_started() {
+            state.lane_drag_source = Some(slot_idx);
+        }
+        if state.lane_drag_source == Some(slot_idx) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
         let name_response = draw_empty_lane_name_v2(ui, name_w, slot_idx + 1);
         let add_click_pos = if name_response.clicked() {
             name_response.interact_pointer_pos()

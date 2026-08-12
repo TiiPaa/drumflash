@@ -1,88 +1,66 @@
 # Handoff — Flash Drum VST3
 
-**Date:** 2026-08-12 · **Branch:** `skeuo-vector` · **Latest installed build:** `20260807-170048`
+**Date:** 2026-08-12 (soir) · **Branch:** `skeuo-vector` · **Latest installed build:** `20260812-123906`
 **Read [`CLAUDE.md`](../CLAUDE.md) first** — it is the canonical architecture + invariants + workflow reference for all AI agents. This file is a session-state handoff, not a replacement for it.
 
 ---
 
 ## 1. Snapshot / working-tree state
 
-- The whole session's work sits **uncommitted** on `skeuo-vector` (~29 tracked files modified, several new files). **Nothing has been committed** — the user commits explicitly, on request only. Do not commit or push unless asked.
-- Build is **green**: `cargo test` = **421 tests pass** (259 lib + 1 + 161 integration), `cargo check` warning-clean (one pre-existing `kick_out` unused-var in an integration test), `build.ps1 -Install` OK.
-- New untracked files this session:
-  - Voices: `src/synthesis/{bd606,sd606,ch606,buzz,sample_bank}.rs` + their `src/synthesis/settings/{bd606,sd606,ch606,buzz}.rs`.
-  - Assets: `assets/{bd606,sd606,ch606}.wav` (TR-606 samples loaded by `sample_bank.rs`).
-  - `wav/` is a scratch folder, **gitignored on purpose** — leave it.
-- **Deploy caveat:** Studio One locks the VST3 DLL — it must be closed before `build.ps1 -Install`. Run the build **plainly** (no `2>&1`/`2>$null` — PowerShell 5.1 turns cargo stderr into a fake `NativeCommandError`).
+- Branch `skeuo-vector` @ latest, **committed & pushed** ; `main` fast-forwardé sur `skeuo-vector` ce jour (les deux branches sont alignées).
+- Build **green** : `cargo test` = **432 tests pass** (265 lib + 1 + 166 integration), `cargo check` warning-clean (sauf le `kick_out` unused-var pré-existant dans un test d'intégration), `build.ps1 -Install` OK.
+- **Deploy caveat (rappel)** : Studio One locke la DLL VST3 — il doit être fermé avant `build.ps1 -Install`. Lancer le build **plainly** (pas de `2>&1`/`2>$null` — PowerShell 5.1 transforme le stderr de cargo en faux `NativeCommandError`).
 
-## 2. Last completed — [159] validated
+## 2. Last completed — batch [164]/[162]/[165]/[160]/[161] (build 20260812-123906)
 
-### [159] Amp envelope → A-H-D bipolar (Release removed) — DONE & validated in Studio One (2026-08-12)
-All voices' **amplitude** envelope went from decay+release to **Attack-Hold-Decay, no release**, with **independent bipolar concave/convex curves** on attack and decay (generalises the Buzz filter-env the user liked).
+- **[164]** Glyphe « × » corrompu (« Ã— ») du bouton reset morphing → « X » ASCII (`ui/plock.rs`, convention [73]).
+- **[162]** Voix smp (BD6/SD6/CH6smp) : **One Shot ON grise** les sliders Attack/Decay/Decay Curve (`add_enabled_ui` dans `sound_editor.rs` — le switch One Shot est un special param, reste actif) + ligne d'enveloppe grise dans `draw_sample_amp_graph`. On grise, on ne cache pas (règle zones stables).
+- **[165]** **Drag d'une lane vide** : grip câblé comme les lanes actives dans `draw_empty_slot_lane_v2` (pas de `select_legacy_track` — un slot inactif n'a pas d'onglet). `apply_lane_reorder_move` était déjà slot-générique.
+- **[160]** **Graphe Gate Shape (Buzz)** : `draw_buzz_gate_graph` (`envelope_viz.rs`) sous le graphe d'ampli, famille Env. Fenêtre **fixe 60 ms** (Rate visible), Smooth cosinus `^(1+4·shape)`, Razor rampe 0,3 ms + spike expo (constantes de `BuzzVoice`), plancher Depth, tag « GATE ».
+- **[161]** **Microtiming par cellule (seq plock), ±50 ms complet** — n' avait JAMAIS été câblé au moteur (stockage/persistance seuls). Désormais appliqué **par le séquenceur** :
+  - `groove::step_start_beat()` = inverse exacte de `beat_to_step` (paires swing/shuffle/MPC).
+  - Nudge **positif** → `late_trigger`/`late_fire_beat` (tout le train stutter/fusion décalé d'un bloc).
+  - Nudge **négatif** → peek de la cellule du prochain boundary à chaque sample ; fire en avance quand temps restant ≤ −nudge ; `classify_cell`/`eval_trigger` partagés avec le chemin normal (masque/humanize/fusions/morphs identiques) ; `suppress_next` au boundary réel ; `early_next_loop` quand le fire croise le wrap → conditions évaluées avec `loop_count + 1` dans `lib.rs`.
+  - `Sequencer::set_microtimings()` copie les atomics 1×/buffer ; `clear_microtiming_state()` sur play/stop/reset/seek/sync.
+  - UI : row **Nudge** (−50..+50 ms) dans le menu Seq Plock, entre Stutter et Condition.
+  - Export MIDI : notes décalées du nudge (clamp tick 0).
+  - Tests : inverse step_start_beat, ±25 ms sample-accurate, wrap + flag, zéro nudge, export MIDI.
+  - ⚠️ Limites assumées : conditions à la boucle avec push/pull ≠ 0 approximatives (préexistant : `loop_count` wrap sur la timeline non shiftée) ; collision late+transition même sample → report d'1 sample.
 
-- Core: **`DecayReleaseEnvelope` was rewritten internally** in `dsp.rs` (time-based A-H-D) keeping its public signatures, so the amp voices barely changed. `decay_curve` = bipolar **decay** curve; `release_curve` **repurposed** as bipolar **attack** curve; `set_release`/`release_time` = **no-op**. `shape_curve(e,c)` shared. `trigger()` ramps from current value (anti-click), `trigger_hard()` from zero (machine-gun/stutter).
-- Registry: **Release slider removed** from every `*_STD` table; **"Release Curve" → "Attack Curve"** (−1..1); **"Decay Curve"** → −1..1.
-- Graph `draw_amp_envelope` (envelope_viz.rs): A-H-D bipolar, Hold plateau, no Release segment.
-- Buzz amp migrated `ExpDecayEnvelope` → `DecayReleaseEnvelope` (its Decay Curve is bipolar now too).
-- Bonus bug fixes: `open_hihat` recreated its envelope in `set_settings` (state reset → click on slider drag) → replaced by setters; `open_hihat`/`cymbal` discarded `with_attack_ms` results (`Copy` no-op) → `set_attack_ms`; cymbal's duplicated attack-drift cleaned.
-
-**Known limitation (accepted by the user):** per-voice **defaults were not retuned**. Old stiffness values (0.1–20) are read on the new −1..1 range and **clamp to +1**, so a *fresh* instance shows Attack/Decay Curve sliders **at max (convex)**. The user is fine with this (sound stays punchy). If it ever needs centered (0 = linear) defaults, retune `sound_settings_default` (pos 6 = decay_curve, pos 7 = release_curve/attack) per voice in `instrument_registry.rs` + `VoiceSettings::*()` in `synthesis/mod.rs`.
+**Non validé en main** : le batch entier attend la checklist « À tester dans Studio One » (voir section 4 du CHANGELOG / fin de session).
 
 ## 3. Pending tasks (TODO.md)
 
-**Resume point (`REPRENDRE ICI`) = [155].** The user picks the next task — present the curated TODO list, don't auto-start.
+**Resume point (`REPRENDRE ICI`) = [166].** L'utilisateur choisit la tâche — présenter la liste, ne pas auto-démarrer.
 
-- **[155]** SMP voices (BD6/SD6/CH6smp) attack barely audible **and** mismatches `draw_sample_amp_graph` (attack drawn as a sample fraction). Align audible attack ↔ graph. *(Note: amp attack was already converted to absolute ms — `MAX_AMP_ATTACK_SECS = 0.08` — but the graph/range still don't line up.)*
-- **[160]** Draw a **Gate Shape** graph for Buzz (Smooth cosine tremolo vs Razor exp spike, driven by Rate/Depth/Shape) next to its gate controls.
-- **[161]** Restore **per-cell microtiming** (nudge) in the sequencer p-lock.
-- **[162]** Grey out the envelope controls/graph when **One-Shot** is on for smp voices (amp is bypassed then). Related to [155].
-- **[163]** Instrument **categories** (BD, SD, HH, PERC, FX, OTHER) + let the lane-name right-click menu also **change the instrument type**.
-- **[164]** Wrong glyph on the **morphing reset** button.
-- Backlog P2/P3: [144] [146] [150] [152] [69] [27] [56] [41] [84] [83cont] [94] [95] and **[BUG-LANE-DESYNC]**.
+- **[166]** Mixer le **stutter avec les cellules fusionnées** (aujourd'hui exclusifs). **Bien étudier avant de coder** : sémantique temporelle, audio, export MIDI, UI/plocks.
+- **[163]** **Catégories d'instruments** (BD, SD, HH, PERC, FX, OTHER) + changement de type via clic droit sur le nom de lane.
+- **[155] ANNULÉ** par l'utilisateur (2026-08-12).
+- Backlog P2/P3 : [144] [146] [150] [152] [69] [27] [56] [41] [84] [83cont] [94] [95] et **[BUG-LANE-DESYNC]**.
 
-Reminder: when the user says "next" / "on continue", **do not start coding** — present the curated unchecked-TODO list and let them pick.
+Rappel : quand l'utilisateur dit « next » / « on continue », **ne pas coder** — présenter la liste TODO et le laisser choisir.
 
-## 4. What shipped this session (all built & installed, uncommitted)
+## 4. Gotchas / lessons learned (aussi en mémoire agent)
 
-| Task | Summary | Build |
-|---|---|---|
-| CH6smp wiring + samplers | TR-606 closed-hat sampler finished; `sample_bank.rs` + wav assets | — |
-| Sampler attack | amp attack converted sample-fraction → **absolute ms** (`MAX_AMP_ATTACK_SECS = 0.08`) | — |
-| Step-drag phantom | fixed yellow-marker cell following the mouse on right-click/release | bb45c76 |
-| **Buzz voice** | new voice: tonal osc (sine/square/saw) + noise + pitch sweep + Smooth/Razor amplitude gate + bipolar filter env (LP/HP/BP) + machine-gun amp retrigger | — |
-| [148] Generator styles | +6 styles (Bossa/House/DnB/Afrobeat/Dub/Breakbeat); anchors kept sacred (four-on-floor fix) | — |
-| Style preset chips | fixed chips that also install a **lane KIT** per style (`apply_style_preset`, bottom_panel.rs) | — |
-| [153] | phantom "unsaved" star fixes incl. reopened-project-matching-a-slot nuance (pattern_bank.rs) | — |
-| [154] | Hold shown in amp env graph | 20260807-111016 |
-| [156] | Save keycap moved left of the pattern slots | 20260807-123130 |
-| [157] | Buzz max gate rate raised | — |
-| [158] | MIDI export includes fused-cell pulses + stutter notes | 20260807-140101 |
-| **[159]** | amp env → A-H-D bipolar, Release removed | 20260807-170048 |
+- **PowerShell 5.1** : jamais `2>&1`/`2>$null` sur un exe natif (cargo/build.ps1) — stderr devient `NativeCommandError`. Et ne JAMAIS éditer un fichier source via `Set-Content` (risque d'encodage) — utiliser l'outil Edit.
+- **Studio One DLL lock** : `-Install` échoue si S1 est ouvert (`Get-Process "Studio One"` pour vérifier). Build plainly, ne remonter S1 que si la copie échoue.
+- **« Aucune différence après un build »** = souvent une DLL cachée dans Studio One — vérifier le build ID dans le header du plugin, retirer/réajouter l'instance.
+- **Anti-click** : ne jamais recréer une enveloppe dans `set_settings()` ; utiliser les setters. `DecayReleaseEnvelope` est `Copy` — `x.with_attack_ms(..)` en statement = no-op silencieux.
+- **Blobs positionnels** : la longueur EST la version — ne jamais renuméroter un champ ni réutiliser une longueur. `sound-settings-v2`, `plock-v1`, `pattern-v5`.
+- **UI zones stables** : pas de ligne conditionnelle qui décale l'UI — réserver l'espace, griser plutôt que cacher.
+- **Labels de boutons : ASCII only** (tâche [73]) — les glyphes UTF-8 finissent corrompus en Windows-1252 ([164] en est un exemple résiduel).
+- **Skeuo rendering** : tout vit dans `src/ui/skeuo.rs`, une fonction par élément.
+- **Ne pas ajouter de scope non demandé** : implémenter exactement la demande ; proposer des idées de TODO, ne pas les construire en silence.
+- **Graphes dans le Sound Editor** : un LCD par famille avec graphe (Env/Filter) ; pour empiler un 2e graphe (Buzz gate), tag texte en coin pour les distinguer.
 
-## 5. Gotchas / lessons learned (also in agent memory)
+## 5. Key file map (features de la session)
 
-- **PowerShell 5.1**: never `2>&1`/`2>$null` a native exe (cargo/build.ps1) — stderr gets wrapped as `NativeCommandError` and aborts / can deadlock two cargo processes on the build lock. Run plainly; capture with `| Out-String` if you must.
-- **Studio One DLL lock**: `-Install` copy fails if S1 is open. The rule is: run `build.ps1 -Install` directly, only surface S1 if the copy fails.
-- **"No difference after a build"** is often a **cached DLL in Studio One** — check the build ID in the plugin header and remove/re-add the instance before suspecting the code.
-- **Anti-click**: never recreate an envelope in `set_settings()` (resets state → click mid-drag); drive it via setters. `DecayReleaseEnvelope` is `Copy` — `x.with_attack_ms(..)` as a statement is a silent no-op; use `set_attack_ms`.
-- **Two style systems** are distinct: fixed "preset" chips (`Pattern::xxx_pattern()`, bottom_panel) vs Generator "Style" dropdowns (`enum Style`/`MusicalTemplate`, generator/styles.rs). "preset de style" in French = the fixed chips.
-- **Persistence blobs are positional; the blob length IS the version** — never renumber a field or reuse a length. `sound-settings-v2`, `plock-v1`, `pattern-v5`.
-- **Pattern dirty-state** (the "unsaved ★"): a reopened project whose grid matches an occupied slot must NOT warn even when `last_loaded = None` — see `pattern_is_dirty` in pattern_bank.rs.
-- **UI stable zones**: no conditional line that shifts UI zones — reserve the space (14 fixed rows), grey out rather than hide.
-- **Skeuo rendering** all lives in `src/ui/skeuo.rs`, one function per element — never scatter it.
-- **Don't add unrequested scope**: implement exactly the request/mockup; propose TODO ideas, don't silently build them.
+- Microtiming : `src/sequencer/mod.rs` (`TrackState::{late_trigger, suppress_next, early_fired}`, `classify_cell`, `eval_trigger`, `set_microtimings`), `src/groove.rs` (`step_start_beat`), `src/lib.rs` (copie 1×/buffer + `early_next_loop` → conditions), `src/ui/plock.rs` (row Nudge), `src/midi_export.rs` (nudge en ticks).
+- One-Shot greying : `src/ui/sound_editor.rs` (`env_disabled`), `src/ui/envelope_viz.rs` (`draw_sample_amp_graph` one-shot gris).
+- Gate graph Buzz : `src/ui/envelope_viz.rs` (`draw_buzz_gate_graph`), appelant `src/ui/sound_editor.rs`.
+- Drag lane vide : `src/ui/grid.rs` (`draw_empty_slot_lane_v2`).
+- Glyphe morphing : `src/ui/plock.rs` (`draw_morph_target_action_buttons`).
 
-## 6. Key file map (this session's features)
+## 6. If you're picking this up
 
-- Envelope engine: `src/synthesis/dsp.rs` (`DecayReleaseEnvelope`, `ExpDecayEnvelope`, `shape_curve`).
-- Registry (single source of truth for the 17 voices, params, defaults): `src/instrument_registry.rs`.
-- Buzz: `src/synthesis/buzz.rs` + `settings/buzz.rs`; graph `draw_buzz_filter_envelope` in `ui/envelope_viz.rs`.
-- Samplers: `src/synthesis/{bd606,sd606,ch606,sample_bank}.rs` + `settings/*`; graphs `draw_sample_amp_graph`/`draw_sample_filter_graph`.
-- Amp graph: `draw_amp_envelope` in `ui/envelope_viz.rs`; caller in `ui/sound_editor.rs`.
-- Generator styles + kits: `src/generator/styles.rs`, `src/sequencer/pattern.rs`, `src/ui/bottom_panel.rs`.
-- MIDI export (fusions/stutters): `src/midi_export.rs`, `src/ui/midi.rs`.
-- Pattern bank / dirty-state / Save button: `src/ui/pattern_bank.rs`.
-
-## 7. If you're picking this up
-
-1. Read `CLAUDE.md`. 2. The whole session is **committed & pushed** (`skeuo-vector` @ latest); [159] is validated. 3. Resume at **[155]** but wait for the user's explicit pick from TODO before coding. 4. Build+install and end every build report with the "À tester dans Studio One" checklist.
+1. Read `CLAUDE.md`. 2. Tout est **commité & poussé** (`skeuo-vector` = `main`) ; le batch [164]/[162]/[165]/[160]/[161] attend validation Studio One (checklist en fin de session précédente / CHANGELOG build `20260812-123906`). 3. Resume point = **[166]** mais attendre le choix explicite de l'utilisateur avant de coder. 4. Build+install et terminer chaque rapport de build par la checklist « À tester dans Studio One ».

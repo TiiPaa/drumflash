@@ -9,8 +9,8 @@ use crate::ui::editor_state::{
     schema_voice_idx, select_legacy_track, EditorUIState, LanePresetAction, SoundEditorTab,
 };
 use crate::ui::envelope_viz::{
-    draw_amp_envelope, draw_buzz_filter_envelope, draw_filter_envelope, draw_sample_amp_graph,
-    draw_sample_filter_graph,
+    draw_amp_envelope, draw_buzz_filter_envelope, draw_buzz_gate_graph, draw_filter_envelope,
+    draw_sample_amp_graph, draw_sample_filter_graph,
 };
 use crate::ui::fmt::{freq_to_note, note_name, note_to_freq};
 use crate::ui::pattern_bank::load_pattern_for_ui;
@@ -1058,6 +1058,13 @@ pub fn draw_sound_panel(
                     ui.set_width(params_w);
                     ui.spacing_mut().item_spacing.y = 9.0;
                     // Standard params for this family
+                    // smp voices: One Shot bypasses the amp envelope — grey out
+                    // the Env sliders (the One Shot switch is a special param,
+                    // rendered below, and stays enabled).
+                    let env_disabled = family == crate::instrument_registry::ParamFamily::Env
+                        && matches!(voice_idx, 13 | 14 | 15)
+                        && inst.special_value(2) > 0.5;
+                    ui.add_enabled_ui(!env_disabled, |ui| {
                     for def in standard_defs.iter().filter(|d| {
                         d.family == family
                             && d.field != crate::instrument_registry::StandardField::Volume
@@ -1204,6 +1211,7 @@ pub fn draw_sound_panel(
                             }
                         }
                     }
+                    });
 
                     // Special params for this family — stored PER SLOT so two
                     // slots of the same kind stay independent.
@@ -1369,6 +1377,19 @@ pub fn draw_sound_panel(
                             // A-H-D bipolar: `release_curve` is repurposed as the
                             // attack curve; `decay_curve` shapes the decay.
                             draw_amp_envelope(ui, attack, release_curve, hold, decay, decay_curve);
+                            if voice_idx == 16 {
+                                // Buzz: the Env family also holds the gate
+                                // controls — show the gate shape under the amp
+                                // envelope.
+                                ui.add_space(6.0);
+                                draw_buzz_gate_graph(
+                                    ui,
+                                    params.algos()[state.selected_instrument].value() == 1,
+                                    inst.special_value(0),
+                                    inst.special_value(1),
+                                    inst.special_value(2),
+                                );
+                            }
                         }
                     }
                     crate::instrument_registry::ParamFamily::Filter => {

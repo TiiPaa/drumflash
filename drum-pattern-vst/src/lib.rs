@@ -2576,6 +2576,16 @@ impl Plugin for DrumFlashVst {
             std::array::from_fn(|i| self.params.track_layout.state.grid_slot(i));
         self.sequencer.set_grid_slots(grid_slots);
 
+        // Per-cell microtiming (nudge): copied from the seq-plock atomics once
+        // per buffer; the sequencer fires nudged cells early/late.
+        let seq_plock_state = &self.params.seq_plock_state.state;
+        self.sequencer
+            .set_microtimings(std::array::from_fn(|slot| {
+                std::array::from_fn(|step| {
+                    f32::from_bits(seq_plock_state.microtimings[slot][step].load(Ordering::Relaxed))
+                })
+            }));
+
         // Reinitialize synthesizer slots whose kind changed (added/removed/reassigned).
         for slot in 0..crate::track::MAX_TRACKS {
             let current_kind = self.params.track_layout.state.kind_for_slot(slot);
@@ -2792,8 +2802,11 @@ impl Plugin for DrumFlashVst {
                             continue; // Skip this trigger based on probability
                         }
 
-                        // Apply step conditions
-                        let loop_count = self.sequencer.loop_count();
+                        // Apply step conditions. A trigger that fired early
+                        // across the pattern wrap (negative microtiming on the
+                        // first step) belongs to the NEXT loop.
+                        let loop_count = self.sequencer.loop_count()
+                            + usize::from(trigger.early_next_loop);
                         let condition_passes = if let Some(sp) = seq_params {
                             use crate::plock::StepCondition::*;
                             match sp.condition {

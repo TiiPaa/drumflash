@@ -54,6 +54,18 @@ pub fn beat_to_step(beat_pos: f64, swing: f32, groove_type: GrooveType) -> usize
     }
 }
 
+/// Beat position at which `step` STARTS — the inverse of `beat_to_step` for
+/// the pair-based grooves (Straight included: ratio 0.5 → 0.25 beat steps).
+/// Used to compute exact step-boundary times for per-cell microtiming.
+pub fn step_start_beat(step: usize, swing: f32, groove_type: GrooveType) -> f64 {
+    let pair_start = (step / 2) as f64 * 0.5;
+    if step % 2 == 0 {
+        pair_start
+    } else {
+        pair_start + 0.5 * swing_ratio_for(swing, groove_type).clamp(0.02, 0.98)
+    }
+}
+
 fn straight_step(beat_pos: f64) -> usize {
     ((beat_pos / 0.25).floor() as usize).clamp(0, 63)
 }
@@ -167,8 +179,36 @@ mod tests {
     }
 
     #[test]
-    fn test_total_bar_length_unchanged() {
-        // Regardless of groove type / swing, one full bar must still map to 16 steps.
+    fn test_step_start_beat_inverts_beat_to_step() {
+        for groove in [
+            GrooveType::Straight,
+            GrooveType::Swing16,
+            GrooveType::Shuffle,
+            GrooveType::Mpc,
+        ] {
+            for swing in [-0.5_f32, -0.25, 0.0, 0.25, 0.5] {
+                for step in 0..16 {
+                    let start = step_start_beat(step, swing, groove);
+                    assert_eq!(
+                        beat_to_step(start + 1e-9, swing, groove),
+                        step,
+                        "start of step {step} should map back to it (groove {groove:?}, swing {swing})"
+                    );
+                    if step > 0 {
+                        assert_eq!(
+                            beat_to_step(start - 1e-9, swing, groove),
+                            step - 1,
+                            "just before step {step} should still be step {} (groove {groove:?}, swing {swing})",
+                            step - 1
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_total_bar_length_unchanged() {        // Regardless of groove type / swing, one full bar must still map to 16 steps.
         for groove in [
             GrooveType::Straight,
             GrooveType::Swing16,

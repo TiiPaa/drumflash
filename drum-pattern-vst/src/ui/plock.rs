@@ -472,7 +472,7 @@ fn draw_morph_target_action_buttons(
             MorphDirection::Source => MorphDirection::Target,
         });
     }
-    if ui.small_button("Ã—").clicked() {
+    if ui.small_button("X").clicked() {
         delete = true;
     }
     if let Some(dir) = new_dir {
@@ -1170,6 +1170,36 @@ fn draw_sequencer_plock_menu(
             if stutter_response.changed() {
                 let new_stutter = stutter.round() as u8;
                 seq_plock.set_stutter(instrument, step, new_stutter);
+                changed_this_frame = true;
+            }
+        }
+
+        // Microtiming (nudge): shifts the whole cell (stutter/fusion pulses
+        // included) by -50..+50 ms around its step boundary.
+        {
+            let mut nudge = current.microtiming_ms.clamp(-50.0, 50.0);
+            let nudge_text = if nudge.abs() < 0.5 {
+                "0 ms".to_string()
+            } else {
+                format!("{:+.0} ms", nudge)
+            };
+            let nudge_response = plock_menu_row(
+                ui,
+                "Nudge",
+                ACCENT,
+                has_seq_plock && current.microtiming_ms != 0.0,
+                Some(&nudge_text),
+                |ui| {
+                    ui.add(
+                        LocalParamSlider::new(&mut nudge, -50.0..=50.0)
+                            .with_width(86.0)
+                            .without_value()
+                            .reset_value(0.0),
+                    )
+                },
+            );
+            if nudge_response.changed() {
+                seq_plock.set_microtiming(instrument, step, nudge);
                 changed_this_frame = true;
             }
         }
