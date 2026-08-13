@@ -4,7 +4,7 @@
 
 ### P1 — Quick wins UI
 - [x] [164] **Caractère bizarre sur le bouton de reset du morphing** — glyphe « × » corrompu (« Ã— », UTF-8 relu en Windows-1252) remplacé par « X » ASCII (convention [73]) dans `plock.rs` (build 20260812-111741, à valider dans S1).
-- [ ] [162] **Griser les enveloppes quand One-Shot est actif (samplers smp)** — sur BD6smp/SD6smp/CH6smp, en mode One-Shot l'ampli est bypassée → désactiver visuellement (griser) les contrôles + graphe d'enveloppe concernés. ~~Lié à [155]~~ (annulé).
+- [x] [162] **Griser les enveloppes quand One-Shot est actif (samplers smp)** — sur BD6smp/SD6smp/CH6smp, en mode One-Shot l'ampli est bypassée → désactiver visuellement (griser) les contrôles + graphe d'enveloppe concernés. ~~Lié à [155]~~ (annulé).
 - [x] [165] **Pouvoir déplacer une lane vide** — grip des lanes vides câblé comme les lanes actives (`lane_drag_source` + curseurs Grab/Grabbing) ; `apply_lane_reorder_move` est déjà slot-générique, rien d'autre à toucher (pas de sélection de track pour un slot inactif).
 
 ### P2 — Features moyennes
@@ -13,7 +13,7 @@
 
 ### P2/P3 — Gros chantiers
 - [ ] [166] **REPRENDRE ICI** — **Mixer le stutter avec les cellules fusionnées** — étudier attentivement l'interaction stutter × fusion (actuellement exclusifs) : sémantique temporelle, rendu audio, export MIDI [158], UI/plocks. **Bien étudier le point avant de coder.**
-- [ ] [163] **Catégories d'instruments + changement de type via clic droit sur le nom de lane** — regrouper les kinds en catégories (BD, SD, HH, PERC, FX, OTHER) ; le menu clic-droit sur le nom de la lane doit aussi permettre de changer le type d'instrument.
+- [x] [163] **Catégories d'instruments + changement de type via clic droit sur le nom de lane** — `InstrumentCategory` (BD, SD, HH, PERC, FX, OTHER) sur `TrackInstrumentKind` (`category()` + `kinds_in()` + `ALL`) ; sous-menu « Instrument » groupé par catégorie dans le menu clic-droit du nom de lane (même sémantique que le dropdown Type : nom + note MIDI + reset défauts, `change_slot_kind`) ; popup Add Module aussi groupé par catégorie. Tests partition + spot-checks (build 20260813-153921, à valider dans S1).
 
 ---
 
@@ -22,7 +22,7 @@
 ### Régressions / bugs (P1)
 - [x] [153] **Étoile "non sauvegardé" fantôme** — le positionnement sur un slot vide (action UI-only) ne publiait pas le slot vers `audio_last_loaded_slot` ; la resync UI ramenait alors le slot sauvé + grille vidée → faux dirty. Fix : publier `audio_last_loaded_slot = i` sur slot vide (build 20260807-105334).
 - [x] [154] **Hold manquant dans le graphe d'enveloppe** — tracé A-H-D explicite : palier plat au sommet pendant le Hold (couleur dédiée) + légende « H », Hold intégré à l'échelle temporelle (build 20260807-111016).
-- [ ] ~~[155]~~ **ANNULÉ (2026-08-12)** — Attaque des instruments smp quasi inaudible + graphe décalé — annulé par l'utilisateur.
+- [x] ~~[155]~~ **ANNULÉ (2026-08-12)** — Attaque des instruments smp quasi inaudible + graphe décalé — annulé par l'utilisateur.
 
 ### Quick wins UI (P1/P2)
 - [x] [156] **Bouton "Save" à gauche des patterns** — Save déplacé avant la rangée de slots (build 20260807-123130).
@@ -31,7 +31,7 @@
 ### Features moyennes (P2)
 - [x] [158] **Export MIDI : inclure les notes des cellules fusionnées et des stutters** — fusion = `step_count` pulses uniformes sur le span ; stutter = N notes sur un pas ; réplique le séquenceur (les deux ne se combinent pas). `SequencerPlockState` passé à l'export. Tests fusion/stutter (build 20260807-140101).
 - [x] [159] **Enveloppes d'ampli en A-H-D bipolaire (Release retiré) sur toutes les voix** — réécriture interne de `DecayReleaseEnvelope` (A-H-D piloté par le temps, signatures conservées) ; `decay_curve`/`release_curve` réinterprétés en courbes **decay**/**attack** bipolaires (−1..1) ; Release retiré des tables + du graphe ; Buzz ampli migré vers `DecayReleaseEnvelope` ; bugs `with_attack_ms` (`Copy` no-op) et recréation d'env corrigés (open_hihat/cymbal). Persistance : clamp gracieux des vieilles valeurs à +1, sans migration (build 20260807-170048).
-- [ ] [160]/[161] — déplacés dans la liste priorisée 2026-08-12 en haut du fichier.
+- [x] [160]/[161] — déplacés dans la liste priorisée 2026-08-12 en haut du fichier (faits).
 
 ---
 

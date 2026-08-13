@@ -41,13 +41,18 @@ pub fn draw_add_module_popup_if_any(
         .show(ui.ctx(), |ui| {
             page_menu_frame(ui, BLUE(), |ui| {
                 page_menu_header(ui, &format!("Slot {} - Add Module", popup.slot + 1), BLUE());
-                for kind_idx in 0..TrackInstrumentKind::COUNT {
-                    let Some(kind) = TrackInstrumentKind::from_index(kind_idx) else {
-                        continue;
-                    };
-                    if plock_menu_action_row(ui, kind.default_name(), BLUE()).clicked() {
-                        crate::ui::grid::activate_slot(params, sound_settings, state, popup.slot, kind);
-                        state.add_module_popup = None;
+                // Kinds grouped by category (BD/SD/HH/PERC/FX/OTHER).
+                for cat in crate::track::InstrumentCategory::ALL {
+                    ui.label(
+                        RichText::new(cat.label())
+                            .font(theme::f_sans_sb(9.0))
+                            .color(INK3()),
+                    );
+                    for kind in TrackInstrumentKind::kinds_in(cat) {
+                        if plock_menu_action_row(ui, kind.default_name(), BLUE()).clicked() {
+                            crate::ui::grid::activate_slot(params, sound_settings, state, popup.slot, kind);
+                            state.add_module_popup = None;
+                        }
                     }
                 }
             });

@@ -5,7 +5,7 @@ use crate::sequencer::{
     FusedGroup, SharedPattern,
 };
 use crate::sound_settings::SoundSettingsState;
-use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot};
+use crate::track::{InstrumentCategory, TrackInstrumentKind, TrackLayoutState, TrackSlot};
 use crate::ui::controls::*;
 use crate::ui::editor_state::*;
 use crate::ui::header::header_param_slider;
@@ -361,6 +361,49 @@ fn draw_legacy_slot_lane_v2(
             ui.spacing_mut().item_spacing.y = 4.0;
             ui.set_min_width(148.0);
             ui.set_max_width(148.0);
+            // Instrument type, grouped by category (BD/SD/HH/PERC/FX/OTHER).
+            // Same semantics as the Track tab Type dropdown.
+            let current_kind = layout_state.slots[slot_idx].kind;
+            let mut picked_kind = None;
+            ui.menu_button(
+                RichText::new("Instrument").font(f_sans_med(10.5)).color(INK()),
+                |ui| {
+                    ui.spacing_mut().item_spacing.y = 4.0;
+                    ui.set_min_width(150.0);
+                    ui.set_max_width(150.0);
+                    for cat in InstrumentCategory::ALL {
+                        ui.label(
+                            RichText::new(cat.label())
+                                .font(f_sans_sb(9.0))
+                                .color(INK3()),
+                        );
+                        for kind in TrackInstrumentKind::kinds_in(cat) {
+                            let is_current = kind == current_kind;
+                            let label = if is_current {
+                                format!("> {}", kind.default_name())
+                            } else {
+                                kind.default_name().to_string()
+                            };
+                            if context_menu_button(
+                                ui,
+                                &label,
+                                if is_current { BLUE() } else { INK() },
+                                !is_current,
+                            )
+                            .clicked()
+                                && !is_current
+                            {
+                                picked_kind = Some(kind);
+                            }
+                        }
+                    }
+                },
+            );
+            if let Some(kind) = picked_kind {
+                change_slot_kind(params, sound_settings, state, slot_idx, kind);
+                ui.close_menu();
+            }
+            context_menu_separator(ui);
             if context_menu_button(ui, "Copy Lane", INK(), true).clicked() {
                 state.copy_lane(params, slot_idx, sound_settings, pattern, plock);
                 state.lane_clear_grid_confirm = None;
@@ -1276,6 +1319,34 @@ fn apply_lane_reorder_move(
         PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
     new_layout.move_slot(from, to);
     PersistentField::<TrackLayoutState>::set(&params.track_layout, new_layout);
+}
+
+/// Change an active slot's instrument kind (lane-name context menu). Same
+/// semantics as the Track tab Type dropdown: default name + MIDI note, and the
+/// slot's sound settings are reseeded from the new kind's defaults (the audio
+/// thread reinitializes the voice on kind change).
+pub fn change_slot_kind(
+    params: &DrumFlashParams,
+    sound_settings: &SoundSettingsState,
+    state: &mut EditorUIState,
+    slot_idx: usize,
+    kind: TrackInstrumentKind,
+) {
+    if slot_idx >= crate::track::MAX_TRACKS {
+        return;
+    }
+    let mut new_state =
+        PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+    let slot = &mut new_state.slots[slot_idx];
+    if !slot.active || slot.kind == kind {
+        return;
+    }
+    slot.kind = kind;
+    slot.name = kind.default_name().to_string();
+    slot.midi_note = kind.default_midi_note();
+    PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+    sound_settings.reset_slot_to_defaults(slot_idx, kind, state.global_config.default_analog);
+    state.selected_instrument = slot_idx;
 }
 
 /// Activate a specific inactive slot with the chosen instrument kind.
