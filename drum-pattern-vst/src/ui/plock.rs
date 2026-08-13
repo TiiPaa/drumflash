@@ -1175,9 +1175,9 @@ fn draw_sequencer_plock_menu(
         }
 
         // Microtiming (nudge): shifts the whole cell (stutter/fusion pulses
-        // included) by -50..+50 ms around its step boundary.
+        // included) by -100..+100 ms around its step boundary.
         {
-            let mut nudge = current.microtiming_ms.clamp(-50.0, 50.0);
+            let mut nudge = current.microtiming_ms.clamp(-100.0, 100.0);
             let nudge_text = if nudge.abs() < 0.5 {
                 "0 ms".to_string()
             } else {
@@ -1191,7 +1191,7 @@ fn draw_sequencer_plock_menu(
                 Some(&nudge_text),
                 |ui| {
                     ui.add(
-                        LocalParamSlider::new(&mut nudge, -50.0..=50.0)
+                        LocalParamSlider::new(&mut nudge, -100.0..=100.0)
                             .with_width(86.0)
                             .without_value()
                             .reset_value(0.0),

@@ -16,13 +16,13 @@
 - **[164]** Glyphe « × » corrompu (« Ã— ») du bouton reset morphing → « X » ASCII (`ui/plock.rs`, convention [73]).
 - **[162]** Voix smp (BD6/SD6/CH6smp) : **One Shot ON grise** les sliders Attack/Decay/Decay Curve (`add_enabled_ui` dans `sound_editor.rs` — le switch One Shot est un special param, reste actif) + ligne d'enveloppe grise dans `draw_sample_amp_graph`. On grise, on ne cache pas (règle zones stables).
 - **[165]** **Drag d'une lane vide** : grip câblé comme les lanes actives dans `draw_empty_slot_lane_v2` (pas de `select_legacy_track` — un slot inactif n'a pas d'onglet). `apply_lane_reorder_move` était déjà slot-générique.
-- **[160]** **Graphe Gate Shape (Buzz)** : `draw_buzz_gate_graph` (`envelope_viz.rs`) sous le graphe d'ampli, famille Env. Fenêtre **fixe 60 ms** (Rate visible), Smooth cosinus `^(1+4·shape)`, Razor rampe 0,3 ms + spike expo (constantes de `BuzzVoice`), plancher Depth, tag « GATE ».
-- **[161]** **Microtiming par cellule (seq plock), ±50 ms complet** — n' avait JAMAIS été câblé au moteur (stockage/persistance seuls). Désormais appliqué **par le séquenceur** :
+- **[160]** **Graphe Gate Shape (Buzz)** : `draw_buzz_gate_graph` (`envelope_viz.rs`) placé **à droite des sliders Gate Rate/Depth/Shape** (sous-rangée dédiée dans la famille Env — l'empilement sous le graphe d'ampli décalait le bloc, corrigé). Fenêtre **fixe 60 ms** (Rate visible), Smooth cosinus `^(1+4·shape)`, Razor rampe 0,3 ms + spike expo, plancher Depth, tag « GATE ».
+- **[161]** **Microtiming par cellule (seq plock), ±100 ms complet** — n' avait JAMAIS été câblé au moteur (stockage/persistance seuls). Désormais appliqué **par le séquenceur** :
   - `groove::step_start_beat()` = inverse exacte de `beat_to_step` (paires swing/shuffle/MPC).
   - Nudge **positif** → `late_trigger`/`late_fire_beat` (tout le train stutter/fusion décalé d'un bloc).
   - Nudge **négatif** → peek de la cellule du prochain boundary à chaque sample ; fire en avance quand temps restant ≤ −nudge ; `classify_cell`/`eval_trigger` partagés avec le chemin normal (masque/humanize/fusions/morphs identiques) ; `suppress_next` au boundary réel ; `early_next_loop` quand le fire croise le wrap → conditions évaluées avec `loop_count + 1` dans `lib.rs`.
   - `Sequencer::set_microtimings()` copie les atomics 1×/buffer ; `clear_microtiming_state()` sur play/stop/reset/seek/sync.
-  - UI : row **Nudge** (−50..+50 ms) dans le menu Seq Plock, entre Stutter et Condition.
+  - UI : row **Nudge** (−100..+100 ms) dans le menu Seq Plock, entre Stutter et Condition.
   - Export MIDI : notes décalées du nudge (clamp tick 0).
   - Tests : inverse step_start_beat, ±25 ms sample-accurate, wrap + flag, zéro nudge, export MIDI.
   - ⚠️ Limites assumées : conditions à la boucle avec push/pull ≠ 0 approximatives (préexistant : `loop_count` wrap sur la timeline non shiftée) ; collision late+transition même sample → report d'1 sample.
