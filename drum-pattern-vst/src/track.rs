@@ -30,8 +30,82 @@ pub enum TrackInstrumentKind {
     Buzz = 14,
 }
 
+/// Instrument category used to group the kind pickers/menus
+/// (BD, SD, HH, PERC, FX, OTHER).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstrumentCategory {
+    BassDrum,
+    Snare,
+    HiHat,
+    Perc,
+    Fx,
+    Other,
+}
+
+impl InstrumentCategory {
+    pub const ALL: [Self; 6] = [
+        Self::BassDrum,
+        Self::Snare,
+        Self::HiHat,
+        Self::Perc,
+        Self::Fx,
+        Self::Other,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::BassDrum => "BD",
+            Self::Snare => "SD",
+            Self::HiHat => "HH",
+            Self::Perc => "PERC",
+            Self::Fx => "FX",
+            Self::Other => "OTHER",
+        }
+    }
+}
+
 impl TrackInstrumentKind {
     pub const COUNT: usize = 15;
+
+    /// Every kind, in stable declaration order.
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::Kick,
+        Self::Snare,
+        Self::HiHat,
+        Self::OpenHiHat,
+        Self::Tom,
+        Self::Clap,
+        Self::Ride,
+        Self::Cymbal,
+        Self::Snare606,
+        Self::BassDrum808,
+        Self::Perc1,
+        Self::Bd6smp,
+        Self::Sd6smp,
+        Self::Ch6smp,
+        Self::Buzz,
+    ];
+
+    /// Musical family of this kind (grouping for pickers/menus).
+    pub fn category(self) -> InstrumentCategory {
+        match self {
+            Self::Kick | Self::BassDrum808 | Self::Bd6smp => InstrumentCategory::BassDrum,
+            Self::Snare | Self::Snare606 | Self::Sd6smp | Self::Clap => {
+                InstrumentCategory::Snare
+            }
+            Self::HiHat | Self::OpenHiHat | Self::Ch6smp => InstrumentCategory::HiHat,
+            Self::Tom | Self::Perc1 => InstrumentCategory::Perc,
+            Self::Buzz => InstrumentCategory::Fx,
+            Self::Ride | Self::Cymbal => InstrumentCategory::Other,
+        }
+    }
+
+    /// Kinds of one category, in `ALL` order.
+    pub fn kinds_in(category: InstrumentCategory) -> impl Iterator<Item = Self> {
+        Self::ALL
+            .into_iter()
+            .filter(move |k| k.category() == category)
+    }
 
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
@@ -771,6 +845,40 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
 mod tests {
     use super::*;
     use nih_plug::params::persist::PersistentField;
+
+    #[test]
+    fn categories_partition_all_kinds() {
+        // Every kind appears in exactly one category; no category is empty.
+        let mut seen = [false; TrackInstrumentKind::COUNT];
+        for cat in InstrumentCategory::ALL {
+            let kinds: Vec<_> = TrackInstrumentKind::kinds_in(cat).collect();
+            assert!(!kinds.is_empty(), "category {} is empty", cat.label());
+            for kind in kinds {
+                assert!(
+                    !seen[kind.index()],
+                    "{:?} appears in two categories",
+                    kind
+                );
+                seen[kind.index()] = true;
+            }
+        }
+        assert!(
+            seen.iter().all(|s| *s),
+            "some kinds have no category: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn category_spot_checks() {
+        assert_eq!(TrackInstrumentKind::Kick.category(), InstrumentCategory::BassDrum);
+        assert_eq!(TrackInstrumentKind::BassDrum808.category(), InstrumentCategory::BassDrum);
+        assert_eq!(TrackInstrumentKind::Bd6smp.category(), InstrumentCategory::BassDrum);
+        assert_eq!(TrackInstrumentKind::Clap.category(), InstrumentCategory::Snare);
+        assert_eq!(TrackInstrumentKind::Ch6smp.category(), InstrumentCategory::HiHat);
+        assert_eq!(TrackInstrumentKind::Tom.category(), InstrumentCategory::Perc);
+        assert_eq!(TrackInstrumentKind::Buzz.category(), InstrumentCategory::Fx);
+        assert_eq!(TrackInstrumentKind::Ride.category(), InstrumentCategory::Other);
+    }
 
     #[test]
     fn grid_slot_resolves_link_chain_to_active_master() {

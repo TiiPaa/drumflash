@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-13 — [163] Catégories d'instruments + type via clic droit sur la lane (build 20260813-153921)
+
+**Branche:** `skeuo-vector` · **Build:** `20260813-153921`
+**Validation:** `cargo test` 267+1+168 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **`InstrumentCategory` (BD, SD, HH, PERC, FX, OTHER)** sur `TrackInstrumentKind` (`track.rs`) : `category()`, `kinds_in(cat)`, `ALL`. Mapping : BD = Kick/808 Kick/BD6smp, SD = Snare/Snare 606/SD6smp/Clap, HH = HiHat/Open Hi-Hat/CH6smp, PERC = Tom/Perc1, FX = Buzz, OTHER = Ride/Cymbal.
+- **Le menu clic-droit sur le nom de lane permet de changer le type d'instrument** : sous-menu « Instrument » en tête, kinds groupés par catégorie (headers dim), kind courant marqué « > » en bleu et non cliquable. `change_slot_kind()` applique la même sémantique que le dropdown Type de l'onglet Track : nom par défaut + note MIDI du kind + reset des réglages aux défauts (réinit audio via le watch `last_slot_kinds`).
+- **Popup Add Module groupé par catégorie** (même regroupement, headers de catégorie).
+- Tests : `categories_partition_all_kinds` (chaque kind dans exactement une catégorie, aucune vide) + `category_spot_checks`.
+
 ## 2026-08-12 — [164]+[162]+[165]+[160]+[161] Batch de tâches (build 20260813-143901)
 
 **Branche:** `skeuo-vector` · **Build:** `20260813-143901` (inclut les retours : graphe gate replacé à côté des sliders, nudge ±100 ms)
