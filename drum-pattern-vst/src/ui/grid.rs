@@ -361,41 +361,45 @@ fn draw_legacy_slot_lane_v2(
             ui.spacing_mut().item_spacing.y = 4.0;
             ui.set_min_width(148.0);
             ui.set_max_width(148.0);
-            // Instrument type, grouped by category (BD/SD/HH/PERC/FX/OTHER).
-            // Same semantics as the Track tab Type dropdown.
+            // Instrument type, cascading submenus by category:
+            // Instrument ▸ BD/SD/HH/PERC/FX/OTHER ▸ kinds. Same semantics as
+            // the Track tab Type dropdown.
             let current_kind = layout_state.slots[slot_idx].kind;
             let mut picked_kind = None;
             ui.menu_button(
                 RichText::new("Instrument").font(f_sans_med(10.5)).color(INK()),
                 |ui| {
                     ui.spacing_mut().item_spacing.y = 4.0;
-                    ui.set_min_width(150.0);
-                    ui.set_max_width(150.0);
+                    ui.set_min_width(110.0);
+                    ui.set_max_width(110.0);
                     for cat in InstrumentCategory::ALL {
-                        ui.label(
-                            RichText::new(cat.label())
-                                .font(f_sans_sb(9.0))
-                                .color(INK3()),
+                        ui.menu_button(
+                            RichText::new(cat.label()).font(f_sans_med(10.5)).color(INK()),
+                            |ui| {
+                                ui.spacing_mut().item_spacing.y = 4.0;
+                                ui.set_min_width(130.0);
+                                ui.set_max_width(130.0);
+                                for kind in TrackInstrumentKind::kinds_in(cat) {
+                                    let is_current = kind == current_kind;
+                                    let label = if is_current {
+                                        format!("> {}", kind.default_name())
+                                    } else {
+                                        kind.default_name().to_string()
+                                    };
+                                    if context_menu_button(
+                                        ui,
+                                        &label,
+                                        if is_current { BLUE() } else { INK() },
+                                        !is_current,
+                                    )
+                                    .clicked()
+                                        && !is_current
+                                    {
+                                        picked_kind = Some(kind);
+                                    }
+                                }
+                            },
                         );
-                        for kind in TrackInstrumentKind::kinds_in(cat) {
-                            let is_current = kind == current_kind;
-                            let label = if is_current {
-                                format!("> {}", kind.default_name())
-                            } else {
-                                kind.default_name().to_string()
-                            };
-                            if context_menu_button(
-                                ui,
-                                &label,
-                                if is_current { BLUE() } else { INK() },
-                                !is_current,
-                            )
-                            .clicked()
-                                && !is_current
-                            {
-                                picked_kind = Some(kind);
-                            }
-                        }
                     }
                 },
             );

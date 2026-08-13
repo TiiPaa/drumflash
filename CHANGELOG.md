@@ -1,19 +1,19 @@
 # Changelog
 
-## 2026-08-13 — [163] Catégories d'instruments + type via clic droit sur la lane (build 20260813-153921)
+## 2026-08-13 — [163] Catégories d'instruments + type via clic droit sur la lane (build 20260813-174717)
 
-**Branche:** `skeuo-vector` · **Build:** `20260813-153921`
-**Validation:** `cargo test` 267+1+168 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Branche:** `main` · **Build:** `20260813-174717`
+**Validation:** `cargo test` 267+1+168 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-13).**
 
 - **`InstrumentCategory` (BD, SD, HH, PERC, FX, OTHER)** sur `TrackInstrumentKind` (`track.rs`) : `category()`, `kinds_in(cat)`, `ALL`. Mapping : BD = Kick/808 Kick/BD6smp, SD = Snare/Snare 606/SD6smp/Clap, HH = HiHat/Open Hi-Hat/CH6smp, PERC = Tom/Perc1, FX = Buzz, OTHER = Ride/Cymbal.
-- **Le menu clic-droit sur le nom de lane permet de changer le type d'instrument** : sous-menu « Instrument » en tête, kinds groupés par catégorie (headers dim), kind courant marqué « > » en bleu et non cliquable. `change_slot_kind()` applique la même sémantique que le dropdown Type de l'onglet Track : nom par défaut + note MIDI du kind + reset des réglages aux défauts (réinit audio via le watch `last_slot_kinds`).
+- **Le menu clic-droit sur le nom de lane permet de changer le type d'instrument** : sous-menus **cascadés** « Instrument ▸ Catégorie ▸ kind » (2 niveaux), kind courant marqué « > » en bleu et non cliquable. `change_slot_kind()` applique la même sémantique que le dropdown Type de l'onglet Track : nom par défaut + note MIDI du kind + reset des réglages aux défauts (réinit audio via le watch `last_slot_kinds`). **Hover highlight** ajouté sur `context_menu_button` (tous les menus contextuels : fond `P_HOVER` + label blanc au survol, rangées désactivées sans highlight).
 - **Popup Add Module groupé par catégorie** (même regroupement, headers de catégorie).
 - Tests : `categories_partition_all_kinds` (chaque kind dans exactement une catégorie, aucune vide) + `category_spot_checks`.
 
 ## 2026-08-12 — [164]+[162]+[165]+[160]+[161] Batch de tâches (build 20260813-143901)
 
-**Branche:** `skeuo-vector` · **Build:** `20260813-143901` (inclut les retours : graphe gate replacé à côté des sliders, nudge ±100 ms)
-**Validation:** `cargo test` 265+1+166 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Branche:** `main` · **Build:** `20260813-143901` (inclut les retours : graphe gate replacé à côté des sliders, nudge ±100 ms)
+**Validation:** `cargo test` 265+1+166 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-13).**
 
 - **[164] Glyphe du bouton reset morphing corrigé** — « × » corrompu (« Ã— », UTF-8 relu en Windows-1252) remplacé par « X » ASCII dans le popup Morph (`ui/plock.rs`), conforme à la convention [73] (ASCII only dans les labels).
 - **[162] Enveloppes grisées en One-Shot (voix smp)** — sur BD6smp/SD6smp/CH6smp, activer **One Shot** grise les sliders Attack/Decay/Decay Curve (`add_enabled_ui`, le switch One Shot reste actif car c'est un special param) et la ligne d'enveloppe du graphe passe en gris (`draw_sample_amp_graph`). Layout stable : on grise, on ne cache pas.
