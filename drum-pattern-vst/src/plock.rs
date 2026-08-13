@@ -565,7 +565,7 @@ pub struct SequencerStepParams {
     pub probability: f32,  // 0.0 - 1.0, default 1.0 = always trigger
     pub stutter_count: u8, // 1-16, default 1 = no stutter
     pub condition: StepCondition,
-    pub microtiming_ms: f32, // -50.0 to +50.0, default 0.0
+    pub microtiming_ms: f32, // -100.0 to +100.0, default 0.0
     /// Step-scoped solo: while this cell (or its fusion span) plays, every
     /// non-soloed lane is muted for those steps. Independent of the lane-level
     /// `S` tag. Default false.

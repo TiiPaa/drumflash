@@ -124,7 +124,7 @@ fn export_pattern_to_midi_data(
     let nudge_ticks = |slot: usize, step: usize| -> i64 {
         let ms = seq_plock
             .get(slot, step)
-            .map(|p| p.microtiming_ms.clamp(-50.0, 50.0))
+            .map(|p| p.microtiming_ms.clamp(-100.0, 100.0))
             .unwrap_or(0.0);
         (ms as f64 * bpm as f64 / 60000.0 * TICKS_PER_QUARTER as f64).round() as i64
     };

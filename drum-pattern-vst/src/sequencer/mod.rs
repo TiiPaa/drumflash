@@ -184,7 +184,7 @@ pub struct Sequencer {
     /// steps + fusions (layering). Identity by default; refreshed each buffer
     /// from the track layout via `set_grid_slots`.
     grid_slots: [usize; MAX_TRACKS],
-    /// Per-cell microtiming (ms, -50..+50), indexed by (slot, source step) like
+    /// Per-cell microtiming (ms, -100..+100), indexed by (slot, source step) like
     /// the sequencer plocks. Copied from the atomics once per buffer.
     microtimings: [[f32; SEQ_STEP_COUNT]; MAX_TRACKS],
 }
@@ -371,7 +371,7 @@ impl Sequencer {
                         grid,
                     );
                     if trig.should_trigger {
-                        let micro = self.microtimings[slot][source_step];
+                        let micro = self.microtimings[slot][source_step].clamp(-100.0, 100.0);
                         if micro > 0.0 {
                             // Positive nudge: defer the whole trigger (its
                             // stutter/fusion pulses expand from the delayed
@@ -393,13 +393,13 @@ impl Sequencer {
             }
 
             // 3) Microtiming early-fire: the NEXT boundary's cell has a
-            // negative nudge — fire it up to 50 ms before its step boundary.
+            // negative nudge — fire it up to 100 ms before its step boundary.
             if !track.early_fired && !track.suppress_next {
                 let next_step = track.step_counter.wrapping_add(1) % track.track_length.max(1);
                 if let CellFire::Fire { source_step, .. } =
                     classify_cell(&self.fusions[grid], next_step)
                 {
-                    let micro = self.microtimings[slot][source_step];
+                    let micro = self.microtimings[slot][source_step].clamp(-100.0, 100.0);
                     if micro < 0.0 {
                         let next_master = shifted_master + 1;
                         let (delta_beats, crosses_wrap) = if next_master < self.master_length {
@@ -1195,18 +1195,18 @@ mod tests {
         };
         let nudged = {
             let mut seq = Sequencer::new(one_cell_pattern(5));
-            seq.set_microtimings(microtiming_grid(5, -25.0));
+            seq.set_microtimings(microtiming_grid(5, -75.0));
             seq.play();
             collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 7.0) as usize)
         };
 
         assert_eq!(baseline.len(), 1);
         assert_eq!(nudged.len(), 1, "negative nudge must not double-fire");
-        let expected_shift = 0.025 * sample_rate as f64;
+        let expected_shift = 0.075 * sample_rate as f64;
         let shift = baseline[0].0 as f64 - nudged[0].0 as f64;
         assert!(
             (shift - expected_shift).abs() <= 2.0,
-            "trigger should be ~25 ms early (shift = {shift} samples, expected {expected_shift})"
+            "trigger should be ~75 ms early (shift = {shift} samples, expected {expected_shift})"
         );
         assert_eq!(nudged[0].1.step, 5);
     }

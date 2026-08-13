@@ -1220,6 +1220,11 @@ pub fn draw_sound_panel(
                         if def.name.ends_with("_fine_tune") {
                             continue;
                         }
+                        // Buzz gate controls render in their own sub-row, with
+                        // the gate shape graph beside them (see below).
+                        if voice_idx == 16 && def.name.starts_with("buzz_gate") {
+                            continue;
+                        }
                         // Multisample voices (*606): the Sample list only makes
                         // sense in fixed-sample mode — grey it out (don't hide
                         // it, to keep the layout stable) while Analog Mode
@@ -1377,19 +1382,6 @@ pub fn draw_sound_panel(
                             // A-H-D bipolar: `release_curve` is repurposed as the
                             // attack curve; `decay_curve` shapes the decay.
                             draw_amp_envelope(ui, attack, release_curve, hold, decay, decay_curve);
-                            if voice_idx == 16 {
-                                // Buzz: the Env family also holds the gate
-                                // controls — show the gate shape under the amp
-                                // envelope.
-                                ui.add_space(6.0);
-                                draw_buzz_gate_graph(
-                                    ui,
-                                    params.algos()[state.selected_instrument].value() == 1,
-                                    inst.special_value(0),
-                                    inst.special_value(1),
-                                    inst.special_value(2),
-                                );
-                            }
                         }
                     }
                     crate::instrument_registry::ParamFamily::Filter => {
@@ -1430,6 +1422,49 @@ pub fn draw_sound_panel(
                     _ => {}
                 }
             });
+
+            // Buzz, Env family: the gate controls get their own row with the
+            // gate shape graph BESIDE the sliders (not stacked under the amp
+            // graph — stacking grew the section and shifted the layout).
+            if family == crate::instrument_registry::ParamFamily::Env && voice_idx == 16 {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_max_width(params_w);
+                        ui.set_width(params_w);
+                        ui.spacing_mut().item_spacing.y = 9.0;
+                        for def in special_defs
+                            .iter()
+                            .filter(|d| d.family == family && d.name.starts_with("buzz_gate"))
+                        {
+                            let mut value = inst.special_value(def.special_index);
+                            let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
+                            if draw_editor_slider_row(
+                                ui,
+                                def.label,
+                                &mut value,
+                                def.min,
+                                def.max,
+                                def.default,
+                                logarithmic,
+                                None,
+                            )
+                            .changed()
+                            {
+                                inst.set_special(def.special_index, value);
+                                sound_settings.bump_version();
+                            }
+                        }
+                    });
+                    ui.add_space(16.0);
+                    draw_buzz_gate_graph(
+                        ui,
+                        params.algos()[state.selected_instrument].value() == 1,
+                        inst.special_value(0),
+                        inst.special_value(1),
+                        inst.special_value(2),
+                    );
+                });
+            }
             }
                     }
                         SoundEditorTab::Track => {
