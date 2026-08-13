@@ -1,14 +1,4 @@
-- pouvoir aussi déplacer une lane vide
-- revoir l'enveloppe de la snare, le decay curve est étrange, il faut pouvoir couper net
-- mixer le stutter avec les cellules fusionnées
-- les notes midi des cellules fusionnées et des stutters doivent être inclus dans les exports midi
-- il manque le Hold dans le graph de l'env de instrument qui ont un hold (ex Snare)
-- toujours un pb d'attaque sur le instruments smp : quasi inaudible et ne correspond pas à la représentation graphique
-- augmenter le max gate rate du buzz
-- afficher un graphe pour le gate shape
-- Remettre le microtiming par celulle dans le plock sequencer
-- griser les env quand le one shot est activé pour les instruments smp
-- créer des catégories d'instruments (BD,SD,HH,PERC,FX,OTHER) et menu bouton droit sur nom du lane permet aussi de changer le type d'instrument
-- caractère bizarre sur le bouton de reset morphing
-
-
+- mixer le stutter avec les cellules fusionnées => bien étudier le point
+- Proposer de régler la densité (slider) quand on fait un random du lane
+- pour les instruments multisamplés si analogue mode is off, proposé un mode stéréo avec 2 samples distincts L&R.
+- clap pas assez fort

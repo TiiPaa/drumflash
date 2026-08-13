@@ -122,8 +122,8 @@ pub fn plock_menu_action_row(ui: &mut egui::Ui, label: &str, accent: Color32) ->
 
 /// Full-width keycap row for the egui-native context menus (lane name, empty
 /// lane, lane length, song block). Returns the `Response` so callers can chain
-/// `.on_hover_text(...)`. `enabled` dims the label and drops the press feedback;
-/// the caller still gates its action on the same condition.
+/// `.on_hover_text(...)`. `enabled` dims the label and drops the hover/press
+/// feedback; the caller still gates its action on the same condition.
 pub fn context_menu_button(
     ui: &mut egui::Ui,
     label: &str,
@@ -132,10 +132,21 @@ pub fn context_menu_button(
 ) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), egui::Sense::click());
     crate::ui::skeuo::keycap(ui, rect, crate::ui::widgets::KeycapState::Rest);
+    // Hover highlight: the user must see which row they are about to pick.
+    let hovered = enabled && resp.hovered();
+    if hovered {
+        ui.painter().rect_filled(rect, RADIUS_CTL, P_HOVER());
+    }
     if enabled && resp.is_pointer_button_down_on() {
         ui.painter().rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(60));
     }
-    let col = if enabled { accent } else { INK3() };
+    let col = if !enabled {
+        INK3()
+    } else if hovered {
+        Color32::WHITE
+    } else {
+        accent
+    };
     ui.painter()
         .text(rect.center(), egui::Align2::CENTER_CENTER, label, f_sans_med(10.5), col);
     resp
