@@ -152,6 +152,39 @@ pub fn context_menu_button(
     resp
 }
 
+/// Flat variant of `context_menu_button` (no 3D keycap) — used inside the
+/// nested Instrument ▸ Category ▸ kind submenus where keycaps are too heavy.
+/// Same interaction contract: hover highlight + label color, disabled rows
+/// dim without feedback.
+pub fn context_menu_row_plain(
+    ui: &mut egui::Ui,
+    label: &str,
+    accent: Color32,
+    enabled: bool,
+) -> egui::Response {
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 20.0), egui::Sense::click());
+    let hovered = enabled && resp.hovered();
+    if hovered {
+        ui.painter().rect_filled(rect, RADIUS_CTL, P_HOVER());
+    }
+    let col = if !enabled {
+        INK3()
+    } else if hovered {
+        Color32::WHITE
+    } else {
+        accent
+    };
+    ui.painter().text(
+        rect.left_center() + egui::vec2(8.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        label,
+        f_sans_med(10.5),
+        col,
+    );
+    resp
+}
+
 /// Faint separator line used to group items inside a context menu.
 pub fn context_menu_separator(ui: &mut egui::Ui) {
     ui.add_space(2.0);

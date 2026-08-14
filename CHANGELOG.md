@@ -1,12 +1,12 @@
 # Changelog
 
-## 2026-08-13 — [163] Catégories d'instruments + type via clic droit sur la lane (build 20260813-174717)
+## 2026-08-13 — [163] Catégories d'instruments + type via clic droit sur la lane (build 20260814-090820)
 
-**Branche:** `main` · **Build:** `20260813-174717`
-**Validation:** `cargo test` 267+1+168 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-13).**
+**Branche:** `main` · **Build:** `20260814-090820`
+**Validation:** `cargo test` 267+1+168 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-14).**
 
 - **`InstrumentCategory` (BD, SD, HH, PERC, FX, OTHER)** sur `TrackInstrumentKind` (`track.rs`) : `category()`, `kinds_in(cat)`, `ALL`. Mapping : BD = Kick/808 Kick/BD6smp, SD = Snare/Snare 606/SD6smp/Clap, HH = HiHat/Open Hi-Hat/CH6smp, PERC = Tom/Perc1, FX = Buzz, OTHER = Ride/Cymbal.
-- **Le menu clic-droit sur le nom de lane permet de changer le type d'instrument** : sous-menus **cascadés** « Instrument ▸ Catégorie ▸ kind » (2 niveaux), kind courant marqué « > » en bleu et non cliquable. `change_slot_kind()` applique la même sémantique que le dropdown Type de l'onglet Track : nom par défaut + note MIDI du kind + reset des réglages aux défauts (réinit audio via le watch `last_slot_kinds`). **Hover highlight** ajouté sur `context_menu_button` (tous les menus contextuels : fond `P_HOVER` + label blanc au survol, rangées désactivées sans highlight).
+- **Le menu clic-droit sur le nom de lane permet de changer le type d'instrument** : sous-menus **cascadés** « Instrument ▸ Catégorie ▸ kind » (2 niveaux), kind courant marqué « > » en bleu et non cliquable. `change_slot_kind()` applique la même sémantique que le dropdown Type de l'onglet Track : nom par défaut + note MIDI du kind + reset des réglages aux défauts (réinit audio via le watch `last_slot_kinds`). **Hover highlight** ajouté sur `context_menu_button` (tous les menus contextuels : fond `P_HOVER` + label blanc au survol, rangées désactivées sans highlight). Lignes d'instruments en version **plate** (`context_menu_row_plain` — pas de keycap 3D dans les sous-menus imbriqués, trop lourd visuellement).
 - **Popup Add Module groupé par catégorie** (même regroupement, headers de catégorie).
 - Tests : `categories_partition_all_kinds` (chaque kind dans exactement une catégorie, aucune vide) + `category_spot_checks`.
 
