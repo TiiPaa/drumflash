@@ -386,7 +386,9 @@ fn draw_legacy_slot_lane_v2(
                                     } else {
                                         kind.default_name().to_string()
                                     };
-                                    if context_menu_button(
+                                    // Flat rows here — 3D keycaps are too heavy
+                                    // inside nested submenus.
+                                    if crate::ui::menus::context_menu_row_plain(
                                         ui,
                                         &label,
                                         if is_current { BLUE() } else { INK() },
