@@ -185,6 +185,53 @@ pub fn context_menu_row_plain(
     resp
 }
 
+/// Shared instrument picker used EVERYWHERE a lane's kind is chosen (the
+/// empty-lane Add-Module popup, the lane right-click menu, and the Track-tab
+/// Type field): one cascading submenu per category (BD/SD/HH/PERC/FX/OTHER),
+/// each listing its kinds. The current kind (if any) is prefixed "> " and
+/// highlighted. Returns the picked kind, or `None` if nothing was chosen this
+/// frame. Keeping this in one place is what makes the three selectors identical.
+pub fn instrument_category_menu(
+    ui: &mut egui::Ui,
+    current: Option<crate::track::TrackInstrumentKind>,
+) -> Option<crate::track::TrackInstrumentKind> {
+    use crate::track::{InstrumentCategory, TrackInstrumentKind};
+    let mut picked = None;
+    for cat in InstrumentCategory::ALL {
+        ui.menu_button(
+            RichText::new(cat.label()).font(f_sans_med(10.5)).color(INK()),
+            |ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.set_min_width(130.0);
+                ui.set_max_width(130.0);
+                for kind in TrackInstrumentKind::kinds_in(cat) {
+                    let is_current = Some(kind) == current;
+                    let label = if is_current {
+                        format!("> {}", kind.default_name())
+                    } else {
+                        kind.default_name().to_string()
+                    };
+                    if context_menu_row_plain(
+                        ui,
+                        &label,
+                        if is_current { BLUE() } else { INK() },
+                        !is_current,
+                    )
+                    .clicked()
+                        && !is_current
+                    {
+                        picked = Some(kind);
+                        // Custom rows don't trigger egui's auto-close — do it here
+                        // so every caller gets the same behaviour.
+                        ui.close_menu();
+                    }
+                }
+            },
+        );
+    }
+    picked
+}
+
 /// Faint separator line used to group items inside a context menu.
 pub fn context_menu_separator(ui: &mut egui::Ui) {
     ui.add_space(2.0);

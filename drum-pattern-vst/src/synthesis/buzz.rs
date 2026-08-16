@@ -152,14 +152,15 @@ impl BuzzVoice {
 
     /// Bipolar curve shaping of the normalised filter envelope value.
     /// `curve` -1 = concave (slow → fast), 0 = natural, +1 = convex (snappy).
+    /// Mirrors `dsp::shape_curve` (exponent 1+5|c|, [170]).
     #[inline]
     fn shape_curve(e: f32, curve: f32) -> f32 {
         let e = e.clamp(0.0, 1.0);
         let c = curve.clamp(-1.0, 1.0);
         if c >= 0.0 {
-            e.powf(1.0 + c * 3.0)
+            e.powf(1.0 + c * 5.0)
         } else {
-            1.0 - (1.0 - e).powf(1.0 - c * 3.0)
+            1.0 - (1.0 - e).powf(1.0 - c * 5.0)
         }
     }
 
