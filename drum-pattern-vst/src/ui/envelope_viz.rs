@@ -160,14 +160,15 @@ pub fn draw_filter_envelope(
 
 // -- Buzz A-H-D filter envelope ----------------------------------------------
 
-/// Bipolar curve shaping, mirroring `BuzzVoice::shape_curve`.
+/// Bipolar curve shaping, mirroring `BuzzVoice::shape_curve` / `dsp::shape_curve`
+/// (exponent 1+5|c|, [170]).
 fn buzz_shape_curve(e: f32, curve: f32) -> f32 {
     let e = e.clamp(0.0, 1.0);
     let c = curve.clamp(-1.0, 1.0);
     if c >= 0.0 {
-        e.powf(1.0 + c * 3.0)
+        e.powf(1.0 + c * 5.0)
     } else {
-        1.0 - (1.0 - e).powf(1.0 - c * 3.0)
+        1.0 - (1.0 - e).powf(1.0 - c * 5.0)
     }
 }
 

@@ -652,7 +652,13 @@ pub fn restore_from_buffers(
 }
 
 fn deserialize_fusions(fusion_bytes: &[u8], pattern: &crate::sequencer::pattern::SharedPattern) {
-    let expected_new = INSTRUMENT_COUNT * MAX_FUSIONS * FUSION_SLOT_COUNT * 8;
+    // Actual serialized size of the current format, per instrument: one bare
+    // count u64 (8 B) followed by (MAX_FUSIONS - 1) group slots of
+    // FUSION_SLOT_COUNT u64 each — matching `PatternSlot::capture`. (The count is
+    // NOT padded to a full FUSION_SLOT_COUNT slot, so this is 16 B/instrument
+    // less than `MAX_FUSION_BYTES`; the old gate used that larger buffer size and
+    // therefore rejected every real blob, silently dropping saved fusions.)
+    let expected_new = INSTRUMENT_COUNT * (8 + (MAX_FUSIONS - 1) * FUSION_SLOT_COUNT * 8);
     let expected_old = INSTRUMENT_COUNT * MAX_FUSIONS * 8;
 
     if fusion_bytes.len() >= expected_new {
@@ -894,6 +900,44 @@ mod tests {
             ),
             0.5
         );
+    }
+
+    #[test]
+    fn pattern_slot_capture_restore_preserves_fusions() {
+        use crate::sequencer::pattern::FusedGroup;
+        let pattern = SharedPattern::new(&Pattern::rock_pattern());
+        let plock = PlockState::new();
+        let seq_plock = SequencerPlockState::new();
+
+        // Two fused groups on different lanes.
+        let g0 = FusedGroup {
+            start_cell: 2,
+            end_cell: 5,
+            step_count: 4,
+            ..FusedGroup::default()
+        };
+        let g3 = FusedGroup {
+            start_cell: 8,
+            end_cell: 11,
+            step_count: 3,
+            ..FusedGroup::default()
+        };
+        pattern.store_fusions(0, &[g0]);
+        pattern.store_fusions(3, &[g3]);
+
+        // Save to a slot, wipe the working fusions, then restore.
+        let mut slot = PatternSlot::default();
+        slot.capture(&pattern, &plock, &seq_plock, 16);
+        pattern.store_fusions(0, &[]);
+        pattern.store_fusions(3, &[]);
+        assert!(pattern.load_fusions(0).is_empty());
+        slot.restore(&pattern, &plock, &seq_plock);
+
+        // Regression: the deserialize gate used to reject the real blob as legacy
+        // and drop every fusion, so saving a pattern lost its fused cells.
+        assert_eq!(pattern.load_fusions(0), vec![g0]);
+        assert_eq!(pattern.load_fusions(3), vec![g3]);
+        assert!(pattern.load_fusions(1).is_empty());
     }
 
     #[test]

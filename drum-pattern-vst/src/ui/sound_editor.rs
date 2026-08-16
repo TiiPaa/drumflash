@@ -3,10 +3,10 @@
 use crate::sequencer::SharedPattern;
 use crate::sound_settings::SoundSettingsState;
 use crate::synthesis::{self, DrumVoice, VoiceSettings};
-use crate::track::{TrackInstrumentKind, TrackLayoutState};
+use crate::track::TrackLayoutState;
 use crate::ui::controls::{algo_combo, draw_track_length_control};
 use crate::ui::editor_state::{
-    schema_voice_idx, select_legacy_track, EditorUIState, LanePresetAction, SoundEditorTab,
+    schema_voice_idx, select_legacy_track, EditorUIState, SoundEditorTab,
 };
 use crate::ui::envelope_viz::{
     draw_amp_envelope, draw_buzz_filter_envelope, draw_buzz_gate_graph, draw_filter_envelope,
@@ -386,39 +386,31 @@ fn draw_track_tab(
         });
     });
 
-    // Type (instrument kind)
-    let kinds = [
-        TrackInstrumentKind::Kick,
-        TrackInstrumentKind::Snare,
-        TrackInstrumentKind::HiHat,
-        TrackInstrumentKind::OpenHiHat,
-        TrackInstrumentKind::Tom,
-        TrackInstrumentKind::Clap,
-        TrackInstrumentKind::Ride,
-        TrackInstrumentKind::Cymbal,
-        TrackInstrumentKind::Snare606,
-        TrackInstrumentKind::BassDrum808,
-        TrackInstrumentKind::Perc1,
-        TrackInstrumentKind::Bd6smp,
-        TrackInstrumentKind::Sd6smp,
-        TrackInstrumentKind::Ch6smp,
-        TrackInstrumentKind::Buzz,
-    ];
+    // Type (instrument kind) — shared category▸kind cascade, identical to the
+    // empty-lane Add-Module popup and the lane right-click menu.
     let current_kind = slot.kind;
-    let kind_labels: Vec<&str> = kinds.iter().map(|k| k.default_name()).collect();
-    let cur_kind_idx = kinds.iter().position(|k| *k == current_kind).unwrap_or(0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         editor_label(ui, "Type");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let (_, Some(i)) = crate::ui::widgets::styled_select(
-                ui,
-                "track_kind",
-                cur_kind_idx,
-                &kind_labels,
-                146.0,
-            ) {
-                let kind = kinds[i];
+            // Same 146×CTL_HEIGHT field as the Aux Out / Choke selectors, but it
+            // opens the SHARED category▸kind cascade (identical to the empty-lane
+            // +N chip and the lane right-click).
+            let type_btn = egui::Button::new(
+                RichText::new(format!("{}", current_kind.default_name()))
+                    .font(f_mono_med(11.0))
+                    .color(INK()),
+            )
+            .fill(P_ACTIVE())
+            .stroke(egui::Stroke::new(1.0, LINE2()))
+            .corner_radius(RADIUS_CTL)
+            .min_size(Vec2::new(146.0, CTL_HEIGHT));
+            let picker = egui::menu::menu_custom_button(ui, type_btn, |ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.set_min_width(130.0);
+                crate::ui::menus::instrument_category_menu(ui, Some(current_kind))
+            });
+            if let Some(kind) = picker.inner.flatten() {
                 if kind != current_kind {
                     let label = kind.default_name();
                     new_state.slots[slot_idx].kind = kind;
@@ -434,6 +426,64 @@ fn draw_track_tab(
                         state.global_config.default_analog,
                     );
                     state.selected_instrument = slot_idx;
+                }
+            }
+        });
+    });
+
+    // ---- Preset ----
+    // Quick loader for saved instrument presets matching this lane's kind.
+    editor_section_header(ui, "Preset");
+    let preset_kind = new_state.slots[slot_idx].kind;
+    let preset_cache_key = (slot_idx, preset_kind.index());
+    if state.track_preset_cache_key != Some(preset_cache_key) {
+        state.track_preset_entries = crate::presets::list_instrument_presets(preset_kind.index());
+        state.track_preset_cache_key = Some(preset_cache_key);
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "Load");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if state.track_preset_entries.is_empty() {
+                ui.label(
+                    RichText::new("No presets")
+                        .font(f_sans_med(11.0))
+                        .color(INK3()),
+                );
+            } else {
+                // Action dropdown: index 0 is a placeholder, 1.. are the presets.
+                let mut pending: Option<crate::presets::InstrumentPreset> = None;
+                {
+                    let mut labels: Vec<&str> =
+                        Vec::with_capacity(state.track_preset_entries.len() + 1);
+                    labels.push("Load preset…");
+                    for e in &state.track_preset_entries {
+                        labels.push(e.name.as_str());
+                    }
+                    if let (_, Some(i)) = crate::ui::widgets::styled_select(
+                        ui,
+                        "track_inst_preset",
+                        0,
+                        &labels,
+                        146.0,
+                    ) {
+                        if i >= 1 {
+                            pending = state
+                                .track_preset_entries
+                                .get(i - 1)
+                                .and_then(crate::presets::load_instrument_preset);
+                        }
+                    }
+                }
+                if let Some(preset) = pending {
+                    crate::ui::preset_browser::apply_instrument_preset_to_slot(
+                        setter,
+                        params,
+                        sound_settings,
+                        state,
+                        slot_idx,
+                        &preset,
+                    );
                 }
             }
         });
@@ -598,30 +648,7 @@ pub fn apply_lane_layout_preset(
 
     let selected_slot = layout.active_slot_indices().next().unwrap_or(0);
     PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
-    state.add_module_popup = None;
     select_legacy_track(state, selected_slot);
-}
-
-pub fn apply_lane_preset_action(
-    params: &DrumFlashParams,
-    sound_settings: &SoundSettingsState,
-    pattern: &SharedPattern,
-    state: &mut EditorUIState,
-    action: LanePresetAction,
-) {
-    let (layout, clear_pattern_data) = match action {
-        LanePresetAction::ClearAll => (TrackLayoutState::empty_layout(), true),
-        LanePresetAction::Preset4 => (TrackLayoutState::modular_default_layout(), false),
-        LanePresetAction::Preset12 => (TrackLayoutState::preset_12_layout(), false),
-    };
-    apply_lane_layout_preset(
-        params,
-        sound_settings,
-        pattern,
-        state,
-        layout,
-        clear_pattern_data,
-    );
 }
 
 // Sound Panel (always visible, tabbed by instrument)
@@ -1069,6 +1096,13 @@ pub fn draw_sound_panel(
                         d.family == family
                             && d.field != crate::instrument_registry::StandardField::Volume
                     }) {
+                            // smp voices: Stereo renders under the Sample
+                            // select (Osc family), not in Output ([168]).
+                            if matches!(voice_idx, 13 | 14 | 15)
+                                && def.field == crate::instrument_registry::StandardField::Stereo
+                            {
+                                continue;
+                            }
                             ui.horizontal(|ui| {
                                 let label_text = if def.field == crate::instrument_registry::StandardField::FilterFreq {
                                     let ft = crate::instrument_registry::filter_type_label(voice_idx);
@@ -1243,11 +1277,21 @@ pub fn draw_sound_panel(
                                 }
                             // Multisample voices: Sample select 1..8 (stored 1-based)
                             } else if def.name.ends_with("_sample") {
-                                let sample_names = ["1", "2", "3", "4", "5", "6", "7", "8"];
-                                let current_idx = (current.round() as usize).clamp(1, 8) - 1;
                                 editor_label(ui, def.label);
-                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &sample_names) {
-                                    new_value = Some(idx as f32 + 1.0);
+                                if stereo > 0.5 {
+                                    // [168] Stereo on: the list picks the PAIR.
+                                    let pair_names = ["1+2", "3+4", "5+6", "7+8"];
+                                    let current_idx =
+                                        ((current.round() as usize).clamp(1, 8) - 1) / 2;
+                                    if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &pair_names) {
+                                        new_value = Some((idx * 2 + 1) as f32);
+                                    }
+                                } else {
+                                    let sample_names = ["1", "2", "3", "4", "5", "6", "7", "8"];
+                                    let current_idx = (current.round() as usize).clamp(1, 8) - 1;
+                                    if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &sample_names) {
+                                        new_value = Some(idx as f32 + 1.0);
+                                    }
                                 }
                             // Boolean toggle for on/off switches (min=0, max=1)
                             } else if def.min == 0.0 && def.max == 1.0 && def.label.to_lowercase().contains("pre-filter") {
@@ -1319,6 +1363,27 @@ pub fn draw_sound_panel(
                             }
                         });
                         });
+                        // smp voices: the Stereo switch lives directly under the
+                        // Sample select ([168]) and works in BOTH modes — in
+                        // Analog Mode a random pair plays on every hit.
+                        if def.name.ends_with("_sample") && matches!(voice_idx, 13 | 14 | 15) {
+                            if draw_editor_switch_row(ui, "Stereo", &mut stereo)
+                                .on_hover_text(
+                                    "Stereo: plays two DIFFERENT samples per hit — the left \
+                                     channel plays the first of the pair, the right channel the \
+                                     second. The Sample list picks the pair (1+2, 3+4, 5+6, 7+8). \
+                                     With Analog Mode on, a random pair is played on every hit.",
+                                )
+                                .changed()
+                            {
+                                store_field(
+                                    inst,
+                                    crate::instrument_registry::StandardField::Stereo,
+                                    stereo,
+                                );
+                                changed = true;
+                            }
+                        }
                     }
 
                     // Algorithm selector inside OSC family

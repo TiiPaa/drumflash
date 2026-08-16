@@ -1,5 +1,97 @@
 # Changelog
 
+## 2026-08-16 — [167] densité Randomize Lane + [170] curves renforcées + [168] stéréo 2 samples smp (build 20260816-185337)
+
+**Branche:** `main` · **Build:** `20260816-185337` (retour utilisateur intégré : paires + compatible Analog)
+**Validation:** `cargo test` 277+1+172 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **[167] Densité réglable pour Randomize Lane** : slider « Density » (5-100 %, défaut 30 %) dans le menu clic droit du nom de lane, au-dessus de « Randomize Lane ». Persisté dans l'état éditeur (`randomize_density`, fallback 30 % si 0/legacy).
+- **[170] Courbes bipolaires renforcées** (tous les instruments) : exposant `1+3|c|` → `1+5|c|` dans `dsp::shape_curve` (enveloppes d'ampli A-H-D), `buzz::shape_curve` (enveloppe de filtre Buzz) et le graphe `envelope_viz`. Les réglages de courbe existants sonnent plus extrêmes aux bords (voulu).
+- **[168] Mode stéréo 2 samples (voix multisamplées)** : switch **Stereo** placé **directement sous le sélecteur Sample** (famille Osc) avec infobulle EN expliquant la relation. Quand Stereo est ON, le sélecteur affiche des **paires** (« 1+2 », « 3+4 », « 5+6 », « 7+8 ») : L = 1er sample de la paire, R = 2e. **Compatible avec l'Analog Mode** : la paire est alors tirée au hasard à chaque coup. DSP : enveloppes partagées (1 avancée/sample), filtre et DC blocker indépendants par canal ; dual mono quand OFF. Tests ×3 voix (paire distincte / dual mono / analog+stereo) ; tests registry stereo/mono mis à jour (13|14|15 → stereo-capable).
+
+## 2026-08-16 — [171] MIDI Pat sans retrig + [172] temps forts éclaircis + [169] Clap plus fort (build 20260816-151800)
+
+**Branche:** `main` · **Build:** `20260816-151800`
+**Validation:** `cargo test` 273+1+168 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **[171] MIDI Pat : plus de retrig au changement de pattern.** Le switch par note MIDI (60-75) ne lève plus `pending_song_pattern_restart` : le nouveau pattern **reprend à la volée** (position conservée). Si la longueur change, le resync host existant (`sync_to_host`, `rem_euclid` sur la nouvelle longueur) ramène la lecture dans le pattern — une page courante qui n'existe plus retombe dans le pattern (page 1 pour un pattern 1 page). Le mode Song conserve son restart (avancée par bloc).
+- **[172] Temps forts 1/5/9/13 éclaircis** : voile `white_a(26)` sur les cellules OFF des temps forts dans `draw_step_cell_v2` (le sprite `pad-off-beat` seul était trop subtil).
+- **[169] Clap plus fort** : volume par défaut 0.7 → 1.0 (`sound_settings_default` registry + `VoiceSettings::clap`). N'affecte que les nouvelles lanes / resets (les sessions existantes gardent leur valeur).
+
+## 2026-08-15 — Sélecteur d'instrument : vrai flyout natif identique partout + rendu propre (build 20260815-181345)
+
+**Branche:** `main` · **Build:** `20260815-181345`
+**Validation:** `cargo check` warning-clean, `build.ps1 -Install` OK.
+
+- **Refonte de l'unification** (la précédente était bâclée) : les trois points d'entrée ouvrent maintenant **exactement le même menu natif egui** (flyout cascade catégorie ▸ kind), donc rendu et comportement rigoureusement identiques.
+  - **Cause des bugs précédents** : `ui.menu_button` brut posé dans un `Area` popup custom (lane vide) n'a pas de racine de menu → les sous-menus (catégories) ne s'ouvraient pas ; et dans l'onglet Track il produisait un petit bouton étroit disgracieux.
+  - **Correctif** : passage à `egui::menu::menu_custom_button` (déclencheur custom + **vraie racine de menu native** → sous-menus fonctionnels) pour la lane vide et l'onglet Track. Le clic-droit reste natif. Le flyout est donc le même partout (celui, validé, du clic-droit).
+  - **Lane vide** : le « +N » devient un bouton stylé (fill/bordure/coins arrondis) qui ouvre la cascade ; l'ancien popup custom `AddModulePopup` est **supprimé** (struct + champ d'état + `draw_add_module_popup_if_any` + remaps).
+  - **Onglet Track « Type »** : champ 146×CTL_HEIGHT (même gabarit que Aux Out / Choke, fill P_ACTIVE + bordure LINE2 + police mono) ouvrant la cascade — fini le carré étroit.
+  - Helper `menus::instrument_category_menu` : ferme désormais le menu à la sélection (les lignes custom ne déclenchent pas la fermeture auto d'egui).
+- Nettoyage : `draw_empty_lane_name_v2` retiré, imports orphelins supprimés.
+
+## 2026-08-15 — Sélecteur d'instrument unifié partout (cascade par catégorie) (build 20260815-171606)
+
+**Branche:** `main` · **Build:** `20260815-171606`
+**Validation:** `cargo check`/build warning-clean, `build.ps1 -Install` OK.
+
+- **Un seul sélecteur d'instrument, identique aux trois endroits** : lane vide (popup « Add Module »), clic-droit sur le nom de lane, et champ « Type » de l'onglet Track. Tous ouvrent désormais la **même cascade par catégorie** (BD/SD/HH/PERC/FX/OTHER ▸ kind), avec le kind courant préfixé « > » et surligné.
+- Helper partagé unique `menus::instrument_category_menu(ui, current) -> Option<kind>` (un sous-menu par catégorie, lignes plates) — les trois appelants s'y branchent, plus de duplication.
+  - Lane vide : le popup « Add Module » passe de la liste plate groupée à la cascade.
+  - Onglet Track : le dropdown plat `styled_select` (15 kinds) est remplacé par un menu-bouton `<kind> ▾` ouvrant la cascade.
+  - Clic-droit : inchangé fonctionnellement (déjà en cascade), factorisé sur le helper.
+- Nettoyage des imports devenus inutilisés (`InstrumentCategory` dans grid.rs, `TrackInstrumentKind` dans popups.rs/sound_editor.rs).
+
+## 2026-08-15 — Onglet Track : loader de presets d'instrument pour la lane sélectionnée (build 20260815-161113)
+
+**Branche:** `main` · **Build:** `20260815-161113`
+**Validation:** `cargo test` 273+1+168 OK, `build.ps1 -Install` (install manuelle — verrou AV transitoire sur le DLL, cf. note).
+
+- **Nouvelle section « Preset » dans l'onglet Track** (sous *Instrument*, avant *Routing*) : un menu **« Load »** liste les presets d'instrument (factory + utilisateur) **du type de la lane sélectionnée** et les applique en un clic (standards + algo + specials) sur le slot courant.
+  - Menu « action » : le bouton reste sur « Load preset… » ; après sélection il applique puis revient au placeholder. « No presets » si aucun preset pour ce type (zone stable).
+  - Liste mise en cache par (slot, kind) → aucune I/O par frame ; rebâtie au changement de lane/type et après sauvegarde d'un preset d'instrument.
+  - `presets::list_instrument_presets(kind)` / `load_instrument_preset(entry)` ; application via `preset_browser::apply_instrument_preset_to_slot` (factorisé avec `apply_instrument`, helper `write_slot_sound` partagé).
+- **Note install** : l'écriture dans `C:\Program Files\...\VST3\` a échoué 2× sur un « accès refusé » alors que Studio One était fermé — verrou transitoire de l'antivirus (BitDefender) scannant le DLL fraîchement compilé. Le fichier était libre juste après ; bundle copié manuellement. À surveiller si ça se reproduit.
+
+## 2026-08-15 — Preset de pattern : sauvegarde/restauration du son de chaque instrument (build 20260815-124040)
+
+**Branche:** `main` · **Build:** `20260815-124040`
+**Validation:** `cargo test` 273+1+168 OK (2 nouveaux tests presets), `build.ps1 -Install` OK.
+
+- **Le preset de pattern ([150] « Patterns ») embarque désormais le son de chaque lane active** (13 standards + algo + specials), en plus de la grille / fusions / plocks / kit déjà capturés. Avant : charger un preset de pattern restaurait la grille et le kit (types d'instruments) mais **pas** les réglages sonores → les instruments sonnaient avec leurs valeurs courantes/par défaut.
+- **Capture** : `capture_pattern` prend `sound_settings` + les algos par slot et sérialise un `PatternSlotSound { slot, kind, standards[13], algo, specials }` par lane active (réutilise l'extraction de `capture_instrument`).
+- **Restauration** : `apply_pattern` réapplique chaque son **sur le slot qui porte encore le même kind** (garanti après pose du kit ; les lanes de kind différent sont ignorées quand on charge sans le kit, pour ne jamais écraser un autre instrument). Helper `write_slot_sound` factorisé et partagé avec `apply_instrument`.
+- **Rétro-compat** : champ `sounds` en `#[serde(default)]` → les presets enregistrés avant ce changement se chargent avec une liste vide (grille seule, sons inchangés). Tests : capture des sons + chargement d'un preset legacy sans `sounds`.
+
+## 2026-08-15 — Fix : les cellules fusionnées sont bien enregistrées dans un slot de pattern (build 20260815-121906)
+
+**Branche:** `main` · **Build:** `20260815-121906`
+**Validation:** `cargo test` 272+1+168 OK (nouveau test `pattern_slot_capture_restore_preserves_fusions`), `build.ps1 -Install` OK.
+
+- **Bug** : sauvegarder le pattern courant dans un slot (P1–P16) **perdait les cellules fusionnées** au rechargement du slot.
+- **Cause** : dans `deserialize_fusions` (`pattern_bank.rs`), le gate `expected_new` calculait la taille attendue comme `INSTRUMENT_COUNT × MAX_FUSIONS × FUSION_SLOT_COUNT × 8`, alors que `PatternSlot::capture` sérialise en réalité, par lane, **un compteur u64 nu (8 o) + (MAX_FUSIONS−1) groupes de FUSION_SLOT_COUNT u64** (16 o de moins par lane). Le vrai blob (5152 o) étant plus court que le gate (5376 o), il était **rejeté puis relu en format legacy** → toutes les fusions tombaient.
+- **Fix** : gate corrigé à la taille réelle `INSTRUMENT_COUNT × (8 + (MAX_FUSIONS−1) × FUSION_SLOT_COUNT × 8)`. S'applique aux deux chemins de chargement (`PatternSlot::restore` et `restore_from_buffers`). Test de non-régression ajouté.
+- N'affectait pas la persistance projet (`pattern-v5`, autre chemin) — d'où des fusions conservées à la sauvegarde du projet mais perdues au save-slot.
+
+## 2026-08-14 — [150] Gestion des presets (instruments / patterns / grid / songs) + outil factory (build 20260814-171844)
+
+**Branche:** `main` · **Build:** `20260814-171844`
+**Validation:** `cargo test` 271+1+168 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Retours post-v1** : bouton **« Presets » déplacé dans le header**, entre « MIDI Pat » et « Settings », encadré de barres de séparation (vbar épaissies 1→2 px) ; le bouton de la barre Pattern Bank est retiré.
+- **Type de preset « Grid »** (4e onglet du modal) : capture/charge le kit de lanes (kinds par slot, `.fdgrid.json`). Les 3 layouts d'usine de l'ancien dropdown **« Preset » de la page-bar — supprimé** — y vivent désormais : **Clear All** (2 clics, efface la grille) / **4 Lanes** / **12 Lanes**. `LanePresetAction`, le dropdown et le warning popup associés sont supprimés ; `apply_lane_layout_preset` est partagé avec le modal.
+
+- **Modal « Presets »** (nouveau bouton dans la barre Pattern Bank, plaque skeuo centrée) avec 3 onglets :
+  - **Instruments** : capture les 13 standards + specials + algo du slot sélectionné. Au load, si le preset vise un autre kind, la lane change de type d'abord (`change_slot_kind`), puis les valeurs s'appliquent.
+  - **Patterns** : capture grille 64 steps + fusions + sound plocks + seq plocks (blobs hex, même layout que la Pattern Bank → tolérance legacy) + **kit de lanes**. Toggle **« Load lanes too »** : avec kit = installe les lanes du preset (`apply_lane_layout_preset`), sans kit = steps/plocks sur les lanes actuelles.
+  - **Songs** : capture/publie la `SongSequence` (bank + snapshot + `song_controller`).
+- **Fichiers JSON versionnés** (`version: 1`) sous `Documents/Flash Drum/presets/{instruments,patterns,songs}/` (extensions `.fdinst.json` / `.fdpat.json` / `.fdsong.json`). Listes Factory (read-only) + User (Load / Del en 2 clics).
+- **Presets d'usine embarqués** : `factory_presets.rs` expose `INSTRUMENTS`/`PATTERNS`/`SONGS` en `include_str!` depuis `assets/presets/` (vides pour l'instant).
+- **Outil d'authoring factory** : en build debug, bouton « Export factory (dev) » dans le modal → écrit le JSON dans `presets/_factory/<kind>/` ; workflow : copier dans `assets/presets/<kind>/`, ajouter la ligne `include_str!`, commit (documenté dans `factory_presets.rs`).
+- Modules : `src/presets.rs` (types, capture, fs, hex) + `src/ui/preset_browser.rs`. L'ancien outil dev `preset_dumps.rs` reste en place (sound editor debug).
+- Tests : roundtrips JSON/hex, sanitize, capture pattern (masks + kit + blobs décodables).
+
 ## 2026-08-13 — [163] Catégories d'instruments + type via clic droit sur la lane (build 20260814-090820)
 
 **Branche:** `main` · **Build:** `20260814-090820`

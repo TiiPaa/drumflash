@@ -2,3 +2,4 @@
 - Proposer de régler la densité (slider) quand on fait un random du lane
 - pour les instruments multisamplés si analogue mode is off, proposé un mode stéréo avec 2 samples distincts L&R.
 - clap pas assez fort
+- pousser un peu plus les curves (tous)
