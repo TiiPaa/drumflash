@@ -1,76 +1,17 @@
-//! Popups: Add Module picker, page menu, global settings, lane preset warning.
+//! Popups: Add Module picker, page menu, global settings.
 
 use crate::plock::PlockState;
 use crate::sequencer::SharedPattern;
-use crate::sound_settings::SoundSettingsState;
-use crate::track::{TrackInstrumentKind, TrackLayoutState};
-use crate::ui::editor_state::{
-    EditorUIState, LanePresetAction, PageMenuAction,
-};
+use crate::track::TrackLayoutState;
+use crate::ui::editor_state::{EditorUIState, PageMenuAction};
 use crate::ui::local_param_slider::LocalParamSlider;
 use crate::ui::menus::{page_menu_frame, page_menu_header, plock_menu_action_row};
-use crate::ui::sound_editor::apply_lane_preset_action;
 use crate::ui::theme;
 use crate::ui::theme::*;
 use crate::ui::widgets::styled_select;
 use crate::DrumFlashParams;
 use nih_plug::{params::persist::PersistentField, prelude::*};
 use nih_plug_egui::egui::{self, RichText, Vec2};
-
-pub fn draw_add_module_popup_if_any(
-    ui: &mut egui::Ui,
-    params: &DrumFlashParams,
-    sound_settings: &SoundSettingsState,
-    state: &mut EditorUIState,
-) {
-    let Some(popup) = state.add_module_popup else {
-        return;
-    };
-
-    // The slot may have been activated in the meantime.
-    if params.track_layout.state.is_active(popup.slot) {
-        state.add_module_popup = None;
-        return;
-    }
-
-    let area_id = ui.id().with("add_module_popup");
-    let response = egui::Area::new(area_id)
-        .kind(egui::UiKind::Popup)
-        .order(egui::Order::Foreground)
-        .fixed_pos(popup.screen_pos)
-        .show(ui.ctx(), |ui| {
-            page_menu_frame(ui, BLUE(), |ui| {
-                page_menu_header(ui, &format!("Slot {} - Add Module", popup.slot + 1), BLUE());
-                // Kinds grouped by category (BD/SD/HH/PERC/FX/OTHER).
-                for cat in crate::track::InstrumentCategory::ALL {
-                    ui.label(
-                        RichText::new(cat.label())
-                            .font(theme::f_sans_sb(9.0))
-                            .color(INK3()),
-                    );
-                    for kind in TrackInstrumentKind::kinds_in(cat) {
-                        if plock_menu_action_row(ui, kind.default_name(), BLUE()).clicked() {
-                            crate::ui::grid::activate_slot(params, sound_settings, state, popup.slot, kind);
-                            state.add_module_popup = None;
-                        }
-                    }
-                }
-            });
-        })
-        .response;
-
-    // Close popup when clicking outside.
-    let clicked_outside = ui.input(|input| {
-        input.pointer.any_pressed()
-            && input
-                .pointer
-                .interact_pos()
-                .map_or(false, |pos| !response.rect.contains(pos))
-    });
-    if clicked_outside {
-        state.add_module_popup = None;
-    }
-}
 
 pub fn draw_page_popup_if_any(
     ui: &mut egui::Ui,
@@ -305,20 +246,6 @@ pub fn draw_settings_popup_if_any(
     }
 }
 
-pub fn draw_lane_preset_dropdown(ui: &mut egui::Ui, state: &mut EditorUIState) {
-    // Skeuo dropdown (styled_select → skeuo::keycap). Entry 0 is the resting
-    // "Preset" label (no-op); 1..=3 trigger the actions.
-    let opts = ["Preset", "Clear All", "Preset 4", "Preset 12"];
-    if let (_, Some(i)) = crate::ui::widgets::styled_select(ui, "lane_preset_dropdown", 0, &opts, 94.0) {
-        match i {
-            1 => state.lane_preset_confirm = Some(LanePresetAction::ClearAll),
-            2 => state.lane_preset_confirm = Some(LanePresetAction::Preset4),
-            3 => state.lane_preset_confirm = Some(LanePresetAction::Preset12),
-            _ => {}
-        }
-    }
-}
-
 pub fn draw_pattern_load_warning_if_any(
     ui: &mut egui::Ui,
     params: &DrumFlashParams,
@@ -409,64 +336,6 @@ pub fn draw_pattern_load_warning_if_any(
                             .clicked()
                         {
                             state.pattern_load_confirm = None;
-                        }
-                    });
-                });
-            ui.painter()
-                .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
-        });
-}
-
-pub fn draw_lane_preset_warning_if_any(
-    ui: &mut egui::Ui,
-    params: &DrumFlashParams,
-    sound_settings: &SoundSettingsState,
-    pattern: &SharedPattern,
-    state: &mut EditorUIState,
-) {
-    let Some(action) = state.lane_preset_confirm else {
-        return;
-    };
-
-    let screen_rect = ui.ctx().screen_rect();
-    let panel_w = 318.0;
-    let pos = egui::pos2(
-        screen_rect.center().x - panel_w * 0.5,
-        screen_rect.top() + 92.0,
-    );
-    egui::Area::new(ui.id().with("lane_preset_warning"))
-        .kind(egui::UiKind::Popup)
-        .order(egui::Order::Foreground)
-        .fixed_pos(pos)
-        .show(ui.ctx(), |ui| {
-            let bg = ui.painter().add(egui::Shape::Noop);
-            let resp = egui::Frame::NONE
-                .inner_margin(egui::Margin::same(12))
-                .show(ui, |ui| {
-                    ui.set_width(panel_w);
-                    ui.label(RichText::new("Warning").font(f_sans_sb(12.0)).color(RED()));
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new(format!(
-                            "{} modifies the current pattern and lane layout.",
-                            action.label()
-                        ))
-                        .font(f_sans_med(10.5))
-                        .color(INK2()),
-                    );
-                    ui.add_space(10.0);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        if crate::ui::controls::chip_button(ui, action.apply_label().as_str(), true, RED(), egui::Sense::click())
-                            .clicked()
-                        {
-                            apply_lane_preset_action(params, sound_settings, pattern, state, action);
-                            state.lane_preset_confirm = None;
-                        }
-                        if crate::ui::controls::chip_button(ui, "Cancel", false, INK2(), egui::Sense::click())
-                            .clicked()
-                        {
-                            state.lane_preset_confirm = None;
                         }
                     });
                 });

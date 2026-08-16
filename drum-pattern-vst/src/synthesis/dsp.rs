@@ -583,14 +583,15 @@ impl ExpDecayEnvelope {
 /// during a ringing tail.
 /// Bipolar curve shaping of a normalised progress `e` in [0,1].
 /// `curve` -1 = concave (slow → fast), 0 = linear, +1 = convex (fast → slow).
+/// Exponent 1+5|c| ([170] — pushed from 3|c| for more extreme shapes).
 #[inline]
 pub fn shape_curve(e: f32, curve: f32) -> f32 {
     let e = e.clamp(0.0, 1.0);
     let c = curve.clamp(-1.0, 1.0);
     if c >= 0.0 {
-        e.powf(1.0 + c * 3.0)
+        e.powf(1.0 + c * 5.0)
     } else {
-        1.0 - (1.0 - e).powf(1.0 - c * 3.0)
+        1.0 - (1.0 - e).powf(1.0 - c * 5.0)
     }
 }
 

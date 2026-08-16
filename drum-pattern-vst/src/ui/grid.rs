@@ -5,14 +5,11 @@ use crate::sequencer::{
     FusedGroup, SharedPattern,
 };
 use crate::sound_settings::SoundSettingsState;
-use crate::track::{InstrumentCategory, TrackInstrumentKind, TrackLayoutState, TrackSlot};
+use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot};
 use crate::ui::controls::*;
 use crate::ui::editor_state::*;
 use crate::ui::header::header_param_slider;
-use crate::ui::popups::{
-    draw_add_module_popup_if_any, draw_lane_preset_dropdown, draw_lane_preset_warning_if_any,
-    draw_page_popup_if_any,
-};
+use crate::ui::popups::draw_page_popup_if_any;
 use crate::ui::slider;
 use crate::ui::theme::*;
 use crate::ui::widgets::*;
@@ -125,9 +122,9 @@ pub fn draw_grid_v2(
             // so the grid height is constant and the panels below never shift.
             for slot_idx in 0..crate::track::MAX_TRACKS {
                 let Some(inst) = voice_idx_for_slot(params, slot_idx) else {
-                    // Inactive slot: the +N chip opens the instrument picker
-                    // for this specific slot.
-                    let (row_response, add_pos) = draw_empty_slot_lane_v2(
+                    // Inactive slot: the +N chip opens the shared instrument
+                    // picker (category ▸ kind) for this specific slot.
+                    let row_response = draw_empty_slot_lane_v2(
                         ui,
                         setter,
                         params,
@@ -146,12 +143,6 @@ pub fn draw_grid_v2(
                         plock,
                     );
                     lane_row_rects[slot_idx] = Some(row_response.rect);
-                    if let Some(pos) = add_pos {
-                        state.add_module_popup = Some(AddModulePopup {
-                            slot: slot_idx,
-                            screen_pos: pos,
-                        });
-                    }
                     continue;
                 };
                 let row = &mixer_rows[slot_idx];
@@ -254,7 +245,6 @@ pub fn draw_grid_v2(
     }
 
     draw_page_popup_if_any(ui, setter, pattern, params, plock, state);
-    draw_add_module_popup_if_any(ui, params, sound_settings, state);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -372,37 +362,8 @@ fn draw_legacy_slot_lane_v2(
                     ui.spacing_mut().item_spacing.y = 4.0;
                     ui.set_min_width(110.0);
                     ui.set_max_width(110.0);
-                    for cat in InstrumentCategory::ALL {
-                        ui.menu_button(
-                            RichText::new(cat.label()).font(f_sans_med(10.5)).color(INK()),
-                            |ui| {
-                                ui.spacing_mut().item_spacing.y = 4.0;
-                                ui.set_min_width(130.0);
-                                ui.set_max_width(130.0);
-                                for kind in TrackInstrumentKind::kinds_in(cat) {
-                                    let is_current = kind == current_kind;
-                                    let label = if is_current {
-                                        format!("> {}", kind.default_name())
-                                    } else {
-                                        kind.default_name().to_string()
-                                    };
-                                    // Flat rows here — 3D keycaps are too heavy
-                                    // inside nested submenus.
-                                    if crate::ui::menus::context_menu_row_plain(
-                                        ui,
-                                        &label,
-                                        if is_current { BLUE() } else { INK() },
-                                        !is_current,
-                                    )
-                                    .clicked()
-                                        && !is_current
-                                    {
-                                        picked_kind = Some(kind);
-                                    }
-                                }
-                            },
-                        );
-                    }
+                    // Shared category▸kind picker (identical everywhere).
+                    picked_kind = crate::ui::menus::instrument_category_menu(ui, Some(current_kind));
                 },
             );
             if let Some(kind) = picked_kind {
@@ -488,8 +449,30 @@ fn draw_legacy_slot_lane_v2(
                     state.lane_clear_grid_confirm = None;
                 }
             }
+            // Randomize density (drives the Randomize Lane row below).
+            {
+                let mut density = state.randomize_density();
+                let response = ui.horizontal(|ui| {
+                    ui.label(RichText::new("Density").font(f_sans_med(10.0)).color(INK3()));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add(
+                            crate::ui::local_param_slider::LocalParamSlider::new(
+                                &mut density,
+                                0.05..=1.0,
+                            )
+                            .with_width(72.0)
+                            .without_value()
+                            .reset_value(0.3),
+                        )
+                    })
+                    .inner
+                });
+                if response.inner.changed() {
+                    state.randomize_density = density;
+                }
+            }
             if context_menu_button(ui, "Randomize Lane", INK(), true)
-                .on_hover_text("Fill this lane with random steps (30% density); clears fusions and plocks")
+                .on_hover_text("Fill this lane with random steps (clears fusions and plocks) at the Density above")
                 .clicked()
             {
                 state.randomize_lane(params, slot_idx, pattern, plock);
@@ -907,7 +890,7 @@ fn draw_empty_slot_lane_v2(
     sound_settings: &SoundSettingsState,
     pattern: &SharedPattern,
     plock: &PlockState,
-) -> (egui::Response, Option<egui::Pos2>) {
+) -> egui::Response {
     let inner = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.set_height(LANE_H);
@@ -923,28 +906,44 @@ fn draw_empty_slot_lane_v2(
         if state.lane_drag_source == Some(slot_idx) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         }
-        let name_response = draw_empty_lane_name_v2(ui, name_w, slot_idx + 1);
-        let add_click_pos = if name_response.clicked() {
-            name_response.interact_pointer_pos()
-        } else {
-            None
-        };
-
-        name_response.context_menu(|ui| {
+        // The +N chip opens the SHARED category▸kind picker (native menu root,
+        // so the submenus work) — identical to the Track-tab Type field and the
+        // lane right-click menu.
+        let add_btn = egui::Button::new(
+            RichText::new(format!("+{}", slot_idx + 1))
+                .font(f_mono_sb(11.0))
+                .color(FAINT()),
+        )
+        .fill(BG())
+        .stroke(egui::Stroke::new(1.0, LINE()))
+        .corner_radius(RADIUS_PAD)
+        .min_size(Vec2::new(name_w, 21.0));
+        let picker = egui::menu::menu_custom_button(ui, add_btn, |ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
-            ui.set_min_width(118.0);
-            ui.set_max_width(118.0);
-            let can_paste = state.lane_clipboard.is_some();
-            if crate::ui::menus::context_menu_button(ui, "Paste Lane", INK(), can_paste).clicked()
-                && can_paste
-            {
-                if state.paste_lane(setter, params, slot_idx, sound_settings, pattern, plock) {
-                    // Flash visual feedback
-                    state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
-                }
-                ui.close_menu();
-            }
+            ui.set_min_width(130.0);
+            crate::ui::menus::instrument_category_menu(ui, None)
         });
+        if let Some(kind) = picker.inner.flatten() {
+            activate_slot(params, sound_settings, state, slot_idx, kind);
+        }
+        picker
+            .response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .context_menu(|ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.set_min_width(118.0);
+                ui.set_max_width(118.0);
+                let can_paste = state.lane_clipboard.is_some();
+                if crate::ui::menus::context_menu_button(ui, "Paste Lane", INK(), can_paste)
+                    .clicked()
+                    && can_paste
+                {
+                    if state.paste_lane(setter, params, slot_idx, sound_settings, pattern, plock) {
+                        state.slot_flash_until[slot_idx] = ui.ctx().input(|i| i.time) + 0.5;
+                    }
+                    ui.close_menu();
+                }
+            });
         draw_empty_lane_chip_v2(ui, vol_w, "Empty");
         draw_empty_lane_chip_v2(ui, mst_w, "");
 
@@ -973,31 +972,8 @@ fn draw_empty_slot_lane_v2(
         draw_empty_lane_chip_v2(ui, extra_w, "");
         draw_empty_lane_chip_v2(ui, extra_w, "");
         draw_empty_lane_chip_v2(ui, extra_w, "");
-        add_click_pos
     });
-    (inner.response, inner.inner)
-}
-
-fn draw_empty_lane_name_v2(ui: &mut egui::Ui, width: f32, slot_number: usize) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
-    // Discreet at rest (near-background), readable on hover — the `+N` is the
-    // only affordance of an empty lane.
-    let fill = if response.hovered() { P_HOVER() } else { BG() };
-    ui.painter().rect_filled(rect, RADIUS_PAD, fill);
-    ui.painter().rect_stroke(
-        rect,
-        RADIUS_PAD,
-        egui::Stroke::new(1.0, LINE()),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        format!("+{}", slot_number),
-        f_mono_sb(11.0),
-        FAINT(),
-    );
-    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    inner.response
 }
 
 fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::Response {
@@ -1319,7 +1295,6 @@ fn apply_lane_reorder_move(
         popup.instrument = remap_slot_index(&order, popup.instrument);
         popup
     });
-    state.add_module_popup = None;
 
     let mut new_layout =
         PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
@@ -1413,9 +1388,6 @@ fn deactivate_slot(params: &DrumFlashParams, state: &mut EditorUIState, slot_idx
         .filter(|popup| popup.instrument != slot_idx);
     state.lane_clear_grid_confirm = None;
     state.lane_delete_confirm = None;
-    state.add_module_popup = state
-        .add_module_popup
-        .filter(|popup| popup.slot != slot_idx);
 
     if state.selected_track_slot == slot_idx {
         state.selected_track_slot = next_selected;
@@ -1430,7 +1402,7 @@ fn draw_page_bar_v2(
     setter: &ParamSetter,
     params: &DrumFlashParams,
     pattern: &SharedPattern,
-    sound_settings: &SoundSettingsState,
+    _sound_settings: &SoundSettingsState,
     plock: &PlockState,
     state: &mut EditorUIState,
     play_page: usize,
@@ -1497,24 +1469,7 @@ fn draw_page_bar_v2(
         }
         const LEN_GROUP_W: f32 = 468.0;
         const LEN_VALUE_W: f32 = 64.0;
-        const PRESET_W: f32 = 104.0;
-        const PRESET_LEN_GAP: f32 = 34.0;
-        let between_follow_and_len_w = (ui.available_width() - LEN_GROUP_W).max(PRESET_W);
-        let len_gap = if between_follow_and_len_w >= PRESET_W + PRESET_LEN_GAP {
-            PRESET_LEN_GAP
-        } else {
-            16.0
-        };
-        let preset_zone_w = (between_follow_and_len_w - len_gap).max(PRESET_W);
-        ui.allocate_ui_with_layout(
-            Vec2::new(preset_zone_w, CTL_HEIGHT),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.add_space(((preset_zone_w - PRESET_W) * 0.5).max(0.0));
-                draw_lane_preset_dropdown(ui, state);
-            },
-        );
-        ui.add_space(len_gap);
+        ui.add_space((ui.available_width() - LEN_GROUP_W).max(0.0));
         ui.allocate_ui_with_layout(
             Vec2::new(LEN_GROUP_W, CTL_HEIGHT),
             egui::Layout::left_to_right(egui::Align::Center),
@@ -1575,7 +1530,6 @@ fn draw_page_bar_v2(
             },
         );
     });
-    draw_lane_preset_warning_if_any(ui, params, sound_settings, pattern, state);
 }
 
 
@@ -1777,6 +1731,12 @@ fn draw_step_cell_v2(
             // Step cell = designer baked bitmap atlas (state + fusion length,
             // bleed-corrected). Overlays (playhead ring, pulse count) drawn below.
             crate::ui::pads::draw_pad(ui, block_rect, fill, fusion_span, enabled);
+            // Downbeats (1/5/9/13): a faint light wash makes the off cells read
+            // as anchors — the baked pad-off-beat sprite alone is too subtle.
+            if fill == CELL_EMPTY_BEAT() {
+                ui.painter()
+                    .rect_filled(block_rect, 4.0, white_a(6));
+            }
             // Fused-block state overlays (the sprite is always the lit "hit"
             // variant, so muted/editing states can't come from the sprite).
             if fusion_span.is_some() {

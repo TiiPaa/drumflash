@@ -366,7 +366,7 @@ impl VoiceSettings {
         Self {
             frequency: 1200.0,
             decay: 0.03,
-            volume: 0.7,
+            volume: 1.0,
             filter_freq: 1000.0,
             attack: 0.0015,
             release: 0.12,

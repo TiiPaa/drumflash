@@ -11,6 +11,7 @@ use std::sync::{
 
 mod atomic_song;
 mod config;
+mod factory_presets;
 mod generator;
 mod groove;
 mod instrument_registry;
@@ -18,6 +19,7 @@ mod midi_export;
 mod pattern_bank;
 mod plock;
 mod preset_dumps;
+mod presets;
 mod sequencer;
 mod sound_settings;
 mod synthesis;
@@ -3058,11 +3060,16 @@ impl Plugin for DrumFlashVst {
         // Only active when not in Song mode, so the two live-switch mechanisms
         // do not compete. Pattern loads are retried if the bank is temporarily
         // locked by the UI thread.
+        //
+        // [171] NO restart here: the new pattern picks up at the current
+        // position ("à la volée"). If its length differs, the length-change
+        // handler above resyncs to the host timeline modulo the new length —
+        // so a playhead on a page that no longer exists lands back inside the
+        // pattern (page 1 for a 1-page pattern).
         if self.params.midi_pattern_switch.value() && !self.params.song_mode.value() {
             if let Some(slot) = self.pending_midi_pattern_slot.take() {
                 match self.load_pattern_from_slot(slot) {
                     PatternBankActionResult::Loaded(_) | PatternBankActionResult::Applied => {
-                        self.pending_song_pattern_restart = true;
                         self.audio_last_loaded_slot
                             .store(slot as u32, Ordering::Relaxed);
                     }

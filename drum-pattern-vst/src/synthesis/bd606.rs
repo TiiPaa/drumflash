@@ -34,15 +34,23 @@ pub struct Bd606Voice {
     step: f32,
     current_hit: usize,
     last_hit: usize,
+    /// Right channel of the [168] stereo pair (Stereo on): plays the SECOND
+    /// hit of the left channel's pair (1+2, 3+4, 5+6, 7+8).
+    hit_r: usize,
+    pos_r: f32,
+    end_pos_r: f32,
+    step_r: f32,
     /// xorshift32 state — seeded at construction, never reseeded on trigger
     /// (retrigger continuity convention).
     rng: u32,
 
     amp_env: dsp::DecayReleaseEnvelope,
     filter: dsp::OnePoleFilter,
+    filter_r: dsp::OnePoleFilter,
     filter_env: dsp::ExpDecayEnvelope,
     saturation: saturation::SaturationConfig,
     dc_block: dsp::DcBlocker,
+    dc_block_r: dsp::DcBlocker,
 
     active: bool,
 }
@@ -72,9 +80,14 @@ impl Bd606Voice {
             step: 1.0,
             current_hit: 0,
             last_hit: 0,
+            hit_r: 1,
+            pos_r: 0.0,
+            end_pos_r: f32::MAX,
+            step_r: 1.0,
             rng: 0x6060_0001,
             amp_env,
             filter,
+            filter_r: dsp::OnePoleFilter::new(dsp::FilterMode::LowPass),
             filter_env,
             saturation: saturation::SaturationConfig {
                 saturation_type: saturation::SaturationType::None,
@@ -85,6 +98,7 @@ impl Bd606Voice {
                 compensation_gain: 1.0,
             },
             dc_block: dsp::DcBlocker::default(),
+            dc_block_r: dsp::DcBlocker::default(),
             active: false,
         };
         let decay_secs = voice.filter_env_decay_seconds();
@@ -104,6 +118,13 @@ impl Bd606Voice {
 
     fn analog_mode(&self) -> bool {
         self.settings.analog_mode > 0.5
+    }
+
+    /// [168] Stereo pair: two DISTINCT samples, one per channel (L = first of
+    /// the pair, R = second). With Analog Mode on, the pair itself is
+    /// randomised on every trigger.
+    fn stereo_pair(&self) -> bool {
+        self.settings.stereo > 0.5
     }
 
     fn pitch_ratio(&self) -> f32 {
@@ -177,6 +198,11 @@ impl Voice for Bd606Voice {
         } else {
             (self.settings.sample_index.round() as usize).clamp(1, sample_bank::HIT_COUNT) - 1
         };
+        // [168] Stereo pairs: (1,2) (3,4) (5,6) (7,8) — L plays the EVEN base
+        // of the pair, R the odd one.
+        if self.stereo_pair() {
+            self.current_hit &= !1;
+        }
         self.last_hit = self.current_hit;
         let bank = sample_bank::bd606();
         let rate_ratio = bank.source_rate / self.sample_rate;
@@ -187,6 +213,15 @@ impl Voice for Bd606Voice {
         let end = self.end_frac().max(start + 0.005);
         self.pos = start * hit_len.saturating_sub(1) as f32;
         self.end_pos = end * hit_len as f32;
+
+        // [168] Right channel: the second hit of the pair (base+1).
+        if self.stereo_pair() {
+            self.hit_r = (self.current_hit + 1) % sample_bank::HIT_COUNT;
+            let hit_r_len = bank.hits[self.hit_r].len();
+            self.step_r = self.step;
+            self.pos_r = start * hit_r_len.saturating_sub(1) as f32;
+            self.end_pos_r = end * hit_r_len as f32;
+        }
 
         self.amp_env.set_decay(self.amp_decay_secs());
         let amp_attack_ms = self.amp_attack_secs() * 1000.0;
@@ -253,6 +288,83 @@ impl Voice for Bd606Voice {
             * self.settings.volume
     }
 
+    /// [168] Stereo pair: left = selected hit, right = the next hit in the
+    /// bank. Envelopes advance once per sample (shared); each channel has its
+    /// own filter + DC blocker. Falls back to dual mono when the pair is off.
+    fn process_sample_stereo(&mut self) -> (f32, f32) {
+        if !self.stereo_pair() {
+            let m = self.process_sample();
+            return (m, m);
+        }
+        if !self.active {
+            return (0.0, 0.0);
+        }
+
+        let bank = sample_bank::bd606();
+        let hit_l = &bank.hits[self.current_hit];
+        let hit_r = &bank.hits[self.hit_r];
+
+        let idx_l = self.pos as usize;
+        let l_done = idx_l + 1 >= hit_l.len() || self.pos + 1.0 >= self.end_pos;
+        let raw_l = if l_done {
+            0.0
+        } else {
+            let frac = self.pos - idx_l as f32;
+            let raw = hit_l[idx_l] + frac * (hit_l[idx_l + 1] - hit_l[idx_l]);
+            self.pos += self.step;
+            raw
+        };
+
+        let idx_r = self.pos_r as usize;
+        let r_done = idx_r + 1 >= hit_r.len() || self.pos_r + 1.0 >= self.end_pos_r;
+        let raw_r = if r_done {
+            0.0
+        } else {
+            let frac = self.pos_r - idx_r as f32;
+            let raw = hit_r[idx_r] + frac * (hit_r[idx_r + 1] - hit_r[idx_r]);
+            self.pos_r += self.step_r;
+            raw
+        };
+
+        if l_done && r_done {
+            self.active = false;
+            return (0.0, 0.0);
+        }
+
+        let amp = if self.one_shot() {
+            1.0
+        } else {
+            let amp = self.amp_env.next();
+            if amp <= 0.0 {
+                self.active = false;
+                return (0.0, 0.0);
+            }
+            amp
+        };
+
+        let filter_env_val = self.filter_env.next();
+        let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);
+        let effective_freq =
+            filter_freq + filter_env_val * self.settings.filter_env_amount * FILTER_ENV_DEPTH_HZ;
+        let cutoff = effective_freq.max(20.0).min(20000.0);
+        self.filter.set_cutoff(cutoff, self.sample_rate);
+        self.filter_r.set_cutoff(cutoff, self.sample_rate);
+
+        let out_l = self
+            .filter
+            .process(self.saturation.process_at(true, raw_l * amp));
+        let out_r = self
+            .filter_r
+            .process(self.saturation.process_at(true, raw_r * amp));
+
+        (
+            self.dc_block.process(self.saturation.process_at(false, out_l)) * self.settings.volume,
+            self.dc_block_r
+                .process(self.saturation.process_at(false, out_r))
+                * self.settings.volume,
+        )
+    }
+
     fn is_active(&self) -> bool {
         self.active
     }
@@ -260,10 +372,13 @@ impl Voice for Bd606Voice {
     fn reset(&mut self) {
         self.active = false;
         self.pos = 0.0;
+        self.pos_r = 0.0;
         self.amp_env.reset();
         self.filter_env.reset();
         self.filter.reset();
+        self.filter_r.reset();
         self.dc_block.reset();
+        self.dc_block_r.reset();
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
@@ -351,6 +466,56 @@ mod tests {
             peak = peak.max(voice.process_sample().abs());
         }
         assert!(peak > 0.05, "BD606 should produce sound, peak {peak}");
+    }
+
+    #[test]
+    fn stereo_pair_plays_distinct_hits_per_channel() {
+        // Analog Mode OFF + Stereo ON → two different samples L/R.
+        let mut settings = VoiceSettings::bd606();
+        settings.special[0] = 0.0; // analog mode off (fixed sample)
+        settings.stereo = 1.0;
+        let mut voice = voice_with(settings);
+        voice.trigger();
+        let mut diverged = false;
+        let mut peak = 0.0f32;
+        for _ in 0..44100 {
+            let (l, r) = voice.process_sample_stereo();
+            peak = peak.max(l.abs()).max(r.abs());
+            if (l - r).abs() > 1e-6 {
+                diverged = true;
+            }
+        }
+        assert!(peak > 0.05, "stereo pair should sound, peak {peak}");
+        assert!(diverged, "stereo pair must not duplicate mono");
+
+        // Stereo OFF → dual mono (identical channels).
+        let mut settings = VoiceSettings::bd606();
+        settings.special[0] = 0.0;
+        settings.stereo = 0.0;
+        let mut voice = voice_with(settings);
+        voice.trigger();
+        for _ in 0..44100 {
+            let (l, r) = voice.process_sample_stereo();
+            assert_eq!(l, r, "stereo off must be dual mono");
+        }
+    }
+
+    #[test]
+    fn stereo_pair_also_works_with_analog_mode() {
+        // Analog ON + Stereo ON → a random PAIR per hit, still distinct L/R.
+        let mut settings = VoiceSettings::bd606();
+        settings.special[0] = 1.0; // analog mode on
+        settings.stereo = 1.0;
+        let mut voice = voice_with(settings);
+        voice.trigger();
+        let mut diverged = false;
+        for _ in 0..44100 {
+            let (l, r) = voice.process_sample_stereo();
+            if (l - r).abs() > 1e-6 {
+                diverged = true;
+            }
+        }
+        assert!(diverged, "analog + stereo must still play a pair");
     }
 
     #[test]

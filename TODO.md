@@ -1,3 +1,25 @@
+## Nouvelles tâches — session 2026-08-14
+
+> **Ordre de priorité (2026-08-14)** — comportement/bugs d'abord, quick wins, features, gros chantiers.
+
+### P1 — Comportement / quick wins
+- [x] [171] **Retirer le retrig en mode MIDI Pat** — le `pending_song_pattern_restart` n'est plus levé sur un switch MIDI : le nouveau pattern reprend à la position courante (à la volée) ; si la longueur change, le resync host existant (`sync_to_host` modulo la nouvelle longueur) ramène la lecture dans le pattern (page 1 si la page courante n'existe plus) (build 20260816-151800, à valider dans S1).
+- [x] [172] **Temps forts 1/5/9/13 en plus clair dans la grille** — voile clair (`white_a(26)`) sur les cellules OFF des temps forts (le sprite `pad-off-beat` seul était trop subtil) (build 20260816-151800, à valider dans S1).
+- [x] [169] **Clap pas assez fort** — volume par défaut 0.7 → 1.0 (registry `sound_settings_default` + `VoiceSettings::clap`) (build 20260816-151800, à valider dans S1).
+
+### P2 — Features moyennes
+- [x] [167] **Densité réglable pour Randomize Lane** — slider « Density » (5-100 %, défaut 30 %) dans le menu clic droit lane, au-dessus de « Randomize Lane » ; persisté (`randomize_density`, fallback 0.3 si 0/legacy) (build 20260816-183613, à valider dans S1).
+- [x] [170] **Pousser les curves plus loin (tous les instruments)** — exposant bipolaire `1+3|c|` → `1+5|c|` partout : `dsp::shape_curve` (amp A-H-D), `buzz::shape_curve` (filtre), `buzz_shape_curve` (graphes envelope_viz) (build 20260816-183613, à valider dans S1).
+- [x] [168] **Mode stéréo 2 samples pour les voix multisamplées** — checkbox **Stereo** (BD6/SD6/CH6smp) placée **sous le sélecteur Sample** avec infobulle EN ; le selecteur affiche des **paires** (1+2, 3+4, 5+6, 7+8) quand Stereo est ON : L = 1er de la paire, R = 2e ; **compatible Analog Mode** (paire aléatoire à chaque coup). DSP : envs partagées, filtre + DC blocker par canal ; dual mono sinon. Tests ×3 voix + analog+stereo (build 20260816-185337, à valider dans S1).
+
+### P2/P3 — Gros chantiers
+- [ ] [166] **REPRENDRE ICI** — **Mixer le stutter avec les cellules fusionnées** — étudier attentivement l'interaction stutter × fusion (actuellement exclusifs) : sémantique temporelle, rendu audio, export MIDI [158], UI/plocks. **Bien étudier le point avant de coder.**
+
+### Idées notées (2026-08-16)
+- [ ] [173] **Presets d'usine de départ** — composer et embarquer les premiers presets factory (instruments/patterns/grids/songs) via l'outil « Export factory (dev) » + `assets/presets/` + `factory_presets.rs`.
+
+---
+
 ## Nouvelles tâches — session 2026-08-12 (notées à la passation)
 
 > **Ordre de priorité revu (2026-08-12)** — quick wins d'abord, features ensuite, gros chantiers en fin.
@@ -12,7 +34,6 @@
 - [x] [161] **Remettre le microtiming par cellule dans le plock séquenceur** — nudge **±100 ms** par cellule, appliqué DANS le séquenceur : `groove::step_start_beat` (inverse de `beat_to_step`), late-fire (nudge > 0, diffère tout le trigger) + early-fire avec peek de la cellule suivante (nudge < 0, `suppress_next` à la frontière, flag `early_next_loop` pour les conditions à la boucle) ; données copiées des atomics 1×/buffer (`set_microtimings`) ; UI row « Nudge » dans le menu seq-plock ; export MIDI décale les notes (clamp tick 0). Tests : +25/−75 ms sample-accurate, wrap, zéro, inverse groove, export MIDI. ⚠️ Limites : conditions First/NotFirst à la boucle avec push/pull ≠ 0 = approximatif ; collision même sample = report d'1 sample.
 
 ### P2/P3 — Gros chantiers
-- [ ] [166] **REPRENDRE ICI** — **Mixer le stutter avec les cellules fusionnées** — étudier attentivement l'interaction stutter × fusion (actuellement exclusifs) : sémantique temporelle, rendu audio, export MIDI [158], UI/plocks. **Bien étudier le point avant de coder.**
 - [x] [163] **Catégories d'instruments + changement de type via clic droit sur le nom de lane** — `InstrumentCategory` (BD, SD, HH, PERC, FX, OTHER) sur `TrackInstrumentKind` (`category()` + `kinds_in()` + `ALL`) ; sous-menu « Instrument » groupé par catégorie dans le menu clic-droit du nom de lane (même sémantique que le dropdown Type : nom + note MIDI + reset défauts, `change_slot_kind`) ; popup Add Module aussi groupé par catégorie. Tests partition + spot-checks (build 20260813-153921, à valider dans S1).
 
 ---
@@ -61,7 +82,7 @@
 
 ### Grosses features (P2/P3)
 - [x] [149] **16 patterns au lieu de 8** — `SLOT_COUNT 8→16`, migration `deserialize_with` tolérant (vieux blob 8-slots → P1-P8 préservés, P9-P16 vides, plus de perte silencieuse), UI 16 slots sur 1 rangée (26px), MIDI switch notes 60-75, 2 tests migration/round-trip (build 20260801-154337).
-- [ ] [150] **Gestion des presets dans un modal** — user presets de modèles de grid / patterns / songs.
+- [x] [150] **Gestion des presets dans un modal** — modal « Presets » (bouton dans la barre Pattern Bank) : 3 onglets Instruments/Patterns/Songs ; save du courant (slot sélectionné / pattern / song), listes Factory (embarqués, read-only) + User (Load/Del 2-clics) ; presets patterns embarquent le kit de lanes avec option « Load lanes too » au chargement ; load instrument change le kind de la lane si besoin. Fichiers JSON versionnés sous `Documents/Flash Drum/presets/` ; factory embeddés via `include_str!` (`factory_presets.rs`, vides pour l'instant) ; outil d'authoring : bouton « Export factory (dev) » (debug) → staging `_factory/` → copier dans `assets/presets/` + enregistrer. Modules `presets.rs` + `ui/preset_browser.rs` (build 20260814-112155, à valider dans S1).
 - [x] [151] **Linker 2 lanes adjacentes** (layering) — une lane linke celle du dessus et partage ses **steps + fusions** (son/plocks/routing indépendants). `TrackSlot.linked_up` + `AtomicTrackLayout.slot_linked`, helper `grid_slot()` (chaîne, rompt si maître inactif), audio `set_grid_slots`/bloc, UI affichage+édition bidirectionnelle redirigés, menu clic-droit Link/Unlink, indicateur barre+point. **À valider en S1 (build 20260804-105255).** Limites v1 : morph des fusions reste au maître ; reorder ne réajuste pas les liens.
 - [ ] [152] **Instrument Ambiant** — voix jouant des bouts de samples d'ambiances noisy avec offset aléatoire (dépend de l'infra sampler [83] ?).
 
