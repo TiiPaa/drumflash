@@ -35,6 +35,7 @@ mod pads;
 mod pattern_bank;
 mod plock;
 mod popups;
+mod preset_browser;
 mod skeuo;
 mod slider;
 mod song;
@@ -373,6 +374,16 @@ pub fn create_editor(
 
                     // Global settings popup (default analog, MIDI prefs, etc.).
                     draw_settings_popup_if_any(ui, setter, &params_for_ui, state);
+
+                    // Presets modal (instruments / patterns / songs).
+                    preset_browser::draw_preset_browser_if_any(
+                        ui,
+                        setter,
+                        &params_for_ui,
+                        &pattern_for_ui,
+                        &sound_settings_for_ui,
+                        state,
+                    );
 
                     // Auto-save pattern edits to the current bank slot when Song Mode is active.
                     // This prevents edits from being lost when the song advances to the next pattern.

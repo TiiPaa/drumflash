@@ -96,12 +96,12 @@ pub fn header_param_slider<P: Param>(
     crate::ui::skeuo::slider_track(ui, track, frac, BLUE(), true);
 }
 
-/// A 1px vertical separator (height 22) with 14pt horizontal padding on each side.
+/// A 2px vertical separator (height 22) with 13pt horizontal padding on each side.
 fn header_vbar(ui: &mut egui::Ui) {
-    ui.add_space(14.0);
-    let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 22.0), egui::Sense::hover());
+    ui.add_space(13.0);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(2.0, 22.0), egui::Sense::hover());
     ui.painter().rect_filled(r, 0.0, LINE());
-    ui.add_space(14.0);
+    ui.add_space(13.0);
 }
 
 pub fn draw_header_bar(
@@ -233,8 +233,24 @@ pub fn draw_header_bar(
                 // Choke moved to per-slot choke groups in the Track tab (the
                 // legacy global HH→OH param is hidden but still loaded).
 
-                // Push the settings keycap to the right edge of the header.
-                ui.add_space((ui.available_width() - 84.0).max(0.0));
+                header_vbar(ui);
+
+                // Push the Presets + Settings keycaps to the right edge.
+                // Trailing block: Presets (80) + vbar (28) + Settings (84).
+                ui.add_space((ui.available_width() - 192.0).max(0.0));
+                if crate::ui::controls::keycap_button(
+                    ui,
+                    "Presets",
+                    80.0,
+                    crate::ui::widgets::KeycapState::Rest,
+                    true,
+                    f_sans_med(10.5),
+                )
+                .clicked()
+                {
+                    crate::ui::preset_browser::open(state);
+                }
+                header_vbar(ui);
                 if crate::ui::controls::keycap_button(
                     ui,
                     "Settings",

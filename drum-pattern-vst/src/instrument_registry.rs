@@ -922,6 +922,10 @@ const SMP606_STD: &[StandardParamDef] = &[
         false,
         None,
     ),
+    // [168] Stereo = two distinct samples L&R in pairs (1+2, 3+4, 5+6, 7+8);
+    // with Analog Mode on, a random pair plays per hit. Rendered in the UI
+    // directly under the Sample select.
+    cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
     s(
         StandardField::FilterFreq,
         "Filter",
@@ -1706,7 +1710,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // No hold, no filter env, stereo
         sound_settings_default: [
-            1200.0, 0.03, 0.7, 1000.0, 0.0015, 0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 0.5, 1.0,
+            1200.0, 0.03, 1.0, 1000.0, 0.0015, 0.12, 6.0, 3.0, 0.0, 0.0, 0.05, 0.5, 1.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
@@ -2698,8 +2702,9 @@ mod tests {
 
     #[test]
     fn stereo_capable_voices_expose_the_stereo_checkbox() {
-        // Snare, HiHat, OpenHiHat, Clap, Ride, Cymbal, Snare606, Perc1, Buzz.
-        for idx in [1usize, 2, 3, 7, 8, 9, 10, 12, 16] {
+        // Snare, HiHat, OpenHiHat, Clap, Ride, Cymbal, Snare606, Perc1,
+        // BD606, SD606, CH606 ([168]: two-sample L&R stereo), Buzz.
+        for idx in [1usize, 2, 3, 7, 8, 9, 10, 12, 13, 14, 15, 16] {
             assert!(
                 has_stereo(&INSTRUMENTS[idx]),
                 "{} (idx {idx}) lost its Stereo standard param",
@@ -2710,8 +2715,8 @@ mod tests {
 
     #[test]
     fn mono_voices_do_not_expose_the_stereo_checkbox() {
-        // Kick, Tom1-3, B8, BD606, SD606 stay mono.
-        for idx in [0usize, 4, 5, 6, 11, 13, 14, 15] {
+        // Kick, Tom1-3, B8 stay mono.
+        for idx in [0usize, 4, 5, 6, 11] {
             assert!(
                 !has_stereo(&INSTRUMENTS[idx]),
                 "{} (idx {idx}) unexpectedly exposes Stereo",

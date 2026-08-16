@@ -114,6 +114,12 @@ pub struct EditorUIState {
     pub selected_instrument: usize,
     #[serde(default)]
     pub selected_track_slot: usize,
+    /// Cached instrument-preset list for the Track-tab loader + the (slot, kind)
+    /// key it was built for. Runtime-only (rebuilt from disk), never persisted.
+    #[serde(skip)]
+    pub track_preset_entries: Vec<crate::presets::InstrumentPresetEntry>,
+    #[serde(skip)]
+    pub track_preset_cache_key: Option<(usize, usize)>,
     #[serde(default)]
     pub sound_editor_tab: SoundEditorTab,
     #[serde(default)]
@@ -169,12 +175,6 @@ pub struct EditorUIState {
     pub suppress_step_cell_click: bool,
     // Right-click page popup state (Copy/Paste/Clear page).
     pub page_popup: Option<PagePopup>,
-    /// Instrument picker for an empty lane (opened by the +N chip).
-    #[serde(default)]
-    pub add_module_popup: Option<AddModulePopup>,
-    /// Pending global lane preset. Requires explicit confirmation because it mutates the current pattern/layout.
-    #[serde(default)]
-    pub lane_preset_confirm: Option<LanePresetAction>,
     /// Pending pattern-bank slot load (click on P1-P16) while the current
     /// pattern has unsaved changes. Requires explicit confirmation.
     #[serde(skip)]
@@ -216,6 +216,42 @@ pub struct EditorUIState {
     /// True when the global settings popup is open.
     #[serde(skip)]
     pub settings_open: bool,
+    /// Preset browser modal (instruments / patterns / songs).
+    #[serde(skip)]
+    pub preset_browser: Option<PresetBrowserState>,
+    /// Density of Randomize Lane (fraction of steps turned on).
+    #[serde(default = "default_randomize_density")]
+    pub randomize_density: f32,
+}
+
+fn default_randomize_density() -> f32 {
+    0.3
+}
+
+/// State of the Presets modal ([150]).
+pub struct PresetBrowserState {
+    /// Active tab.
+    pub kind: crate::presets::PresetKind,
+    /// Name of the preset being saved.
+    pub name_input: String,
+    /// Patterns tab: also install the preset's lane kit on load.
+    pub load_with_kit: bool,
+    /// User preset waiting for a second click before deletion.
+    pub confirm_delete: Option<std::path::PathBuf>,
+    /// Grid tab: the built-in "Clear All" layout waits for a second click.
+    pub confirm_clear_all_grid: bool,
+}
+
+impl Default for PresetBrowserState {
+    fn default() -> Self {
+        Self {
+            kind: crate::presets::PresetKind::Pattern,
+            name_input: String::new(),
+            load_with_kit: true,
+            confirm_delete: None,
+            confirm_clear_all_grid: false,
+        }
+    }
 }
 
 pub fn select_legacy_track(state: &mut EditorUIState, slot_idx: usize) {
@@ -285,28 +321,17 @@ pub struct PagePopup {
     pub confirm_action: Option<PageMenuAction>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum LanePresetAction {
-    ClearAll,
-    Preset4,
-    Preset12,
-}
-
-impl LanePresetAction {
-    pub fn label(self) -> &'static str {
-        match self {
-            LanePresetAction::ClearAll => "Clear All",
-            LanePresetAction::Preset4 => "Preset 4",
-            LanePresetAction::Preset12 => "Preset 12",
+impl EditorUIState {
+    /// Randomize Lane density; 0.0 means "unset" (fresh/legacy state) → 30 %.
+    pub fn randomize_density(&self) -> f32 {
+        if self.randomize_density <= 0.0 {
+            0.3
+        } else {
+            self.randomize_density.clamp(0.05, 1.0)
         }
     }
 
-    pub fn apply_label(self) -> String {
-        format!("Apply {}", self.label())
-    }
-}
 
-impl EditorUIState {
     /// Mark the current pattern as dirty so it will be auto-saved back to the
     /// currently loaded pattern-bank slot at the end of the frame when Song Mode
     /// is active. This prevents edits from being lost when the song advances.
@@ -476,7 +501,7 @@ impl EditorUIState {
         pattern.store_fusions(slot, &[]);
         clear_grid_sound_plocks(plock, slot);
         clear_grid_seq_plocks(&params.seq_plock_state.state, slot);
-        randomize_lane_steps(pattern, slot, 0.3);
+        randomize_lane_steps(pattern, slot, self.randomize_density());
 
         self.fusion_selection_start[slot] = None;
         self.fusion_editing = self.fusion_editing.filter(|(idx, _)| *idx != slot);
@@ -632,14 +657,6 @@ pub fn randomize_lane_steps(pattern: &SharedPattern, target_slot: usize, density
             pattern.set_step_mask(step, next);
         }
     }
-}
-
-/// Instrument picker for an empty lane (opened by the `+N` chip).
-#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct AddModulePopup {
-    pub slot: usize,
-    #[serde(with = "serde_pos2")]
-    pub screen_pos: egui::Pos2,
 }
 
 pub mod serde_pos2 {

@@ -1,60 +1,59 @@
 # Handoff — Flash Drum VST3
 
-**Date:** 2026-08-13 · **Branch:** `main` (skeuo-vector fusionnée dedans — ne plus l'utiliser) · **Latest installed build:** `20260813-174717`
+**Date:** 2026-08-16 · **Branch:** `main` (unique — skeuo-vector supprimée) · **Latest installed build:** `20260816-185337`
 **Read [`CLAUDE.md`](../CLAUDE.md) first** — it is the canonical architecture + invariants + workflow reference for all AI agents. This file is a session-state handoff, not a replacement for it.
 
 ---
 
 ## 1. Snapshot / working-tree state
 
-- Branch **`main`** @ latest ; `skeuo-vector` a été fusionnée (ff) dans `main` le 2026-08-13 — travailler sur `main` désormais.
-- Build **green** : `cargo test` = **436 tests pass** (267 lib + 1 + 168 integration), `cargo check` warning-clean (sauf le `kick_out` unused-var pré-existant dans un test d'intégration), `build.ps1 -Install` OK.
-- **Tout le batch [164]/[162]/[165]/[160]/[161]/[163] est validé dans Studio One (2026-08-13).**
-- **Deploy caveat (rappel)** : Studio One locke la DLL VST3 — il doit être fermé avant `build.ps1 -Install`. Lancer le build **plainly** (pas de `2>&1`/`2>$null` — PowerShell 5.1 transforme le stderr de cargo en faux `NativeCommandError`).
+- Branch **`main`** (skeuo-vector fusionnée puis supprimée le 2026-08-13 — travailler sur `main`).
+- Build **green** : `cargo test` = **450 tests** (277 lib + 1 + 172 integration), `build.ps1 -Install` OK.
+- **Deploy caveat (rappel)** : Studio One locke la DLL — le fermer avant `build.ps1 -Install`. Lancer le build **plainly** (pas de `2>&1` sur PS 5.1).
 
-## 2. Last completed — [163] validé + batch [164]/[162]/[165]/[160]/[161] validé (builds 20260813)
+## 2. Last completed (cette session, builds 20260816)
 
-### [163] Catégories d'instruments + type via clic droit lane — DONE & validé (build 20260813-174717)
-`InstrumentCategory` (BD/SD/HH/PERC/FX/OTHER) sur `TrackInstrumentKind` (`category()`/`kinds_in()`/`ALL`, `track.rs`). Sous-menus **cascadés** « Instrument ▸ Catégorie ▸ kind » dans le menu clic-droit du nom de lane (`grid.rs`), kind courant « > » bleu non cliquable ; `change_slot_kind()` = même sémantique que le dropdown Type (nom + note MIDI + reset défauts). Popup Add Module groupé par catégorie (plat, headers). **Hover highlight** sur `context_menu_button` (`menus.rs`) → tous les menus contextuels. Tests partition + spot-checks.
+| Task | Résumé | Build |
+|---|---|---|
+| **[150]** | **Gestion des presets** : modal « Presets » (bouton header entre MIDI Pat et Settings, vbars 2 px) — 4 onglets **Instruments / Patterns / Grid / Songs**, JSON versionné sous `Documents/Flash Drum/presets/`, factory embeddés via `include_str!` (`factory_presets.rs`, vides), outil dev « Export factory » → staging `_factory/`. Grid = kits de lanes (les ex Clear All/4/12 de la page-bar y vivent ; dropdown page-bar supprimé). | 20260814-171844 |
+| **[171]** | **MIDI Pat sans retrig** : `pending_song_pattern_restart` non levé sur switch MIDI → reprise à la volée ; page absente → page 1 via le resync host modulo nouvelle longueur. | 20260816-151800 |
+| **[172]** | Temps forts 1/5/9/13 éclaircis (voile `white_a(6)` sur cellules OFF — itéré 26→12→6). | 20260816-173323 |
+| **[169]** | Clap volume par défaut 0.7 → 1.0. | 20260816-151800 |
+| **[167]** | Randomize Lane : slider **Density** (5-100 %) dans le menu lane (`randomize_density`, fallback 30 %). | 20260816-183613 |
+| **[170]** | Curves bipolaires renforcées : exposant `1+3|c|` → `1+5|c|` (dsp + buzz + graphes). | 20260816-183613 |
+| **[168]** | **Stéréo 2 samples** voix smp : switch **Stereo sous le sélecteur Sample** (infobulle EN) ; sélecteur en **paires** 1+2/3+4/5+6/7+8 quand Stereo ON ; **compatible Analog Mode** (paire aléatoire par coup) ; DSP filtre+DC par canal. | 20260816-185337 |
 
-### Retours post-batch (build 20260813-143901)
-[160] graphe gate **replacé à droite des sliders Gate Rate/Depth/Shape** (l'empilement sous le graphe d'ampli décalait le bloc) ; [161] nudge étendu à **±100 ms** (UI, clamps sequencer/midi_export, test −75 ms).
-
-### Batch 20260812-123906 (détail dans CHANGELOG)
-[164] glyphe morphing « X » · [162] env grisées One-Shot (smp) · [165] drag lane vide · [160] graphe Gate Shape Buzz · [161] microtiming seq-plock (séquenceur early/late fire, `groove::step_start_beat`, UI Nudge, export MIDI).
+**Tout ce batch attend validation Studio One** (checklists données en fin de chaque build).
 
 ## 3. Pending tasks (TODO.md)
 
-**Resume point (`REPRENDRE ICI`) = [166].** L'utilisateur choisit la tâche — présenter la liste, ne pas auto-démarrer.
+**Resume point (`REPRENDRE ICI`) = [166].** L'utilisateur choisit — présenter la liste, ne pas auto-démarrer.
 
-- **[166]** Mixer le **stutter avec les cellules fusionnées** (aujourd'hui exclusifs). **Bien étudier avant de coder** : sémantique temporelle, audio, export MIDI, UI/plocks.
-- ~~**[163]**~~ FAIT & validé (build 20260813-174717).
-- **[155] ANNULÉ** par l'utilisateur (2026-08-12).
-- Backlog P2/P3 : [144] [146] [150] [152] [69] [27] [56] [41] [84] [83cont] [94] [95] et **[BUG-LANE-DESYNC]**.
+- **[166]** Stutter × fusions (exclusifs aujourd'hui) — **étude d'abord**.
+- **[173]** Presets d'usine de départ (composer + embarquer via l'outil factory).
+- Backlog : [144] [146] [152] [94] [95] [69] [27] [84] [56] [41] + [BUG-LANE-DESYNC].
 
-Rappel : quand l'utilisateur dit « next » / « on continue », **ne pas coder** — présenter la liste TODO et le laisser choisir.
+Rappel : « next » / « on continue » → présenter la liste TODO, ne pas coder.
 
-## 4. Gotchas / lessons learned (aussi en mémoire agent)
+## 4. Gotchas / lessons learned
 
-- **PowerShell 5.1** : jamais `2>&1`/`2>$null` sur un exe natif (cargo/build.ps1) — stderr devient `NativeCommandError`. Et ne JAMAIS éditer un fichier source via `Set-Content` (risque d'encodage) — utiliser l'outil Edit.
-- **Studio One DLL lock** : `-Install` échoue si S1 est ouvert (`Get-Process "Studio One"` pour vérifier). Build plainly, ne remonter S1 que si la copie échoue.
-- **« Aucune différence après un build »** = souvent une DLL cachée dans Studio One — vérifier le build ID dans le header du plugin, retirer/réajouter l'instance.
-- **Anti-click** : ne jamais recréer une enveloppe dans `set_settings()` ; utiliser les setters. `DecayReleaseEnvelope` est `Copy` — `x.with_attack_ms(..)` en statement = no-op silencieux.
-- **Blobs positionnels** : la longueur EST la version — ne jamais renuméroter un champ ni réutiliser une longueur. `sound-settings-v2`, `plock-v1`, `pattern-v5`.
-- **UI zones stables** : pas de ligne conditionnelle qui décale l'UI — réserver l'espace, griser plutôt que cacher.
-- **Labels de boutons : ASCII only** (tâche [73]) — les glyphes UTF-8 finissent corrompus en Windows-1252 ([164] en est un exemple résiduel).
-- **Skeuo rendering** : tout vit dans `src/ui/skeuo.rs`, une fonction par élément.
-- **Ne pas ajouter de scope non demandé** : implémenter exactement la demande ; proposer des idées de TODO, ne pas les construire en silence.
-- **Graphes dans le Sound Editor** : un LCD par famille avec graphe (Env/Filter) ; pour empiler un 2e graphe (Buzz gate), tag texte en coin pour les distinguer.
+- **PowerShell 5.1** : jamais `2>&1`/`2>$null` sur un exe natif ; jamais d'édition de source via `Set-Content` (encodage) — outil Edit uniquement.
+- **Studio One DLL lock** : `-Install` échoue si S1 ouvert.
+- **Anti-click** : pas de recréation d'enveloppe dans `set_settings()` ; `DecayReleaseEnvelope` est `Copy` (`with_*` en statement = no-op).
+- **Blobs positionnels** : la longueur EST la version (`sound-settings-v2`, `plock-v1`, `pattern-v5`). Les presets JSON (user/factory) ont un champ `version` propre — format texte, migration explicite.
+- **Labels boutons ASCII only** ([73]/[164]).
+- **UI zones stables** : griser, ne pas cacher ; pas de ligne conditionnelle qui décale.
+- **Skeuo rendering** : tout dans `src/ui/skeuo.rs`. **Keycaps 3D : trop lourds dans les sous-menus imbriqués** → `context_menu_row_plain` (lignes plates) pour les menus cascadés.
+- **`EditorUIState` dérive `Default`** : un `f32` ajouté vaut 0.0 par défaut — prévoir un accesseur avec fallback (cf. `randomize_density()`).
+- **Graphes Sound Editor** : empiler un 2e LCD dans une famille peut faire grandir la section et décaler le bloc — préférer une sous-rangée dédiée (cf. gate Buzz [160]).
 
-## 5. Key file map (features de la session)
+## 5. Key file map (features récentes)
 
-- Microtiming : `src/sequencer/mod.rs` (`TrackState::{late_trigger, suppress_next, early_fired}`, `classify_cell`, `eval_trigger`, `set_microtimings`), `src/groove.rs` (`step_start_beat`), `src/lib.rs` (copie 1×/buffer + `early_next_loop` → conditions), `src/ui/plock.rs` (row Nudge), `src/midi_export.rs` (nudge en ticks).
-- One-Shot greying : `src/ui/sound_editor.rs` (`env_disabled`), `src/ui/envelope_viz.rs` (`draw_sample_amp_graph` one-shot gris).
-- Gate graph Buzz : `src/ui/envelope_viz.rs` (`draw_buzz_gate_graph`), appelant `src/ui/sound_editor.rs`.
-- Drag lane vide : `src/ui/grid.rs` (`draw_empty_slot_lane_v2`).
-- Glyphe morphing : `src/ui/plock.rs` (`draw_morph_target_action_buttons`).
+- Presets : `src/presets.rs`, `src/factory_presets.rs`, `src/ui/preset_browser.rs` ; bouton header dans `src/ui/header.rs`.
+- Stéréo smp : `src/synthesis/{bd606,sd606,ch606}.rs` (`stereo_pair`, `process_sample_stereo`), UI dans `src/ui/sound_editor.rs` (sous le select Sample, paires).
+- Microtiming : `src/sequencer/mod.rs` (early/late fire), `src/groove.rs` (`step_start_beat`).
+- Catégories instruments : `src/track.rs` (`InstrumentCategory`), menu cascadé dans `src/ui/grid.rs`, lignes plates dans `src/ui/menus.rs`.
 
 ## 6. If you're picking this up
 
-1. Read `CLAUDE.md`. 2. Tout est **commité** sur `main` ; le batch [164]/[162]/[165]/[160]/[161] + [163] sont **validés dans Studio One**. 3. Resume point = **[166]** mais attendre le choix explicite de l'utilisateur avant de coder. 4. Build+install et terminer chaque rapport de build par la checklist « À tester dans Studio One ».
+1. Read `CLAUDE.md`. 2. Tout est **commité** sur `main` (push à confirmer par l'utilisateur) ; les builds 20260814/16 attendent validation Studio One. 3. Resume point = **[166]** mais attendre le choix explicite de l'utilisateur. 4. Build+install → terminer chaque rapport par la checklist « À tester dans Studio One ».
