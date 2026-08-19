@@ -589,6 +589,60 @@ mod tests {
     }
 
     #[test]
+    fn pattern_preset_roundtrip_preserves_sound_plock() {
+        // Live state with a sound plock on slot 0 step 4 (link mode, freq).
+        let pattern = SharedPattern::new(&crate::sequencer::pattern::Pattern::empty());
+        pattern.set_step_mask(4, 0b1);
+        let plock = crate::plock::PlockState::new();
+        let seq = crate::plock::SequencerPlockState::new();
+        plock.set_field(0, 4, 0, 1234.5); // field 0 = Freq
+        let layout = crate::track::TrackLayoutState::modular_default_layout();
+
+        let sound_settings = crate::sound_settings::SoundSettingsState::new(&layout);
+        let preset = capture_pattern(
+            "T".into(),
+            &layout,
+            &pattern,
+            &plock,
+            &seq,
+            16,
+            &sound_settings,
+            &[0i32; 14],
+        );
+        // JSON round trip, like save/load through a file.
+        let json = serde_json::to_string(&preset).unwrap();
+        let preset: PatternPreset = serde_json::from_str(&json).unwrap();
+
+        // Apply into a FRESH live state (the preset_browser apply path).
+        let pattern2 = SharedPattern::new(&crate::sequencer::pattern::Pattern::empty());
+        let plock2 = crate::plock::PlockState::new();
+        let seq2 = crate::plock::SequencerPlockState::new();
+        let plock_bytes = hex_decode(&preset.plock_hex).unwrap();
+        let seq_bytes = hex_decode(&preset.seq_plock_hex).unwrap();
+        let fusion_bytes = hex_decode(&preset.fusion_hex).unwrap();
+        crate::pattern_bank::restore_from_buffers(
+            &preset.step_masks,
+            &plock_bytes,
+            &seq_bytes,
+            &fusion_bytes,
+            &pattern2,
+            &plock2,
+            &seq2,
+        );
+
+        assert!(plock2.masks.is_active(0, 4), "sound plock mask lost");
+        let v = plock2.values.get(0, 4, 0);
+        assert!(
+            (v - 1234.5).abs() < 0.01,
+            "sound plock value lost (got {v})"
+        );
+        assert!(
+            plock2.field_masks.get(0, 4) & 1 != 0,
+            "sound plock field mask lost"
+        );
+    }
+
+    #[test]
     fn pattern_preset_capture_has_decodable_blobs() {
         let pattern = SharedPattern::new(&crate::sequencer::pattern::Pattern::empty());
         pattern.set_step_mask(0, 0b101);
