@@ -773,6 +773,12 @@ impl PitchEnvelope {
         self.active = true;
     }
 
+    /// Update the sweep duration WITHOUT resetting the running envelope
+    /// (recreating the envelope in `set_settings` restarts the sweep mid-drag).
+    pub fn set_sweep_time(&mut self, sweep_time: f32) {
+        self.sweep_time = sweep_time.max(0.001);
+    }
+
     #[inline]
     pub fn next(&mut self) -> f32 {
         if !self.active {
