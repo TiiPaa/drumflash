@@ -563,7 +563,10 @@ pub fn restore_from_buffers(
                     plock_bytes[offset + 7],
                 ]);
                 offset += 8;
-                plock_state.field_masks.set(inst, step, mask as usize);
+                // set_raw, NOT set: `set` takes a field INDEX (it ORs
+                // `1 << field`), which silently corrupted the mask on every
+                // pattern load (bank slots and pattern presets).
+                plock_state.field_masks.set_raw(inst, step, mask);
             }
         }
     }

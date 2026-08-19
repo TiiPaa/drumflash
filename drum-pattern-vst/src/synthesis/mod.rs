@@ -129,7 +129,12 @@ impl DrumVoice {
             DrumVoice::HiHat => Some(HiHatVoice::FILTER_ENV_CURVE),
             DrumVoice::Tom1 | DrumVoice::Tom2 | DrumVoice::Tom3 => Some(TomVoice::FILTER_ENV_CURVE),
             DrumVoice::Snare606 => Some(Snare606Voice::FILTER_ENV_CURVE),
-            // Perc1 uses the amplitude decay_curve for its filter envelope.
+            // [174/F2] Fixed too — their DSP no longer reads the (now bipolar)
+            // amp decay_curve for the filter envelope.
+            DrumVoice::Perc1 => Some(Perc1Voice::FILTER_ENV_CURVE),
+            DrumVoice::Bd606 => Some(Bd606Voice::FILTER_ENV_CURVE),
+            DrumVoice::Sd606 => Some(Sd606Voice::FILTER_ENV_CURVE),
+            DrumVoice::Ch606 => Some(Ch606Voice::FILTER_ENV_CURVE),
             _ => None,
         }
     }

@@ -93,6 +93,10 @@ pub struct Perc1Voice {
 }
 
 impl Perc1Voice {
+    /// Fixed steepness of the filter envelope decay ([174/F2]) — the amp
+    /// `decay_curve` became bipolar (-1..1) in [159], the filter env needs a
+    /// positive steepness.
+    pub const FILTER_ENV_CURVE: f32 = 6.0;
     pub fn new(sample_rate: f32, settings: Perc1Settings) -> Self {
         let algo = settings.algo;
         let base_freq = settings.frequency.max(20.0);
@@ -124,7 +128,7 @@ impl Perc1Voice {
         let filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         let filter_env_decay = settings.filter_env_decay.max(0.01).min(2.0);
         let filter_env =
-            dsp::ExpDecayEnvelope::new(sample_rate, settings.decay_curve, filter_env_decay)
+            dsp::ExpDecayEnvelope::new(sample_rate, Self::FILTER_ENV_CURVE, filter_env_decay)
                 .with_attack_ms(0.5);
 
         let delay_samples = ((SLAP_DELAY_MS * 0.001) * sample_rate).round() as usize;
@@ -384,7 +388,7 @@ impl Voice for Perc1Voice {
         // Update filter envelope via setters — do NOT recreate to preserve tail state
         let filter_env_decay = self.settings.filter_env_decay.max(0.01).min(2.0);
         self.filter_env.set_decay(filter_env_decay);
-        self.filter_env.set_curve(self.settings.decay_curve);
+        self.filter_env.set_curve(Self::FILTER_ENV_CURVE);
 
         // Update filter cutoff
         let filter_freq = self.settings.filter_freq.max(20.0).min(20000.0);

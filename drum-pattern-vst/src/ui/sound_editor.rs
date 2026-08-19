@@ -1440,6 +1440,7 @@ pub fn draw_sound_panel(
                                 end,
                                 attack,
                                 decay,
+                                release_curve, // repurposed as the bipolar attack curve
                                 decay_curve,
                                 inst.special_value(2) > 0.5,
                             );
@@ -1480,7 +1481,13 @@ pub fn draw_sound_panel(
                                     inst.special_value(15), // Filter Dec Curve
                                 );
                             } else {
-                                draw_filter_envelope(ui, filter_curve, filter_env_decay);
+                                draw_filter_envelope(
+                                    ui,
+                                    filter_curve,
+                                    filter_env_decay,
+                                    filt,
+                                    filter_env_amount,
+                                );
                             }
                         }
                     }

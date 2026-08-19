@@ -18,9 +18,17 @@ pub struct TomVoice {
 
     osc: dsp::SineOsc,
     pitch_env: dsp::PitchEnvelope,
-    // LowPass filter — cutoff closes after trigger for natural damp.
-    // Modulation: cutoff = filter_freq * (1 + filter_env * amount * 4.0)
-    filter: dsp::OnePoleFilter,
+    // 2-pole (12 dB/oct) LowPass filter — the envelope sweeps the cutoff
+    // EXPONENTIALLY from the base toward 20 kHz:
+    // cutoff = filter_freq × (20000/filter_freq)^(filter_env × amount).
+    filter: dsp::Biquad,
+    /// The stick attack goes through the SAME cutoff (its own biquad, since
+    /// a filter can't carry two signals) — otherwise it bypasses the Filter
+    /// knob entirely (e.g. Filter at 20 Hz still let the hit through).
+    stick_filter: dsp::Biquad,
+    /// Last computed modulated cutoff, reused by `stick_filter` (the stick
+    /// rings on after the body is done).
+    last_cutoff: f32,
     amp_env: dsp::DecayReleaseEnvelope,
     // Filter envelope for natural "bouum" decay.
     filter_env: dsp::ExpDecayEnvelope,
@@ -37,14 +45,18 @@ pub struct TomVoice {
 impl TomVoice {
     /// Steepness of the filter envelope decay stage used by the engine and the UI graph.
     pub const FILTER_ENV_CURVE: f32 = 6.0;
+    /// Butterworth Q (no resonance bump) for the 12 dB/oct lowpass.
+    const FILTER_Q: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
     pub fn new(sample_rate: f32, settings: TomSettings) -> Self {
         let sweep_time = 0.14f32.min(settings.decay);
         let mut osc = dsp::SineOsc::new(sample_rate);
         osc.set_freq(settings.frequency);
 
-        let mut filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
-        filter.set_cutoff(settings.filter_freq, sample_rate);
+        let mut filter = dsp::Biquad::new();
+        filter.set_lowpass(settings.filter_freq, Self::FILTER_Q, sample_rate);
+        let mut stick_filter = dsp::Biquad::new();
+        stick_filter.set_lowpass(settings.filter_freq, Self::FILTER_Q, sample_rate);
 
         let mut voice = Self {
             settings,
@@ -52,6 +64,8 @@ impl TomVoice {
             osc,
             pitch_env: dsp::PitchEnvelope::new(sample_rate, 1.0, 0.55, sweep_time),
             filter,
+            stick_filter,
+            last_cutoff: settings.filter_freq,
             amp_env: dsp::DecayReleaseEnvelope::new(
                 sample_rate,
                 settings.decay_curve,
@@ -86,7 +100,7 @@ impl TomVoice {
     fn update_derived_params(&mut self) {
         self.osc.set_freq(self.settings.frequency);
         self.filter
-            .set_cutoff(self.settings.filter_freq, self.sample_rate);
+            .set_lowpass(self.settings.filter_freq, Self::FILTER_Q, self.sample_rate);
         self.amp_env.set_decay(self.settings.decay);
         self.amp_env
             .set_attack_ms((self.settings.attack * 1000.0).max(MIN_AMP_ATTACK_MS));
@@ -96,7 +110,7 @@ impl TomVoice {
         self.filter_env
             .set_decay(self.settings.filter_env_decay.max(0.001));
         let sweep_time = 0.14f32.min(self.settings.decay);
-        self.pitch_env = dsp::PitchEnvelope::new(self.sample_rate, 1.0, 0.55, sweep_time);
+        self.pitch_env.set_sweep_time(sweep_time);
     }
 
     fn stick_amount(&self) -> f32 {
@@ -114,6 +128,7 @@ impl Voice for TomVoice {
         if !was_active {
             self.osc.phase = 0.0;
             self.filter.reset();
+            self.stick_filter.reset();
             self.dc_block.reset();
         }
         // analog = per-hit drift (breathing) ; digital = bit-identical hits.
@@ -139,10 +154,9 @@ impl Voice for TomVoice {
         let mut tone = 0.0f32;
 
         if self.active {
-            // Pitch sweep
+            // Pitch sweep — advanced ONCE per sample (it was previously also
+            // advanced inside the algo branches → 2× speed).
             let pitch_ratio = self.pitch_env.next();
-            self.osc
-                .set_freq(self.settings.frequency * pitch_ratio * self.drift.pitch);
 
             // Amplitude envelope
             let env = self.amp_env.next();
@@ -152,7 +166,6 @@ impl Voice for TomVoice {
                 let (body, modulated_cutoff) = match self.settings.algo {
                     1 => {
                         // Deep: lower pitch, darker tone, less overtone
-                        let pitch_ratio = self.pitch_env.next();
                         let deep_freq = self.settings.frequency * 0.7;
                         self.osc
                             .set_freq(deep_freq * pitch_ratio * self.drift.pitch);
@@ -160,34 +173,44 @@ impl Voice for TomVoice {
                         let overtone =
                             ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.12;
                         let filter_env_val = self.filter_env.next();
-                        let cutoff = self.settings.filter_freq
-                            * 0.7
-                            * (1.0 + filter_env_val * self.settings.filter_env_amount * 4.0);
-                        (fundamental + overtone, cutoff.max(50.0))
+                        // Exponential sweep from the base cutoff toward fully
+                        // open (20 kHz), same law as Buzz: amount = how far
+                        // toward open the env pushes (0 = static filter,
+                        // 1 = base → 20 kHz → base). Was base×(1+env×amount×4)
+                        // → a 20 Hz base only swept to 100 Hz.
+                        let base = self.settings.filter_freq * 0.7;
+                        let sweep =
+                            (filter_env_val * self.settings.filter_env_amount).clamp(0.0, 1.0);
+                        let cutoff = base * (20000.0 / base.max(20.0)).powf(sweep);
+                        (fundamental + overtone, cutoff.max(20.0))
                     }
                     _ => {
                         // Standard: sine + overtone, pitch sweep
-                        let pitch_ratio = self.pitch_env.next();
                         self.osc
                             .set_freq(self.settings.frequency * pitch_ratio * self.drift.pitch);
                         let fundamental = self.osc.next();
                         let overtone =
                             ((self.osc.phase * 2.0) * 2.0 * std::f32::consts::PI).sin() * 0.22;
                         let filter_env_val = self.filter_env.next();
-                        let cutoff = self.settings.filter_freq
-                            * (1.0 + filter_env_val * self.settings.filter_env_amount * 4.0);
-                        (fundamental + overtone, cutoff.max(100.0))
+                        let base = self.settings.filter_freq;
+                        let sweep =
+                            (filter_env_val * self.settings.filter_env_amount).clamp(0.0, 1.0);
+                        let cutoff = base * (20000.0 / base.max(20.0)).powf(sweep);
+                        (fundamental + overtone, cutoff.max(20.0))
                     }
                 };
-                self.filter.set_cutoff(modulated_cutoff, self.sample_rate);
+                self.filter.set_lowpass(modulated_cutoff, Self::FILTER_Q, self.sample_rate);
+                self.last_cutoff = modulated_cutoff;
                 let filtered = self.filter.process(self.saturation.process_at(true, body));
                 tone = filtered * env * self.drift.level;
             }
         }
 
-        // Stick attack — allowed to ring out even if body finished
+        // Stick attack — allowed to ring out even if body finished, but routed
+        // through the same cutoff so the Filter knob governs the WHOLE voice.
         let attack = if self.stick_amount() > 0.0 && self.stick_attack.is_active() {
-            self.stick_attack.next() * self.stick_amount()
+            self.stick_filter.set_lowpass(self.last_cutoff, Self::FILTER_Q, self.sample_rate);
+            self.stick_filter.process(self.stick_attack.next()) * self.stick_amount()
         } else {
             0.0
         };
@@ -208,6 +231,7 @@ impl Voice for TomVoice {
         self.filter_env.reset();
         self.stick_attack.reset();
         self.filter.reset();
+        self.stick_filter.reset();
         self.dc_block.reset();
     }
 

@@ -3,8 +3,9 @@
 > **Ordre de priorité (2026-08-14)** — comportement/bugs d'abord, quick wins, features, gros chantiers.
 
 ### P1 — Comportement / quick wins
+- [x] [174] **Graphe/DSP env filtre défectueux** — F1 Toms : span du graphe normalisé puis fenêtre fixe 1 s ; F2 smp + Perc1 : `FILTER_ENV_CURVE = 6.0` dédié par voix (régression [159]) ; F3 graphe ampli smp en A-H-D bipolaire. **Bonus bugs** : plocks sound perdus au chargement de pattern (`set_raw` sur field masks, bank slots + presets) ; filtre Tom : double avance pitch_env, pitch_env recréé au drag, stick contournant le filtre, plancher cutoff 100 Hz, 1 pôle → biquad 12 dB/oct, sweep exponentiel vers 20 kHz (loi Buzz), graphe = vrai sweep cutoff (build 20260819-114620, à valider dans S1).
 - [x] [171] **Retirer le retrig en mode MIDI Pat** — le `pending_song_pattern_restart` n'est plus levé sur un switch MIDI : le nouveau pattern reprend à la position courante (à la volée) ; si la longueur change, le resync host existant (`sync_to_host` modulo la nouvelle longueur) ramène la lecture dans le pattern (page 1 si la page courante n'existe plus) (build 20260816-151800, à valider dans S1).
-- [x] [172] **Temps forts 1/5/9/13 en plus clair dans la grille** — voile clair (`white_a(26)`) sur les cellules OFF des temps forts (le sprite `pad-off-beat` seul était trop subtil) (build 20260816-151800, à valider dans S1).
+- [x] [172] **Temps forts 1/5/9/13 en plus clair dans la grille** — voile clair (`white_a(6)`, itéré 26→12→6) sur les cellules OFF des temps forts (build 20260816-173323, validé dans S1).
 - [x] [169] **Clap pas assez fort** — volume par défaut 0.7 → 1.0 (registry `sound_settings_default` + `VoiceSettings::clap`) (build 20260816-151800, à valider dans S1).
 
 ### P2 — Features moyennes
