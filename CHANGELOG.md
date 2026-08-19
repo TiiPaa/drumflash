@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-08-19 — Filtre Tom : câblage corrigé + sweep exponentiel 20k (build 20260819-114620)
+
+**Branche:** `main` · **Build:** `20260819-114620`
+**Validation:** `cargo test` 278+1+172 OK. **À valider dans Studio One.**
+
+Diagnostic utilisateur (« le filtre du Tom ne fonctionne pas ») — 5 corrections en chaîne sur `tom.rs` :
+- **Bug pitch** : `pitch_env.next()` appelé 2× par sample (top + branches algo) → sweep de pitch à **double vitesse**. Corrigé (1 appel, réutilisé).
+- **Anti-click** : `set_settings()` recréait `pitch_env` à chaque paramètre → sweep redémarré au drag. Nouveau `PitchEnvelope::set_sweep_time` (mutation sans reset).
+- **Stick attack contournait le filtre** (ajouté après) → routé à travers le même cutoff via un filtre dédié (`stick_filter`).
+- **Plancher de cutoff 100 Hz** (50 en Deep) supprimé → 20 Hz (un Filter à 20 Hz donnait 100 Hz réels — le bas du slider était inopérant).
+- **Filtre 1 pôle (6 dB/oct) → biquad 12 dB/oct** (RBJ Butterworth, Q=0.707, sans résonance) pour un filtrage radical en bas de course.
+- **Loi du sweep changée** : `cutoff × (1 + env×amount×4)` (Filter 20 Hz + Env max = sweep 100→20 Hz, invisible) → **sweep exponentiel vers 20 kHz** `cutoff × (20000/cutoff)^(env×amount)` (même loi que Buzz) — DSP + graphe alignés.
+- **Graphe filtre refait** : affiche le **vrai sweep du cutoff** sur axe log Hz (ligne de repos = Filter, courbe = balayage, fenêtre fixe 1 s) ; Filter Env à 0 = ligne plate honnête.
+
+## 2026-08-18 — [174] Fixes graphes/DSP env filtre + BUG plocks sound perdus au chargement de pattern (build 20260818-182234)
+
+**Branche:** `main` · **Build:** `20260818-182234`
+**Validation:** `cargo test` 278+1+172 OK. **À valider dans Studio One.**
+
+- **BUG (P1) — plocks sound perdus au chargement d'un pattern** (bank slots ET presets) : `restore_from_buffers` écrivait le field mask via `field_masks.set(inst, step, mask as usize)` — or `set()` attend un **index de champ** (`1 << field`), pas un masque → le masque était corrompu à chaque restore (snapshot `(1<<46)-1` → no-op → masque vide → le plock devenait un link sans champ = muet). Remplacé par `set_raw`. La persistence projet (`plock-v1`) utilisait déjà `set_raw` — seul le chargement de patterns était cassé. Test de régression `pattern_preset_roundtrip_preserves_sound_plock`.
+- **[174/F1] Toms** : `draw_filter_envelope` normalise la courbe sur toute la largeur (avant : plancher 100 ms sur l'axe X → courbe écrasée à gauche quand Filter Decay < 100 ms).
+- **[174/F2] smp (BD6/SD6/CH6) + Perc1** : courbe de l'enveloppe de filtre = **constante dédiée** `FILTER_ENV_CURVE = 6.0` par voix (comme Kick/Snare/Tom). Avant, ces voix lisaient `decay_curve` — devenu **bipolaire (−1..1)** en [159] — comme raideur exp (2..12) → sweep de filtre quasi plat (vieilles sessions clampées à +1). Régression [159] corrigée côté **DSP et graphe** (`filter_env_curve()` étendu). ⚠️ Effet audible : le sweep de filtre de ces 4 voix redevient punchy.
+- **[174/F3] Graphe ampli smp** : `draw_sample_amp_graph` réécrit en **A-H-D bipolaire** fidèle au DSP (`shape_curve` attack + decay ; proportion attack/decay approximative, shapes exactes) ; l'attack curve (`release_curve` repurposée) est passée au graphe.
+
 ## 2026-08-16 — [167] densité Randomize Lane + [170] curves renforcées + [168] stéréo 2 samples smp (build 20260816-185337)
 
 **Branche:** `main` · **Build:** `20260816-185337` (retour utilisateur intégré : paires + compatible Analog)

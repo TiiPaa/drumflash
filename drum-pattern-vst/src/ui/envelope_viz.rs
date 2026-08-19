@@ -118,10 +118,17 @@ pub fn draw_amp_envelope(
 
 // -- Filter envelope ---------------------------------------------------------
 
+/// Filter graph for the synth voices (Toms): the actual CUTOFF SWEEP on a log
+/// Hz axis — resting cutoff line + swept curve `cutoff × (1 + env×amount×4)`
+/// over a FIXED 1 s window (the decay slider visibly stretches the sweep).
+/// With amount = 0 the curve is a flat line at the cutoff: the graph then
+/// truthfully says "the envelope does nothing".
 pub fn draw_filter_envelope(
     ui: &mut nih_plug_egui::egui::Ui,
     curve: f32,
     filter_env_decay: f32,
+    cutoff_hz: f32,
+    env_amount: f32,
 ) -> nih_plug_egui::egui::Response {
     let w = ui.available_width().max(120.0);
     let desired_size = Vec2::new(w, 104.0);
@@ -138,22 +145,42 @@ pub fn draw_filter_envelope(
         rect.size() - Vec2::new(pad_x * 2.0, pad_y * 2.0),
     );
 
-    let total_time = filter_env_decay.max(0.1);
+    let hz_to_y = |hz: f32| -> f32 {
+        let norm = ((hz.max(20.0).min(20000.0)).ln() - 20f32.ln()) / (20000f32.ln() - 20f32.ln());
+        graph.max.y - graph.height() * norm.clamp(0.0, 1.0)
+    };
+
+    const SPAN_SECS: f32 = 1.0;
+    let c = curve.max(0.1);
+    let decay = filter_env_decay.max(0.001);
+    let cutoff = cutoff_hz.max(20.0).min(20000.0);
+    let amount = env_amount.clamp(0.0, 1.0);
     const POINTS: usize = 200;
     let mut points: Vec<Pos2> = Vec::with_capacity(POINTS + 1);
 
     for i in 0..=POINTS {
-        let t = total_time * (i as f32 / POINTS as f32);
-        let x = graph.min.x + graph.width() * (i as f32 / POINTS as f32);
-        let mut filt = (-curve * t / filter_env_decay.max(0.001)).exp();
-        filt = filt.clamp(0.0, 1.0);
-        let y = graph.max.y - graph.height() * filt;
-        points.push(Pos2::new(x, y));
+        let p = i as f32 / POINTS as f32;
+        let env = (-c * (p * SPAN_SECS) / decay).exp().clamp(0.0, 1.0);
+        // Same law as the voice DSP: exponential sweep from the base cutoff
+        // toward 20 kHz — `cutoff × (20000/cutoff)^(env×amount)`.
+        let hz = cutoff * (20000.0 / cutoff).powf(env * amount);
+        let x = graph.min.x + graph.width() * p;
+        points.push(Pos2::new(x, hz_to_y(hz)));
     }
 
     if !points.is_empty() {
         painter.add(Shape::line(points, Stroke::new(2.5, ENVELOPE_CURVE())));
     }
+
+    // Resting cutoff line (where the sweep returns).
+    let cutoff_y = hz_to_y(cutoff);
+    painter.line_segment(
+        [
+            Pos2::new(graph.min.x, cutoff_y),
+            Pos2::new(graph.max.x, cutoff_y),
+        ],
+        Stroke::new(1.0, white_a(90)),
+    );
 
     response
 }
@@ -406,8 +433,12 @@ fn env_x(graph: &Rect, region_len: f32, t: f32) -> f32 {
     graph.min.x + graph.width() * (t / region_len).clamp(0.0, 1.0)
 }
 
-/// Amp graph for multisample voices: cropped waveform + amp envelope
-/// (attack & decay are fractions of the FULL played sample length).
+/// Amp graph for multisample voices: cropped waveform + amp envelope.
+/// [174/F3] A-H-D bipolar, faithful to the DSP (`DecayReleaseEnvelope`):
+/// shaped attack (absolute, ≤80 ms) then shaped decay. The x split between
+/// attack and decay mixes units (seconds vs fraction of the region), so the
+/// proportion is approximate — but both curve SHAPES mirror the engine.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_sample_amp_graph(
     ui: &mut nih_plug_egui::egui::Ui,
     hit: &[f32],
@@ -415,19 +446,17 @@ pub fn draw_sample_amp_graph(
     end_frac: f32,
     attack_frac: f32,
     decay_frac: f32,
+    attack_curve: f32,
     decay_curve: f32,
     one_shot: bool,
 ) -> nih_plug_egui::egui::Response {
     let (graph, painter, response) = prep_graph(ui);
     let start = start_frac.clamp(0.0, 1.0);
     let end = end_frac.clamp(0.0, 1.0).max(start + 0.01);
-    let region_len = end - start;
     draw_waveform(&painter, &graph, hit, start, end);
 
     let top_y = graph.min.y;
     let base_y = graph.max.y;
-    let attack = attack_frac.clamp(0.0, 1.0);
-    let decay = decay_frac.clamp(0.01, 1.0);
 
     if one_shot {
         // Amp envelope is bypassed: flat full-level line, greyed out.
@@ -436,27 +465,23 @@ pub fn draw_sample_amp_graph(
             Stroke::new(2.0, white_a(60)),
         );
     } else {
+        let attack_s = attack_frac.clamp(0.0, 1.0) * 0.08; // MAX_AMP_ATTACK_SECS
+        let decay_rel = decay_frac.clamp(0.01, 1.0);
+        let total = attack_s + decay_rel;
+        let p_a = (attack_s / total).clamp(0.0, 1.0);
+
         const POINTS: usize = 80;
         let mut points: Vec<Pos2> = Vec::with_capacity(POINTS + 2);
         for i in 0..=POINTS {
-            let t = i as f32 / POINTS as f32; // env time, fraction of the hit length
-            let v = if t < attack {
-                if attack > 0.0 { t / attack } else { 1.0 }
+            let p = i as f32 / POINTS as f32;
+            let v = if p < p_a {
+                buzz_shape_curve(p / p_a.max(1e-6), attack_curve)
             } else {
-                (-decay_curve.max(0.1) * (t - attack) / decay).exp()
+                buzz_shape_curve(1.0 - (p - p_a) / (1.0 - p_a).max(1e-6), decay_curve)
             };
-            let x = env_x(&graph, region_len, t);
+            let x = graph.min.x + graph.width() * p;
             let y = base_y - (base_y - top_y) * v.clamp(0.0, 1.0);
             points.push(Pos2::new(x, y));
-            if t >= region_len {
-                break;
-            }
-        }
-        // Make sure the curve visibly lands on the baseline at the region edge.
-        if let Some(last) = points.last().copied() {
-            if last.x < graph.max.x - 1.0 && last.y < base_y - 1.0 {
-                points.push(Pos2::new(graph.max.x, base_y));
-            }
         }
         if points.len() > 1 {
             painter.add(Shape::line(points, Stroke::new(2.0, BLUE())));
