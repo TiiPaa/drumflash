@@ -17,5 +17,5 @@
 - **Active priorities / known issues** → `TODO.md`
 - **Build history (one entry per installed build)** → `CHANGELOG.md`
 - **UI redesign scope & pitfalls (read before touching `src/ui/`)** → `docs/design/UI-REDESIGN-HANDOFF.md`
-- **Handoff / current session state** → `docs/HANDOFF.md`
+- **Handoff / current session state** → dernier fichier `handoff-*.md` dans `docs/notes/` (un fichier daté par session ; convention unique, ne pas créer de HANDOFF.md ailleurs)
 - Older notes under `docs/historique/` are historical references, not the active source of truth.
