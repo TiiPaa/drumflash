@@ -30,6 +30,17 @@ pub fn set_int_param_if_changed(setter: &ParamSetter, param: &IntParam, value: i
     }
 }
 
+/// Reset every lane's mute/solo to off. Used by the destructive clears
+/// (header Clear All, lane layout presets, style presets, lane delete) so no
+/// invisible mute/solo survives on a deactivated lane and keeps muting the
+/// rest of the kit.
+pub fn clear_all_mutes_solos(setter: &ParamSetter, params: &DrumFlashParams) {
+    for i in 0..crate::track::MAX_TRACKS {
+        set_bool_param_if_changed(setter, params.mutes()[i], false);
+        set_bool_param_if_changed(setter, params.solos()[i], false);
+    }
+}
+
 pub fn draw_track_length_control(
     ui: &mut egui::Ui,
     setter: &ParamSetter,

@@ -332,6 +332,11 @@ fn draw_plock_menu(
                 continue;
             }
             let field = SPECIAL_FIELD_START + def.special_index;
+            if field
+                == crate::instrument_registry::StandardField::Attack.plock_field_index()
+            {
+                continue;
+            }
             let value = if plock.field_masks.is_set(instrument, step, field) {
                 plock.values.get(instrument, step, field)
             } else {
@@ -765,7 +770,10 @@ fn draw_fusion_morph_menu(
                 continue;
             }
             let field = SPECIAL_FIELD_START + def.special_index;
-            if standard_field_indices.contains(&field) {
+            if field
+                == crate::instrument_registry::StandardField::Attack.plock_field_index()
+                || standard_field_indices.contains(&field)
+            {
                 continue;
             }
             let (mut value, is_target) = fusion_morph_state(

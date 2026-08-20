@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-08-20 — [178] Graphes d'enveloppe unifiés et factorisés (build 20260820-083705)
+
+**Branche:** `main` · **Build:** `20260820-083705`
+**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Tous les graphes du Sound Panel sont construits de la même manière** : socle commun `prep_graph` (cadre LCD encastré + padding unifié 12/10 + hauteur 104, gate Buzz 72) et grille de quarts partagée, utilisés par les 6 graphes (`envelope_viz.rs`).
+- **Couleurs de stages partout** : attaque = ambre, hold = vert, decay = bleu (helpers `stage_attack/hold/decay`). Le graphe filtre A-H-D (Buzz/SDrex) et le graphe ampli des samplers 606 colorent désormais leurs segments comme le graphe ampli des synthés ; les courbes filtre mono-stage (Toms, samplers) passent de l'orange au bleu decay. Trait de courbe unifié à 2 px ; ligne de cutoff factorisée (`draw_cutoff_line`).
+- Token de thème `envelope_curve` (orange) devenu inutile → supprimé des 3 skins.
+
+## 2026-08-20 — Fix solo/mute invisibles après les clears (build 20260820-082201)
+
+**Branche:** `main` · **Build:** `20260820-082201`
+**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Bug** : un solo (ou mute) enclenché sur une lane survivait aux clears ; une fois la lane désactivée, le solo devenait invisible et continuait de muter tout le kit → silence total sans cause apparente.
+- Nouveau helper partagé `controls::clear_all_mutes_solos(setter, params)` (14 mutes + 14 solos à off via `ParamSetter`).
+- Appelé dans tous les chemins de clear destructifs : **Clear All** du header, **presets de layout** du navigateur de presets (Clear All / 4 Lanes / 12 Lanes + kits pattern/grid), **presets de style** du panneau Generate (House/Dub/DnB/Bossa/Afro/Break), et **Delete Lane** (reset du mute/solo du slot désactivé).
+- Non touchés (les lanes restent visibles) : Generate, chips Rock/Funk/Disco/Random, Clear Lane, Clear All du Song.
+
+## 2026-08-19 — SDrex : Flanger / Filter Mod + Decays 1,5 s (build 20260819-202022)
+
+**Branche:** `main` · **Build:** `20260819-202022`
+**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Decay maxima ajustés** : Amp Decay et Filter Decay passent de 2 s à **1,5 s** ; les Holds restent à 2 s.
+- **Section Flanger → Modulation** : ajout du switch `Filter Mod`. OFF = flanger classique ; ON = le même LFO module le cutoff du filtre LP et le délai flanger est bypassé.
+- **Mapping Filter Mod** : `Rate` = fréquence du LFO, `Depth` = excursion bipolaire jusqu’à ±3 octaves, `Wet` = intensité de cette excursion. `Delay` et `Feedback` sont grisés dans l’UI et strictement ignorés par le DSP.
+- **Changement de cible sûr** : le buffer de délai est vidé lors du passage Flanger ↔ Filter Mod pour empêcher la réapparition d’un ancien feedback. `Free Phase` contrôle le même LFO dans les deux modes.
+- Tests dédiés : routage Depth/Wet vers le cutoff, indépendance bit-identique vis-à-vis de Delay/Feedback en Filter Mod, différence de rendu entre les deux cibles, nettoyage du buffer et roundtrip du switch.
+
+## 2026-08-19 — SDrex : Holds, Decays 2 s, Free Phase flanger (build 20260819-165918)
+
+**Branche:** `main` · **Build:** `20260819-165918`
+**Validation:** `cargo test` 295+1+187 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Enveloppe volume A-H-D** : ajout de `Hold` (0-2 s) entre Attack et Decay ; `Decay` monte désormais jusqu’à **2 s**. Le hold retarde les trois décroissances body/noise/metal sans figer le pitch drop.
+- **Enveloppe filtre A-H-D** : ajout de `Filter Hold` (0-2 s) ; `Filter Decay` monte désormais jusqu’à **2 s**. DSP et graphe utilisent Attack → Hold → Decay avec les courbes bipolaires existantes.
+- **Free Phase corrigé** : le switch quitte Oscillator et rejoint la section **Flanger**. OFF remet la phase du LFO flanger à zéro à chaque trigger ; ON conserve sa phase courante. Il n’agit plus sur les oscillateurs body/metal, qui retrouvent leur reset normal au cold start.
+- Tests dédiés : plages UI à 2 s, Holds audibles, roundtrip des nouveaux champs, reset/conservation directe de `flanger_phase`, absence d’effet de Free Phase sur `body_phase`.
+
+## 2026-08-19 — SDrex : section Flanger + enveloppe volume A-D (build 20260819-164808)
+
+**Branche:** `main` · **Build:** `20260819-164808`
+**Validation:** `cargo test` 292+1+184 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Filter et Flanger séparés** : nouvelle famille data-driven `ParamFamily::Flanger`; Rate, Delay, Depth, Feedback et Wet apparaissent désormais dans une section **Flanger** autonome. Les paramètres cutoff et enveloppe LP restent seuls dans **Filter**.
+- **Enveloppe volume SDrex enrichie** : ajout de `Attack`, `Attack Curve` et `Decay Curve` dans la section **Envelope**, avec graphe A-D. Attack applique une rampe commune aux couches body/noise/metal ; Attack Curve façonne cette rampe et Decay Curve façonne les trois décroissances caractéristiques sans ajouter une seconde enveloppe qui raccourcirait la recette.
+- **Défaut neutre préservant le son** : Decay Curve SDrex passe à `0.0` (linéaire/neutre dans `shape_curve`), Attack reste à 0,5 ms et Attack Curve à `0.0`. Le reset par double-clic utilise les défauts SDrex du registry.
+- Tests dédiés : séparation exacte des 5 paramètres Flanger, effet audible Attack/Attack Curve/Decay Curve, plus toute la suite de stabilité SDrex.
+
+## 2026-08-19 — Correctif stabilité Clear All / SDrex (build 20260819-163329)
+
+**Branche:** `main` · **Build:** `20260819-163329`
+**Validation:** `cargo test` 290+1+182 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Risque de crash natif supprimé dans la persistence Pattern Bank / Clear All** : l'ancien snapshot JSON publié par `AtomicPtr<Vec<u8>>` libérait immédiatement l'ancien buffer pendant qu'un autre thread pouvait encore le lire. Remplacé par un snapshot partagé protégé par `RwLock`, avec test de lecture/rafraîchissement concurrents.
+- **Thread audio assaini** : une sauvegarde de pattern ne clone/sérialise plus toute la banque dans `process()` ; elle pose uniquement un drapeau atomique, consommé au prochain accès de persistence hors callback audio.
+- **SDrex temps réel sécurisé** : buffer du flanger `Vec` remplacé par un tableau fixe (aucune allocation lors d'un changement de kind à chaud), longueur active bornée jusqu'à 192 kHz avec fallback sûr au-delà, délai interpolé clampé, phases oscillateurs bornées à `2π`. Test extrême fini à 8/44,1/192/384 kHz.
+- **Preset Song** : suppression d'un auto-deadlock (`refresh_snapshot()` était appelé alors que le mutex Pattern Bank était encore détenu).
+- **P-lock/morph** : `special[4]` ne peut plus écraser le champ réservé `Attack` (18). Pour SDrex, **Flanger Wet reste éditable globalement mais n'est pas proposé en p-lock/morph** tant que le format persistant n'a pas un champ distinct.
+
+## 2026-08-19 — [175] Nouvel instrument SDrex + fix Algo Perc1 + légendes/grilles graphes (build 20260819-145510)
+
+**Branche:** `main` · **Build:** `20260819-145510`
+**Validation:** `cargo test` 284+1+178 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **[175] SDrex** (kind 15 / voice 17, catégorie SD) : recette « drex_snare » de l'utilisateur portée en voix temps réel — corps sine (pitch drop +95 Hz → base, env rate 32), noise HP par soustraction LP (env 18), metal ring-mod 620×910 Hz (env 25), mix 0.50/0.80/0.18, **flanger** (Rate 0.1-20 Hz / Delay 0-3 ms / Depth 0-3 ms / Fdbk 0-0.9 / Wet 0-1 — les 5 params demandés, en special params famille Filter), drive tanh ×2.2×0.8 fixe dans la chaîne de saturation standard. `Frequency` = base du corps (déplace aussi la paire metal), `Decay` scale les 3 enveloppes, `Analog` = drift par coup. Note MIDI 48, rôle Snare au GENERATE, mono. Enveloppes en formules temporelles → `set_settings` sans recréation (anti-click natif). Tests : son/fini/silence, wet flanger audible, decay étire la queue, roundtrip settings.
+- **Fix Perc1 Algorithm** : `set_algo()` ne recréait pas les oscillateurs et faisait échouer la détection de changement dans `set_settings` → Perc1 jouait toujours Sine. `set_algo` reconstruit maintenant les 4 oscs sur changement réel. Test de régression (`perc1_algo_changes_the_output`, chemin moteur bit-identique à une voix Saw fraîche).
+- **Graphes** : légende A/H/D supprimée (graphe ampli pleine hauteur) ; barres verticales de quart **sur tous les graphes** via `draw_grid_lines` partagé, atténuées (`white_a(9)`).
+
 ## 2026-08-19 — Filtre Tom : câblage corrigé + sweep exponentiel 20k (build 20260819-114620)
 
 **Branche:** `main` · **Build:** `20260819-114620`
