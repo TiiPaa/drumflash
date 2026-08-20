@@ -405,7 +405,17 @@ impl Voice for Perc1Voice {
     }
 
     fn set_algo(&mut self, algo: u8) {
-        self.settings.algo = algo;
+        // The engine calls this every block: only rebuild on a REAL change,
+        // and rebuild HERE — setting the field alone made `set_settings` see
+        // `algo == algo` and skip the oscillator swap (Perc1 stayed on its
+        // construction algo forever).
+        if self.settings.algo != algo {
+            self.settings.algo = algo;
+            self.osc_a_l = Perc1Osc::new(self.sample_rate, algo);
+            self.osc_a_r = Perc1Osc::new(self.sample_rate, algo);
+            self.osc_b_l = Perc1Osc::new(self.sample_rate, algo);
+            self.osc_b_r = Perc1Osc::new(self.sample_rate, algo);
+        }
     }
 
     fn set_special_param(&mut self, index: usize, value: f32) {
@@ -456,12 +466,58 @@ mod tests {
         count
     }
 
+    /// Algo Sine vs Saw must produce clearly different output — both via a
+    /// fresh voice AND via the engine's `set_algo` path (which must not leave
+    /// stale oscillators behind).
+    #[test]
+    fn perc1_algo_changes_the_output() {
+        let render = |algo: u8| -> Vec<f32> {
+            let mut settings = VoiceSettings::perc1();
+            settings.algo = algo;
+            let mut voice = Perc1Voice::new(44100.0, settings.into());
+            voice.trigger();
+            (0..22050).map(|_| voice.process_sample()).collect()
+        };
+        let sine = render(0);
+        let saw = render(1);
+        let max_diff = sine
+            .iter()
+            .zip(saw.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_diff > 0.05,
+            "Sine vs Saw should differ clearly (max diff {max_diff})"
+        );
+
+        // Engine path: construct as Sine, switch via set_algo, then trigger
+        // (the engine re-applies settings per trigger, which must recreate
+        // the oscillators).
+        let mut settings = VoiceSettings::perc1();
+        settings.algo = 0;
+        let mut voice = Perc1Voice::new(44100.0, settings.into());
+        voice.set_algo(1);
+        let mut vs = VoiceSettings::perc1();
+        vs.algo = 1;
+        voice.set_settings(vs);
+        voice.trigger();
+        let via_setter: Vec<f32> = (0..22050).map(|_| voice.process_sample()).collect();
+        let max_diff = via_setter
+            .iter()
+            .zip(saw.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_diff < 1e-4,
+            "set_algo path should render exactly like a fresh Saw voice (max diff {max_diff})"
+        );
+    }
+
     /// Regression guard: a retrigger during a ringing tail must NOT reset the
     /// oscillator phases (that unconditional reset was the click parasite). The
     /// body should continue roughly continuously across the retrigger.
     #[test]
-    fn perc1_no_click_on_retrigger_during_tail() {
-        let sr = 44100.0;
+    fn perc1_no_click_on_retrigger_during_tail() {        let sr = 44100.0;
         let mut settings = VoiceSettings::perc1();
         settings.decay = 0.3;
         settings.release = 0.4;

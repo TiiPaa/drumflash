@@ -442,7 +442,7 @@ fn draw_legacy_slot_lane_v2(
             .clicked()
             {
                 if confirm_delete {
-                    deactivate_slot(params, state, slot_idx);
+                    deactivate_slot(setter, params, state, slot_idx);
                     ui.close_menu();
                 } else {
                     state.lane_delete_confirm = Some(slot_idx);
@@ -1368,7 +1368,12 @@ fn set_lane_linked_up(params: &DrumFlashParams, slot_idx: usize, linked: bool) {
 }
 
 /// Triggered from the lane title context menu.
-fn deactivate_slot(params: &DrumFlashParams, state: &mut EditorUIState, slot_idx: usize) {
+fn deactivate_slot(
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
+    state: &mut EditorUIState,
+    slot_idx: usize,
+) {
     if slot_idx >= crate::track::MAX_TRACKS {
         return;
     }
@@ -1380,6 +1385,10 @@ fn deactivate_slot(params: &DrumFlashParams, state: &mut EditorUIState, slot_idx
     new_state.slots[slot_idx].active = false;
     let next_selected = new_state.active_slot_indices().next().unwrap_or(0);
     PersistentField::<TrackLayoutState>::set(&params.track_layout, new_state);
+
+    // The lane becomes invisible: its mute/solo must not keep acting.
+    crate::ui::controls::set_bool_param_if_changed(setter, params.mutes()[slot_idx], false);
+    crate::ui::controls::set_bool_param_if_changed(setter, params.solos()[slot_idx], false);
 
     state.fusion_selection_start[slot_idx] = None;
     state.fusion_editing = state.fusion_editing.filter(|(idx, _)| *idx != slot_idx);

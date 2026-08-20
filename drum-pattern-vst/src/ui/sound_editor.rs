@@ -621,6 +621,7 @@ fn draw_track_tab(
 }
 
 pub fn apply_lane_layout_preset(
+    setter: &ParamSetter,
     params: &DrumFlashParams,
     sound_settings: &SoundSettingsState,
     pattern: &SharedPattern,
@@ -635,6 +636,10 @@ pub fn apply_lane_layout_preset(
         crate::ui::grid::clear_all_fusions(pattern);
         state.last_loaded_slot = None;
     }
+
+    // The new layout can deactivate lanes: drop every mute/solo so none keeps
+    // acting while invisible.
+    crate::ui::controls::clear_all_mutes_solos(setter, params);
 
     for (slot_idx, slot) in layout.slots.iter().enumerate() {
         if slot.active {
@@ -1038,6 +1043,7 @@ pub fn draw_sound_panel(
                 crate::instrument_registry::ParamFamily::Env,
                 crate::instrument_registry::ParamFamily::Analog,
                 crate::instrument_registry::ParamFamily::Filter,
+                crate::instrument_registry::ParamFamily::Modulation,
                 crate::instrument_registry::ParamFamily::Saturation,
                 crate::instrument_registry::ParamFamily::Output,
             ] {
@@ -1059,6 +1065,7 @@ pub fn draw_sound_panel(
                     crate::instrument_registry::ParamFamily::Env => "Envelope",
                     crate::instrument_registry::ParamFamily::Analog => "Analog",
                     crate::instrument_registry::ParamFamily::Filter => "Filter",
+                    crate::instrument_registry::ParamFamily::Modulation => "Modulation",
                     crate::instrument_registry::ParamFamily::Saturation => "Saturation",
                     crate::instrument_registry::ParamFamily::Output => "Output",
                 };
@@ -1167,7 +1174,9 @@ pub fn draw_sound_panel(
                                             crate::instrument_registry::StandardField::Analog => &mut analog,
                                             crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                         };
-                                        let default_value = if matches!(voice_idx, 13 | 14 | 15) {
+                                        let default_value = if matches!(voice_idx, 13 | 14 | 15)
+                                            || voice_idx == 17
+                                        {
                                             instrument.sound_settings_default[field as usize]
                                         } else {
                                             match field {
@@ -1265,14 +1274,30 @@ pub fn draw_sound_panel(
                         // (random multisample) is on.
                         let sample_disabled =
                             def.name.ends_with("_sample") && inst.special_value(0) > 0.5;
-                        ui.add_enabled_ui(!sample_disabled, |ui| {
+                        let filter_mod_active = voice_idx == 17 && inst.special_value(17) > 0.5;
+                        let modulation_disabled = filter_mod_active
+                            && matches!(def.special_index, 1 | 3);
+                        ui.add_enabled_ui(!(sample_disabled || modulation_disabled), |ui| {
                         ui.horizontal(|ui| {
                             let current = inst.special_value(def.special_index);
                             let mut new_value = None;
-                            // Multisample voices: Analog Mode / One Shot as switches
-                            if def.name.ends_with("_analog_mode") || def.name.ends_with("_one_shot") {
+                            // Boolean mode switches, including SDrex's modulation
+                            // target and free-running LFO phase.
+                            if def.name.ends_with("_analog_mode")
+                                || def.name.ends_with("_one_shot")
+                                || def.name.ends_with("_free_phase")
+                                || def.name.ends_with("_filter_mod")
+                            {
                                 let mut value = current;
-                                if draw_editor_switch_row(ui, def.label, &mut value).changed() {
+                                let response = draw_editor_switch_row(ui, def.label, &mut value);
+                                let response = if def.name.ends_with("_filter_mod") {
+                                    response.on_hover_text(
+                                        "Off: flanger delay modulation. On: low-pass cutoff modulation; Delay and Feedback are disabled.",
+                                    )
+                                } else {
+                                    response
+                                };
+                                if response.changed() {
                                     new_value = Some(value);
                                 }
                             // Multisample voices: Sample select 1..8 (stored 1-based)
@@ -1478,6 +1503,18 @@ pub fn draw_sound_panel(
                                     inst.special_value(13), // Filter Hold
                                     filter_env_decay,
                                     inst.special_value(16), // Filter Atk Curve
+                                    inst.special_value(15), // Filter Dec Curve
+                                );
+                            } else if voice_idx == 17 {
+                                // SDrex: A-H-D filter envelope.
+                                draw_buzz_filter_envelope(
+                                    ui,
+                                    filt,
+                                    filter_env_amount,
+                                    inst.special_value(13), // Filter Attack
+                                    inst.special_value(16), // Filter Hold
+                                    filter_env_decay,
+                                    inst.special_value(14), // Filter Atk Curve
                                     inst.special_value(15), // Filter Dec Curve
                                 );
                             } else {

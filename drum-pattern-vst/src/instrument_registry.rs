@@ -22,6 +22,8 @@ pub enum ParamFamily {
     Analog,
     /// Filter parameters: cutoff, filter envelope amount/decay.
     Filter,
+    /// Modulation parameters: target, LFO, flanger and modulation depth/mix.
+    Modulation,
     /// Saturation / distortion parameters: type, amount, mix, output gain, pre/post filter.
     Saturation,
     /// Output / routing parameters: volume, mix, stereo, analog drift.
@@ -35,6 +37,7 @@ impl ParamFamily {
             ParamFamily::Env => "ENV",
             ParamFamily::Analog => "ANALOG",
             ParamFamily::Filter => "FILTER",
+            ParamFamily::Modulation => "MOD",
             ParamFamily::Saturation => "SAT",
             ParamFamily::Output => "OUTPUT",
         }
@@ -952,6 +955,109 @@ const SMP606_STD: &[StandardParamDef] = &[
         1.0,
         false,
         None,
+    ),
+];
+
+/// SDrex: body/noise/metal recipe + volume A-D and LP filter A-D envelopes.
+const SDREX_STD: &[StandardParamDef] = &[
+    s(
+        StandardField::Freq,
+        "Frequency",
+        ParamFamily::Osc,
+        60.0,
+        600.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Hold,
+        "Hold",
+        ParamFamily::Env,
+        0.0,
+        2.0,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.03,
+        1.5,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Attack Curve",
+        ParamFamily::Env,
+        -1.0,
+        1.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        -1.0,
+        1.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        2.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Analog,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::FilterEnvAmount,
+        "Filter Env",
+        ParamFamily::Filter,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterEnvDecay,
+        "Filter Decay",
+        ParamFamily::Filter,
+        0.001,
+        1.5,
+        false,
+        Some(" s"),
     ),
 ];
 
@@ -2568,6 +2674,180 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         freq_display_ratio: 1.0,
         filter_type_label: "",
     },
+    InstrumentDef {
+        index: 17,
+        name: "Sdrex",
+        label: "Sx",
+        full_name: "SDrex",
+        midi_note: 48,
+        algo_count: 1,
+        standard_params: SDREX_STD,
+        special_params: &[
+            sp_discrete(
+                "sdrex_filter_mod",
+                "Filter Mod",
+                0.0,
+                0.0,
+                1.0,
+                17,
+                ParamFamily::Modulation,
+            ),
+            sp(
+                "sdrex_flanger_rate",
+                "Rate",
+                5.7,
+                0.1,
+                20.0,
+                0,
+                ParamFamily::Modulation,
+            ),
+            sp(
+                "sdrex_flanger_min_delay",
+                "Delay",
+                0.7,
+                0.0,
+                3.0,
+                1,
+                ParamFamily::Modulation,
+            ),
+            sp(
+                "sdrex_flanger_depth",
+                "Depth",
+                1.8,
+                0.0,
+                3.0,
+                2,
+                ParamFamily::Modulation,
+            ),
+            sp(
+                "sdrex_flanger_feedback",
+                "Feedback",
+                0.38,
+                0.0,
+                0.9,
+                3,
+                ParamFamily::Modulation,
+            ),
+            sp(
+                "sdrex_flanger_wet",
+                "Wet",
+                0.32,
+                0.0,
+                1.0,
+                4,
+                ParamFamily::Modulation,
+            ),
+            sp_discrete(
+                "sdrex_saturation_type",
+                "Saturation Type",
+                0.0,
+                0.0,
+                5.0,
+                5,
+                ParamFamily::Saturation,
+            ),
+            sp(
+                "sdrex_saturation_amount",
+                "Saturation Amount",
+                0.0,
+                0.0,
+                1.0,
+                6,
+                ParamFamily::Saturation,
+            ),
+            sp(
+                "sdrex_saturation_mix",
+                "Saturation Mix",
+                1.0,
+                0.0,
+                1.0,
+                7,
+                ParamFamily::Saturation,
+            ),
+            sp(
+                "sdrex_saturation_output_gain",
+                "Saturation Output Gain",
+                1.0,
+                0.5,
+                2.0,
+                8,
+                ParamFamily::Saturation,
+            ),
+            sp_discrete(
+                "sdrex_saturation_pre_filter",
+                "Saturation Pre-Filter",
+                0.0,
+                0.0,
+                1.0,
+                9,
+                ParamFamily::Saturation,
+            ),
+            sp(
+                "sdrex_noise_level", "Noise", 0.8, 0.0, 1.0, 10, ParamFamily::Osc,
+            ),
+            sp_discrete(
+                "sdrex_noise_type",
+                "Noise Type",
+                0.0,
+                0.0,
+                3.0,
+                11,
+                ParamFamily::Osc,
+            ),
+            sp_discrete(
+                "sdrex_free_phase",
+                "Free Phase",
+                0.0,
+                0.0,
+                1.0,
+                12,
+                ParamFamily::Modulation,
+            ),
+            sp(
+                "sdrex_filter_attack",
+                "Filter Attack",
+                0.0,
+                0.0,
+                0.5,
+                13,
+                ParamFamily::Filter,
+            ),
+            sp(
+                "sdrex_filter_hold",
+                "Filter Hold",
+                0.0,
+                0.0,
+                2.0,
+                16,
+                ParamFamily::Filter,
+            ),
+            sp(
+                "sdrex_filter_atk_curve",
+                "Filter Atk Curve",
+                0.0,
+                -1.0,
+                1.0,
+                14,
+                ParamFamily::Filter,
+            ),
+            sp(
+                "sdrex_filter_dec_curve",
+                "Filter Dec Curve",
+                0.6,
+                -1.0,
+                1.0,
+                15,
+                ParamFamily::Filter,
+            ),
+        ],
+        // [freq, decay, vol, filter_freq, attack, release, decay_curve,
+        //  release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]
+        sound_settings_default: [
+            185.0, 0.15, 0.9, 20000.0, 0.0005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        filter_type_label: "",
+    },
 ];
 
 #[allow(dead_code)]
@@ -2669,7 +2949,9 @@ pub fn morphable_fields(voice_idx: usize) -> Vec<MorphableField> {
             continue;
         }
         let field_index = SPECIAL_FIELD_START + def.special_index;
-        if standard_field_indices.contains(&field_index) {
+        if field_index == StandardField::Attack.plock_field_index()
+            || standard_field_indices.contains(&field_index)
+        {
             continue;
         }
         fields.push(MorphableField {
@@ -2715,13 +2997,77 @@ mod tests {
 
     #[test]
     fn mono_voices_do_not_expose_the_stereo_checkbox() {
-        // Kick, Tom1-3, B8 stay mono.
-        for idx in [0usize, 4, 5, 6, 11] {
+        // Kick, Tom1-3, B8, Sdrex stay mono.
+        for idx in [0usize, 4, 5, 6, 11, 17] {
             assert!(
                 !has_stereo(&INSTRUMENTS[idx]),
                 "{} (idx {idx}) unexpectedly exposes Stereo",
                 INSTRUMENTS[idx].name
             );
         }
+    }
+
+    #[test]
+    fn sdrex_modulation_has_its_own_parameter_family() {
+        let sdrex = &INSTRUMENTS[17];
+        let flanger_params: Vec<_> = sdrex
+            .special_params
+            .iter()
+            .filter(|param| param.name.starts_with("sdrex_flanger_"))
+            .collect();
+        assert_eq!(flanger_params.len(), 5);
+        assert!(
+            flanger_params
+                .iter()
+                .all(|param| param.family == ParamFamily::Modulation)
+        );
+        assert!(sdrex
+            .special_params
+            .iter()
+            .filter(|param| {
+                param.name.starts_with("sdrex_filter_") && param.name != "sdrex_filter_mod"
+            })
+            .all(|param| param.family == ParamFamily::Filter));
+        let free_phase = sdrex
+            .special_params
+            .iter()
+            .find(|param| param.name == "sdrex_free_phase")
+            .unwrap();
+        assert_eq!(free_phase.family, ParamFamily::Modulation);
+        let filter_mod = sdrex
+            .special_params
+            .iter()
+            .find(|param| param.name == "sdrex_filter_mod")
+            .unwrap();
+        assert_eq!(filter_mod.family, ParamFamily::Modulation);
+        assert!(!filter_mod.continuous);
+    }
+
+    #[test]
+    fn sdrex_amp_and_filter_decay_reach_one_point_five_seconds() {
+        let sdrex = &INSTRUMENTS[17];
+        for field in [
+            StandardField::Decay,
+            StandardField::Hold,
+            StandardField::FilterEnvDecay,
+        ] {
+            let def = sdrex
+                .standard_params
+                .iter()
+                .find(|param| param.field == field)
+                .unwrap();
+            let ParamWidget::Slider { max, .. } = def.widget else {
+                panic!("{field:?} should be a slider");
+            };
+            let expected = if field == StandardField::Hold { 2.0 } else { 1.5 };
+            assert_eq!(max, expected, "unexpected maximum for {field:?}");
+        }
+        let filter_hold = sdrex
+            .special_params
+            .iter()
+            .find(|param| param.name == "sdrex_filter_hold")
+            .unwrap();
+        assert_eq!(filter_hold.max, 2.0);
+        assert_eq!(filter_hold.family, ParamFamily::Filter);
     }
 }

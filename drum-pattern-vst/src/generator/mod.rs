@@ -145,6 +145,7 @@ fn remap_roles_to_slots(
             TrackInstrumentKind::Sd6smp => 1,
             TrackInstrumentKind::Ch6smp => 2, // borrow the HiHat role
             TrackInstrumentKind::Buzz => 12, // borrow the Perc1 role
+            TrackInstrumentKind::Sdrex => 1, // borrow the Snare role
             _ => kind.drum_voice_index(),
         };
         let duplicate_index = assigned_per_voice[base_voice];
