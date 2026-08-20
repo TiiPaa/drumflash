@@ -1,4 +1,14 @@
+## Nouvelles tâches — session 2026-08-20
+
+### Bugs
+- [x] [176] **Solo/mute invisibles après les clears** — un solo enclenché survivait à Clear All et continuait de muter le kit depuis une lane désactivée (invisible). Fix : helper `controls::clear_all_mutes_solos` appelé par Clear All header, presets de layout (Clear All/4/12 Lanes + kits), presets de style Generate, et Delete Lane (build 20260820-082201, à valider dans S1).
+- [x] [177] **Perc1 sature / artefact type FM** — FAUX POSITIF : c'était le fix Algo du build 20260819-145510 ([175]) qui faisait enfin jouer l'algo **Saw** stocké en session (ignoré → Sine forcé avant). Pas de régression DSP. Validé par l'utilisateur sur le build 20260820-083705 (« c'est bon dans le dernier »). Migration automatique envisagée puis rejetée (elle aurait écrasé les choix Saw volontaires à chaque chargement).
+- [x] [178] **Uniformiser les graphes d'enveloppe** — socle commun `prep_graph` (LCD + padding + grille) + couleurs de stages partout (A ambre / H vert / D bleu), y compris filtre A-H-D Buzz/SDrex et ampli samplers ; courbes mono-stage en bleu ; token `envelope_curve` supprimé (build 20260820-083705, à valider dans S1).
+
 ## Nouvelles tâches — session 2026-08-14
+
+### Features
+- [x] [175] **Nouvel instrument SDrex** (snare métallique, recette utilisateur) — corps sine (drop +95 Hz) + noise HP coloré (niveau/type) + metal ring-mod 620×910, mix 0.5/0.8/0.18, **section Modulation autonome** avec switch Flanger/Filter Mod (Rate/Depth/Wet partagés, Delay/Fdbk réservés au flanger, Free Phase du LFO), drive tanh fixe, **enveloppe volume A-H-D** (Attack/Hold/Decay jusqu’à 1,5 s + Attack/Decay Curve), filtre LP + env A-H-D bipolaire (Filter Hold, Decay jusqu’à 1,5 s), Analog = drift standard. Kind 15 / voice 17, catégorie SD, note MIDI 48, rôle Snare au générateur, mono. Correctifs stabilité : buffer flanger fixe sans allocation audio, snapshot Pattern Bank sans pointeur brut, sérialisation sortie du callback audio, conflit p-lock Attack/special[4] neutralisé. Tests complets 297+1+189 (build 20260819-202022, à valider dans S1).
 
 > **Ordre de priorité (2026-08-14)** — comportement/bugs d'abord, quick wins, features, gros chantiers.
 

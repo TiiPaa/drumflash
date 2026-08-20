@@ -1,16 +1,83 @@
 //! Interactive envelope visualizer for the Sound Panel.
 //!
-//! Two separate views:
-//! - `draw_amp_envelope`   : ADSR-style amplitude curve (amber/blue/purple)
-//! - `draw_filter_envelope`: Filter envelope curve (orange)
-//!
-//! The engine is bi-stage parallel (DecayReleaseEnvelope), but the amplitude
-//! graph intentionally follows the designer mockup's simplified ADSR readout.
+//! All graphs are built the same way ([178]): the shared `prep_graph` frame
+//! (recessed LCD + padding + faint quarter gridlines) and the shared stage
+//! colors — attack = amber, hold = green, decay = blue. Every A-H-D graph
+//! (amp, filter, sample) splits its curve into those colored stages.
 
 use crate::ui::theme::*;
-use nih_plug_egui::egui::{Align2, Color32, Pos2, Rect, Shape, Stroke, Vec2};
+use nih_plug_egui::egui::{Align2, Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 
-// -- Amplitude envelope (AHDSR style) ----------------------------------------
+// -- Shared frame & stage colors ([178]) --------------------------------------
+
+/// Full-height graphs (amp / filter / sample) share this height; the Buzz gate
+/// strip is the only smaller one.
+const GRAPH_H: f32 = 104.0;
+const GATE_GRAPH_H: f32 = 72.0;
+const PAD_X: f32 = 12.0;
+const PAD_Y: f32 = 10.0;
+const CURVE_W: f32 = 2.0;
+
+/// Attack stage color (amber) — same for every graph.
+fn stage_attack() -> Color32 {
+    AMBER()
+}
+
+/// Hold stage color (green) — same for every graph.
+fn stage_hold() -> Color32 {
+    Color32::from_rgb(110, 200, 165)
+}
+
+/// Decay stage color (blue) — same for every graph; also the color of
+/// single-stage (pure exponential decay) curves.
+fn stage_decay() -> Color32 {
+    BLUE()
+}
+
+/// Common scaffolding for every Sound-Panel graph: allocates the LCD rect,
+/// paints the recessed green screen and returns the inner graph rect +
+/// painter. Grid lines stay a separate call so sample graphs can slide their
+/// waveform UNDER the grid.
+fn prep_graph(
+    ui: &mut nih_plug_egui::egui::Ui,
+    height: f32,
+) -> (Rect, Painter, nih_plug_egui::egui::Response) {
+    let w = ui.available_width().max(120.0);
+    let desired_size = Vec2::new(w, height);
+    let (rect, response) =
+        ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
+    crate::ui::skeuo::lcd_bg(ui, rect, RADIUS_PAD as f32);
+    let graph = Rect::from_min_size(
+        rect.min + Vec2::new(PAD_X, PAD_Y),
+        rect.size() - Vec2::new(PAD_X * 2.0, PAD_Y * 2.0),
+    );
+    (graph, ui.painter_at(rect), response)
+}
+
+/// Faint vertical quarter gridlines, drawn on every envelope/filter graph.
+fn draw_grid_lines(painter: &Painter, graph: &Rect) {
+    for i in 0..=4 {
+        let x = graph.min.x + graph.width() * i as f32 / 4.0;
+        painter.line_segment(
+            [
+                Pos2::new(x, graph.min.y),
+                Pos2::new(x, graph.max.y),
+            ],
+            Stroke::new(1.0, white_a(9)),
+        );
+    }
+}
+
+/// Resting cutoff line (where a filter sweep returns), shared by all filter
+/// graphs.
+fn draw_cutoff_line(painter: &Painter, graph: &Rect, y: f32) {
+    painter.line_segment(
+        [Pos2::new(graph.min.x, y), Pos2::new(graph.max.x, y)],
+        Stroke::new(1.0, white_a(90)),
+    );
+}
+
+// -- Amplitude envelope (A-H-D) ----------------------------------------------
 
 /// Amplitude envelope readout: **A-H-D** with independent BIPOLAR curve shaping
 /// on the attack and the decay (no release stage), mirroring the DSP.
@@ -22,39 +89,17 @@ pub fn draw_amp_envelope(
     decay: f32,
     dec_curve: f32,
 ) -> nih_plug_egui::egui::Response {
-    let w = ui.available_width().max(120.0);
-    let desired_size = Vec2::new(w, 104.0);
-    let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-
-    // Recessed green LCD screen (one place: `skeuo::lcd_bg`); curve drawn on top.
-    crate::ui::skeuo::lcd_bg(ui, rect, RADIUS_PAD as f32);
-
-    let pad_x = 12.0f32;
-    let pad_y = 12.0f32;
-    let graph = Rect::from_min_size(
-        rect.min + Vec2::new(pad_x, pad_y),
-        rect.size() - Vec2::new(pad_x * 2.0, pad_y * 2.0),
-    );
-    // Reserve a bottom strip for the A/H/D legend (letters no longer on the curve).
-    let legend_h = 14.0f32;
-    let base_y = graph.max.y - legend_h;
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
+    let base_y = graph.max.y;
     let top_y = graph.min.y;
 
-    for i in 0..=4 {
-        let x = graph.min.x + graph.width() * i as f32 / 4.0;
-        painter.line_segment(
-            [Pos2::new(x, top_y), Pos2::new(x, base_y)],
-            Stroke::new(1.0, white_a(13)),
-        );
-    }
+    draw_grid_lines(&painter, &graph);
 
     let attack = attack_time.max(0.001);
     let hold_time = hold.max(0.0);
     let decay_time = decay.max(0.02);
     let total_time = attack + hold_time + decay_time;
 
-    let hold_col = Color32::from_rgb(110, 200, 165);
     let x_start = graph.min.x;
     let x_attack = x_start + graph.width() * attack / total_time;
     let x_hold = x_attack + graph.width() * hold_time / total_time;
@@ -68,15 +113,15 @@ pub fn draw_amp_envelope(
     for i in 0..=SEG {
         let p = i as f32 / SEG as f32;
         let x = x_start + (x_attack - x_start) * p;
-        atk_pts.push(Pos2::new(x, y_of(buzz_shape_curve(p, atk_curve))));
+        atk_pts.push(Pos2::new(x, y_of(bipolar_shape_curve(p, atk_curve))));
     }
-    painter.add(Shape::line(atk_pts, Stroke::new(2.0, AMBER())));
+    painter.add(Shape::line(atk_pts, Stroke::new(CURVE_W, stage_attack())));
 
     // Hold: flat plateau at peak (only when a hold is set).
     if hold_time > 0.0 {
         painter.line_segment(
             [Pos2::new(x_attack, top_y), Pos2::new(x_hold, top_y)],
-            Stroke::new(2.0, hold_col),
+            Stroke::new(CURVE_W, stage_hold()),
         );
     }
 
@@ -85,33 +130,9 @@ pub fn draw_amp_envelope(
     for i in 0..=SEG {
         let p = i as f32 / SEG as f32;
         let x = x_hold + (x_end - x_hold) * p;
-        dec_pts.push(Pos2::new(x, y_of(buzz_shape_curve(1.0 - p, dec_curve))));
+        dec_pts.push(Pos2::new(x, y_of(bipolar_shape_curve(1.0 - p, dec_curve))));
     }
-    painter.add(Shape::line(dec_pts, Stroke::new(2.0, BLUE())));
-
-    // Bottom legend (coloured square + letter) - no letters on the curve itself.
-    let mut items: Vec<(Color32, &str)> = vec![(AMBER(), "A")];
-    if hold_time > 0.0 {
-        items.push((hold_col, "H"));
-    }
-    items.push((BLUE(), "D"));
-    let ly = graph.max.y - legend_h * 0.5;
-    let mut lx = graph.min.x + 2.0;
-    for (col, letter) in &items {
-        painter.rect_filled(
-            Rect::from_min_size(Pos2::new(lx, ly - 4.0), Vec2::splat(8.0)),
-            1.0,
-            *col,
-        );
-        painter.text(
-            Pos2::new(lx + 12.0, ly),
-            nih_plug_egui::egui::Align2::LEFT_CENTER,
-            *letter,
-            f_mono_med(9.0),
-            white_a(150),
-        );
-        lx += 40.0;
-    }
+    painter.add(Shape::line(dec_pts, Stroke::new(CURVE_W, stage_decay())));
 
     response
 }
@@ -130,25 +151,14 @@ pub fn draw_filter_envelope(
     cutoff_hz: f32,
     env_amount: f32,
 ) -> nih_plug_egui::egui::Response {
-    let w = ui.available_width().max(120.0);
-    let desired_size = Vec2::new(w, 104.0);
-    let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-
-    // Recessed green LCD screen (one place: `skeuo::lcd_bg`); curve drawn on top.
-    crate::ui::skeuo::lcd_bg(ui, rect, RADIUS_PAD as f32);
-
-    let pad_x = 14.0f32;
-    let pad_y = 10.0f32;
-    let graph = Rect::from_min_size(
-        rect.min + Vec2::new(pad_x, pad_y),
-        rect.size() - Vec2::new(pad_x * 2.0, pad_y * 2.0),
-    );
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
 
     let hz_to_y = |hz: f32| -> f32 {
         let norm = ((hz.max(20.0).min(20000.0)).ln() - 20f32.ln()) / (20000f32.ln() - 20f32.ln());
         graph.max.y - graph.height() * norm.clamp(0.0, 1.0)
     };
+
+    draw_grid_lines(&painter, &graph);
 
     const SPAN_SECS: f32 = 1.0;
     let c = curve.max(0.1);
@@ -168,28 +178,21 @@ pub fn draw_filter_envelope(
         points.push(Pos2::new(x, hz_to_y(hz)));
     }
 
+    // Single-stage curve: decay color, like every other graph ([178]).
     if !points.is_empty() {
-        painter.add(Shape::line(points, Stroke::new(2.5, ENVELOPE_CURVE())));
+        painter.add(Shape::line(points, Stroke::new(CURVE_W, stage_decay())));
     }
 
-    // Resting cutoff line (where the sweep returns).
-    let cutoff_y = hz_to_y(cutoff);
-    painter.line_segment(
-        [
-            Pos2::new(graph.min.x, cutoff_y),
-            Pos2::new(graph.max.x, cutoff_y),
-        ],
-        Stroke::new(1.0, white_a(90)),
-    );
+    draw_cutoff_line(&painter, &graph, hz_to_y(cutoff));
 
     response
 }
 
-// -- Buzz A-H-D filter envelope ----------------------------------------------
+// -- A-H-D filter envelope (Buzz / SDrex) -------------------------------------
 
 /// Bipolar curve shaping, mirroring `BuzzVoice::shape_curve` / `dsp::shape_curve`
 /// (exponent 1+5|c|, [170]).
-fn buzz_shape_curve(e: f32, curve: f32) -> f32 {
+fn bipolar_shape_curve(e: f32, curve: f32) -> f32 {
     let e = e.clamp(0.0, 1.0);
     let c = curve.clamp(-1.0, 1.0);
     if c >= 0.0 {
@@ -199,9 +202,10 @@ fn buzz_shape_curve(e: f32, curve: f32) -> f32 {
     }
 }
 
-/// Filter graph for the Buzz voice: draws the A-H-D cutoff sweep exactly like
-/// the DSP — attack ramp, hold, decay (with the bipolar curve), the cutoff
-/// swept EXPONENTIALLY from the base toward fully open by `env × amount`.
+/// Filter graph for the Buzz/SDrex voices: draws the A-H-D cutoff sweep
+/// exactly like the DSP — attack ramp, hold, decay (each with its bipolar
+/// curve), the cutoff swept EXPONENTIALLY from the base toward fully open by
+/// `env × amount`. Stages use the shared colors ([178]).
 #[allow(clippy::too_many_arguments)]
 pub fn draw_buzz_filter_envelope(
     ui: &mut nih_plug_egui::egui::Ui,
@@ -213,18 +217,7 @@ pub fn draw_buzz_filter_envelope(
     atk_curve: f32,
     dec_curve: f32,
 ) -> nih_plug_egui::egui::Response {
-    let w = ui.available_width().max(120.0);
-    let desired_size = Vec2::new(w, 104.0);
-    let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-    crate::ui::skeuo::lcd_bg(ui, rect, RADIUS_PAD as f32);
-
-    let pad_x = 14.0f32;
-    let pad_y = 10.0f32;
-    let graph = Rect::from_min_size(
-        rect.min + Vec2::new(pad_x, pad_y),
-        rect.size() - Vec2::new(pad_x * 2.0, pad_y * 2.0),
-    );
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
 
     let base = base_cutoff_hz.max(20.0).min(20000.0);
     let amount = env_amount.clamp(0.0, 1.0);
@@ -238,39 +231,46 @@ pub fn draw_buzz_filter_envelope(
         let norm = ((hz.max(20.0).min(20000.0)).ln() - 20f32.ln()) / (20000f32.ln() - 20f32.ln());
         graph.max.y - graph.height() * norm.clamp(0.0, 1.0)
     };
-
-    const POINTS: usize = 200;
-    let mut points: Vec<Pos2> = Vec::with_capacity(POINTS + 1);
-    for i in 0..=POINTS {
-        let t = span * (i as f32 / POINTS as f32);
-        // Same A-H-D shape as the DSP: linear attack & decay ramps, each shaped
-        // by its own bipolar curve.
-        let env = if t < attack {
-            buzz_shape_curve(t / attack, atk_curve)
-        } else if t < attack + hold {
-            1.0
-        } else {
-            let p = ((t - attack - hold) / decay).clamp(0.0, 1.0);
-            buzz_shape_curve(1.0 - p, dec_curve)
-        };
+    let y_of_env = |env: f32| -> f32 {
         let amt = (env * amount).clamp(0.0, 1.0);
-        let hz = base * (20000.0 / base).powf(amt);
-        let x = graph.min.x + graph.width() * (i as f32 / POINTS as f32);
-        points.push(Pos2::new(x, hz_to_y(hz)));
+        hz_to_y(base * (20000.0 / base).powf(amt))
+    };
+    let x_of_t = |t: f32| graph.min.x + graph.width() * (t / span).clamp(0.0, 1.0);
+
+    draw_grid_lines(&painter, &graph);
+
+    const POINTS: usize = 80;
+
+    // Attack: shaped ramp of the envelope 0 -> 1.
+    let mut atk_pts = Vec::with_capacity(POINTS + 1);
+    for i in 0..=POINTS {
+        let t = attack * (i as f32 / POINTS as f32);
+        atk_pts.push(Pos2::new(
+            x_of_t(t),
+            y_of_env(bipolar_shape_curve(t / attack, atk_curve)),
+        ));
     }
-    if points.len() > 1 {
-        painter.add(Shape::line(points, Stroke::new(2.5, ENVELOPE_CURVE())));
+    painter.add(Shape::line(atk_pts, Stroke::new(CURVE_W, stage_attack())));
+
+    // Hold: envelope pinned at 1.
+    if hold > 0.0 {
+        painter.line_segment(
+            [Pos2::new(x_of_t(attack), y_of_env(1.0)), Pos2::new(x_of_t(attack + hold), y_of_env(1.0))],
+            Stroke::new(CURVE_W, stage_hold()),
+        );
     }
 
-    // Resting cutoff line (the base the sweep returns to).
-    let cutoff_y = hz_to_y(base);
-    painter.line_segment(
-        [
-            Pos2::new(graph.min.x, cutoff_y),
-            Pos2::new(graph.max.x, cutoff_y),
-        ],
-        Stroke::new(1.0, white_a(90)),
-    );
+    // Decay: shaped ramp 1 -> 0, drawn over the rest of the window so it
+    // visibly lands on the resting cutoff.
+    let mut dec_pts = Vec::with_capacity(POINTS + 2);
+    for i in 0..=POINTS {
+        let t = (attack + hold) + (span - attack - hold) * (i as f32 / POINTS as f32);
+        let p = ((t - attack - hold) / decay).clamp(0.0, 1.0);
+        dec_pts.push(Pos2::new(x_of_t(t), y_of_env(bipolar_shape_curve(1.0 - p, dec_curve))));
+    }
+    painter.add(Shape::line(dec_pts, Stroke::new(CURVE_W, stage_decay())));
+
+    draw_cutoff_line(&painter, &graph, hz_to_y(base));
 
     response
 }
@@ -289,17 +289,7 @@ pub fn draw_buzz_gate_graph(
     depth: f32,
     shape: f32,
 ) -> nih_plug_egui::egui::Response {
-    let w = ui.available_width().max(120.0);
-    let desired_size = Vec2::new(w, 72.0);
-    let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-    crate::ui::skeuo::lcd_bg(ui, rect, RADIUS_PAD as f32);
-
-    let pad = 8.0f32;
-    let graph = Rect::from_min_size(
-        rect.min + Vec2::new(pad, pad),
-        rect.size() - Vec2::new(pad * 2.0, pad * 2.0),
-    );
+    let (graph, painter, response) = prep_graph(ui, GATE_GRAPH_H);
 
     let rate = rate.clamp(1.0, 500.0);
     let depth = depth.clamp(0.0, 1.0);
@@ -315,6 +305,7 @@ pub fn draw_buzz_gate_graph(
 
     let top_y = graph.min.y;
     let base_y = graph.max.y;
+    draw_grid_lines(&painter, &graph);
     const POINTS: usize = 240;
     let mut points: Vec<Pos2> = Vec::with_capacity(POINTS + 1);
     for i in 0..=POINTS {
@@ -335,7 +326,7 @@ pub fn draw_buzz_gate_graph(
         let y = base_y - (base_y - top_y) * gate_mod.clamp(0.0, 1.0);
         points.push(Pos2::new(x, y));
     }
-    painter.add(Shape::line(points, Stroke::new(2.0, BLUE())));
+    painter.add(Shape::line(points, Stroke::new(CURVE_W, stage_decay())));
 
     // Depth floor: the level the gate chops down to.
     if depth > 0.001 && depth < 0.999 {
@@ -365,25 +356,6 @@ pub fn draw_buzz_gate_graph(
 
 /// Depth of the additive filter envelope, mirrors the voices' constant.
 const SMP_FILTER_ENV_DEPTH_HZ: f32 = 8000.0;
-
-fn prep_graph(
-    ui: &mut nih_plug_egui::egui::Ui,
-) -> (
-    Rect,
-    nih_plug_egui::egui::Painter,
-    nih_plug_egui::egui::Response,
-) {
-    let w = ui.available_width().max(120.0);
-    let desired_size = Vec2::new(w, 104.0);
-    let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
-    crate::ui::skeuo::lcd_bg(ui, rect, RADIUS_PAD as f32);
-    let pad = 8.0f32;
-    let graph = Rect::from_min_size(
-        rect.min + Vec2::new(pad, pad),
-        rect.size() - Vec2::new(pad * 2.0, pad * 2.0),
-    );
-    (graph, ui.painter_at(rect), response)
-}
 
 /// Waveform of the played region [start, end], cropped (the offset parts are
 /// NOT drawn), normalised, centred - wide stylised bars, dim under the curve.
@@ -450,42 +422,48 @@ pub fn draw_sample_amp_graph(
     decay_curve: f32,
     one_shot: bool,
 ) -> nih_plug_egui::egui::Response {
-    let (graph, painter, response) = prep_graph(ui);
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
     let start = start_frac.clamp(0.0, 1.0);
     let end = end_frac.clamp(0.0, 1.0).max(start + 0.01);
     draw_waveform(&painter, &graph, hit, start, end);
 
     let top_y = graph.min.y;
     let base_y = graph.max.y;
+    draw_grid_lines(&painter, &graph);
 
     if one_shot {
         // Amp envelope is bypassed: flat full-level line, greyed out.
         painter.line_segment(
             [Pos2::new(graph.min.x, top_y), Pos2::new(graph.max.x, top_y)],
-            Stroke::new(2.0, white_a(60)),
+            Stroke::new(CURVE_W, white_a(60)),
         );
     } else {
         let attack_s = attack_frac.clamp(0.0, 1.0) * 0.08; // MAX_AMP_ATTACK_SECS
         let decay_rel = decay_frac.clamp(0.01, 1.0);
         let total = attack_s + decay_rel;
         let p_a = (attack_s / total).clamp(0.0, 1.0);
+        let y_of = |v: f32| base_y - (base_y - top_y) * v.clamp(0.0, 1.0);
+        let x_of = |p: f32| graph.min.x + graph.width() * p;
 
-        const POINTS: usize = 80;
-        let mut points: Vec<Pos2> = Vec::with_capacity(POINTS + 2);
+        const POINTS: usize = 40;
+
+        // Attack stage (amber), shaped ramp 0 -> 1.
+        let mut atk_pts = Vec::with_capacity(POINTS + 1);
         for i in 0..=POINTS {
-            let p = i as f32 / POINTS as f32;
-            let v = if p < p_a {
-                buzz_shape_curve(p / p_a.max(1e-6), attack_curve)
-            } else {
-                buzz_shape_curve(1.0 - (p - p_a) / (1.0 - p_a).max(1e-6), decay_curve)
-            };
-            let x = graph.min.x + graph.width() * p;
-            let y = base_y - (base_y - top_y) * v.clamp(0.0, 1.0);
-            points.push(Pos2::new(x, y));
+            let p = p_a * (i as f32 / POINTS as f32);
+            let v = bipolar_shape_curve(p / p_a.max(1e-6), attack_curve);
+            atk_pts.push(Pos2::new(x_of(p), y_of(v)));
         }
-        if points.len() > 1 {
-            painter.add(Shape::line(points, Stroke::new(2.0, BLUE())));
+        painter.add(Shape::line(atk_pts, Stroke::new(CURVE_W, stage_attack())));
+
+        // Decay stage (blue), shaped ramp 1 -> 0.
+        let mut dec_pts = Vec::with_capacity(POINTS + 1);
+        for i in 0..=POINTS {
+            let p = p_a + (1.0 - p_a) * (i as f32 / POINTS as f32);
+            let v = bipolar_shape_curve(1.0 - (p - p_a) / (1.0 - p_a).max(1e-6), decay_curve);
+            dec_pts.push(Pos2::new(x_of(p), y_of(v)));
         }
+        painter.add(Shape::line(dec_pts, Stroke::new(CURVE_W, stage_decay())));
     }
 
     response
@@ -504,7 +482,7 @@ pub fn draw_sample_filter_graph(
     env_decay_frac: f32,
     curve: f32,
 ) -> nih_plug_egui::egui::Response {
-    let (graph, painter, response) = prep_graph(ui);
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
     let start = start_frac.clamp(0.0, 1.0);
     let end = end_frac.clamp(0.0, 1.0).max(start + 0.01);
     let region_len = end - start;
@@ -514,6 +492,8 @@ pub fn draw_sample_filter_graph(
         let norm = ((hz.max(20.0).min(20000.0)).ln() - 20f32.ln()) / (20000f32.ln() - 20f32.ln());
         graph.max.y - graph.height() * norm.clamp(0.0, 1.0)
     };
+
+    draw_grid_lines(&painter, &graph);
 
     // Envelope sweep from the playback start, then held at the resting cutoff.
     let decay = env_decay_frac.clamp(0.01, 1.0);
@@ -535,19 +515,13 @@ pub fn draw_sample_filter_graph(
             points.push(Pos2::new(graph.max.x, hz_to_y(cutoff_hz)));
         }
     }
+    // Single-stage curve: decay color, like every other graph ([178]).
     if points.len() > 1 {
-        painter.add(Shape::line(points, Stroke::new(2.0, ENVELOPE_CURVE())));
+        painter.add(Shape::line(points, Stroke::new(CURVE_W, stage_decay())));
     }
 
     // Resting cutoff line across the whole graph.
-    let cutoff_y = hz_to_y(cutoff_hz);
-    painter.line_segment(
-        [
-            Pos2::new(graph.min.x, cutoff_y),
-            Pos2::new(graph.max.x, cutoff_y),
-        ],
-        Stroke::new(1.0, white_a(90)),
-    );
+    draw_cutoff_line(&painter, &graph, hz_to_y(cutoff_hz));
 
     response
 }

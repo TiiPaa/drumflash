@@ -337,7 +337,7 @@ pub fn draw_preset_browser_if_any(
                 1 => (TrackLayoutState::modular_default_layout(), false),
                 _ => (TrackLayoutState::preset_12_layout(), false),
             };
-            apply_lane_layout_preset(params, sound_settings, pattern, state, layout, clear);
+            apply_lane_layout_preset(setter, params, sound_settings, pattern, state, layout, clear);
             if let Some(b) = state.preset_browser.as_mut() {
                 b.confirm_clear_all_grid = false;
             }
@@ -466,6 +466,7 @@ fn load_preset_json(
             };
             if let Ok(mut bank) = params.pattern_bank.bank.lock() {
                 bank.song = preset.song;
+                drop(bank);
                 params.pattern_bank.refresh_snapshot();
                 params.song_controller.publish(preset.song);
                 state.last_published_song = Some(preset.song);
@@ -476,7 +477,7 @@ fn load_preset_json(
                 return;
             };
             let layout = presets::layout_from_kit(&preset.kit);
-            apply_lane_layout_preset(params, sound_settings, pattern, state, layout, false);
+            apply_lane_layout_preset(setter, params, sound_settings, pattern, state, layout, false);
         }
     }
 }
@@ -589,7 +590,7 @@ fn apply_pattern(
                 }
             }
         }
-        apply_lane_layout_preset(params, sound_settings, pattern, state, layout, false);
+        apply_lane_layout_preset(setter, params, sound_settings, pattern, state, layout, false);
     }
 
     let Ok(plock_bytes) = presets::hex_decode(&preset.plock_hex) else {

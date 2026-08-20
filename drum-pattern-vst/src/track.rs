@@ -28,6 +28,7 @@ pub enum TrackInstrumentKind {
     Sd6smp = 12,
     Ch6smp = 13,
     Buzz = 14,
+    Sdrex = 15,
 }
 
 /// Instrument category used to group the kind pickers/menus
@@ -65,7 +66,7 @@ impl InstrumentCategory {
 }
 
 impl TrackInstrumentKind {
-    pub const COUNT: usize = 15;
+    pub const COUNT: usize = 16;
 
     /// Every kind, in stable declaration order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -84,13 +85,14 @@ impl TrackInstrumentKind {
         Self::Sd6smp,
         Self::Ch6smp,
         Self::Buzz,
+        Self::Sdrex,
     ];
 
     /// Musical family of this kind (grouping for pickers/menus).
     pub fn category(self) -> InstrumentCategory {
         match self {
             Self::Kick | Self::BassDrum808 | Self::Bd6smp => InstrumentCategory::BassDrum,
-            Self::Snare | Self::Snare606 | Self::Sd6smp | Self::Clap => {
+            Self::Snare | Self::Snare606 | Self::Sd6smp | Self::Clap | Self::Sdrex => {
                 InstrumentCategory::Snare
             }
             Self::HiHat | Self::OpenHiHat | Self::Ch6smp => InstrumentCategory::HiHat,
@@ -124,6 +126,7 @@ impl TrackInstrumentKind {
             12 => Some(Self::Sd6smp),
             13 => Some(Self::Ch6smp),
             14 => Some(Self::Buzz),
+            15 => Some(Self::Sdrex),
             _ => None,
         }
     }
@@ -149,6 +152,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Sd6smp => "s6",
             TrackInstrumentKind::Ch6smp => "c6",
             TrackInstrumentKind::Buzz => "Bz",
+            TrackInstrumentKind::Sdrex => "Sx",
         }
     }
 
@@ -169,6 +173,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Sd6smp => "SD6smp",
             TrackInstrumentKind::Ch6smp => "CH6smp",
             TrackInstrumentKind::Buzz => "Buzz",
+            TrackInstrumentKind::Sdrex => "SDrex",
         }
     }
 
@@ -190,6 +195,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Sd6smp => 40,
             TrackInstrumentKind::Ch6smp => 42,
             TrackInstrumentKind::Buzz => 44,
+            TrackInstrumentKind::Sdrex => 48,
         }
     }
 
@@ -214,6 +220,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Sd6smp => 14,
             TrackInstrumentKind::Ch6smp => 15,
             TrackInstrumentKind::Buzz => 16,
+            TrackInstrumentKind::Sdrex => 17,
         }
     }
 
@@ -235,6 +242,7 @@ impl TrackInstrumentKind {
             14 => Some(Self::Sd6smp),
             15 => Some(Self::Ch6smp),
             16 => Some(Self::Buzz),
+            17 => Some(Self::Sdrex),
             _ => None,
         }
     }

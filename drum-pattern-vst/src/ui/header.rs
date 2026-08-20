@@ -104,10 +104,55 @@ fn header_vbar(ui: &mut egui::Ui) {
     ui.add_space(13.0);
 }
 
+/// Clear the whole program: grid (steps + fusions + sound/seq plocks on every
+/// lane), all 16 pattern-bank slots, and the song. Lane kinds, sounds and
+/// routing are kept.
+fn clear_entire_program(
+    setter: &ParamSetter,
+    params: &DrumFlashParams,
+    pattern: &crate::sequencer::SharedPattern,
+    state: &mut EditorUIState,
+) {
+    // Grid.
+    pattern.load_step_masks(&[0u16; crate::sequencer::pattern::STEP_COUNT]);
+    crate::ui::grid::clear_all_fusions(pattern);
+    params.plock_state.state.clear_all();
+    params.seq_plock_state.state.clear_all();
+
+    // No mute/solo may survive on lanes that are about to become invisible.
+    crate::ui::controls::clear_all_mutes_solos(setter, params);
+
+    // Pattern bank + song.
+    if let Ok(mut bank) = params.pattern_bank.bank.lock() {
+        for slot in bank.slots.iter_mut() {
+            *slot = crate::pattern_bank::PatternSlot::default();
+        }
+        bank.song = crate::pattern_bank::SongSequence::default();
+        drop(bank);
+        params.pattern_bank.refresh_snapshot();
+    }
+    let empty_song = crate::pattern_bank::SongSequence::default();
+    params.song_controller.publish(empty_song);
+    state.last_published_song = Some(empty_song);
+
+    // Lanes: deactivate every slot (the audio thread gates them off via the
+    // kind-change watch).
+    nih_plug::params::persist::PersistentField::<crate::track::TrackLayoutState>::set(
+        &params.track_layout,
+        crate::track::TrackLayoutState::empty_layout(),
+    );
+    state.selected_track_slot = 0;
+    state.selected_instrument = 0;
+
+    state.last_loaded_slot = None;
+    state.clear_program_confirm = false;
+}
+
 pub fn draw_header_bar(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
     params: &DrumFlashParams,
+    pattern: &crate::sequencer::SharedPattern,
     state: &mut EditorUIState,
     _save_pattern_request: &Arc<AtomicU32>,
     _load_pattern_request: &Arc<AtomicU32>,
@@ -235,9 +280,10 @@ pub fn draw_header_bar(
 
                 header_vbar(ui);
 
-                // Push the Presets + Settings keycaps to the right edge.
-                // Trailing block: Presets (80) + vbar (28) + Settings (84).
-                ui.add_space((ui.available_width() - 192.0).max(0.0));
+                // Push the Presets + Clear All + Settings keycaps to the right
+                // edge. Trailing block: Presets (80) + vbar (28) + Clear All
+                // (72) + vbar (28) + Settings (84).
+                ui.add_space((ui.available_width() - 292.0).max(0.0));
                 if crate::ui::controls::keycap_button(
                     ui,
                     "Presets",
@@ -249,6 +295,31 @@ pub fn draw_header_bar(
                 .clicked()
                 {
                     crate::ui::preset_browser::open(state);
+                }
+                header_vbar(ui);
+                // Clear the whole program (grid + pattern bank + song + lanes)
+                // — two clicks, the second one confirms.
+                let clear_armed = state.clear_program_confirm;
+                if crate::ui::controls::keycap_button(
+                    ui,
+                    if clear_armed { "Sure?" } else { "Clear All" },
+                    72.0,
+                    if clear_armed {
+                        crate::ui::widgets::KeycapState::PressedAmber
+                    } else {
+                        crate::ui::widgets::KeycapState::Rest
+                    },
+                    true,
+                    f_sans_med(10.5),
+                )
+                .on_hover_text("Clear everything: grid, pattern slots, song AND lanes (click twice)")
+                .clicked()
+                {
+                    if clear_armed {
+                        clear_entire_program(setter, params, pattern, state);
+                    } else {
+                        state.clear_program_confirm = true;
+                    }
                 }
                 header_vbar(ui);
                 if crate::ui::controls::keycap_button(

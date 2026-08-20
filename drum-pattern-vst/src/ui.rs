@@ -256,6 +256,7 @@ pub fn create_editor(
                         ui,
                         setter,
                         &params_for_ui,
+                        &pattern_for_ui,
                         state,
                         &save_pattern_request,
                         &load_pattern_request,

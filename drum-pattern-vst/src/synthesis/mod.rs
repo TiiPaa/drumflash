@@ -2,6 +2,7 @@
 
 mod bd606;
 mod buzz;
+mod sdrex;
 mod clap;
 mod cymbal;
 mod dsp;
@@ -29,6 +30,7 @@ pub use special_params::{algos_for, AlgoDef};
 
 pub use bd606::Bd606Voice;
 pub use buzz::BuzzVoice;
+pub use sdrex::SdrexVoice;
 pub use ch606::Ch606Voice;
 pub use clap::ClapVoice;
 pub use cymbal::CymbalVoice;
@@ -41,6 +43,7 @@ pub use ride::RideVoice;
 pub use sd606::Sd606Voice;
 pub use settings::bd606::Bd606Settings;
 pub use settings::buzz::BuzzSettings;
+pub use settings::sdrex::SdrexSettings;
 pub use settings::ch606::Ch606Settings;
 pub use settings::clap::ClapSettings;
 pub use settings::cymbal::CymbalSettings;
@@ -79,11 +82,12 @@ pub enum DrumVoice {
     Sd606 = 14,
     Ch606 = 15,
     Buzz = 16,
+    Sdrex = 17,
 }
 
 #[allow(dead_code)]
 impl DrumVoice {
-    pub const COUNT: usize = 17;
+    pub const COUNT: usize = 18;
 
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
@@ -104,6 +108,7 @@ impl DrumVoice {
             14 => Some(Self::Sd606),
             15 => Some(Self::Ch606),
             16 => Some(Self::Buzz),
+            17 => Some(Self::Sdrex),
             _ => None,
         }
     }
@@ -627,6 +632,36 @@ impl VoiceSettings {
             ],
         }
     }
+
+    pub fn sdrex() -> Self {
+        // Metallic snare (body + HP noise + ring-mod metal) through a flanger.
+        // Mirror of the registry `sound_settings_default` + special defaults.
+        Self {
+            frequency: 185.0,
+            decay: 0.15,
+            volume: 0.9,
+            filter_freq: 20000.0,
+            attack: 0.0005,
+            release: 0.0,
+            decay_curve: 0.0,
+            release_curve: 0.0,
+            hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.05,
+            analog: 0.5,
+            stereo: 0.0,
+            algo: 0,
+            // [0 fl_rate, 1 fl_min_delay, 2 fl_depth, 3 fl_feedback, 4 fl_wet,
+            //  5 sat_type, 6 sat_amount, 7 sat_mix, 8 sat_gain, 9 sat_pre,
+            //  10 noise_level, 11 noise_type, 12 modulation_free_phase,
+            //  13 filt_attack, 14 filt_atk_curve, 15 filt_dec_curve,
+            //  16 filt_hold, 17 modulation_type, …]
+            special: [
+                5.7, 0.7, 1.8, 0.38, 0.32, 0.0, 0.0, 1.0, 1.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 0.6,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        }
+    }
 }
 
 pub trait Voice: Send + Sync {
@@ -673,6 +708,7 @@ pub enum DrumVoiceKind {
     Sd606(Sd606Voice),
     Ch606(Ch606Voice),
     Buzz(BuzzVoice),
+    Sdrex(SdrexVoice),
 }
 
 impl Voice for DrumVoiceKind {
@@ -693,6 +729,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.trigger(),
             DrumVoiceKind::Ch606(v) => v.trigger(),
             DrumVoiceKind::Buzz(v) => v.trigger(),
+            DrumVoiceKind::Sdrex(v) => v.trigger(),
         }
     }
 
@@ -713,6 +750,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.trigger_hard(),
             DrumVoiceKind::Ch606(v) => v.trigger_hard(),
             DrumVoiceKind::Buzz(v) => v.trigger_hard(),
+            DrumVoiceKind::Sdrex(v) => v.trigger_hard(),
         }
     }
 
@@ -733,6 +771,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.process_sample(),
             DrumVoiceKind::Ch606(v) => v.process_sample(),
             DrumVoiceKind::Buzz(v) => v.process_sample(),
+            DrumVoiceKind::Sdrex(v) => v.process_sample(),
         }
     }
 
@@ -753,6 +792,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Ch606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Buzz(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Sdrex(v) => v.process_sample_stereo(),
         }
     }
 
@@ -773,6 +813,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.is_active(),
             DrumVoiceKind::Ch606(v) => v.is_active(),
             DrumVoiceKind::Buzz(v) => v.is_active(),
+            DrumVoiceKind::Sdrex(v) => v.is_active(),
         }
     }
 
@@ -793,6 +834,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.reset(),
             DrumVoiceKind::Ch606(v) => v.reset(),
             DrumVoiceKind::Buzz(v) => v.reset(),
+            DrumVoiceKind::Sdrex(v) => v.reset(),
         }
     }
 
@@ -813,6 +855,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.set_settings(settings),
             DrumVoiceKind::Ch606(v) => v.set_settings(settings),
             DrumVoiceKind::Buzz(v) => v.set_settings(settings),
+            DrumVoiceKind::Sdrex(v) => v.set_settings(settings),
         }
     }
 
@@ -833,6 +876,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.set_algo(algo),
             DrumVoiceKind::Ch606(v) => v.set_algo(algo),
             DrumVoiceKind::Buzz(v) => v.set_algo(algo),
+            DrumVoiceKind::Sdrex(v) => v.set_algo(algo),
         }
     }
 
@@ -853,6 +897,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Ch606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Buzz(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Sdrex(v) => v.set_special_param(index, value),
         }
     }
 }
@@ -922,6 +967,10 @@ fn create_voice_for_kind(
         K::Buzz => DrumVoiceKind::Buzz(BuzzVoice::new(
             sample_rate,
             BuzzSettings::from(VoiceSettings::buzz()),
+        )),
+        K::Sdrex => DrumVoiceKind::Sdrex(SdrexVoice::new(
+            sample_rate,
+            SdrexSettings::from(VoiceSettings::sdrex()),
         )),
     }
 }

@@ -222,6 +222,10 @@ pub struct EditorUIState {
     /// Density of Randomize Lane (fraction of steps turned on).
     #[serde(default = "default_randomize_density")]
     pub randomize_density: f32,
+    /// Header "Clear" button armed: the next click wipes the whole program
+    /// (grid + pattern bank + song).
+    #[serde(skip)]
+    pub clear_program_confirm: bool,
 }
 
 fn default_randomize_density() -> f32 {

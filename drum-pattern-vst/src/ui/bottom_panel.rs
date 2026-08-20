@@ -142,7 +142,7 @@ fn draw_preset_bar(
     ui: &mut egui::Ui,
     pattern: &SharedPattern,
     params: &DrumFlashParams,
-    _setter: &ParamSetter,
+    setter: &ParamSetter,
     state: &mut EditorUIState,
 ) {
     ui.horizontal(|ui| {
@@ -207,7 +207,7 @@ fn draw_preset_bar(
         ];
         for (label, kinds, make) in style_presets {
             if compact_chip(ui, label, false).clicked() {
-                apply_style_preset(params, state, pattern, kinds, make(), pattern_length);
+                apply_style_preset(params, setter, state, pattern, kinds, make(), pattern_length);
             }
         }
         ui.add_space(8.0);
@@ -227,6 +227,7 @@ fn draw_preset_bar(
 /// `PersistentField::set`, so the audio thread reinitialises the voices.
 fn apply_style_preset(
     params: &DrumFlashParams,
+    setter: &ParamSetter,
     state: &mut EditorUIState,
     pattern: &SharedPattern,
     kinds: &[TrackInstrumentKind],
@@ -235,6 +236,9 @@ fn apply_style_preset(
 ) {
     let layout = TrackLayoutState::from_kinds(kinds);
     PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
+    // The layout replaced the lanes: no mute/solo may survive on a lane that
+    // changed instrument or disappeared.
+    crate::ui::controls::clear_all_mutes_solos(setter, params);
     let analog = state.global_config.default_analog;
     for (slot, &kind) in kinds.iter().enumerate() {
         params
