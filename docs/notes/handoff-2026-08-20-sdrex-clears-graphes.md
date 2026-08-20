@@ -1,7 +1,7 @@
-# Handoff — Flash Drum VST3
+# Handoff 2026-08-20 — SDrex, clears mute/solo, graphes unifiés
 
 **Date:** 2026-08-20 · **Branch:** `main` · **Latest installed build:** `20260820-083705` · **HEAD:** `8ebf004` (commité + pushé)
-**Read [`CLAUDE.md`](../CLAUDE.md) first** — it is the canonical architecture + invariants + workflow reference for all AI agents. This file is a session-state handoff, not a replacement for it.
+**Read [`CLAUDE.md`](../../CLAUDE.md) first** — it is the canonical architecture + invariants + workflow reference for all AI agents. This file is a session-state handoff, not a replacement for it.
 
 ---
 
