@@ -52,8 +52,6 @@ pub struct Theme {
     pub danger: Color32,
     pub drag_target: Color32,
     pub solo_fill: Color32,
-    // Envelope graphs
-    pub envelope_curve: Color32,
 }
 
 // ============================================================
@@ -92,7 +90,6 @@ pub const SKIN_DARK: Theme = Theme {
     danger: Color32::from_rgb(255, 80, 80),
     drag_target: Color32::from_rgb(255, 200, 80),
     solo_fill: Color32::from_rgb(6, 32, 15),
-    envelope_curve: Color32::from_rgb(255, 160, 60),
 };
 
 pub const SKIN_MIDNIGHT: Theme = Theme {
@@ -128,7 +125,6 @@ pub const SKIN_MIDNIGHT: Theme = Theme {
     danger: Color32::from_rgb(255, 90, 90),
     drag_target: Color32::from_rgb(250, 204, 21),
     solo_fill: Color32::from_rgb(8, 34, 20),
-    envelope_curve: Color32::from_rgb(96, 165, 250),
 };
 
 pub const SKIN_EMBER: Theme = Theme {
@@ -164,7 +160,6 @@ pub const SKIN_EMBER: Theme = Theme {
     danger: Color32::from_rgb(255, 90, 80),
     drag_target: Color32::from_rgb(251, 191, 36),
     solo_fill: Color32::from_rgb(10, 36, 18),
-    envelope_curve: Color32::from_rgb(251, 146, 60),
 };
 
 /// (name, theme) pairs shown in the Settings skin selector.
@@ -335,10 +330,6 @@ pub fn DRAG_TARGET() -> Color32 {
 #[inline]
 pub fn SOLO_FILL() -> Color32 {
     current().solo_fill
-}
-#[inline]
-pub fn ENVELOPE_CURVE() -> Color32 {
-    current().envelope_curve
 }
 
 // ============================================================

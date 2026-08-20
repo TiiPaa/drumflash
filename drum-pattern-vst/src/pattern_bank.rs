@@ -6,8 +6,8 @@
 use crate::sequencer::pattern::{
     FusedGroup, FUSION_SLOT_COUNT, INSTRUMENT_COUNT, MAX_FUSIONS, STEP_COUNT,
 };
-use std::sync::atomic::{AtomicPtr, Ordering as AtomicOrdering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex, RwLock};
 
 pub const SLOT_COUNT: usize = 16;
 
@@ -772,39 +772,51 @@ impl PatternBank {
 
 /// Wrapper around PatternBank for nih-plug persistence.
 ///
-/// The mutable bank stays behind a short-lived `Mutex`, but the JSON snapshot
-/// used by nih-plug persistence is refreshed outside that lock and published
-/// as an atomic pointer. `map()` therefore never serializes while holding the
-/// bank lock.
+/// The mutable bank stays behind a short-lived `Mutex`. The serialized snapshot
+/// has its own lock so nih-plug can safely read it while the UI replaces it.
 #[derive(Clone)]
 pub struct PersistentPatternBank {
     pub bank: Arc<Mutex<PatternBank>>,
-    snapshot: Arc<AtomicPtr<Vec<u8>>>,
+    snapshot: Arc<RwLock<Vec<u8>>>,
+    snapshot_dirty: Arc<AtomicBool>,
 }
 
 impl PersistentPatternBank {
     pub fn new() -> Self {
         Self {
             bank: Arc::new(Mutex::new(PatternBank::new())),
-            snapshot: Arc::new(AtomicPtr::new(std::ptr::null_mut())),
+            snapshot: Arc::new(RwLock::new(Vec::new())),
+            snapshot_dirty: Arc::new(AtomicBool::new(true)),
         }
+    }
+
+    /// Mark the persisted snapshot stale without allocating or blocking. This
+    /// is safe to call from the audio thread after a pattern-bank mutation.
+    pub fn mark_snapshot_dirty(&self) {
+        self.snapshot_dirty
+            .store(true, AtomicOrdering::Release);
     }
 
     /// Rebuild the persisted JSON snapshot outside the bank lock.
     /// This may allocate and is therefore only called from UI/persistence code
     /// paths, never from the audio callback.
     pub fn refresh_snapshot(&self) {
+        // Clearing before cloning avoids losing a concurrent dirty mark: a
+        // mutation that happens during this rebuild will set the flag again.
+        self.snapshot_dirty
+            .store(false, AtomicOrdering::Release);
         let cloned = match self.bank.lock() {
             Ok(guard) => guard.clone(),
-            Err(_) => return,
+            Err(_) => {
+                self.mark_snapshot_dirty();
+                return;
+            }
         };
         let bytes = serde_json::to_vec(&cloned).unwrap_or_default();
-        let new_ptr = Box::into_raw(Box::new(bytes));
-        let old_ptr = self.snapshot.swap(new_ptr, AtomicOrdering::AcqRel);
-        if !old_ptr.is_null() {
-            unsafe {
-                drop(Box::from_raw(old_ptr));
-            }
+        if let Ok(mut snapshot) = self.snapshot.write() {
+            *snapshot = bytes;
+        } else {
+            self.mark_snapshot_dirty();
         }
     }
 }
@@ -812,17 +824,6 @@ impl PersistentPatternBank {
 impl Default for PersistentPatternBank {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Drop for PersistentPatternBank {
-    fn drop(&mut self) {
-        let old_ptr = self.snapshot.swap(std::ptr::null_mut(), AtomicOrdering::AcqRel);
-        if !old_ptr.is_null() {
-            unsafe {
-                drop(Box::from_raw(old_ptr));
-            }
-        }
     }
 }
 
@@ -840,17 +841,16 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, Vec<u8>> for PersistentP
     where
         F: Fn(&Vec<u8>) -> R,
     {
-        let snapshot = self.snapshot.load(AtomicOrdering::Acquire);
-        if snapshot.is_null() {
+        if self.snapshot_dirty.load(AtomicOrdering::Acquire) {
             self.refresh_snapshot();
         }
-        let snapshot = self.snapshot.load(AtomicOrdering::Acquire);
-        if snapshot.is_null() {
-            let empty = Vec::new();
-            return f(&empty);
+        match self.snapshot.read() {
+            Ok(snapshot) => f(&snapshot),
+            Err(_) => {
+                let empty = Vec::new();
+                f(&empty)
+            }
         }
-        let bytes = unsafe { &*snapshot };
-        f(bytes)
     }
 }
 
@@ -1233,5 +1233,29 @@ mod tests {
         let guard = restored.bank.lock().unwrap();
         assert_eq!(guard.song.length, 2);
         assert_eq!(guard.song.slot_at(0), Some(4));
+    }
+
+    #[test]
+    fn persistent_bank_snapshot_is_safe_during_concurrent_refresh() {
+        let persistent = Arc::new(PersistentPatternBank::new());
+        persistent.refresh_snapshot();
+
+        let writer = Arc::clone(&persistent);
+        let writer_thread = std::thread::spawn(move || {
+            for length in 1..=SONG_BLOCKS as u8 {
+                if let Ok(mut bank) = writer.bank.lock() {
+                    bank.song.length = length;
+                }
+                writer.refresh_snapshot();
+            }
+        });
+
+        for _ in 0..256 {
+            let valid = persistent.map(|bytes| {
+                serde_json::from_slice::<PatternBank>(bytes).is_ok()
+            });
+            assert!(valid, "snapshot must always remain valid JSON");
+        }
+        writer_thread.join().unwrap();
     }
 }

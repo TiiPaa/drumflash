@@ -74,6 +74,8 @@ pub const CH606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 /// Gate retrigger mode: Smooth = ramp from current, Razor = snap from zero.
 pub const BUZZ_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Smooth" }, AlgoDef { name: "Razor" }];
 
+pub const SDREX_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
+
 // ── Registry helpers ────────────────────────────────────────────────────────
 
 use super::DrumVoice;
@@ -98,5 +100,6 @@ pub fn algos_for(voice: DrumVoice) -> &'static [AlgoDef] {
         DrumVoice::Sd606 => SD606_ALGOS,
         DrumVoice::Ch606 => CH606_ALGOS,
         DrumVoice::Buzz => BUZZ_ALGOS,
+        DrumVoice::Sdrex => SDREX_ALGOS,
     }
 }
