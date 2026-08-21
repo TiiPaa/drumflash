@@ -169,6 +169,9 @@ pub struct EditorUIState {
     pub fusion_edit_steps: u8,
     // Right-click plock popup state (replaces egui context_menu to control frame chrome).
     pub plock_popup: Option<PlockPopup>,
+    /// Cell whose p-lock the Lane Editor edits ([184]). `None` = the lane global.
+    #[serde(default)]
+    pub sound_edit_target: Option<SelectedCell>,
     /// When true, a click occurred while the p-lock popup was open; suppress step-cell
     /// toggles this frame so the popup (not the cell underneath) handles the click.
     #[serde(skip)]
@@ -260,6 +263,11 @@ impl Default for PresetBrowserState {
 
 pub fn select_legacy_track(state: &mut EditorUIState, slot_idx: usize) {
     let slot_idx = slot_idx.min(crate::track::MAX_TRACKS - 1);
+    // [184] Selecting a different lane abandons the cell selection: the panel
+    // would otherwise show one lane's name and another lane's p-lock.
+    if state.selected_track_slot != slot_idx {
+        state.sound_edit_target = None;
+    }
     state.selected_track_slot = slot_idx;
     // `selected_instrument` holds the SLOT index (0..MAX_TRACKS); the voice
     // schema for registry lookups is derived from the slot's kind.
@@ -293,6 +301,87 @@ pub fn effective_lane_length_for_ui(
         params.lengths()[slot_idx].value().clamp(1, 64) as usize
     } else {
         master_length
+    }
+}
+
+/// The grid cell whose sound the Lane Editor is editing ([184]).
+///
+/// Distinct from [`PlockPopup`]: the popup is a transient menu whose presence
+/// also acts as a modal flag that deadens grid clicks, whereas this selection is
+/// persistent and must never do that. The step is stored **raw**, as clicked, and
+/// normalised to a fusion's start cell at read time — so deleting a fusion
+/// restores the exact cell the user picked.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub struct SelectedCell {
+    pub slot: usize,
+    pub step: usize,
+}
+
+/// What the Lane Editor's rows read and write this frame.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EditScope {
+    /// The lane's global sound: no cell selected, or editing is not allowed here.
+    LaneGlobal,
+    /// The selected cell's sound p-lock.
+    StepPlock { step: usize },
+}
+
+/// Outcome of resolving the selection against the current pattern.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ResolvedScope {
+    pub scope: EditScope,
+    /// Cell to ring in the grid, already normalised to a fusion's start.
+    pub highlight_step: Option<usize>,
+    /// The selection no longer points at anything editable: the caller drops it.
+    pub drop_selection: bool,
+}
+
+/// Resolve the selected cell into an edit scope. Pure, so it is unit-testable
+/// without an egui context.
+///
+/// - no selection, or the selection belongs to another lane than the one the
+///   panel shows → the lane's global sound;
+/// - p-lock editing disabled (Song mode, grid Follow) → global, but the
+///   selection is **kept** so it comes back when the user leaves that mode;
+/// - the lane is inactive, or the step is past the lane's length → global, and
+///   the selection is dropped;
+/// - a step covered by a fusion → normalised to the fusion's start cell, which
+///   is the only cell that carries sound for the whole group.
+pub fn resolve_edit_scope(
+    selected: Option<SelectedCell>,
+    panel_slot: usize,
+    lane_active: bool,
+    lane_length: usize,
+    fusion_start_for_step: impl Fn(usize) -> Option<usize>,
+    plock_editing_allowed: bool,
+) -> ResolvedScope {
+    let global = ResolvedScope {
+        scope: EditScope::LaneGlobal,
+        highlight_step: None,
+        drop_selection: false,
+    };
+    let Some(cell) = selected else {
+        return global;
+    };
+    if cell.slot != panel_slot {
+        // Another lane is shown: edit that lane's global sound, but do not throw
+        // the selection away — switching back must restore it.
+        return global;
+    }
+    if !lane_active || cell.step >= crate::plock::STEP_COUNT || cell.step >= lane_length {
+        return ResolvedScope {
+            drop_selection: true,
+            ..global
+        };
+    }
+    if !plock_editing_allowed {
+        return global;
+    }
+    let step = fusion_start_for_step(cell.step).unwrap_or(cell.step);
+    ResolvedScope {
+        scope: EditScope::StepPlock { step },
+        highlight_step: Some(step),
+        drop_selection: false,
     }
 }
 
@@ -483,6 +572,8 @@ impl EditorUIState {
         self.fusion_selection_start[slot] = None;
         self.fusion_editing = self.fusion_editing.filter(|(idx, _)| *idx != slot);
         self.plock_popup = self.plock_popup.filter(|popup| popup.instrument != slot);
+        // [184] The lane's p-locks were just wiped: stop pointing at one.
+        self.sound_edit_target = self.sound_edit_target.filter(|cell| cell.slot != slot);
         self.lane_clear_grid_confirm = None;
         self.lane_delete_confirm = None;
         self.mark_pattern_dirty();
@@ -510,6 +601,8 @@ impl EditorUIState {
         self.fusion_selection_start[slot] = None;
         self.fusion_editing = self.fusion_editing.filter(|(idx, _)| *idx != slot);
         self.plock_popup = self.plock_popup.filter(|popup| popup.instrument != slot);
+        // [184] The lane's p-locks were just wiped: stop pointing at one.
+        self.sound_edit_target = self.sound_edit_target.filter(|cell| cell.slot != slot);
         self.lane_clear_grid_confirm = None;
         self.lane_delete_confirm = None;
         self.mark_pattern_dirty();
@@ -674,5 +767,92 @@ pub mod serde_pos2 {
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Pos2, D::Error> {
         let [x, y] = <[f32; 2]>::deserialize(d)?;
         Ok(Pos2::new(x, y))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PANEL_SLOT: usize = 3;
+    const LANE_LEN: usize = 16;
+
+    fn cell(slot: usize, step: usize) -> Option<SelectedCell> {
+        Some(SelectedCell { slot, step })
+    }
+
+    /// No fusion anywhere.
+    fn no_fusion(_step: usize) -> Option<usize> {
+        None
+    }
+
+    #[test]
+    fn no_selection_edits_the_lane_global() {
+        let r = resolve_edit_scope(None, PANEL_SLOT, true, LANE_LEN, no_fusion, true);
+        assert_eq!(r.scope, EditScope::LaneGlobal);
+        assert_eq!(r.highlight_step, None);
+        assert!(!r.drop_selection);
+    }
+
+    #[test]
+    fn a_plain_cell_edits_its_plock() {
+        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true);
+        assert_eq!(r.scope, EditScope::StepPlock { step: 5 });
+        assert_eq!(r.highlight_step, Some(5));
+        assert!(!r.drop_selection);
+    }
+
+    /// Showing another lane must not edit that lane's step, but the selection is
+    /// kept so coming back restores it.
+    #[test]
+    fn a_selection_on_another_lane_is_kept_but_inactive() {
+        let r = resolve_edit_scope(cell(7, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true);
+        assert_eq!(r.scope, EditScope::LaneGlobal);
+        assert!(!r.drop_selection, "switching lanes must not lose the selection");
+    }
+
+    /// Song mode / grid Follow: p-lock editing is disabled, but leaving the mode
+    /// must bring the selection back — so it is kept, not dropped.
+    #[test]
+    fn disabled_editing_falls_back_to_global_without_losing_the_selection() {
+        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, false);
+        assert_eq!(r.scope, EditScope::LaneGlobal);
+        assert_eq!(r.highlight_step, None);
+        assert!(!r.drop_selection);
+    }
+
+    #[test]
+    fn an_inactive_lane_or_an_out_of_range_step_drops_the_selection() {
+        let inactive = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, false, LANE_LEN, no_fusion, true);
+        assert!(inactive.drop_selection);
+        assert_eq!(inactive.scope, EditScope::LaneGlobal);
+
+        let past_len = resolve_edit_scope(cell(PANEL_SLOT, 20), PANEL_SLOT, true, LANE_LEN, no_fusion, true);
+        assert!(past_len.drop_selection, "a step past the lane length is unreachable");
+
+        let past_grid = resolve_edit_scope(cell(PANEL_SLOT, 99), PANEL_SLOT, true, 64, no_fusion, true);
+        assert!(past_grid.drop_selection);
+    }
+
+    /// A fused group carries sound only on its start cell, so any covered cell
+    /// resolves to that start — the raw click is what gets stored, so deleting the
+    /// fusion later restores the exact cell.
+    #[test]
+    fn a_covered_cell_resolves_to_the_fusion_start() {
+        let fusion = |step: usize| -> Option<usize> {
+            if (4..=7).contains(&step) {
+                Some(4)
+            } else {
+                None
+            }
+        };
+        for step in 4..=7 {
+            let r = resolve_edit_scope(cell(PANEL_SLOT, step), PANEL_SLOT, true, LANE_LEN, fusion, true);
+            assert_eq!(r.scope, EditScope::StepPlock { step: 4 }, "step {step}");
+            assert_eq!(r.highlight_step, Some(4));
+        }
+        // Outside the group, nothing is normalised.
+        let r = resolve_edit_scope(cell(PANEL_SLOT, 8), PANEL_SLOT, true, LANE_LEN, fusion, true);
+        assert_eq!(r.scope, EditScope::StepPlock { step: 8 });
     }
 }

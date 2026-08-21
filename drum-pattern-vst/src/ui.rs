@@ -345,6 +345,11 @@ pub fn create_editor(
                                 &params_for_ui,
                                 setter,
                                 state,
+                                // [184] The panel edits either the lane global or
+                                // the selected cell's p-lock; the pattern is what
+                                // tells it whether that cell is inside a fusion.
+                                &plock_for_ui,
+                                &pattern_for_ui,
                             );
                         },
                     );
