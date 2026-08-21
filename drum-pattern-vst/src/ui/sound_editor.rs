@@ -282,6 +282,66 @@ pub fn draw_editor_slider_row_full(
     .inner
 }
 
+/// [184] Width reserved at the left of every Lane Editor row, in **every** scope.
+///
+/// Always reserved, never conditional: if the gutter only existed in p-lock
+/// scope, selecting a cell would shift every slider by 14 px ("UI zones
+/// stables" — reserve the space, do not move things).
+const ROW_GUTTER_W: f32 = 14.0;
+
+/// Draws one row's override marker and returns `true` when the user asked to
+/// hand the parameter back to the lane.
+///
+/// In lane scope this is empty space. In p-lock scope an overridden row gets an
+/// accent bar, clickable to revert — the bar IS the affordance, which keeps the
+/// label ASCII-only (a glyph like a revert arrow is exactly what produced the
+/// mojibake of task [164]).
+fn row_gutter(ui: &mut egui::Ui, overridden: bool) -> bool {
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ROW_GUTTER_W, 22.0),
+        if overridden {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    if !overridden {
+        return false;
+    }
+    let hovered = response.hovered();
+    let bar = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + 3.0, rect.center().y - 7.0),
+        Vec2::new(3.0, 14.0),
+    );
+    ui.painter().rect_filled(
+        bar,
+        1.0,
+        if hovered { INK() } else { PL_LINK() },
+    );
+    response
+        .on_hover_text("Overrides the lane - click to follow the lane again")
+        .clicked()
+}
+
+/// Wraps one row so it carries its gutter, without touching the row helpers'
+/// signatures. Spacing is zeroed so the row lands exactly `ROW_GUTTER_W` to the
+/// right instead of that plus egui's default item spacing.
+fn with_gutter<R>(
+    ui: &mut egui::Ui,
+    overridden: bool,
+    row: impl FnOnce(&mut egui::Ui) -> R,
+) -> (bool, R) {
+    let mut reverted = false;
+    let inner = ui
+        .horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            reverted = row_gutter(ui, overridden);
+            row(ui)
+        })
+        .inner;
+    (reverted, inner)
+}
+
 /// [184] Bridges the panel's algo `IntParam` into the value-source layer, which
 /// must not know about `ParamSetter` (it needs a live `GuiContext`, which is
 /// what would make the layer untestable headless).
@@ -945,6 +1005,10 @@ pub fn draw_sound_panel(
     // [184] Every row reads and writes through this source. Today it is always
     // the lane's global sound; swapping it for a `PlockSource` is what will make
     // the same rows edit one step's p-lock.
+    // [184] Discriminates this scope's widget ids from the popup's (both are live
+    // at once during the migration) and from the other scope's, so a dropdown's
+    // open/closed state can never leak between them.
+    let row_salt = src.salt();
     let mut freq = src.get(ParamId::Std(StandardField::Freq));
     let mut decay = src.get(ParamId::Std(StandardField::Decay));
     let mut vol = src.get(ParamId::Std(StandardField::Volume));
@@ -1175,8 +1239,9 @@ pub fn draw_sound_panel(
 
             // Volume en tête (sans titre de section) — pleine largeur, comme les
             // sections sans graphe.
-            let vol_changed = ui
-                .scope(|ui| {
+            let vol_id = ParamId::Std(StandardField::Volume);
+            let (vol_reverted, vol_changed) =
+                with_gutter(ui, src.is_overridden(vol_id), |ui| {
                     draw_editor_slider_row(
                         ui,
                         "Volume",
@@ -1187,11 +1252,13 @@ pub fn draw_sound_panel(
                         false,
                         Some(""),
                     )
-                        .changed()
-                })
-                .inner;
-            if vol_changed {
-                src.set(ParamId::Std(StandardField::Volume), vol);
+                    .changed()
+                });
+            if vol_reverted {
+                src.clear(vol_id);
+                changed = true;
+            } else if vol_changed {
+                src.set(vol_id, vol);
                 changed = true;
             }
             ui.add(egui::Separator::default().spacing(6.0));
@@ -1295,20 +1362,30 @@ pub fn draw_sound_panel(
                                     // Bass drums can display frequency as Hz or musical notes.
                                     if is_bass_drum && field == crate::instrument_registry::StandardField::Freq {
                                         let ratio = instrument.freq_display_ratio;
-                                        let row = draw_editor_frequency_row(
+                                        let id = ParamId::Std(field);
+                                        let (reverted, row) = with_gutter(
                                             ui,
-                                            ("freq_mode", state.selected_instrument),
-                                            &label_text,
-                                            &mut freq,
-                                            *min,
-                                            *max,
-                                            VoiceSettings::default().frequency,
-                                            *logarithmic,
-                                            ratio,
-                                            freq_in_notes,
+                                            src.is_overridden(id),
+                                            |ui| {
+                                                draw_editor_frequency_row(
+                                                    ui,
+                                                    ("freq_mode", row_salt),
+                                                    &label_text,
+                                                    &mut freq,
+                                                    *min,
+                                                    *max,
+                                                    VoiceSettings::default().frequency,
+                                                    *logarithmic,
+                                                    ratio,
+                                                    freq_in_notes,
+                                                )
+                                            },
                                         );
-                                        if row.value_changed || row.response.changed() {
-                                            src.set(ParamId::Std(field), freq);
+                                        if reverted {
+                                            src.clear(id);
+                                            changed = true;
+                                        } else if row.value_changed || row.response.changed() {
+                                            src.set(id, freq);
                                             changed = true;
                                         }
                                         if let Some(new_mode) = row.mode_change {
@@ -1347,20 +1424,30 @@ pub fn draw_sound_panel(
                                         let smp_pitch = field
                                             == crate::instrument_registry::StandardField::Freq
                                             && matches!(voice_idx, 13 | 14 | 15);
-                                        if draw_editor_slider_row_full(
+                                        let id = ParamId::Std(field);
+                                        let (reverted, edited) = with_gutter(
                                             ui,
-                                            &label_text,
-                                            value,
-                                            *min,
-                                            *max,
-                                            default_value,
-                                            *logarithmic,
-                                            *suffix,
-                                            if smp_pitch { 1.0 } else { 0.0 },
-                                        )
-                                        .changed()
-                                        {
-                                            src.set(ParamId::Std(field), *value);
+                                            src.is_overridden(id),
+                                            |ui| {
+                                                draw_editor_slider_row_full(
+                                                    ui,
+                                                    &label_text,
+                                                    value,
+                                                    *min,
+                                                    *max,
+                                                    default_value,
+                                                    *logarithmic,
+                                                    *suffix,
+                                                    if smp_pitch { 1.0 } else { 0.0 },
+                                                )
+                                                .changed()
+                                            },
+                                        );
+                                        if reverted {
+                                            src.clear(id);
+                                            changed = true;
+                                        } else if edited {
+                                            src.set(id, *value);
                                             changed = true;
                                         }
                                     }
@@ -1370,8 +1457,16 @@ pub fn draw_sound_panel(
                                         crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                         _ => &mut stereo,
                                     };
-                                    if draw_editor_switch_row(ui, &label_text, value).changed() {
-                                        src.set(ParamId::Std(field), *value);
+                                    let id = ParamId::Std(field);
+                                    let (reverted, edited) =
+                                        with_gutter(ui, src.is_overridden(id), |ui| {
+                                            draw_editor_switch_row(ui, &label_text, value).changed()
+                                        });
+                                    if reverted {
+                                        src.clear(id);
+                                        changed = true;
+                                    } else if edited {
+                                        src.set(id, *value);
                                         changed = true;
                                     }
                                 }
@@ -1382,20 +1477,26 @@ pub fn draw_sound_panel(
                         if def.field == crate::instrument_registry::StandardField::Freq
                             && matches!(voice_idx, 13 | 14 | 15)
                         {
-                            let mut fine = src.get(ParamId::Special(9));
-                            if draw_editor_slider_row(
-                                ui,
-                                "Pitch Fine",
-                                &mut fine,
-                                -100.0,
-                                100.0,
-                                0.0,
-                                false,
-                                None,
-                            )
-                            .changed()
-                            {
-                                src.set(ParamId::Special(9), fine);
+                            let fine_id = ParamId::Special(9);
+                            let mut fine = src.get(fine_id);
+                            let (reverted, edited) =
+                                with_gutter(ui, src.is_overridden(fine_id), |ui| {
+                                    draw_editor_slider_row(
+                                        ui,
+                                        "Pitch Fine",
+                                        &mut fine,
+                                        -100.0,
+                                        100.0,
+                                        0.0,
+                                        false,
+                                        Some(" ct"),
+                                    )
+                                    .changed()
+                                });
+                            if reverted {
+                                src.clear(fine_id);
+                            } else if edited {
+                                src.set(fine_id, fine);
                             }
                         }
                     }
@@ -1424,9 +1525,19 @@ pub fn draw_sound_panel(
                         // Fade-in (index 1) applies to both modulation modes.
                         let modulation_disabled =
                             filter_mod_active && def.special_index == 3;
-                        ui.add_enabled_ui(!(sample_disabled || modulation_disabled), |ui| {
+                        let special_id = ParamId::Special(def.special_index);
+                        // [184] A parameter with no per-step slot of its own is
+                        // greyed WITH its reason rather than hidden: the special
+                        // whose field collides with Attack, for instance.
+                        let unsupported = src.supports(special_id).reason();
+                        let row_area = ui.add_enabled_ui(
+                            !(sample_disabled || modulation_disabled || unsupported.is_some()),
+                            |ui| {
                         ui.horizontal(|ui| {
-                            let current = src.get(ParamId::Special(def.special_index));
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            let reverted = row_gutter(ui, src.is_overridden(special_id));
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            let current = src.get(special_id);
                             let mut new_value = None;
                             // Boolean mode switches, including SDrex's modulation
                             // target and free-running LFO phase.
@@ -1438,7 +1549,7 @@ pub fn draw_sound_panel(
                                 if let Some(idx) = segmented_row(
                                     ui,
                                     def.label,
-                                    def.name,
+                                    (def.name, row_salt),
                                     &["Flanger", "Filter LFO"],
                                     selected,
                                 ) {
@@ -1460,13 +1571,13 @@ pub fn draw_sound_panel(
                                     let pair_names = ["1+2", "3+4", "5+6", "7+8"];
                                     let current_idx =
                                         ((current.round() as usize).clamp(1, 8) - 1) / 2;
-                                    if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &pair_names) {
+                                    if let Some(idx) = right_aligned_select(ui, (def.name, row_salt), current_idx, &pair_names) {
                                         new_value = Some((idx * 2 + 1) as f32);
                                     }
                                 } else {
                                     let sample_names = ["1", "2", "3", "4", "5", "6", "7", "8"];
                                     let current_idx = (current.round() as usize).clamp(1, 8) - 1;
-                                    if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &sample_names) {
+                                    if let Some(idx) = right_aligned_select(ui, (def.name, row_salt), current_idx, &sample_names) {
                                         new_value = Some(idx as f32 + 1.0);
                                     }
                                 }
@@ -1481,7 +1592,7 @@ pub fn draw_sound_panel(
                                 let type_names = ["None", "SoftClip", "Valve", "Transistor", "HardClip", "Tape"];
                                 let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
                                 editor_label(ui, def.label);
-                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
+                                if let Some(idx) = right_aligned_select(ui, (def.name, row_salt), current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
                             // Cymbal Noise Type: show select with names
@@ -1489,7 +1600,7 @@ pub fn draw_sound_panel(
                                 let type_names = ["White", "Pink", "Brown", "Blue"];
                                 let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
                                 editor_label(ui, def.label);
-                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
+                                if let Some(idx) = right_aligned_select(ui, (def.name, row_salt), current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
                             // Kick Click Type: show select with names
@@ -1497,7 +1608,7 @@ pub fn draw_sound_panel(
                                 let type_names = ["Soft", "Medium", "Hard"];
                                 let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
                                 editor_label(ui, def.label);
-                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
+                                if let Some(idx) = right_aligned_select(ui, (def.name, row_salt), current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
                             // Buzz oscillator waveform: show select with names
@@ -1505,7 +1616,7 @@ pub fn draw_sound_panel(
                                 let type_names = ["Sine", "Square", "Saw"];
                                 let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
                                 editor_label(ui, def.label);
-                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
+                                if let Some(idx) = right_aligned_select(ui, (def.name, row_salt), current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
                             // Buzz filter type: LP / HP / BP select
@@ -1513,7 +1624,7 @@ pub fn draw_sound_panel(
                                 let type_names = ["LP", "HP", "BP"];
                                 let current_idx = (current as usize).min(type_names.len().saturating_sub(1));
                                 editor_label(ui, def.label);
-                                if let Some(idx) = right_aligned_select(ui, def.name, current_idx, &type_names) {
+                                if let Some(idx) = right_aligned_select(ui, (def.name, row_salt), current_idx, &type_names) {
                                     new_value = Some(idx as f32);
                                 }
                                 } else {
@@ -1534,25 +1645,40 @@ pub fn draw_sound_panel(
                                     new_value = Some(value);
                                 }
                             }
-                            if let Some(value) = new_value {
-                                src.set(ParamId::Special(def.special_index), value);
+                            if reverted {
+                                src.clear(special_id);
+                            } else if let Some(value) = new_value {
+                                src.set(special_id, value);
                             }
                         });
                         });
+                        if let Some(reason) = unsupported {
+                            // The greyed row explains itself over its WHOLE area.
+                            // (An `ui.label("")` allocates nothing, so the hover
+                            // text it carried was unreachable.)
+                            row_area.response.on_hover_text(reason);
+                        }
                         // smp voices: the Stereo switch lives directly under the
                         // Sample select ([168]) and works in BOTH modes — in
                         // Analog Mode a random pair plays on every hit.
                         if def.name.ends_with("_sample") && matches!(voice_idx, 13 | 14 | 15) {
-                            if draw_editor_switch_row(ui, "Stereo", &mut stereo)
-                                .on_hover_text(
+                            let stereo_id = ParamId::Std(StandardField::Stereo);
+                            let (reverted, edited) =
+                                with_gutter(ui, src.is_overridden(stereo_id), |ui| {
+                                    draw_editor_switch_row(ui, "Stereo", &mut stereo)
+                                        .on_hover_text(
                                     "Stereo: plays two DIFFERENT samples per hit — the left \
                                      channel plays the first of the pair, the right channel the \
                                      second. The Sample list picks the pair (1+2, 3+4, 5+6, 7+8). \
                                      With Analog Mode on, a random pair is played on every hit.",
-                                )
-                                .changed()
-                            {
-                                src.set(ParamId::Std(StandardField::Stereo), stereo);
+                                        )
+                                        .changed()
+                                });
+                            if reverted {
+                                src.clear(stereo_id);
+                                changed = true;
+                            } else if edited {
+                                src.set(stereo_id, stereo);
                                 changed = true;
                             }
                         }
@@ -1692,21 +1818,27 @@ pub fn draw_sound_panel(
                             .iter()
                             .filter(|d| d.family == family && d.name.starts_with("buzz_gate"))
                         {
-                            let mut value = src.get(ParamId::Special(def.special_index));
+                            let gate_id = ParamId::Special(def.special_index);
+                            let mut value = src.get(gate_id);
                             let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
-                            if draw_editor_slider_row(
-                                ui,
-                                def.label,
-                                &mut value,
-                                def.min,
-                                def.max,
-                                def.default,
-                                logarithmic,
-                                None,
-                            )
-                            .changed()
-                            {
-                                src.set(ParamId::Special(def.special_index), value);
+                            let (reverted, edited) =
+                                with_gutter(ui, src.is_overridden(gate_id), |ui| {
+                                    draw_editor_slider_row(
+                                        ui,
+                                        def.label,
+                                        &mut value,
+                                        def.min,
+                                        def.max,
+                                        def.default,
+                                        logarithmic,
+                                        def.unit,
+                                    )
+                                    .changed()
+                                });
+                            if reverted {
+                                src.clear(gate_id);
+                            } else if edited {
+                                src.set(gate_id, value);
                             }
                         }
                     });
