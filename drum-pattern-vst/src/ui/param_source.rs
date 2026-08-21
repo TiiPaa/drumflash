@@ -32,13 +32,10 @@ pub enum Support {
     Disabled(&'static str),
 }
 
-// Consumed by the row driver in the p-lock scope ([184] phase 2).
-#[allow(dead_code)]
 impl Support {
-    pub fn is_editable(self) -> bool {
-        matches!(self, Support::Editable)
-    }
-
+    /// The reason a row is greyed, for its tooltip. `None` when editable — the
+    /// panel needs the reason, not a bare boolean, precisely so a disabled row
+    /// can explain itself.
     pub fn reason(self) -> Option<&'static str> {
         match self {
             Support::Editable => None,
@@ -57,10 +54,6 @@ pub trait AlgoSink {
 }
 
 /// Reads and writes one slot's parameters for the active scope.
-// `is_overridden` / `clear` / `supports` / `salt` are exercised by the tests and
-// consumed by the p-lock scope in the next phase; the lane-global panel only
-// needs get/set/inherited/commit.
-#[allow(dead_code)]
 pub trait ParamSource {
     /// The value the row displays: the scope's override when it has one,
     /// otherwise whatever it inherits.
@@ -172,9 +165,6 @@ pub struct PlockSource<'a> {
     pub base: GlobalSource<'a>,
 }
 
-// The p-lock scope is wired to the panel in [184] phase 2; its behaviour is
-// already pinned by the tests below.
-#[allow(dead_code)]
 impl<'a> PlockSource<'a> {
     pub fn new(plock: &'a PlockState, step: usize, base: GlobalSource<'a>) -> Self {
         Self { plock, step, base }
@@ -298,7 +288,10 @@ mod tests {
 
         // Nothing is ever "overridden" on the lane itself.
         assert!(!src.is_overridden(ParamId::Std(StandardField::Decay)));
-        assert!(src.supports(ParamId::Std(StandardField::Decay)).is_editable());
+        assert_eq!(
+            src.supports(ParamId::Std(StandardField::Decay)),
+            Support::Editable
+        );
     }
 
     #[test]
@@ -395,7 +388,7 @@ mod tests {
     }
 
     #[test]
-    fn freq_mode_and_the_aliased_special_are_lane_wide_in_plock_scope() {
+    fn freq_mode_is_lane_wide_and_the_reserved_special_has_no_slot() {
         let layout = TrackLayoutState::default_layout();
         let settings = SoundSettingsState::new(&layout);
         let algo = CellAlgo(Cell::new(0));
@@ -411,14 +404,25 @@ mod tests {
             ParamId::FreqMode.unlockable_reason()
         );
 
-        // The special that shares Attack's slot: greyed, with a reason, and a
-        // write must NOT land on Attack.
-        let aliased = ParamId::Special(4);
-        assert!(!aliased.is_lockable());
-        assert!(src.supports(aliased).reason().is_some());
-        src.set(aliased, 0.9);
-        assert!(!src.is_overridden(ParamId::Std(StandardField::Attack)));
-        assert!(!plock.masks.is_active(SLOT, STEP), "no plock should have been created");
+        // [187] Special index 4 is p-lockable again (re-homed off Attack's field),
+        // and writing it must not touch Attack.
+        let rehomed = ParamId::Special(4);
+        assert!(rehomed.is_lockable());
+        src.set(rehomed, 0.9);
+        assert!(src.is_overridden(rehomed));
+        assert_eq!(src.get(rehomed), 0.9);
+        assert!(
+            !src.is_overridden(ParamId::Std(StandardField::Attack)),
+            "writing the re-homed special must not land on Attack"
+        );
+
+        // The reserved index lends its slot, so it has none: greyed, with a reason,
+        // and a write is a no-op.
+        let reserved = ParamId::Special(crate::param_id::RESERVED_SPECIAL_INDEX);
+        assert!(!reserved.is_lockable());
+        assert!(src.supports(reserved).reason().is_some());
+        src.set(reserved, 0.5);
+        assert!(!src.is_overridden(reserved));
     }
 
     #[test]

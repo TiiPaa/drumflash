@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-08-21 — [187] Le paramètre que l'Attack masquait redevient verrouillable par pas (build 20260821-160115)
+
+**Branche:** `main` · **Build:** `20260821-160115`
+**Validation:** `cargo test` 331+1+205 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-21)** : 8/8, sessions existantes et Pattern Bank inclus.
+
+- **Le problème** : dans le format `plock-v1`, l'**Attack** a été ajoutée tardivement au champ **18**, or 18 = `SPECIAL_FIELD_START + 4`. Le spécial d'indice 4 partageait donc sa case et était purement ignoré, **sans que rien ne l'explique** : sa rangée disparaissait du menu. Chaque voix perdait un paramètre — Output Gain sur le Kick, Saturation Amount sur le Cymbal, Saturation Type sur BD808 et Perc1, Noise Type sur Buzz, Wet sur SDrex.
+- **Le correctif, sans changer le format** : le spécial 4 est relogé sur le champ **45**, l'emplacement du spécial d'indice 31 — que **aucune voix ne déclare** (le plus haut indice utilisé sur les 18 instruments est 17). La longueur du blob ne change pas, donc **aucune nouvelle version de format**. L'indice 31 devient réservé.
+- **Le champ 12 (`LEGACY_CLAP_ECHO_FIELD`) n'est pas touché**, et c'est délibéré : le Clap le lit encore en repli pour les vieux presets qui stockaient l'écho là. Le reloger là aurait été plus simple mais aurait cassé cette compatibilité — le champ 45, inutilisé, évite tout arbitrage. Un test pin ce comportement.
+- **Le piège des anciens snapshots, traité** : un p-lock en mode Snapshot écrivait les 46 bits de masque, champ 45 compris, avec la valeur `0.0` (il stockait `special[31]`, que personne n'utilise). Relire ça comme le spécial 4 aurait mis l'Output Gain du Kick à zéro sur chaque pas snapshoté. Un snapshot pris depuis cette version marque désormais les champs **adressables** (tous sauf le champ 12 mort), ce qui donne une valeur de masque **différente** de l'ancienne — cette différence sert de marqueur de version. `sanitize_field_mask`, appliqué dans `set_raw` (le point de passage unique de tout masque venant de l'extérieur : état DAW, Pattern Bank, presets, presse-papiers, réordonnancement, déplacement de pas, collage), ne retire le bit 45 que pour cette **unique** valeur héritée — reproduisant exactement l'ancien comportement : le paramètre suit la lane.
+- Les boucles de spéciaux de `get_settings` et `set_settings` passent par `ParamId::Special(i).plock_field()` au lieu de refaire l'arithmétique : le relogement n'existe qu'à un seul endroit.
+- **Infobulle réparée** : le motif du grisage était accroché à un `ui.label("")`, or un label vide a une taille nulle — il était donc impossible à survoler. Il est maintenant porté par toute la surface de la rangée, via l'`InnerResponse` de `add_enabled_ui`.
+- Tests : aller-retour du spécial relogé par `set_settings`/`get_settings` sans perturber l'Attack, repli legacy du Clap préservé, masque hérité qui ne revendique pas le champ 45, masque courant laissé intact, et la bijection de la disposition dont le seul trou reste le champ 12.
+
+## 2026-08-21 — [184] phase 2c : les overrides se voient et se retirent par rangée (build 20260821-141959)
+
+**Branche:** `main` · **Build:** `20260821-141959`
+**Validation:** `cargo test` 327+1+203 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-21)** : 8/8 après réparation de l'infobulle du point 7 (voir [187]).
+
+- **Chaque rangée du Lane Editor porte une gouttière de 14 px à gauche**, réservée dans **les deux** portées. Non conditionnelle par choix : si elle n'existait qu'en mode p-lock, sélectionner une cellule décalerait tous les sliders de 14 px — exactement ce qu'interdit la règle des zones stables.
+- **En mode p-lock, une rangée surchargée affiche une barre d'accent** dans cette gouttière, **cliquable pour rendre le paramètre à la lane** (`ParamSource::clear`, qui retire le bit de masque du champ sans détruire le p-lock : les autres champs gardent leur override). La barre *est* l'affordance, ce qui garde le libellé en ASCII pur — un glyphe de type flèche de retour est précisément ce qui avait produit la mojibake de la tâche [164]. Infobulle : « Overrides the lane - click to follow the lane again ».
+- Les **8 sites de rangée** sont couverts : Volume, Frequency (avec son switch Hz/Note), slider standard générique, case à cocher standard, Pitch Fine, la chaîne complète des paramètres spéciaux, le switch Stereo des samplers, les sliders de gate Buzz. Aucune signature de helper n'a changé : la gouttière est dessinée par l'appelant dans un `horizontal` externe à espacement nul, donc la rangée se décale exactement de 14 px et pas de 14 + l'espacement par défaut d'egui.
+- **Un paramètre sans emplacement par pas est grisé AVEC son motif** au lieu d'être masqué — le spécial dont le champ entre en collision avec Attack, notamment. Aujourd'hui il disparaissait sans explication ; désormais il reste visible, inerte, et dit pourquoi au survol.
+- **Collision d'identifiants egui évitée** : le panneau et la popup sont maintenant vivants en même temps et saluaient tous deux leurs `styled_select` avec `def.name`, ce qui leur donnait le même identifiant egui — deux menus déroulants partageant un état d'ouverture. Toutes les salaisons du panneau intègrent désormais `ParamSource::salt()`, qui distingue la portée (lane / pas N).
+- `Support::is_editable` supprimé au profit de `reason()` : le panneau a besoin du **motif** et non d'un booléen, précisément pour qu'une rangée inerte puisse s'expliquer.
+- Pitch Fine et les sliders de gate Buzz affichent maintenant leur unité (`ct`, `Hz`, `s`), ce que la phase [182] avait déclaré dans le registre mais que ces deux rangées, écrites à la main, ignoraient.
+
 ## 2026-08-21 — [184] phase 2 : éditer le p-lock d'un pas depuis l'onglet Sound (build 20260821-124406)
 
 **Branche:** `main` · **Build:** `20260821-124406`, corrigé par `20260821-141012`

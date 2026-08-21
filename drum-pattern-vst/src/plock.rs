@@ -166,11 +166,19 @@ impl PlockFieldMasks {
         self.get(instrument, step)
     }
 
+    /// Store a raw mask, repaired if it was written by an older build ([187]).
+    ///
+    /// This is the single choke point for every mask that enters the state from
+    /// outside: DAW state, pattern-bank slots, presets, the page clipboard, a
+    /// lane reorder, a step move, a p-lock paste.
     pub fn set_raw(&self, instrument: usize, step: usize, mask: u64) {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.masks[instrument][step].store(mask, Ordering::Relaxed);
+        self.masks[instrument][step].store(
+            crate::param_id::sanitize_field_mask(mask),
+            Ordering::Relaxed,
+        );
     }
 }
 
@@ -256,11 +264,11 @@ impl PlockState {
         }
 
         for i in 0..SPECIAL_FIELD_COUNT {
-            let field = SPECIAL_FIELD_START + i;
-            // Skip attack field — it's already read above
-            if field == ATTACK_FIELD {
+            // [187] One mapping decides where a special lives, including index 4
+            // (re-homed off Attack's field) and index 31 (which lends its slot).
+            let Some(field) = crate::param_id::ParamId::Special(i).plock_field() else {
                 continue;
-            }
+            };
             if mask & (1u64 << field) != 0 {
                 result.special[i] = v.get(instrument, step, field);
             }
@@ -299,14 +307,18 @@ impl PlockState {
         }
         v.set(instrument, step, ALGO_FIELD, settings.algo as f32);
         for index in 0..SPECIAL_FIELD_COUNT.min(settings.special.len()) {
-            let field = SPECIAL_FIELD_START + index;
-            // Skip attack field to avoid overwriting it with special params
-            if field == ATTACK_FIELD {
+            // [187] Same single mapping as `get_settings`.
+            let Some(field) = crate::param_id::ParamId::Special(index).plock_field() else {
                 continue;
-            }
+            };
             v.set(instrument, step, field, settings.special[index]);
         }
-        self.field_masks.set_all(instrument, step);
+        // [187] Marks every ADDRESSABLE field, i.e. all but the dead legacy
+        // clap-echo slot. Distinguishable from the old `set_all()` (all 46 bits),
+        // which is what lets `sanitize_field_mask` spot a mask written before the
+        // special-4 re-homing and refuse to trust its field 45.
+        self.field_masks
+            .set_raw(instrument, step, crate::param_id::ADDRESSABLE_MASK);
         self.masks.set_active(instrument, step, true);
     }
 
@@ -971,6 +983,54 @@ mod tests {
         assert_eq!(restored.special[0], 2.5);
         assert_eq!(state.values.get(7, 3, SPECIAL_FIELD_START), 2.5);
         assert_eq!(state.values.get(7, 3, LEGACY_CLAP_ECHO_FIELD), 0.0);
+    }
+
+    /// [187] The special that Attack used to shadow is p-lockable again, on the
+    /// reserved slot. This is the end-to-end proof: it survives `set_settings` and
+    /// comes back out of `get_settings`, and it does NOT disturb Attack.
+    #[test]
+    fn the_rehomed_special_survives_a_settings_roundtrip() {
+        let state = PlockState::new();
+        let mut settings = base_settings();
+        settings.special[4] = 0.42;
+        settings.attack = 0.007;
+
+        state.set_settings(0, 1, &settings);
+        let restored = state
+            .get_settings(0, 1, &base_settings())
+            .expect("plock should exist");
+
+        assert_eq!(restored.special[4], 0.42, "the re-homed special round-trips");
+        assert_eq!(restored.attack, 0.007, "Attack is untouched by it");
+        assert_eq!(
+            state.values.get(0, 1, crate::param_id::SPECIAL_4_FIELD),
+            0.42,
+            "stored on the reserved slot, not on Attack's field"
+        );
+        assert_eq!(state.values.get(0, 1, ATTACK_FIELD), 0.007);
+    }
+
+    /// [187] chose the reserved slot 45 precisely so the dead legacy clap-echo
+    /// field 12 could stay untouched. This pins that: the Clap's own fallback is
+    /// unaffected by the re-homing.
+    #[test]
+    fn the_rehoming_leaves_the_clap_legacy_field_alone() {
+        let state = PlockState::new();
+        // An old blob: echo in field 12, special[0] empty, everything masked.
+        state.values.set(7, 5, LEGACY_CLAP_ECHO_FIELD, 1.25);
+        state.values.set(7, 5, SPECIAL_FIELD_START, 0.0);
+        state.masks.set_active(7, 5, true);
+        state.field_masks.set_all(7, 5);
+
+        let restored = state
+            .get_settings(7, 5, &base_settings())
+            .expect("plock should exist");
+        assert_eq!(
+            restored.special[0], 1.25,
+            "the Clap still reads its legacy echo from field 12"
+        );
+        // And field 12 is still claimed by nobody as a parameter.
+        assert_eq!(crate::param_id::ParamId::from_plock_field(LEGACY_CLAP_ECHO_FIELD), None);
     }
 
     #[test]
