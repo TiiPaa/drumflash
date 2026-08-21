@@ -9,6 +9,8 @@ mod dsp;
 mod hihat;
 mod kick;
 mod kick_808;
+#[cfg(test)]
+mod retrig_tests;
 mod open_hihat;
 mod perc1;
 mod ride;
