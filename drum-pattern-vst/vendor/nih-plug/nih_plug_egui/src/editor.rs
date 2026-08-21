@@ -46,7 +46,8 @@ pub mod win_keyboard {
 
     use std::ffi::c_void;
     use std::ptr::{null, null_mut};
-    use std::sync::atomic::{AtomicPtr, AtomicU16, Ordering};
+    use std::sync::atomic::{AtomicPtr, AtomicU16, AtomicUsize, Ordering};
+    use std::sync::OnceLock;
 
     type WndProcFn = unsafe extern "system" fn(*mut c_void, u32, usize, isize) -> isize;
 
@@ -150,6 +151,14 @@ pub mod win_keyboard {
     #[link(name = "kernel32")]
     extern "system" {
         fn GetModuleHandleW(lp_module_name: *const u16) -> *mut c_void;
+        fn GetModuleHandleExW(
+            flags: u32,
+            module_name: *const u16,
+            module: *mut *mut c_void,
+        ) -> i32;
+        fn DestroyWindow(hwnd: *mut c_void) -> i32;
+        fn RemovePropW(hwnd: *mut c_void, lp_string: *const u16) -> *mut c_void;
+        fn UnregisterClassW(class_name: *const u16, h_instance: *mut c_void) -> i32;
     }
 
     const GWLP_WNDPROC: i32 = -4;
@@ -183,11 +192,68 @@ pub mod win_keyboard {
         0x0000,
     ];
 
-    // UTF-16 null-terminated "NihPlugEguiKbdMsg".
-    const MSG_CLASS_NAME: &[u16] = &[
-        0x004E, 0x0069, 0x0068, 0x0050, 0x006C, 0x0075, 0x0067, 0x0045, 0x0067, 0x0075, 0x0069,
-        0x004B, 0x0062, 0x0064, 0x004D, 0x0073, 0x0067, 0x0000,
-    ];
+    const GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT: u32 = 0x0000_0002;
+    const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: u32 = 0x0000_0004;
+
+    /// Live editors that installed the bridge. The class may only be unregistered
+    /// when the last one goes away, or a second instance's message window would be
+    /// left pointing at a dead class.
+    static INSTALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    /// **This DLL's** module handle — NOT the host executable's.
+    ///
+    /// The window class must be owned by the module whose code its `WndProc` lives
+    /// in. Registering it under the host EXE's `HINSTANCE` (which is what this code
+    /// used to do) made the registration outlive our DLL, leaving a class whose
+    /// `WndProc` pointed into unmapped memory.
+    fn our_hinstance() -> *mut c_void {
+        static CACHED: AtomicPtr<c_void> = AtomicPtr::new(null_mut());
+        let cached = CACHED.load(Ordering::Acquire);
+        if !cached.is_null() {
+            return cached;
+        }
+        unsafe {
+            let mut module: *mut c_void = null_mut();
+            let ok = GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                    | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                msg_wnd_proc as *const () as *const u16,
+                &mut module,
+            );
+            if ok != 0 && !module.is_null() {
+                CACHED.store(module, Ordering::Release);
+                module
+            } else {
+                // Should not happen; the host EXE is still better than nothing.
+                GetModuleHandleW(null())
+            }
+        }
+    }
+
+    /// Class name for THIS DLL load: a fixed prefix plus our module base.
+    ///
+    /// The name used to be the constant `"NihPlugEguiKbdMsg"`, which is what made
+    /// the host crash. Sequence: load the DLL (class registered) -> close the
+    /// session (DLL unloaded, class survives with a dangling `WndProc`) -> load the
+    /// DLL again at a different base. `RegisterClassW` then failed because the name
+    /// was taken, the old code treated that as success, and `CreateWindowExW` built
+    /// a window on the STALE class. The first message dispatched jumped into
+    /// unmapped memory: `0xC0000005` with an execute-violation flag, sometimes
+    /// landing inside whatever unrelated DLL had since been loaded there.
+    ///
+    /// A per-load name makes that reuse impossible by construction, even if a crash
+    /// prevented `uninstall` from running.
+    fn class_name() -> *const u16 {
+        static NAME: OnceLock<Vec<u16>> = OnceLock::new();
+        NAME.get_or_init(|| {
+            let base = our_hinstance() as usize;
+            format!("NihPlugEguiKbdMsg_{base:X}")
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect()
+        })
+        .as_ptr()
+    }
 
     /// Message window's HWND, accessed by `set_keyboard_focus`. Single global since the
     /// plugin is expected to host at most one editor window at a time per process.
@@ -317,7 +383,7 @@ pub mod win_keyboard {
             return existing;
         }
         unsafe {
-            let h_inst = GetModuleHandleW(null());
+            let h_inst = our_hinstance();
             let wc = WNDCLASSW {
                 style: 0,
                 lpfn_wnd_proc: Some(msg_wnd_proc),
@@ -328,13 +394,12 @@ pub mod win_keyboard {
                 h_cursor: null_mut(),
                 hbr_background: null_mut(),
                 lpsz_menu_name: null(),
-                lpsz_class_name: MSG_CLASS_NAME.as_ptr(),
+                lpsz_class_name: class_name(),
             };
             let atom = RegisterClassW(&wc);
-            // If RegisterClassW returned 0 the class might already be registered (eg the
-            // editor was opened, closed and reopened). Treat both cases as "ready to use"
-            // by storing a non-zero marker; CreateWindowExW with the class name will work
-            // either way.
+            // The name is unique per DLL load, so a 0 here means a genuine failure
+            // rather than a leftover registration from a previous load. Reusing such
+            // a leftover is exactly what crashed the host (see `class_name`).
             let marker = if atom == 0 { 1 } else { atom };
             MSG_CLASS_ATOM.store(marker, Ordering::Release);
             marker
@@ -344,10 +409,10 @@ pub mod win_keyboard {
     fn create_message_window(parent: *mut c_void) -> *mut c_void {
         let _ = ensure_msg_class();
         unsafe {
-            let h_inst = GetModuleHandleW(null());
+            let h_inst = our_hinstance();
             CreateWindowExW(
                 0, // WS_EX_NOACTIVATE removed: child window needs to be able to receive focus
-                MSG_CLASS_NAME.as_ptr(),
+                class_name(),
                 null(),
                 WS_CHILD,
                 0,
@@ -364,13 +429,56 @@ pub mod win_keyboard {
 
     /// Install the subclass on the plugin HWND and create the auxiliary message window.
     /// Called once per editor `spawn`.
-    pub fn install(plugin_hwnd: *mut c_void) {
+    pub fn install(plugin_hwnd: *mut c_void) -> *mut c_void {
         if plugin_hwnd.is_null() {
-            return;
+            return null_mut();
         }
         install_subclass(plugin_hwnd);
         let msg_hwnd = create_message_window(plugin_hwnd);
         MESSAGE_HWND.store(msg_hwnd, Ordering::Release);
+        INSTALL_COUNT.fetch_add(1, Ordering::AcqRel);
+        msg_hwnd
+    }
+
+    /// Undo everything [`install`] did, in the order Windows requires.
+    ///
+    /// Must run while the windows still exist, i.e. **before** the editor's
+    /// baseview window is closed. Skipping this is what left the process holding
+    /// function pointers into a DLL that was about to be unloaded:
+    ///
+    /// 1. the host's own window kept OUR `subclass_proc` as its `WndProc`;
+    /// 2. the message window outlived its class;
+    /// 3. the class outlived the DLL.
+    pub fn uninstall(plugin_hwnd: *mut c_void, msg_hwnd: *mut c_void) {
+        unsafe {
+            // 1. Give the host window its original WndProc back.
+            if !plugin_hwnd.is_null() && IsWindow(plugin_hwnd) != 0 {
+                let original = GetPropW(plugin_hwnd, PROP_NAME.as_ptr());
+                if !original.is_null() {
+                    SetWindowLongPtrW(plugin_hwnd, GWLP_WNDPROC, original as isize);
+                    RemovePropW(plugin_hwnd, PROP_NAME.as_ptr());
+                }
+            }
+
+            // 2. Destroy our message window. UnregisterClassW refuses to run while
+            //    a window of the class is alive, so this has to come first.
+            if !msg_hwnd.is_null() && IsWindow(msg_hwnd) != 0 {
+                DestroyWindow(msg_hwnd);
+            }
+            if MESSAGE_HWND.load(Ordering::Acquire) == msg_hwnd {
+                MESSAGE_HWND.store(null_mut(), Ordering::Release);
+            }
+
+            // 3. The last editor out unregisters the class. Several instances of the
+            //    plugin share one DLL load, so unregistering on the first close
+            //    would strand the others.
+            if INSTALL_COUNT.load(Ordering::Acquire) > 0
+                && INSTALL_COUNT.fetch_sub(1, Ordering::AcqRel) == 1
+            {
+                UnregisterClassW(class_name(), our_hinstance());
+                MSG_CLASS_ATOM.store(0, Ordering::Release);
+            }
+        }
     }
 
     unsafe fn is_window_or_descendant(root: *mut c_void, child: *mut c_void) -> bool {
@@ -589,11 +697,16 @@ where
         );
 
         #[cfg(target_os = "windows")]
+        let mut plugin_hwnd = std::ptr::null_mut();
+        #[cfg(target_os = "windows")]
+        let mut msg_hwnd = std::ptr::null_mut();
+        #[cfg(target_os = "windows")]
         {
             use raw_window_handle::HasRawWindowHandle;
             if let RawWindowHandle::Win32(handle) = window.raw_window_handle() {
                 PLUGIN_HWND.store(handle.hwnd, AtomicOrdering::Release);
-                win_keyboard::install(handle.hwnd);
+                plugin_hwnd = handle.hwnd;
+                msg_hwnd = win_keyboard::install(handle.hwnd);
             }
         }
 
@@ -601,6 +714,10 @@ where
         Box::new(EguiEditorHandle {
             egui_state: self.egui_state.clone(),
             window,
+            #[cfg(target_os = "windows")]
+            plugin_hwnd,
+            #[cfg(target_os = "windows")]
+            msg_hwnd,
         })
     }
 
@@ -644,6 +761,11 @@ where
 struct EguiEditorHandle {
     egui_state: Arc<EguiState>,
     window: WindowHandle,
+    /// Kept so `Drop` can undo the keyboard bridge before the window goes away.
+    #[cfg(target_os = "windows")]
+    plugin_hwnd: *mut std::ffi::c_void,
+    #[cfg(target_os = "windows")]
+    msg_hwnd: *mut std::ffi::c_void,
 }
 
 /// The window handle enum stored within 'WindowHandle' contains raw pointers. Is there a way around
@@ -652,6 +774,15 @@ unsafe impl Send for EguiEditorHandle {}
 
 impl Drop for EguiEditorHandle {
     fn drop(&mut self) {
+        // Undo the keyboard bridge BEFORE the window is destroyed, so nothing the
+        // host keeps points into this DLL once it is unloaded.
+        #[cfg(target_os = "windows")]
+        {
+            win_keyboard::uninstall(self.plugin_hwnd, self.msg_hwnd);
+            if PLUGIN_HWND.load(AtomicOrdering::Acquire) == self.plugin_hwnd {
+                PLUGIN_HWND.store(std::ptr::null_mut(), AtomicOrdering::Release);
+            }
+        }
         self.egui_state.open.store(false, Ordering::Release);
         // XXX: This should automatically happen when the handle gets dropped, but apparently not
         self.window.close();
