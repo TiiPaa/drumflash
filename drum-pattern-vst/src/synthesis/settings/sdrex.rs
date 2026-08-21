@@ -21,7 +21,10 @@ pub struct SdrexSettings {
     /// Flanger LFO rate in Hz (default 5.7).
     pub flanger_rate: f32,
     /// Flanger minimum delay in ms (default 0.7).
-    pub flanger_min_delay: f32,
+    /// [181] Modulation fade-in in ms: the LFO's effect ramps in over this time
+    /// after each hit, in BOTH modulation modes. Replaces the flanger's minimum
+    /// delay, which is now the fixed `FLANGER_MIN_DELAY_MS` constant.
+    pub modulation_fade_ms: f32,
     /// Flanger LFO depth in ms (default 1.8).
     pub flanger_depth: f32,
     /// Flanger feedback 0..0.9 (default 0.38).
@@ -71,7 +74,7 @@ impl From<VoiceSettings> for SdrexSettings {
             analog: v.analog,
             stereo: v.stereo,
             flanger_rate: v.special[0],
-            flanger_min_delay: v.special[1],
+            modulation_fade_ms: v.special[1],
             flanger_depth: v.special[2],
             flanger_feedback: v.special[3],
             flanger_wet: v.special[4],
@@ -97,7 +100,7 @@ impl From<SdrexSettings> for VoiceSettings {
     fn from(s: SdrexSettings) -> Self {
         let mut special = [0.0f32; 32];
         special[0] = s.flanger_rate;
-        special[1] = s.flanger_min_delay;
+        special[1] = s.modulation_fade_ms;
         special[2] = s.flanger_depth;
         special[3] = s.flanger_feedback;
         special[4] = s.flanger_wet;

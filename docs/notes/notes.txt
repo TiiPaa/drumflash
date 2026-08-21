@@ -1,13 +1,6 @@
-- Proposer de régler la densité (slider) quand on fait un random du lane
-- pour les instruments multisamplés si analogue mode is off, proposer un mode stéréo avec 2 samples distincts L&R.
-- clap pas assez fort
-- pousser un peu plus les curves (tous)
-- retirer le retrig en mode Midi Pat. On doit reprendre la lecture du pattern à la volée. Si la page courante n'existe pas lire la page 1.
-- dans le grid mettre les temps fort 1/5/9/13 en plus clair
-- comment créer des presets par défaut ?
-- le fine tune des slider (alt+ ?) ne fonctionne plus
-- Le switch modulation n'est pas clair il fait un choix "Filter LFO / Flanger"
-- Remplacer le Delay de la modulation SDrex par un fadein
-- Ne pas griser le delay/fadein lors d'un filter LFO
-- SDrex : Passer les hold à 1s
-- clap : decay max 1.5s
+- Refaire la représentation graphique du link lane
+- virer open-hihat
+- hihat decay : 1.5s
+- possibilité de router plusieurs tracks vers une meme output
+- quand on assigne une output -> déconnecter main
+- Améliorer le visuel du sound editor (déjà un barre de scroll plus sympa)

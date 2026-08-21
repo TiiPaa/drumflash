@@ -117,6 +117,9 @@ pub struct SpecialParamDef {
     pub special_index: usize,
     pub family: ParamFamily,
     pub continuous: bool,
+    /// Display unit, e.g. `Some(" Hz")` ([182]). `None` for dimensionless
+    /// amounts (depth, wet, mix…), exactly like a standard param's `suffix`.
+    pub unit: Option<&'static str>,
 }
 
 /// Helper for continuous special parameters (morphable).
@@ -139,6 +142,32 @@ const fn sp(
         special_index,
         family,
         continuous: true,
+        unit: None,
+    }
+}
+
+/// Helper for a continuous special parameter that carries a display unit ([182]).
+#[allow(dead_code)]
+const fn sp_unit(
+    name: &'static str,
+    label: &'static str,
+    default: f32,
+    min: f32,
+    max: f32,
+    special_index: usize,
+    family: ParamFamily,
+    unit: &'static str,
+) -> SpecialParamDef {
+    SpecialParamDef {
+        name,
+        label,
+        default,
+        min,
+        max,
+        special_index,
+        family,
+        continuous: true,
+        unit: Some(unit),
     }
 }
 
@@ -162,6 +191,7 @@ const fn sp_discrete(
         special_index,
         family,
         continuous: false,
+        unit: None,
     }
 }
 
@@ -508,7 +538,7 @@ const KICK_STD: &[StandardParamDef] = &[
         "Decay",
         ParamFamily::Env,
         0.001,
-        5.0,
+        2.0,
         false,
         Some(" s"),
     ),
@@ -782,6 +812,75 @@ const NO_FREQ_STD: &[StandardParamDef] = &[
     cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
 ];
 
+/// Clap: same as `NO_FREQ_STD` but the decay caps at 1.5 s ([181]) — a clap
+/// never needs more, and the Cymbal keeps the long 5 s range.
+const CLAP_STD: &[StandardParamDef] = &[
+    s(
+        StandardField::Attack,
+        "Attack",
+        ParamFamily::Env,
+        0.0,
+        0.2,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::Decay,
+        "Decay",
+        ParamFamily::Env,
+        0.001,
+        1.5,
+        false,
+        Some(" s"),
+    ),
+    s(
+        StandardField::DecayCurve,
+        "Decay Curve",
+        ParamFamily::Env,
+        -1.0,
+        1.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::ReleaseCurve,
+        "Attack Curve",
+        ParamFamily::Env,
+        -1.0,
+        1.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::Volume,
+        "Volume",
+        ParamFamily::Output,
+        0.0,
+        2.0,
+        false,
+        None,
+    ),
+    s(
+        StandardField::FilterFreq,
+        "Filter",
+        ParamFamily::Filter,
+        20.0,
+        20000.0,
+        true,
+        Some(" Hz"),
+    ),
+    s(
+        StandardField::Analog,
+        "Analog",
+        ParamFamily::Analog,
+        0.0,
+        1.0,
+        false,
+        None,
+    ),
+    cb(StandardField::Stereo, "Stereo", ParamFamily::Output),
+];
+
 /// Tom-like: no hold, filter env, no stereo.
 const TOM_STD: &[StandardParamDef] = &[
     s(
@@ -983,7 +1082,7 @@ const SDREX_STD: &[StandardParamDef] = &[
         "Hold",
         ParamFamily::Env,
         0.0,
-        2.0,
+        1.0,
         false,
         Some(" s"),
     ),
@@ -1172,7 +1271,7 @@ const MINIMAL_STD: &[StandardParamDef] = &[
         "Decay",
         ParamFamily::Env,
         0.001,
-        5.0,
+        2.0,
         false,
         Some(" s"),
     ),
@@ -1765,7 +1864,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         full_name: "Clap",
         midi_note: 39,
         algo_count: 2,
-        standard_params: NO_FREQ_STD,
+        standard_params: CLAP_STD,
         special_params: &[
             sp("clap_echo", "Echo", 0.5, 0.0, 3.0, 0, ParamFamily::Env),
             sp_discrete(
@@ -1901,7 +2000,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1,
                 ParamFamily::Osc,
             ),
-            sp(
+            sp_unit(
                 "cymbal_shimmer_freq",
                 "Shimmer Freq",
                 15.0,
@@ -1909,6 +2008,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 50.0,
                 0,
                 ParamFamily::Osc,
+                " Hz",
             ),
             sp(
                 "cymbal_shimmer_amount",
@@ -2081,7 +2181,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 2,
                 ParamFamily::Osc,
             ),
-            sp(
+            sp_unit(
                 "bassdrum808_click_tone",
                 "Click Tone",
                 4000.0,
@@ -2089,6 +2189,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 8000.0,
                 3,
                 ParamFamily::Filter,
+                " Hz",
             ),
             sp_discrete(
                 "bassdrum808_saturation_type",
@@ -2262,13 +2363,14 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 3,
                 ParamFamily::Osc,
             ),
-            sp(
+            sp_unit(
                 "bd606_fine_tune", "Pitch Fine",
                 0.0,
                 -100.0,
                 100.0,
                 9,
                 ParamFamily::Osc,
+                " ct",
             ),
             sp(
                 "bd606_end",
@@ -2371,13 +2473,14 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 3,
                 ParamFamily::Osc,
             ),
-            sp(
+            sp_unit(
                 "sd606_fine_tune", "Pitch Fine",
                 0.0,
                 -100.0,
                 100.0,
                 9,
                 ParamFamily::Osc,
+                " ct",
             ),
             sp(
                 "sd606_end",
@@ -2480,13 +2583,14 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 3,
                 ParamFamily::Osc,
             ),
-            sp(
+            sp_unit(
                 "ch606_fine_tune", "Pitch Fine",
                 0.0,
                 -100.0,
                 100.0,
                 9,
                 ParamFamily::Osc,
+                " ct",
             ),
             sp(
                 "ch606_end",
@@ -2560,7 +2664,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         algo_count: 2,
         standard_params: BUZZ_STD,
         special_params: &[
-            sp("buzz_gate_rate", "Gate Rate", 55.0, 1.0, 500.0, 0, ParamFamily::Env),
+            sp_unit("buzz_gate_rate", "Gate Rate", 55.0, 1.0, 500.0, 0, ParamFamily::Env, " Hz"),
             sp("buzz_gate_depth", "Gate Depth", 0.85, 0.0, 1.0, 1, ParamFamily::Env),
             sp("buzz_gate_shape", "Gate Shape", 0.55, 0.0, 1.0, 2, ParamFamily::Env),
             sp("buzz_noise_amount", "Noise", 0.3, 0.0, 1.0, 3, ParamFamily::Osc),
@@ -2575,7 +2679,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             ),
             sp("buzz_pitch_sweep", "Pitch Sweep", 0.3, 0.0, 1.0, 5, ParamFamily::Osc),
             sp_discrete("buzz_wave", "Wave", 0.0, 0.0, 2.0, 11, ParamFamily::Osc),
-            sp(
+            sp_unit(
                 "buzz_filter_attack",
                 "Filter Attack",
                 0.0,
@@ -2583,8 +2687,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 0.5,
                 12,
                 ParamFamily::Filter,
+                " s",
             ),
-            sp(
+            sp_unit(
                 "buzz_filter_hold",
                 "Filter Hold",
                 0.0,
@@ -2592,6 +2697,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 0.5,
                 13,
                 ParamFamily::Filter,
+                " s",
             ),
             sp(
                 "buzz_filter_atk_curve",
@@ -2685,14 +2791,14 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         special_params: &[
             sp_discrete(
                 "sdrex_filter_mod",
-                "Filter Mod",
+                "Modulation",
                 0.0,
                 0.0,
                 1.0,
                 17,
                 ParamFamily::Modulation,
             ),
-            sp(
+            sp_unit(
                 "sdrex_flanger_rate",
                 "Rate",
                 5.7,
@@ -2700,15 +2806,17 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 20.0,
                 0,
                 ParamFamily::Modulation,
+                " Hz",
             ),
-            sp(
-                "sdrex_flanger_min_delay",
-                "Delay",
-                0.7,
+            sp_unit(
+                "sdrex_modulation_fade",
+                "Fade-in",
                 0.0,
-                3.0,
+                0.0,
+                300.0,
                 1,
                 ParamFamily::Modulation,
+                " ms",
             ),
             sp(
                 "sdrex_flanger_depth",
@@ -2803,7 +2911,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 12,
                 ParamFamily::Modulation,
             ),
-            sp(
+            sp_unit(
                 "sdrex_filter_attack",
                 "Filter Attack",
                 0.0,
@@ -2811,15 +2919,17 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 0.5,
                 13,
                 ParamFamily::Filter,
+                " s",
             ),
-            sp(
+            sp_unit(
                 "sdrex_filter_hold",
                 "Filter Hold",
                 0.0,
                 0.0,
-                2.0,
+                1.0,
                 16,
                 ParamFamily::Filter,
+                " s",
             ),
             sp(
                 "sdrex_filter_atk_curve",
@@ -3010,16 +3120,25 @@ mod tests {
     #[test]
     fn sdrex_modulation_has_its_own_parameter_family() {
         let sdrex = &INSTRUMENTS[17];
-        let flanger_params: Vec<_> = sdrex
+        // The Modulation section is exactly these params ([181] renamed the
+        // flanger's Delay into the shared `sdrex_modulation_fade`).
+        let modulation: Vec<&str> = sdrex
             .special_params
             .iter()
-            .filter(|param| param.name.starts_with("sdrex_flanger_"))
+            .filter(|param| param.family == ParamFamily::Modulation)
+            .map(|param| param.name)
             .collect();
-        assert_eq!(flanger_params.len(), 5);
-        assert!(
-            flanger_params
-                .iter()
-                .all(|param| param.family == ParamFamily::Modulation)
+        assert_eq!(
+            modulation,
+            vec![
+                "sdrex_filter_mod",
+                "sdrex_flanger_rate",
+                "sdrex_modulation_fade",
+                "sdrex_flanger_depth",
+                "sdrex_flanger_feedback",
+                "sdrex_flanger_wet",
+                "sdrex_free_phase",
+            ]
         );
         assert!(sdrex
             .special_params
@@ -3043,8 +3162,87 @@ mod tests {
         assert!(!filter_mod.continuous);
     }
 
+    /// [182] Special params measuring a physical quantity must declare their unit
+    /// — `SpecialParamDef` had no unit field at all, so every one of them used to
+    /// render as a bare number while standard params showed " s" / " Hz".
+    ///
+    /// Two guards: an exact snapshot of who carries a unit (so a dimensionless
+    /// "amount" never gains a bogus one), and a keyword rule so the NEXT
+    /// frequency or time parameter added cannot silently forget it.
     #[test]
-    fn sdrex_amp_and_filter_decay_reach_one_point_five_seconds() {
+    fn physical_special_params_declare_their_unit() {
+        let with_unit: Vec<(&str, &str)> = INSTRUMENTS
+            .iter()
+            .flat_map(|inst| inst.special_params.iter())
+            .filter_map(|param| param.unit.map(|unit| (param.name, unit)))
+            .collect();
+        assert_eq!(
+            with_unit,
+            vec![
+                ("cymbal_shimmer_freq", " Hz"),
+                ("bassdrum808_click_tone", " Hz"),
+                ("bd606_fine_tune", " ct"),
+                ("sd606_fine_tune", " ct"),
+                ("ch606_fine_tune", " ct"),
+                ("buzz_gate_rate", " Hz"),
+                ("buzz_filter_attack", " s"),
+                ("buzz_filter_hold", " s"),
+                ("sdrex_flanger_rate", " Hz"),
+                ("sdrex_modulation_fade", " ms"),
+                ("sdrex_filter_attack", " s"),
+                ("sdrex_filter_hold", " s"),
+            ]
+        );
+
+        // Anything named like a frequency or a duration needs one. `_atk_curve`
+        // and `snare606_tone` (a 0..1 blend) deliberately do not match.
+        const NEEDS_UNIT: [&str; 6] = [
+            "_rate", "_freq", "_attack", "_hold", "_fade", "_fine_tune",
+        ];
+        for inst in INSTRUMENTS.iter() {
+            for param in inst.special_params {
+                if NEEDS_UNIT.iter().any(|kw| param.name.contains(kw)) {
+                    assert!(
+                        param.unit.is_some(),
+                        "{} measures a physical quantity but declares no unit",
+                        param.name
+                    );
+                }
+            }
+        }
+    }
+
+    /// [181] The decay sliders of the two kicks and the clap are capped where the
+    /// sound actually stops changing — 5 s of convex decay was mostly inaudible
+    /// tail, so most of the slider travel did nothing. The Cymbal, which shares
+    /// the clap's parameter shape, must KEEP its long range.
+    #[test]
+    fn kick_bd808_and_clap_decay_caps_leave_the_cymbal_alone() {
+        let decay_max = |name: &str| {
+            let inst = INSTRUMENTS
+                .iter()
+                .find(|inst| inst.name == name)
+                .unwrap_or_else(|| panic!("no instrument named {name}"));
+            let def = inst
+                .standard_params
+                .iter()
+                .find(|param| param.field == StandardField::Decay)
+                .unwrap();
+            let ParamWidget::Slider { max, .. } = def.widget else {
+                panic!("Decay should be a slider on {name}");
+            };
+            max
+        };
+        assert_eq!(decay_max("Kick"), 2.0);
+        assert_eq!(decay_max("BassDrum808"), 2.0);
+        assert_eq!(decay_max("Clap"), 1.5);
+        assert_eq!(decay_max("Cymbal"), 5.0, "the cymbal needs its long tail");
+    }
+
+    /// Decays reach 1.5 s; the holds are deliberately capped at 1 s ([181] — 2 s
+    /// of hold was unusable slider travel).
+    #[test]
+    fn sdrex_envelope_ranges_are_capped_where_the_user_wants_them() {
         let sdrex = &INSTRUMENTS[17];
         for field in [
             StandardField::Decay,
@@ -3059,7 +3257,7 @@ mod tests {
             let ParamWidget::Slider { max, .. } = def.widget else {
                 panic!("{field:?} should be a slider");
             };
-            let expected = if field == StandardField::Hold { 2.0 } else { 1.5 };
+            let expected = if field == StandardField::Hold { 1.0 } else { 1.5 };
             assert_eq!(max, expected, "unexpected maximum for {field:?}");
         }
         let filter_hold = sdrex
@@ -3067,7 +3265,7 @@ mod tests {
             .iter()
             .find(|param| param.name == "sdrex_filter_hold")
             .unwrap();
-        assert_eq!(filter_hold.max, 2.0);
+        assert_eq!(filter_hold.max, 1.0);
         assert_eq!(filter_hold.family, ParamFamily::Filter);
     }
 }

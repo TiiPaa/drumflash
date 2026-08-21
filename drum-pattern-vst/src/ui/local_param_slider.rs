@@ -122,7 +122,9 @@ impl<'a> Widget for LocalParamSlider<'a> {
         }
 
         if let Some(click_pos) = response.interact_pointer_pos() {
-            if ui.input(|i| i.modifiers.shift) {
+            // [181] Same detection as the editor sliders: egui alone never sees
+            // the modifier when the host swallows key events.
+            if crate::ui::controls::fine_tune_modifier_pressed(ui) {
                 // Shift+drag for granular/fine-tuning
                 self.granular_drag(ui, response.drag_delta());
                 response.mark_changed();

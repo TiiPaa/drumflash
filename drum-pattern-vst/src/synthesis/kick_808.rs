@@ -41,6 +41,11 @@ pub struct Kick808Voice {
     saturation: saturation::SaturationConfig,
     /// Per-hit analog drift (breathing) — pitch/level/time variation per hit.
     drift: dsp::AnalogDrift,
+    /// Fades the previous hit's last output sample to zero so the full state
+    /// reset in `trigger()` never steps the output ([179]).
+    declick: dsp::RetrigDeclick,
+    /// Last sample emitted, captured by the declicker at trigger time.
+    last_out: f32,
 
     active: bool,
 }
@@ -93,6 +98,8 @@ impl Kick808Voice {
                 cfg
             },
             drift: dsp::AnalogDrift::new(0x8080_8080),
+            declick: dsp::RetrigDeclick::new(sample_rate),
+            last_out: 0.0,
             active: false,
         }
     }
@@ -135,41 +142,10 @@ impl Kick808Voice {
         );
         self.freq_smoother.set_time_ms(self.sample_rate, 5.0);
     }
-}
 
-impl Voice for Kick808Voice {
-    fn trigger(&mut self) {
-        let is_cold_start = !self.active;
-        self.active = true;
-        // analog = per-hit drift (breathing) ; digital = bit-identical hits.
-        self.drift.trigger(self.settings.analog >= 0.5);
-        let base = self.settings.frequency.max(10.0);
-        if self.settings.analog < 0.5 && is_cold_start {
-            // Digital stable: reset phase and smoother only on cold start.
-            // Never reset during a retrigger on a ringing tail — that causes a click.
-            self.osc.phase = 0.0;
-            self.freq_smoother.reset(base);
-        }
-        self.osc.set_freq(base);
-        // Per-hit envelope-time drift: scale decay/release so the tail length varies.
-        self.amp_env
-            .set_decay(self.settings.decay * self.drift.time);
-        self.amp_env
-            .set_release(self.settings.release * self.drift.time);
-        self.snap_env.trigger();
-        self.drop_env.trigger();
-        self.amp_env.trigger();
-        if self.accent_amount() > 0.0 {
-            self.click.trigger();
-        }
-    }
-
-    fn trigger_hard(&mut self) {
-        self.active = true;
-        self.amp_env.trigger_hard();
-    }
-
-    fn process_sample(&mut self) -> f32 {
+    /// The voice body, without the retrigger declick tail. Split out of
+    /// `process_sample` so the declicker is added on every return path ([179]).
+    fn body_sample(&mut self) -> f32 {
         if !self.active {
             return 0.0;
         }
@@ -205,10 +181,64 @@ impl Voice for Kick808Voice {
         // Volume post-saturation: the knob sets the final level, not the drive.
         self.saturation.process_at(false, out) * self.settings.volume
     }
+}
+
+impl Voice for Kick808Voice {
+    fn trigger(&mut self) {
+        // [179] Identical clean slate on every hit — same contract as `kick.rs`,
+        // where the rationale and the measurements live. The 808 was the worst
+        // offender: its phase reset was gated on `analog < 0.5`, so in analog
+        // mode (the default) the phase was NEVER reset and even isolated hits
+        // varied by 2.6 dB with a time-to-peak jumping between 1.5 ms and 15 ms.
+        // On a ringing tail the per-hit level drift also stepped the output
+        // (measured 0.244 at 15 ms spacing) — that click disappears with the
+        // reset, since there is no tail left to re-scale.
+        self.declick.arm(self.last_out);
+        self.active = true;
+        // analog = per-hit drift (breathing) ; digital = bit-identical hits.
+        self.drift.trigger(self.settings.analog >= 0.5);
+        let base = self.settings.frequency.max(10.0);
+        self.osc.phase = 0.0;
+        self.osc.set_freq(base);
+        self.freq_smoother.reset(base);
+        self.tone_filter.reset();
+        self.click_filter.reset();
+        self.dc_blocker.reset();
+        // Per-hit envelope-time drift: scale decay/release so the tail length varies.
+        self.amp_env
+            .set_decay(self.settings.decay * self.drift.time);
+        self.amp_env
+            .set_release(self.settings.release * self.drift.time);
+        // All three envelopes restart from zero so the attack trajectory — and
+        // its time-to-peak — is the same on every hit.
+        self.snap_env.trigger_from_zero(1.0);
+        self.drop_env.trigger_from_zero(1.0);
+        self.amp_env.trigger_hard();
+        if self.accent_amount() > 0.0 {
+            self.click.trigger();
+        }
+    }
+
+    /// Stutter / machine-gun repeats. Identical to a normal trigger now that
+    /// every hit restarts from a clean slate — the declicker keeps the repeats
+    /// click-free at any density.
+    fn trigger_hard(&mut self) {
+        self.trigger();
+    }
+
+    fn process_sample(&mut self) -> f32 {
+        let out = self.body_sample();
+        // Declick tail of the previous hit, added post-volume so it continues the
+        // exact sample it was captured from ([179]).
+        let out = out + self.declick.next();
+        self.last_out = out;
+        out
+    }
 
     fn is_active(&self) -> bool {
-        self.active || self.click.is_active()
+        self.active || self.click.is_active() || self.declick.is_active()
     }
+
 
     fn reset(&mut self) {
         self.active = false;
@@ -216,6 +246,8 @@ impl Voice for Kick808Voice {
         self.snap_env.reset();
         self.drop_env.reset();
         self.click.reset();
+        self.declick.reset();
+        self.last_out = 0.0;
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
