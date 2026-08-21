@@ -3708,7 +3708,6 @@ mod tests {
         apply_choke_groups(&mut synth, &atomic, 0);
         let oh_after = render(&mut synth, 1, 2000);
         assert_eq!(oh_after, 0.0, "OH must be choked by group 1, got {oh_after}");
-        let kick_out = render(&mut synth, 2, 64);
         // Kick was never triggered here — trigger it now to prove it still works.
         synth.trigger(2, 1.0);
         let kick_out = render(&mut synth, 2, 64);

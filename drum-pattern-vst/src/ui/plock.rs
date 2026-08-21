@@ -235,9 +235,9 @@ fn draw_plock_menu(
                     min,
                     max,
                     logarithmic,
-                    ..
+                    suffix,
                 } => {
-                    let value_text = format_value_for_plock(def.field, value, *min, *max);
+                    let value_text = format_value_for_plock(def.field, value, *min, *max, *suffix);
                     let row_response = plock_menu_row(
                         ui,
                         def.label,
@@ -388,7 +388,7 @@ fn draw_plock_menu(
             } else {
                 let mut value = value;
                 let log = def.min > 0.0 && def.max / def.min >= 20.0;
-                let value_text = format_value_for_plock_special(value, def.min, def.max);
+                let value_text = format_value_for_plock_special(value, def.min, def.max, def.unit);
                 let response =
                     plock_menu_row(ui, def.label, ACCENT, overridden, Some(&value_text), |ui| {
                         ui.add(
@@ -680,9 +680,9 @@ fn draw_fusion_morph_menu(
                     min,
                     max,
                     logarithmic,
-                    ..
+                    suffix,
                 } => {
-                    let value_text = format_value_for_plock(def.field, value, *min, *max);
+                    let value_text = format_value_for_plock(def.field, value, *min, *max, *suffix);
                     value = value.clamp(*min, *max);
                     let row_response =
                         plock_menu_row(ui, def.label, ACCENT, is_target, Some(&value_text), |ui| {
@@ -787,7 +787,7 @@ fn draw_fusion_morph_menu(
             );
             value = value.clamp(def.min, def.max);
             let log = def.min > 0.0 && def.max / def.min >= 20.0;
-            let value_text = format_value_for_plock_special(value, def.min, def.max);
+            let value_text = format_value_for_plock_special(value, def.min, def.max, def.unit);
             let special_response =
                 plock_menu_row(ui, def.label, ACCENT, is_target, Some(&value_text), |ui| {
                     let slider = ui.add(

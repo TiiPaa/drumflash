@@ -1,9 +1,54 @@
 # Changelog
 
+## 2026-08-21 — [183] Filter LFO SDrex : modulation vers le haut depuis la base (build 20260821-091344)
+
+**Branche:** `main` · **Build:** `20260821-091344`
+**Validation:** `cargo test` 310+1+199 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Symptôme** : en mode Filter LFO, avec Filter au minimum (20 Hz) et Depth à fond, on n'entendait plus rien — l'inverse de ce qu'une modulation à pleine profondeur devrait donner.
+- **Cause** : le cutoff était modulé de façon **bipolaire et multiplicative autour** de la base (`filter × 2^(sin × depth × wet)`). À 20 Hz de base et 3 octaves, le balayage allait de 2,5 Hz à 160 Hz : **la moitié basse de chaque cycle était écrasée par le clamp à 20 Hz**, et le sommet de l'autre moitié (160 Hz) restait sous le corps de la voix (185 Hz), loin du metal (620/910 Hz). Mesuré : **−15,8 dB** sous la voix filtre ouvert, contre −35,4 dB filtre fermé sans modulation. La profondeur étant exprimée en octaves *relatives à la base*, aucun réglage de Depth ne pouvait ouvrir assez depuis une base basse.
+- **Correctif** : le LFO ouvre le filtre **vers le haut depuis la base** (LFO unipolaire) — « Filter » devient le **plancher** du balayage au lieu d'en être le centre, donc plus aucun demi-cycle perdu contre le clamp. Passer unipolaire ne suffisait pas (−15,1 dB), donc l'échelle est élargie : `FILTER_MOD_OCTAVE_SCALE = 2.0`, soit **6 octaves** à Depth × Wet au maximum (20 Hz → 1280 Hz au bas de la plage Filter). Mesuré après : **−4,8 dB** à base 20 Hz, −2,2 dB à 100 Hz, −0,7 dB à 500 Hz. À 9 ou 12 octaves l'effet s'aplatit (filtre quasi ouvert en permanence), d'où le choix de 6.
+- **Conséquence assumée** : un LFO qui n'ouvre que vers le haut rend l'ensemble plus brillant — les réglages SDrex existants en Filter LFO sonneront plus ouverts. Le mode Flanger est inchangé (il lit le même Depth comme des millisecondes de délai).
+- Test `filter_lfo_at_the_lowest_base_stays_audible_at_full_depth` : vérifie les trois propriétés — un passe-bas à 20 Hz seul mute bien la voix (< −25 dB), Depth à fond la ramène à moins de 6 dB du filtre ouvert, et le LFO continue de façonner le son (> 1 dB sous l'ouvert, donc pas un bypass).
+
+## 2026-08-20 — [182] Unités affichées sur les paramètres spéciaux et dans le menu plock (build 20260820-184818)
+
+**Branche:** `main` · **Build:** `20260820-184818`
+**Validation:** `cargo test` 309+1+198 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Cause du manque d'unités** : les deux catégories de paramètres sont deux structures distinctes. `ParamWidget::Slider` (paramètres standard) porte un `suffix`, mais **`SpecialParamDef` n'avait aucun champ d'unité** — le Sound Panel passait `None` en dur pour tous les spéciaux, donc aucun ne pouvait afficher son unité, même quand il s'agissait de Hz, de secondes ou de ms.
+- **`SpecialParamDef` gagne `unit: Option<&'static str>`** + un helper `sp_unit(...)`. `sp()` et `sp_discrete()` restent pour les grandeurs sans dimension (depth, wet, mix, amount…), donc seules les 12 lignes concernées changent : **Hz** — `Gate Rate` (Buzz), `Rate` (LFO SDrex), `Click Tone` (BD808), `Shimmer Freq` (Cymbal) ; **s** — `Filter Attack` et `Filter Hold` (Buzz et SDrex) ; **ms** — `Fade-in` (SDrex) ; **ct** (cents) — `Pitch Fine` des trois samplers 606.
+- **Le menu plock affiche désormais les mêmes unités que le Sound Panel** — il formatait tout en `{:.2}` nu, y compris pour les paramètres standard qui ont une unité (« 0.50 » dans le menu contre « 0.50 s » dans le panneau). Les deux formateurs de `ui/fmt.rs` prennent l'unité ; le nombre reste produit par les mêmes règles d'arrondi qu'avant (fonctions internes `format_plock_number` / `format_plock_special_number`).
+- Test `physical_special_params_declare_their_unit` : snapshot exact des 12 paramètres portant une unité (pour qu'une grandeur sans dimension n'en gagne pas une par erreur) **et** règle par mot-clé (`_rate`, `_freq`, `_attack`, `_hold`, `_fade`, `_fine_tune`) pour que le prochain paramètre de fréquence ou de durée ne puisse pas l'oublier. `snare606_tone` (mélange 0..1) et les `_atk_curve` ne matchent volontairement pas.
+
+## 2026-08-20 — [181] Fine-tune des sliders, Modulation SDrex explicite, Fade-in, plages d'enveloppes (build 20260820-172925)
+
+**Branche:** `main` · **Build:** `20260820-172925`
+**Validation:** `cargo test` 308+1+197 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+
+- **Fine-tune des sliders réparé** — la modulation fine avait disparu lors de l'unification des sliders : `slider::draw_track` ne faisait que du positionnement absolu (saut à la position du curseur). **Shift ou Alt + glisser** fait maintenant un déplacement *relatif* à la valeur courante, ~4× plus fin (0,0015 unité normalisée par pixel, la même sensibilité que le slider du menu plock). Un simple Shift/Alt+clic ne saute plus. Détection du modificateur via `controls::fine_tune_modifier_pressed`, qui double le test egui d'une lecture clavier plateforme (`GetAsyncKeyState`) — les hôtes qui interceptent le clavier (Studio One, REAPER) empêchaient egui de voir le modificateur, ce qui est très probablement la cause de la panne. Le slider du menu plock utilise désormais la même détection. Maths du drag fin isolée dans `apply_fine_drag` + 4 tests unitaires (relatif, clamp aux bornes, mapping log, respect du pas de quantification).
+- **SDrex : le switch « Filter Mod » devient un vrai choix « Flanger / Filter LFO »** — un interrupteur on/off ne disait pas entre quoi il choisissait. Nouveau helper `segmented_row` (label + sélecteur segmenté aligné à droite), le libellé du paramètre passe à « Modulation ».
+- **SDrex : le Delay de modulation devient un Fade-in** — le slider « Delay » (délai minimum du flanger, 0–3 ms) est remplacé par **« Fade-in » (0–300 ms, défaut 0)** : le Wet de la modulation monte progressivement après chaque coup, donc le flanger ou le LFO de filtre **s'installe** au lieu d'être présent dès l'attaque. Actif dans **les deux modes**, donc plus grisé en Filter LFO (seul Feedback reste spécifique au flanger). Le délai minimum du flanger devient la constante `FLANGER_MIN_DELAY_MS = 0.7` — la valeur du défaut précédent, le caractère du flanger est inchangé. Les sessions existantes stockaient 0,7 sur ce champ → interprété en ms, soit un fade-in imperceptible : pas de rupture.
+- **Plages d'enveloppes resserrées** là où la course du slider ne servait à rien : **Kick** et **BD808** decay 5 s → **2 s**, **Clap** decay 5 s → **1,5 s** (nouveau jeu `CLAP_STD` : le Cymbal, qui partageait `NO_FREQ_STD`, garde ses 5 s), **SDrex** Hold et Filter Hold 2 s → **1 s** (clamps DSP alignés).
+- Tests : 4 nouveaux pour le drag fin, 1 pour le fade-in dans les deux modes, 1 pour les plafonds de decay (avec garde sur le Cymbal) ; les 3 tests SDrex existants mis à jour (le Fade-in n'est plus ignoré en Filter LFO, holds à 1 s, composition de la famille Modulation).
+
+## 2026-08-20 — [179] Attaque identique quel que soit l'écart entre deux cellules (Kick + BD808) (build 20260820-162036)
+
+**Branche:** `main` · **Build:** `20260820-162036`
+**Validation:** `cargo test` 302+1+195 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-20).**
+
+- **Le problème, mesuré** : la queue du coup précédent contaminait l'attaque du suivant. En mode digital (donc sans aucun drift aléatoire) et à réglages strictement identiques, seul l'écart entre deux cellules variant : le **Kick** montrait **3,71 dB** de dispersion de pic, une polarité de première demi-période qui s'inversait et un temps de crête errant de 1,5 à 8,3 ms ; la **BD808** passait d'un temps de crête de 12,7 ms (coup isolé) à 1,5 ms (coup rapproché), et en mode analog — le défaut — même ses coups isolés variaient de **2,6 dB** avec une discontinuité de **0,244** (le drift de niveau appliqué d'un coup sur la queue encore sonnante).
+- **Quatre causes** : phase des oscillateurs jamais remise à zéro au retrigger (choix anti-clic historique) ; deux chemins de code distincts (cold start vs retrigger sur queue, bascule au seuil d'extinction de l'enveloppe) ; toutes les enveloppes repartant de leur valeur courante (ampli, pitch, filtre, snap/drop du 808) ; smoothers de fréquence et de cutoff non réinitialisés.
+- **Fix — nouveau primitif `dsp::RetrigDeclick`** : chaque coup repart d'un **état neuf identique** (phase 0, filtre, smoothers et DC blocker vidés, enveloppes redémarrées depuis zéro), et un **fondu raised-cosine de 3 ms** du dernier échantillon émis garde la *sortie* continue pendant ce reset. Le reset de phase seul cliquait (step 0,35) : c'est le fondu qui le rend propre.
+- **Résultat mesuré** : dispersion de pic **0,00 dB** sur 7 espacements (500 → 15 ms), temps de crête constant, polarité constante, step max au retrigger **0,014** (Kick) et **0,044** (BD808) — soit **4× plus propre** que le retrigger à phase continue qu'il remplace (0,058). Le clic du drift analog de la BD808 disparaît (plus de queue à re-scaler).
+- La distinction analog/digital vit désormais **entièrement dans le drift par coup** (pitch/niveau/durée de queue) ; le sweep de pitch est déterministe dans les deux modes. Les stutters (`trigger_hard`) suivent le même contrat.
+- **Contrat verrouillé par des tests** : nouveau module `src/synthesis/retrig_tests.rs` (6 tests) — dispersion ≤ 0,3 dB, temps de crête ≤ 0,5 ms d'écart, polarité constante, absence de discontinuité calibrée sur le même coup joué isolément, et coups isolés bit-identiques en digital. Le test de plock existant a été reformulé sur la même base auto-calibrée (un seuil absolu mesurait en réalité la raideur d'attaque légitime).
+- **Portée : Kick et BD808 uniquement.** Les autres voix tonales (Tom, Perc1, Snare, Snare606, SDrex, Buzz) et les samplers 606 restent sur l'ancien comportement → tâche [180].
+
 ## 2026-08-20 — [178] Graphes d'enveloppe unifiés et factorisés (build 20260820-083705)
 
 **Branche:** `main` · **Build:** `20260820-083705`
-**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-20).**
 
 - **Tous les graphes du Sound Panel sont construits de la même manière** : socle commun `prep_graph` (cadre LCD encastré + padding unifié 12/10 + hauteur 104, gate Buzz 72) et grille de quarts partagée, utilisés par les 6 graphes (`envelope_viz.rs`).
 - **Couleurs de stages partout** : attaque = ambre, hold = vert, decay = bleu (helpers `stage_attack/hold/decay`). Le graphe filtre A-H-D (Buzz/SDrex) et le graphe ampli des samplers 606 colorent désormais leurs segments comme le graphe ampli des synthés ; les courbes filtre mono-stage (Toms, samplers) passent de l'orange au bleu decay. Trait de courbe unifié à 2 px ; ligne de cutoff factorisée (`draw_cutoff_line`).
@@ -12,7 +57,7 @@
 ## 2026-08-20 — Fix solo/mute invisibles après les clears (build 20260820-082201)
 
 **Branche:** `main` · **Build:** `20260820-082201`
-**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-20).**
 
 - **Bug** : un solo (ou mute) enclenché sur une lane survivait aux clears ; une fois la lane désactivée, le solo devenait invisible et continuait de muter tout le kit → silence total sans cause apparente.
 - Nouveau helper partagé `controls::clear_all_mutes_solos(setter, params)` (14 mutes + 14 solos à off via `ParamSetter`).
@@ -22,7 +67,7 @@
 ## 2026-08-19 — SDrex : Flanger / Filter Mod + Decays 1,5 s (build 20260819-202022)
 
 **Branche:** `main` · **Build:** `20260819-202022`
-**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 297+1+189 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-20).**
 
 - **Decay maxima ajustés** : Amp Decay et Filter Decay passent de 2 s à **1,5 s** ; les Holds restent à 2 s.
 - **Section Flanger → Modulation** : ajout du switch `Filter Mod`. OFF = flanger classique ; ON = le même LFO module le cutoff du filtre LP et le délai flanger est bypassé.

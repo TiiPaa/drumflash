@@ -279,6 +279,28 @@ pub fn draw_editor_slider_row_full(
     .inner
 }
 
+/// Label + right-aligned segmented selector, for parameters that are a CHOICE
+/// between two named modes rather than an on/off state ([181] — SDrex's
+/// Modulation row used to be an anonymous switch labelled "Filter Mod").
+fn segmented_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    id_salt: impl std::hash::Hash,
+    options: &[&str],
+    selected: usize,
+) -> Option<usize> {
+    editor_label(ui, label);
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let new = crate::ui::skeuo::segmented(ui, id_salt, options, selected);
+        if new != selected {
+            Some(new)
+        } else {
+            None
+        }
+    })
+    .inner
+}
+
 /// Skeuo dropdown flush to the params column's right edge (matches the mockup:
 /// dropdowns line up with slider values and toggles, not left after the label).
 /// The caller draws `editor_label` first, then calls this in the same row.
@@ -1275,29 +1297,36 @@ pub fn draw_sound_panel(
                         let sample_disabled =
                             def.name.ends_with("_sample") && inst.special_value(0) > 0.5;
                         let filter_mod_active = voice_idx == 17 && inst.special_value(17) > 0.5;
-                        let modulation_disabled = filter_mod_active
-                            && matches!(def.special_index, 1 | 3);
+                        // [181] Only Feedback is flanger-specific now: the
+                        // Fade-in (index 1) applies to both modulation modes.
+                        let modulation_disabled =
+                            filter_mod_active && def.special_index == 3;
                         ui.add_enabled_ui(!(sample_disabled || modulation_disabled), |ui| {
                         ui.horizontal(|ui| {
                             let current = inst.special_value(def.special_index);
                             let mut new_value = None;
                             // Boolean mode switches, including SDrex's modulation
                             // target and free-running LFO phase.
-                            if def.name.ends_with("_analog_mode")
+                            if def.name.ends_with("_filter_mod") {
+                                // [181] Two named destinations for the one LFO —
+                                // an on/off switch labelled "Filter Mod" did not
+                                // say what it was choosing between.
+                                let selected = if current > 0.5 { 1 } else { 0 };
+                                if let Some(idx) = segmented_row(
+                                    ui,
+                                    def.label,
+                                    def.name,
+                                    &["Flanger", "Filter LFO"],
+                                    selected,
+                                ) {
+                                    new_value = Some(idx as f32);
+                                }
+                            } else if def.name.ends_with("_analog_mode")
                                 || def.name.ends_with("_one_shot")
                                 || def.name.ends_with("_free_phase")
-                                || def.name.ends_with("_filter_mod")
                             {
                                 let mut value = current;
-                                let response = draw_editor_switch_row(ui, def.label, &mut value);
-                                let response = if def.name.ends_with("_filter_mod") {
-                                    response.on_hover_text(
-                                        "Off: flanger delay modulation. On: low-pass cutoff modulation; Delay and Feedback are disabled.",
-                                    )
-                                } else {
-                                    response
-                                };
-                                if response.changed() {
+                                if draw_editor_switch_row(ui, def.label, &mut value).changed() {
                                     new_value = Some(value);
                                 }
                             // Multisample voices: Sample select 1..8 (stored 1-based)
@@ -1375,7 +1404,7 @@ pub fn draw_sound_panel(
                                     def.max,
                                     def.default,
                                     logarithmic,
-                                    None,
+                                    def.unit, // [182] specials carry a unit too
                                 )
                                 .changed()
                                 {

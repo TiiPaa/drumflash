@@ -25,6 +25,16 @@ const BODY_SWEEP_HZ: f32 = 95.0;
 const BODY_REF_HZ: f32 = 185.0;
 /// Eight milliseconds at 192 kHz, plus two samples for interpolation.
 const FLANGER_BUFFER_LEN: usize = 1538;
+/// Flanger minimum delay, in ms. Was a user parameter ("Delay") until [181]
+/// replaced that slider with the modulation Fade-in; kept at its former default
+/// so the flanger keeps the exact same character.
+const FLANGER_MIN_DELAY_MS: f32 = 0.7;
+/// Octaves covered by the Filter LFO at full Depth × Wet ([183]). The Depth
+/// slider tops out at 3.0 (it is shared with the flanger, where it means ms of
+/// delay), so 2.0 here means the filter sweeps up to 6 octaves above its base —
+/// 20 Hz → 1280 Hz at the very bottom of the Filter range. Measured: the voice
+/// then peaks 4.8 dB under the wide-open filter instead of 15.8 dB under it.
+const FILTER_MOD_OCTAVE_SCALE: f32 = 2.0;
 
 pub struct SdrexVoice {
     settings: SdrexSettings,
@@ -163,11 +173,21 @@ impl Voice for SdrexVoice {
         let dt = 1.0 / self.sample_rate;
 
         // One LFO, routed either to the flanger delay or to the low-pass
-        // cutoff. In Filter Mod mode, Depth is measured in octaves and Wet
-        // scales the modulation intensity.
+        // cutoff. In Filter LFO mode, Depth × Wet × `FILTER_MOD_OCTAVE_SCALE` is
+        // how many octaves the cutoff climbs ABOVE the Filter setting ([183]);
+        // the flanger reads the same Depth as milliseconds of delay.
         let modulation_rate = self.settings.flanger_rate.clamp(0.1, 20.0);
         let modulation_depth = self.settings.flanger_depth.clamp(0.0, 3.0);
-        let modulation_wet = self.settings.flanger_wet.clamp(0.0, 1.0);
+        // [181] Modulation fade-in: Wet ramps from 0 to its setting over
+        // `Fade-in` ms after the hit, so the flanger sweep / filter LFO swells in
+        // instead of being there on the attack. Applies to BOTH modes.
+        let fade_s = self.settings.modulation_fade_ms.clamp(0.0, 300.0) * 0.001;
+        let modulation_fade = if fade_s <= 0.0 {
+            1.0
+        } else {
+            (self.env_time / fade_s).clamp(0.0, 1.0)
+        };
+        let modulation_wet = self.settings.flanger_wet.clamp(0.0, 1.0) * modulation_fade;
         let filter_mod = self.settings.modulation_type >= 1;
         let modulation_bipolar = self.flanger_phase.sin();
         let modulation_unipolar = 0.5 + 0.5 * modulation_bipolar;
@@ -179,7 +199,7 @@ impl Voice for SdrexVoice {
         // Common volume attack. `release_curve` is the project's persisted
         // bipolar Attack Curve field; zero attack bypasses the ramp.
         let attack = self.settings.attack.clamp(0.0, 0.2);
-        let hold = self.settings.hold.clamp(0.0, 2.0);
+        let hold = self.settings.hold.clamp(0.0, 1.0);
         let attack_gain = if attack <= 0.0 || t >= attack {
             1.0
         } else {
@@ -240,7 +260,7 @@ impl Voice for SdrexVoice {
         // 3b. LP filter with A-D envelope (bipolar curves), exponential sweep
         // toward 20 kHz (same law as Tom/Buzz).
         let f_attack = self.settings.filter_attack.clamp(0.0, 0.5);
-        let f_hold = self.settings.filter_hold.clamp(0.0, 2.0);
+        let f_hold = self.settings.filter_hold.clamp(0.0, 1.0);
         let f_decay = self.settings.filter_env_decay.clamp(0.001, 1.5);
         let ft = self.filter_env_time;
         self.filter_env_time += dt;
@@ -256,9 +276,14 @@ impl Voice for SdrexVoice {
         let f_sweep = (env * self.settings.filter_env_amount.clamp(0.0, 1.0)).clamp(0.0, 1.0);
         let cutoff = f_base * (20000.0 / f_base).powf(f_sweep);
         let cutoff = if filter_mod {
-            let octaves = modulation_depth * modulation_wet;
-            (cutoff * 2.0f32.powf(modulation_bipolar * octaves))
-                .clamp(20.0, 20000.0)
+            // [183] The LFO opens the filter UPWARD from its base: the base is the
+            // FLOOR of the sweep, not its centre. With the previous bipolar swing,
+            // half of every cycle fell below the base and was eaten by the 20 Hz
+            // clamp, so "Filter at minimum + Depth at max" never opened past
+            // 160 Hz — 15.8 dB below the wide-open voice, i.e. inaudible, which is
+            // the opposite of what a full-depth modulation should sound like.
+            let octaves = modulation_depth * modulation_wet * FILTER_MOD_OCTAVE_SCALE;
+            (cutoff * 2.0f32.powf(modulation_unipolar * octaves)).clamp(20.0, 20000.0)
         } else {
             cutoff
         };
@@ -269,7 +294,7 @@ impl Voice for SdrexVoice {
             .process(self.saturation.process_at(true, mixed));
 
         // 4. Flanger target. Filter Mod bypasses the delay line completely.
-        let min_delay = self.settings.flanger_min_delay.clamp(0.0, 3.0);
+        let min_delay = FLANGER_MIN_DELAY_MS;
         let feedback = self.settings.flanger_feedback.clamp(0.0, 0.9);
         let flanged = if filter_mod {
             mixed
@@ -347,7 +372,7 @@ impl Voice for SdrexVoice {
     fn set_special_param(&mut self, index: usize, value: f32) {
         match index {
             0 => self.settings.flanger_rate = value,
-            1 => self.settings.flanger_min_delay = value,
+            1 => self.settings.modulation_fade_ms = value,
             2 => self.settings.flanger_depth = value,
             3 => self.settings.flanger_feedback = value,
             4 => self.settings.flanger_wet = value,
@@ -458,6 +483,88 @@ mod tests {
         );
     }
 
+    /// [183] Regression guard for the user-reported symptom: "Filter at 20 Hz +
+    /// Depth at max and I hear nothing, where I should get the maximum effect".
+    ///
+    /// The Filter LFO must lift the cutoff ABOVE its base, so even at the very
+    /// bottom of the Filter range a full-depth modulation stays audible. With the
+    /// old bipolar swing this measured 15.8 dB under the wide-open voice (half of
+    /// every LFO cycle fell under the 20 Hz clamp); it now sits within ~6 dB.
+    #[test]
+    fn filter_lfo_at_the_lowest_base_stays_audible_at_full_depth() {
+        let peak = |filter_hz: f32, depth: f32, wet: f32, mode: f32| {
+            let mut settings = VoiceSettings::sdrex();
+            settings.analog = 0.0;
+            settings.filter_freq = filter_hz;
+            settings.filter_env_amount = 0.0;
+            settings.special[2] = depth;
+            settings.special[4] = wet;
+            settings.special[17] = mode;
+            let mut voice = voice_with(settings);
+            voice.trigger();
+            (0..24_000)
+                .map(|_| voice.process_sample())
+                .fold(0.0f32, |m, x| m.max(x.abs()))
+        };
+
+        let open = peak(20_000.0, 0.0, 0.0, 1.0);
+        let closed = peak(20.0, 0.0, 1.0, 1.0);
+        let modulated = peak(20.0, 3.0, 1.0, 1.0);
+
+        // A 20 Hz low-pass on its own IS silence for this voice — that part is
+        // the filter doing its job.
+        let closed_db = 20.0 * (closed / open).log10();
+        assert!(
+            closed_db < -25.0,
+            "a 20 Hz low-pass should mute the voice (got {closed_db:.1} dB)"
+        );
+        // Full depth must bring it back to within 6 dB of the open filter.
+        let modulated_db = 20.0 * (modulated / open).log10();
+        assert!(
+            modulated_db > -6.0,
+            "full-depth Filter LFO at the lowest base is inaudible ({modulated_db:.1} dB              under the open filter; the bipolar law measured -15.8 dB)"
+        );
+        // ...and it must still be a modulation, not a bypass.
+        assert!(
+            modulated_db < -1.0,
+            "the Filter LFO should still shape the sound ({modulated_db:.1} dB)"
+        );
+    }
+
+    /// [181] The modulation Fade-in replaced the flanger's Delay slider: the LFO
+    /// effect must ramp in over the given time, in BOTH modulation modes.
+    #[test]
+    fn modulation_fade_in_ramps_the_modulation_in_both_modes() {
+        let render = |mode: f32, fade_ms: f32| {
+            let mut settings = VoiceSettings::sdrex();
+            settings.analog = 0.0;
+            settings.filter_freq = 800.0;
+            settings.filter_env_amount = 0.0;
+            settings.special[1] = fade_ms;
+            settings.special[2] = 2.0; // depth
+            settings.special[4] = 1.0; // wet
+            settings.special[17] = mode;
+            let mut voice = voice_with(settings);
+            voice.trigger();
+            (0..8192).map(|_| voice.process_sample()).collect::<Vec<_>>()
+        };
+        for (mode, name) in [(0.0f32, "flanger"), (1.0, "filter LFO")] {
+            let instant = render(mode, 0.0);
+            let faded = render(mode, 200.0);
+            // Early on, the faded version still has (almost) no modulation.
+            let early = instant
+                .iter()
+                .zip(&faded)
+                .take(4800) // first 100 ms at 48 kHz
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            assert!(
+                early > 0.01,
+                "{name}: a 200 ms fade-in must delay the modulation (max diff {early})"
+            );
+        }
+    }
+
     #[test]
     fn filter_mod_routes_rate_depth_and_wet_to_the_cutoff() {
         let render = |mode: f32, depth: f32, wet: f32, delay: f32, feedback: f32| {
@@ -494,11 +601,13 @@ mod tests {
             "Filter Mod Depth should change cutoff modulation"
         );
 
+        // [181] Feedback is the only flanger-specific control left; the former
+        // Delay slot is now the modulation Fade-in, which applies in BOTH modes.
         let ignored_a = render(1.0, 2.0, 1.0, 0.0, 0.0);
-        let ignored_b = render(1.0, 2.0, 1.0, 3.0, 0.9);
+        let ignored_b = render(1.0, 2.0, 1.0, 0.0, 0.9);
         assert_eq!(
             ignored_a, ignored_b,
-            "Delay and Feedback must be ignored in Filter Mod mode"
+            "Feedback must be ignored in Filter LFO mode"
         );
 
         let flanger = render(0.0, 2.0, 1.0, 0.7, 0.38);
