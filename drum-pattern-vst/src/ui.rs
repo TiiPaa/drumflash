@@ -33,8 +33,6 @@ mod menus;
 mod midi;
 mod pads;
 mod pattern_bank;
-// TEMP: consumed by the Sound panel in the next step of [184] phase 1.
-#[allow(dead_code)]
 pub mod param_source;
 mod plock;
 mod popups;

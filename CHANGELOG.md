@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-08-21 — [186] CRASH de l'hôte au rechargement du plugin : classe de fenêtre fantôme (build 20260821-120829)
+
+**Branche:** `main` · **Build:** `20260821-120829`
+**Validation:** `cargo test` 321+1+203 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-21)** : le scénario de crash ne se reproduit plus et le pont clavier fonctionne toujours.
+
+- **Symptôme, reproductible** : ouvrir une session contenant des plugins, la fermer, ouvrir une session vierge, ajouter Flash Drum → Studio One crashe.
+- **Preuves** : trois minidumps, tous `0xC0000005` avec le paramètre `8` — une violation **DEP en exécution**, c'est-à-dire un saut vers un pointeur de fonction périmé. Aucun `panicked at` en mémoire, donc aucun panic Rust. L'adresse fautive tombait au même offset dans `arp2600vProcessor.dll`, DLL tierce **déchargée** dans deux des trois cas : elle avait simplement été chargée à l'emplacement libéré par l'ancienne Flash Drum.
+- **Cause — notre patch clavier vendoré** (`vendor/nih-plug/nih_plug_egui/src/editor.rs`), trois défauts cumulés :
+  1. la classe de fenêtre du pont clavier était enregistrée sous un **nom fixe** (`NihPlugEguiKbdMsg`) et avec le **`HINSTANCE` de l'EXE hôte**, alors que son `WndProc` vit dans notre DLL → l'inscription appartenait au processus et survivait au déchargement, pointeur pendouillant inclus ;
+  2. **rien n'était nettoyé** : ni `UnregisterClassW`, ni `DestroyWindow` de la fenêtre de messages, ni restauration du `WndProc` d'origine de la fenêtre hôte (la sous-classe restait posée) ;
+  3. au rechargement, `MSG_CLASS_ATOM` étant un `static` de la DLL, il repartait à 0 ; `RegisterClassW` échouait (nom déjà pris par le fantôme) et le code **traitait cet échec comme un succès** avant de créer une fenêtre sur la classe périmée. Le premier message dispatché sautait dans la mémoire libérée.
+- **Correctif, trois volets** :
+  - **identité par chargement** : la classe s'appelle désormais `NihPlugEguiKbdMsg_<base du module>` et est enregistrée avec le `HINSTANCE` de **notre** DLL (`GetModuleHandleExW` + `FROM_ADDRESS`). Réutiliser une inscription fantôme devient impossible par construction, même si un crash empêche le nettoyage ;
+  - **`uninstall()`** appelé depuis `Drop for EguiEditorHandle`, **avant** la destruction de la fenêtre, dans l'ordre exigé par Windows : restaurer le `WndProc` de l'hôte (et retirer la propriété), détruire la fenêtre de messages, puis désenregistrer la classe ;
+  - **comptage de références** (`INSTALL_COUNT`) : plusieurs instances partagent un même chargement de DLL, donc seule la fermeture de la **dernière** désenregistre la classe.
+- L'échec de `RegisterClassW` n'est plus silencieusement toléré : avec un nom unique par chargement, un 0 signale un vrai problème.
+
+## 2026-08-21 — [185] L'algo p-locké ne durait que quelques millisecondes (build 20260821-111726)
+
+**Branche:** `main` · **Build:** `20260821-111726`
+**Validation:** `cargo test` 321+1+203 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-21).**
+
+- **Symptôme** (signalé sur le Kick) : changer l'Algo dans le p-lock d'un pas ne s'entendait pas.
+- **Cause, et ce n'était pas la refonte [184]** : le stockage, la fusion (`get_settings`, masque bit 13) et l'application au déclenchement (`fire_voice_trigger` → `set_voice_settings`) étaient tous corrects. Mais le prologue de `process()` repoussait l'algo **global** sur chaque voix **à chaque buffer, sans condition** (`lib.rs:2566`) — soit toutes les ~10 ms. Le coup jouait donc son algo p-locké pendant les premières millisecondes, puis toute la queue repassait à l'algo de la lane. L'asymétrie était nette : tous les autres réglages globaux ne sont repoussés que lorsque `bump_version()` change ; l'algo était le seul à l'être inconditionnellement.
+- **Correctif** : la propagation devient **conditionnelle au changement** (`last_algos: [u8; MAX_TRACKS]`), comme celle des autres réglages. Re-poussée forcée dans les deux cas où c'est nécessaire : restauration d'état (à côté de l'invalidation de `last_sound_settings_version`) et changement de kind d'un slot (la voix est recréée avec son algo par défaut).
+- **Test** `pushing_the_lane_algo_mid_tail_is_audible_so_the_push_must_be_change_only` : il vérifie que la première moitié du rendu est **identique** au bit près et que la queue **diverge** quand on repousse l'algo en pleine queue. Autrement dit, il prouve que le bug était audible — sans quoi la régression serait invisible et pourrait revenir sans que rien ne casse.
+
+## 2026-08-21 — [184] phase 1b : le panneau Sound lit et écrit par la couche de source (build 20260821-104025)
+
+**Branche:** `main` · **Build:** `20260821-104025`
+**Validation:** `cargo test` 320+1+203 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-21) : aucun changement de comportement**, ce qui est le critère de la phase.
+
+- **Le panneau Sound passe désormais par `GlobalSource`** pour toutes ses lectures et écritures de rangée : les 13 locales viennent de `src.get(ParamId::Std(...))`, les écritures de `store_field`/`set_special`/`set_freq_mode` deviennent `src.set(...)`, et les arguments **spéciaux des six graphes** (sampler, filtre Buzz/SDrex, gate) passent aussi par la source. C'est ce dernier point qui fera suivre les graphes au p-lock en phase 2 : ils étaient structurellement incapables d'afficher autre chose que le global.
+- **Approche chirurgicale assumée** : la structure du panneau, ses sections, ses cas particuliers (Pitch Fine, switch Stereo, gate Buzz) et sa chaîne de détection des paramètres discrets par sous-chaîne de libellé sont **inchangés**. La migration des widgets discrets vers le registre est reportée en phase 4, pour que chaque build validé ait un diff qu'on puisse relier à ce qu'on entend et voit.
+- **`PanelAlgo`** implémente `AlgoSink` : il fait le pont entre l'`IntParam` du panneau et la couche, qui ne doit pas connaître `ParamSetter` (celui-ci exige un `GuiContext` vivant, ce qui rendrait la couche non testable headless).
+- **Un seul `bump_version()` par frame** au lieu d'un par rangée éditée : `GlobalSource` groupe ses écritures et `commit()` les vide une fois. Les rangées de paramètres spéciaux bumpaient chacune la leur.
+- **8ᵉ mapping dupliqué supprimé** : le bloc `default_value` à branche par voix (table `sound_settings_default` pour les samplers et SDrex, `VoiceSettings::default()` sinon, `def.default` pour les spéciaux) devient `src.inherited(id)`, via `instrument_registry::param_default`. Les défauts des rangées Volume et Frequency, qui utilisent un chemin différent, sont **volontairement laissés en place** : les aligner changerait la cible du double-clic sur SDrex et les samplers, ce qui violerait le critère « aucun changement » de la phase.
+- Ce qui reste délibérément sur `inst` et non sur la source : la migration une-fois du pitch des samplers et l'export/import de presets des outils dev — ce sont des opérations sur le son **global** par nature, pas des rangées.
+
 ## 2026-08-21 — [184] phase 0 : une identité de paramètre, six mappings supprimés (build 20260821-101410)
 
 **Branche:** `main` · **Build:** `20260821-101410`

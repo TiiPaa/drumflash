@@ -218,6 +218,12 @@ pub struct DrumFlashVst {
     /// Last active track layout kinds, so the audio thread can reinitialize
     /// synthesizer voices when a slot is added, removed or reassigned.
     last_slot_kinds: [Option<crate::track::TrackInstrumentKind>; crate::track::MAX_TRACKS],
+    /// Last algo pushed to each slot's voice ([184]). The global algo must only
+    /// be re-pushed when it actually changes: pushing it every buffer overwrote
+    /// the per-step p-locked algo a few milliseconds into the hit, so a plocked
+    /// algo was audible only at the very attack and the tail reverted to the
+    /// lane's algo. `u8::MAX` forces a push.
+    last_algos: [u8; crate::track::MAX_TRACKS],
     /// Pending pattern length update after a slot load (1-64, 0 = none).
     /// The UI thread applies this to the IntParam on the next frame.
     pending_pattern_length: Arc<AtomicI32>,
@@ -1910,6 +1916,7 @@ impl Default for DrumFlashVst {
             last_song_position: 0,
             last_master_length: 16,
             last_slot_kinds: [None; crate::track::MAX_TRACKS],
+            last_algos: [u8::MAX; crate::track::MAX_TRACKS],
             pending_pattern_length: Arc::new(AtomicI32::new(0)),
             temp_plock_bytes: [0; pattern_bank::MAX_PLOCK_BYTES],
             temp_seq_plock_bytes: [0; pattern_bank::MAX_SEQ_PLOCK_BYTES],
@@ -2326,6 +2333,7 @@ impl Plugin for DrumFlashVst {
                 .map(|track_slot| track_slot.kind)
         });
         self.last_sound_settings_version = u64::MAX; // force re-sync on next process()
+        self.last_algos = [u8::MAX; crate::track::MAX_TRACKS]; // ...and re-push the algos
         self.song_state = {
             // Use try_lock to avoid blocking the audio thread if the UI happens
             // to hold the bank lock during init. If the bank is unavailable, the
@@ -2560,17 +2568,29 @@ impl Plugin for DrumFlashVst {
                     self.synthesizer.set_slot_active(slot, false);
                 }
                 self.last_slot_kinds[slot] = current_kind;
+                // A recreated voice has its own default algo: push ours again.
+                self.last_algos[slot] = u8::MAX;
             }
         }
 
         // Propagate synthesis algorithms (synthesizer is indexed by slot).
+        //
+        // [184] ONLY on change. This used to run unconditionally every buffer,
+        // which overwrote the algo that `fire_voice_trigger` had just applied
+        // from a step's p-lock: the plocked algo lasted a few milliseconds and
+        // the rest of the tail reverted to the lane's algo. Every other global
+        // setting is already re-pushed only when its version changes; the algo
+        // was the outlier.
         for slot_idx in 0..crate::track::MAX_TRACKS {
             if let Some(voice_idx) = slot_voices[slot_idx] {
                 let algo_count = crate::instrument_registry::INSTRUMENTS[voice_idx]
                     .algo_count
                     .max(1) as u8;
                 let algo = (self.params.algos()[slot_idx].value().max(0) as u8).min(algo_count - 1);
-                self.synthesizer.set_algo(slot_idx, algo);
+                if self.last_algos[slot_idx] != algo {
+                    self.synthesizer.set_algo(slot_idx, algo);
+                    self.last_algos[slot_idx] = algo;
+                }
             }
         }
 
@@ -3629,6 +3649,78 @@ mod tests {
         for _ in 0..2_205 {
             assert!(params.master_volume.smoothed.next().is_finite());
         }
+    }
+
+    /// [184] A p-locked algo must survive the whole hit.
+    ///
+    /// The lane's algo used to be pushed to every voice **unconditionally, once
+    /// per buffer** (`lib.rs` prologue), while `fire_voice_trigger` applies the
+    /// step's merged settings — including its p-locked algo — at the trigger
+    /// sample. So a plocked algo was overwritten a few milliseconds into the hit
+    /// and the tail reverted to the lane's algo, which reads as "the p-locked
+    /// algo does nothing".
+    ///
+    /// This test pins the mechanism the fix relies on: re-pushing the lane algo
+    /// in the middle of a ringing tail **is** audible. That is why the push has
+    /// to happen only when the lane's algo actually changes.
+    #[test]
+    fn pushing_the_lane_algo_mid_tail_is_audible_so_the_push_must_be_change_only() {
+        use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot};
+
+        let mut layout = TrackLayoutState::empty_layout();
+        layout.slots[0] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+
+        // A kick with a long tail, so the second half of the render is pure tail.
+        let mut plocked = synthesis::VoiceSettings::kick();
+        plocked.decay = 1.0;
+        plocked.algo = 2; // FM — clearly not the default sine
+
+        let render = |push_lane_algo_mid_tail: bool| -> Vec<f32> {
+            let mut synth = synthesis::DrumSynthesizer::new();
+            synth.initialize_with_layout(48_000.0, &layout);
+            // Buffer prologue: the lane's algo is 0 (sine).
+            synth.set_algo(0, 0);
+            // Trigger applies the STEP's settings, algo included.
+            synth.set_voice_settings(0, plocked);
+            synth.trigger(0, 1.0);
+
+            let mut out = Vec::with_capacity(4800);
+            let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
+            for _ in 0..2400 {
+                synth.process_voice_samples_stereo(&mut outputs);
+                out.push(outputs[0][0]);
+            }
+            if push_lane_algo_mid_tail {
+                // What the old unconditional per-buffer propagation did.
+                synth.set_algo(0, 0);
+            }
+            for _ in 0..2400 {
+                synth.process_voice_samples_stereo(&mut outputs);
+                out.push(outputs[0][0]);
+            }
+            out
+        };
+
+        let kept = render(false);
+        let overwritten = render(true);
+
+        // The attack is identical either way — the divergence is in the tail.
+        let head_diff = kept
+            .iter()
+            .zip(&overwritten)
+            .take(2400)
+            .fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
+        assert!(head_diff < 1e-6, "the first half must be identical: {head_diff}");
+
+        let tail_diff = kept
+            .iter()
+            .zip(&overwritten)
+            .skip(2400)
+            .fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
+        assert!(
+            tail_diff > 1e-3,
+            "re-pushing the lane algo mid-tail must change the sound, otherwise this              regression would be invisible: {tail_diff}"
+        );
     }
 
     #[test]

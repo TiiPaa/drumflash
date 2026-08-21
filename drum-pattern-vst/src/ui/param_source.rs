@@ -32,6 +32,8 @@ pub enum Support {
     Disabled(&'static str),
 }
 
+// Consumed by the row driver in the p-lock scope ([184] phase 2).
+#[allow(dead_code)]
 impl Support {
     pub fn is_editable(self) -> bool {
         matches!(self, Support::Editable)
@@ -55,6 +57,10 @@ pub trait AlgoSink {
 }
 
 /// Reads and writes one slot's parameters for the active scope.
+// `is_overridden` / `clear` / `supports` / `salt` are exercised by the tests and
+// consumed by the p-lock scope in the next phase; the lane-global panel only
+// needs get/set/inherited/commit.
+#[allow(dead_code)]
 pub trait ParamSource {
     /// The value the row displays: the scope's override when it has one,
     /// otherwise whatever it inherits.
@@ -166,6 +172,9 @@ pub struct PlockSource<'a> {
     pub base: GlobalSource<'a>,
 }
 
+// The p-lock scope is wired to the panel in [184] phase 2; its behaviour is
+// already pinned by the tests below.
+#[allow(dead_code)]
 impl<'a> PlockSource<'a> {
     pub fn new(plock: &'a PlockState, step: usize, base: GlobalSource<'a>) -> Self {
         Self { plock, step, base }
