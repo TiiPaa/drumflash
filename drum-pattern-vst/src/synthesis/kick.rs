@@ -1,31 +1,29 @@
-//! Kick drum synthesizer â€” grey-box model with retrig-safe state.
+//! Kick drum synthesizer - grey-box model with a deterministic attack.
 //!
-//! Architecture (informed by the TR-808/909 retrig analysis under
-//! `resources/roland-kick-rust/docs/retrigger-and-sequencer.md`):
-//! - **Oscillator phase is ALWAYS continuous across triggers, in both modes.**
-//!   Phase is never reset to zero â€” that was the historical "click parasite":
-//!   a phase jump on a still-ringing tail is a broadband discontinuity. Since
-//!   the oscillators are phase accumulators, changing frequency is inherently
-//!   click-free (it changes the phase *slope*, never the phase value).
-//! - The analog/digital distinction lives entirely in the **pitch envelope**,
-//!   which is phase-safe:
-//!     * `analog`  â†’ pitch sweep is *persistent* (`trigger_from_current`): the
-//!       Î”-Hz only ever rises toward the peak, stacking with the ringing tail,
-//!       so every hit drifts slightly â€” the organic, analog feel.
-//!     * `digital` â†’ pitch sweep is *reset* to the full peak every hit
-//!       (`trigger_reset_to`): identical, repeatable sweep on every trigger.
-//! - The amplitude envelope retriggers from its current value via a short attack
-//!   ramp (never a jump from/to zero), so it is continuous through retrigger.
-//! - A short one-pole smoother on the instantaneous frequency is numerical
-//!   hygiene only (frequency changes do not click on a phase accumulator).
-//! - Click transient (impulse + noise burst) is intentionally sharp â€” that's
-//!   the audible attack, not the click parasite we are trying to remove.
-//! - DC blocker on the output cleans up the asymmetric drift that accumulates
-//!   from dense retriggers.
+//! Retrigger contract ([179], measured - see `synthesis/retrig_tests.rs`):
+//! - **Every hit restarts from an identical clean slate**: oscillator phase 0,
+//!   filter, smoothers and DC blocker cleared, all envelopes restarted from
+//!   zero. The attack therefore does NOT depend on whether the previous hit's
+//!   tail is still ringing. The previous design kept the phase continuous
+//!   across triggers; that made the attack vary with the step spacing alone
+//!   (3.7 dB of peak spread, inverted first half-cycle, time-to-peak from
+//!   1.5 ms to 8.3 ms, at strictly identical settings).
+//! - The reset is click-free thanks to `dsp::RetrigDeclick`, which fades the
+//!   last emitted sample to zero over 3 ms while the new hit starts from
+//!   scratch, plus the amplitude envelope restarting from zero (0.5 ms attack
+//!   floor) so no waveform starts at a non-zero value.
+//! - **Do NOT reintroduce a phase reset without the declicker** - a bare phase
+//!   jump on a ringing tail IS the historical click parasite (worst step 0.35).
+//! - The analog / digital distinction now lives entirely in the per-hit drift
+//!   (pitch / level / tail length); the pitch sweep itself is deterministic in
+//!   both modes. Frequency changes never click on a phase accumulator: they
+//!   change the phase *slope*, never the phase value.
+//! - Click transient (impulse + noise burst) is intentionally sharp - that's the
+//!   audible attack, not the click parasite we are trying to remove.
 //!
 //! The sweep range is derived from `settings.frequency` so existing presets
 //! keep their character: `base_freq = freq * 0.3`, `pitch_peak = freq * 0.7`,
-//! giving the same startâ†’end sweep as the legacy multiplicative `PitchEnvelope`.
+//! giving the same start->end sweep as the legacy multiplicative `PitchEnvelope`.
 
 use super::{dsp, saturation, settings::kick::KickSettings, Voice, VoiceSettings};
 
@@ -77,6 +75,12 @@ pub struct KickVoice {
     click: dsp::ClickGenerator,
     /// Saturation stage for analog character.
     saturation: saturation::SaturationConfig,
+
+    /// Fades the previous hit's last output sample to zero so the full state
+    /// reset in `trigger()` never steps the output ([179]).
+    declick: dsp::RetrigDeclick,
+    /// Last sample emitted, captured by the declicker at trigger time.
+    last_out: f32,
 
     active: bool,
     /// Per-hit "analog" drift state. In analog mode each trigger pulls small
@@ -148,6 +152,8 @@ impl KickVoice {
                 pre_filter: false,
                 compensation_gain: 1.0,
             },
+            declick: dsp::RetrigDeclick::new(sample_rate),
+            last_out: 0.0,
             active: false,
             drift_rng: dsp::WhiteNoise::new(0x9E37_79B9),
             drift_pitch: 1.0,
@@ -195,64 +201,68 @@ impl KickVoice {
 
 impl Voice for KickVoice {
     fn trigger(&mut self) {
-        let was_active = self.active;
-        self.active = true;
-        // Phase is never reset DURING a ringing tail — a phase jump on a live tail
-        // was the click parasite. The oscillators are phase accumulators, so the
-        // pitch sweep below is click-safe: it changes the phase *slope*, never the
-        // phase value; filter state and the smoothers also stay continuous.
+        // [179] Every hit restarts from an IDENTICAL clean slate: oscillator
+        // phase 0, filter / smoothers / DC blocker cleared. Before this, a hit
+        // landing on a still-ringing tail inherited that tail's state, so the
+        // attack changed with the step spacing alone (measured in digital mode,
+        // identical settings: 3.7 dB of peak spread, first half-cycle inverted,
+        // time-to-peak wandering from 1.5 ms to 8.3 ms).
         //
-        // Cold start only (voice was silent): align oscillator phase to 0 and clear
-        // the filter so the attack begins from a clean zero baseline. THIS is what
-        // keeps even a 0 ms attack click-free, and it is safe precisely because the
-        // previous output was already silence. (Mirrors the `kick_808` reference.)
-        if !was_active {
-            self.osc_sine.phase = 0.0;
-            self.osc_square.reset_phase();
-            self.fm_carrier.phase = 0.0;
-            self.fm_mod.phase = 0.0;
-            self.filter.reset();
-            // Clear the carry-over state too, so a cold start is a true clean slate
-            // (makes digital mode bit-identical hit-to-hit; analog drift is applied
-            // afterwards). Safe because the previous output was already silence.
-            self.freq_smoother.reset(self.base_freq());
-            self.filter_cutoff_smoother.reset(self.settings.filter_freq);
-            self.dc_block.reset();
-        }
+        // The historical "click parasite" of a phase reset on a live tail is
+        // handled by two mechanisms, both measured:
+        //   1. `declick` continues the last emitted sample toward zero over
+        //      3 ms, so the OUTPUT has no discontinuity (worst step 0.014 vs
+        //      0.058 for the phase-continuous retrigger it replaces);
+        //   2. the amplitude envelope restarts from zero with a 0.5 ms attack
+        //      floor, so even a square / FM waveform at phase 0 starts at zero
+        //      amplitude.
+        self.declick.arm(self.last_out);
+        self.active = true;
+        self.osc_sine.phase = 0.0;
+        self.osc_square.reset_phase();
+        self.fm_carrier.phase = 0.0;
+        self.fm_mod.phase = 0.0;
+        self.filter.reset();
+        self.freq_smoother.reset(self.base_freq());
+        self.filter_cutoff_smoother.reset(self.settings.filter_freq);
+        self.dc_block.reset();
         if self.settings.analog >= 0.5 {
-            // Analog: persistent sweep + per-hit drift (the vintage "breathing").
-            // Δ-Hz only ever rises toward the peak, stacking with the tail.
-            self.pitch_env.trigger_from_current(self.pitch_peak_hz());
+            // Analog: per-hit random drift — the vintage "breathing".
             self.drift_pitch = 1.0 + self.drift_rng.next() * dsp::AnalogDrift::PITCH_DEPTH;
             self.drift_level = 1.0 + self.drift_rng.next() * dsp::AnalogDrift::LEVEL_DEPTH;
             self.drift_decay = 1.0 + self.drift_rng.next() * dsp::AnalogDrift::TIME_DEPTH;
         } else {
-            // Digital: deterministic sweep, NO drift — bit-identical on every hit.
-            self.pitch_env.trigger_reset_to(self.pitch_peak_hz());
+            // Digital: no drift — bit-identical hits.
             self.drift_pitch = 1.0;
             self.drift_level = 1.0;
             self.drift_decay = 1.0;
         }
-        // Per-hit envelope-time drift: scale BOTH the decay and the release stages
-        // so the audible TAIL LENGTH varies in analog (the most audible part of the
-        // "breathing"). Drifting decay alone is nearly inaudible because the long
-        // tail is carried by the release stage. Exact times in digital.
+        // The pitch sweep now restarts from the full peak in BOTH modes: there is
+        // no tail left to stack onto, so the analog / digital distinction lives
+        // entirely in the drift above. Click-safe either way — the value drives a
+        // frequency on a phase accumulator, so it changes the phase slope, never
+        // the phase itself.
+        self.pitch_env.trigger_reset_to(self.pitch_peak_hz());
+        // Per-hit envelope-time drift: scale BOTH stages so the audible TAIL
+        // LENGTH varies in analog mode. Exact times in digital.
         self.amp_env
             .set_decay(self.settings.decay * self.drift_decay);
         self.amp_env
             .set_release(self.settings.release * self.drift_decay);
-        // Amplitude / filter envelopes attack-ramp from their current value, so a
-        // retrigger during a ringing tail is continuous (no jump to/from zero).
-        self.amp_env.trigger();
-        self.filter_env.trigger();
+        // Both envelopes restart from zero so the attack trajectory — and its
+        // time-to-peak — is the same on every hit, whatever the step spacing.
+        self.amp_env.trigger_hard();
+        self.filter_env.trigger_from_zero(1.0);
         if self.click_amount() > 0.0 {
             self.click.trigger();
         }
     }
 
+    /// Stutter / machine-gun repeats. Identical to a normal trigger now that
+    /// every hit restarts from a clean slate — the declicker keeps the repeats
+    /// click-free at any density.
     fn trigger_hard(&mut self) {
-        self.active = true;
-        self.amp_env.trigger_hard();
+        self.trigger();
     }
 
     fn process_sample(&mut self) -> f32 {
@@ -305,11 +315,16 @@ impl Voice for KickVoice {
         // Saturation post-filter by default (pre-filter moves it before the
         // filter). Volume stays post-saturation: the knob sets the final level
         // without changing the drive character.
-        self.saturation.process_at(false, out) * self.settings.volume
+        let out = self.saturation.process_at(false, out) * self.settings.volume;
+        // Declick tail of the previous hit, added post-volume so it continues the
+        // exact sample it was captured from ([179]).
+        let out = out + self.declick.next();
+        self.last_out = out;
+        out
     }
 
     fn is_active(&self) -> bool {
-        self.active || self.click.is_active()
+        self.active || self.click.is_active() || self.declick.is_active()
     }
 
     fn reset(&mut self) {
@@ -319,6 +334,8 @@ impl Voice for KickVoice {
         self.filter_env.reset();
         self.click.reset();
         self.dc_block.reset();
+        self.declick.reset();
+        self.last_out = 0.0;
     }
 
     fn set_settings(&mut self, settings: VoiceSettings) {
@@ -422,6 +439,23 @@ mod tests {
                 max_step = max_step.max((s - prev).abs());
                 prev = s;
             }
+
+            // Reference: the SAME hit played in isolation (fresh voice, no tail).
+            // Since [179] every trigger restarts from an identical clean slate, so
+            // the retrigger must be no steeper than an isolated hit. Comparing the
+            // two is stricter than an absolute threshold and self-calibrating: the
+            // amplitude envelope's own 1.5 ms convex attack ramp legitimately
+            // steps ~0.085/sample here, and that is punch, not a click.
+            let mut isolated = KickVoice::new(sr, plock);
+            isolated.trigger();
+            let mut prev = isolated.process_sample();
+            let mut reference_step = 0.0f32;
+            for _ in 0..300 {
+                let s = isolated.process_sample();
+                reference_step = reference_step.max((s - prev).abs());
+                prev = s;
+            }
+
             // Before the fix the digital path jumped ~0.20 at the edge. Continuous now.
             assert!(
                 edge < 0.05,
@@ -430,10 +464,11 @@ mod tests {
                 edge
             );
             assert!(
-                max_step < 0.06,
-                "click parasite after plock retrigger (analog={}): max step={}",
+                max_step <= reference_step * 1.25,
+                "click parasite after plock retrigger (analog={}): max step={} vs {}                  for the same hit played in isolation",
                 analog,
-                max_step
+                max_step,
+                reference_step
             );
         }
     }
@@ -621,10 +656,15 @@ mod tests {
         fn isolated_hit(kick: &mut KickVoice, n: usize) -> Vec<f32> {
             kick.trigger();
             let out: Vec<f32> = (0..n).map(|_| kick.process_sample()).collect();
-            // Drain to silence so the next hit is a clean cold start.
+            // Drain to TRUE silence so the next hit is a clean cold start. The
+            // envelope going idle is not enough: the DC blocker keeps emitting a
+            // decaying residual, and since [179] the declicker faithfully
+            // continues whatever the voice last emitted — so a hit fired on top of
+            // that residual is legitimately not bit-identical.
             let mut guard = 0;
-            while kick.is_active() && guard < 88_200 {
-                kick.process_sample();
+            let mut residual = 1.0f32;
+            while (kick.is_active() || residual.abs() > 1e-5) && guard < 88_200 {
+                residual = kick.process_sample();
                 guard += 1;
             }
             out

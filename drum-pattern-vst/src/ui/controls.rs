@@ -105,6 +105,19 @@ pub fn fusion_modifier_pressed(ui: &egui::Ui) -> bool {
     ui.input(|i| i.modifiers.shift) || platform_shift_pressed()
 }
 
+/// Fine-tune modifier for sliders ([181]). Accepts **Shift or Alt** — the
+/// gesture is documented as Alt but Shift was what the plock slider used, so
+/// both work rather than making the user guess.
+///
+/// Like [`fusion_modifier_pressed`], it falls back to a platform-level key check:
+/// hosts that swallow keyboard events (Studio One, REAPER) never let egui see the
+/// modifier state, which is exactly how the fine-tune silently stopped working.
+pub fn fine_tune_modifier_pressed(ui: &egui::Ui) -> bool {
+    ui.input(|i| i.modifiers.shift || i.modifiers.alt)
+        || platform_shift_pressed()
+        || platform_alt_pressed()
+}
+
 #[cfg(target_os = "windows")]
 fn platform_shift_pressed() -> bool {
     const VK_SHIFT: i32 = 0x10;
@@ -125,6 +138,29 @@ fn platform_shift_pressed() -> bool {
 
 #[cfg(not(target_os = "windows"))]
 fn platform_shift_pressed() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn platform_alt_pressed() -> bool {
+    const VK_MENU: i32 = 0x12;
+    const VK_LMENU: i32 = 0xA4;
+    const VK_RMENU: i32 = 0xA5;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetAsyncKeyState(vkey: i32) -> i16;
+    }
+
+    unsafe {
+        [VK_MENU, VK_LMENU, VK_RMENU]
+            .iter()
+            .any(|&key| (GetAsyncKeyState(key) as u16 & 0x8000) != 0)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn platform_alt_pressed() -> bool {
     false
 }
 
