@@ -213,6 +213,64 @@ impl Default for VoiceSettings {
 }
 
 impl VoiceSettings {
+    /// Read one parameter by its canonical id ([184]).
+    ///
+    /// Audio-thread safe: a plain match, no allocation. Replaces the
+    /// hand-written `read_morph_value` index list that used to live in `lib.rs`.
+    #[inline]
+    pub fn get(&self, id: crate::param_id::ParamId) -> f32 {
+        use crate::instrument_registry::StandardField as F;
+        use crate::param_id::ParamId;
+        match id {
+            ParamId::Std(F::Freq) => self.frequency,
+            ParamId::Std(F::Decay) => self.decay,
+            ParamId::Std(F::Volume) => self.volume,
+            ParamId::Std(F::FilterFreq) => self.filter_freq,
+            ParamId::Std(F::Attack) => self.attack,
+            ParamId::Std(F::Release) => self.release,
+            ParamId::Std(F::DecayCurve) => self.decay_curve,
+            ParamId::Std(F::ReleaseCurve) => self.release_curve,
+            ParamId::Std(F::Hold) => self.hold,
+            ParamId::Std(F::FilterEnvAmount) => self.filter_env_amount,
+            ParamId::Std(F::FilterEnvDecay) => self.filter_env_decay,
+            ParamId::Std(F::Analog) => self.analog,
+            ParamId::Std(F::Stereo) => self.stereo,
+            ParamId::Algo => self.algo as f32,
+            ParamId::Special(index) => self.special.get(index).copied().unwrap_or(0.0),
+            // A display mode has no place in the synthesis settings.
+            ParamId::FreqMode => 0.0,
+        }
+    }
+
+    /// Write one parameter by its canonical id ([184]). Audio-thread safe.
+    #[inline]
+    pub fn set(&mut self, id: crate::param_id::ParamId, value: f32) {
+        use crate::instrument_registry::StandardField as F;
+        use crate::param_id::ParamId;
+        match id {
+            ParamId::Std(F::Freq) => self.frequency = value,
+            ParamId::Std(F::Decay) => self.decay = value,
+            ParamId::Std(F::Volume) => self.volume = value,
+            ParamId::Std(F::FilterFreq) => self.filter_freq = value,
+            ParamId::Std(F::Attack) => self.attack = value,
+            ParamId::Std(F::Release) => self.release = value,
+            ParamId::Std(F::DecayCurve) => self.decay_curve = value,
+            ParamId::Std(F::ReleaseCurve) => self.release_curve = value,
+            ParamId::Std(F::Hold) => self.hold = value,
+            ParamId::Std(F::FilterEnvAmount) => self.filter_env_amount = value,
+            ParamId::Std(F::FilterEnvDecay) => self.filter_env_decay = value,
+            ParamId::Std(F::Analog) => self.analog = value,
+            ParamId::Std(F::Stereo) => self.stereo = value,
+            ParamId::Algo => self.algo = value.round().clamp(0.0, 255.0) as u8,
+            ParamId::Special(index) => {
+                if index < self.special.len() {
+                    self.special[index] = value;
+                }
+            }
+            ParamId::FreqMode => {}
+        }
+    }
+
     pub fn kick() -> Self {
         Self {
             frequency: 60.0,

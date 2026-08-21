@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-21 — [184] phase 0 : une identité de paramètre, six mappings supprimés (build 20260821-101410)
+
+**Branche:** `main` · **Build:** `20260821-101410`
+**Validation:** `cargo test` 314+1+203 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-21) : aucun changement de comportement**, ce qui est le critère de cette phase de plomberie.
+
+- **Nouveau module `src/param_id.rs`** — `ParamId` : l'identité canonique d'un paramètre de son (`Std(StandardField)` / `Algo` / `Special(i)` / `FreqMode`), indépendante du magasin qui détient sa valeur. Il **possède désormais la disposition des 46 champs** (`FIELD_COUNT`, `ALGO_FIELD`, `SPECIAL_FIELD_START`, `ATTACK_FIELD`…), que `plock.rs` réexporte — la dépendance va de l'identité vers le stockage, jamais l'inverse, ce qui permet au binaire `test_standalone` d'inclure le module sans embarquer la couche de persistance.
+- **Le mapping `StandardField` était écrit à la main six fois** et devait rester synchronisé par discipline. Deux numérotations coexistent — le discriminant de l'enum (ordre du tuple `load()` et du blob `sound-settings-v2`, **Attack = 4**) et l'index de champ p-lock (ordre du blob `plock-v1`, **Attack = 18**) — et les confondre décale silencieusement toutes les valeurs. Trois copies sont supprimées dans cette phase : `lib.rs::read_morph_value`/`apply_morph_value` (thread audio), `ui/plock.rs::get_global_value`, et le `match field_index` interne de `ui/grid.rs::current_field_value_for_fusion`.
+- **Deux paires d'accesseurs** remplacent ces listes : `VoiceSettings::get/set(ParamId)` (thread audio, sans allocation) et `InstrumentSettingsState::get/set(ParamId)` + `standard/set_standard(StandardField)`. L'algo est explicitement **non détenu** par les atomiques (c'est un `IntParam` nih-plug) : les accesseurs le signalent par `debug_assert` au lieu de mentir, et les appelants génériques le traitent à part.
+- **`PlockState::clear_field`** ajouté (retirer UN override en gardant le p-lock actif) — l'affordance ↺ par rangée des phases suivantes.
+- **`StandardField::ALL`** permet d'itérer les 13 champs sans les relister.
+- **La collision Attack / spécial 4 est documentée à sa source** : Attack ayant atterri sur le champ 18 = `SPECIAL_FIELD_START + 4`, ce spécial partage son emplacement et n'est pas verrouillable (`ParamId::is_lockable`, avec `unlockable_reason()` pour l'infobulle de la rangée grisée à venir). **Correction possible sans changer le format** — l'indice spécial le plus élevé déclaré est 17, donc les emplacements 18..31 sont libres — mais un ancien snapshot a ses 46 bits de masque à 1, donc il faut un marqueur de version avant de faire confiance à cette valeur : tâche séparée.
+- 4 nouveaux tests : la table des 46 champs figée avant la suppression des copies (donc équivalence prouvée), l'aller-retour `plock_field` ⇄ `from_plock_field`, la **bijection** de la disposition avec un seul trou documenté (le champ 12, ex-clap echo), et l'unicité du spécial non verrouillable.
+
 ## 2026-08-21 — [183] Filter LFO SDrex : modulation vers le haut depuis la base (build 20260821-091344)
 
 **Branche:** `main` · **Build:** `20260821-091344`
