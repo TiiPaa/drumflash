@@ -214,6 +214,39 @@ const fn sp_discrete(
     }
 }
 
+/// The factory default of one parameter on one voice ([184]).
+///
+/// This is the single definition of "the default", replacing the three the Sound
+/// panel used to carry side by side: the per-voice `sound_settings_default`
+/// table for the voices that have one, `VoiceSettings::default()` for the
+/// others, and `SpecialParamDef::default` for specials. It is the target of
+/// double-click-to-reset.
+pub fn param_default(voice_idx: usize, id: crate::param_id::ParamId) -> f32 {
+    use crate::param_id::ParamId;
+    let Some(instrument) = INSTRUMENTS.get(voice_idx) else {
+        return 0.0;
+    };
+    match id {
+        // Voices with their own default table (the samplers and SDrex) read it;
+        // the rest fall back to the shared `VoiceSettings` defaults.
+        ParamId::Std(field) => {
+            if matches!(voice_idx, 13 | 14 | 15) || voice_idx == 17 {
+                instrument.sound_settings_default[field as usize]
+            } else {
+                crate::synthesis::VoiceSettings::default().get(id)
+            }
+        }
+        ParamId::Special(index) => instrument
+            .special_params
+            .iter()
+            .find(|def| def.special_index == index)
+            .map(|def| def.default)
+            .unwrap_or(0.0),
+        // The algo dropdown and the Hz/Note switch have no reset gesture.
+        ParamId::Algo | ParamId::FreqMode => 0.0,
+    }
+}
+
 /// Metadata for an instrument in the registry.
 #[allow(dead_code)]
 pub struct InstrumentDef {
