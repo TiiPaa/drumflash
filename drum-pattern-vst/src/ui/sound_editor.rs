@@ -1,6 +1,9 @@
 //! Sound Editor: tabbed Sound/Track panel, editor rows, lane layout presets.
 
 use crate::sequencer::SharedPattern;
+use crate::instrument_registry::StandardField;
+use crate::param_id::ParamId;
+use crate::ui::param_source::{GlobalSource, ParamSource};
 use crate::sound_settings::SoundSettingsState;
 use crate::synthesis::{self, DrumVoice, VoiceSettings};
 use crate::track::TrackLayoutState;
@@ -277,6 +280,24 @@ pub fn draw_editor_slider_row_full(
         response
     })
     .inner
+}
+
+/// [184] Bridges the panel's algo `IntParam` into the value-source layer, which
+/// must not know about `ParamSetter` (it needs a live `GuiContext`, which is
+/// what would make the layer untestable headless).
+struct PanelAlgo<'a> {
+    param: &'a nih_plug::prelude::IntParam,
+    setter: &'a ParamSetter<'a>,
+}
+
+impl crate::ui::param_source::AlgoSink for PanelAlgo<'_> {
+    fn get(&self) -> u8 {
+        self.param.value().max(0) as u8
+    }
+
+    fn set(&self, value: u8) {
+        crate::ui::controls::set_int_param_if_changed(self.setter, self.param, value as i32);
+    }
 }
 
 /// Label + right-aligned segmented selector, for parameters that are a CHOICE
@@ -802,21 +823,33 @@ pub fn draw_sound_panel(
     );
 
     let inst = &sound_settings.instruments[state.selected_instrument];
-    let (
-        mut freq,
-        mut decay,
-        mut vol,
-        mut filt,
-        mut attack,
-        mut release,
-        mut decay_curve,
-        mut release_curve,
-        mut hold,
-        mut filter_env_amount,
-        mut filter_env_decay,
-        mut analog,
-        mut stereo,
-    ) = inst.load();
+    // [184] Every row reads and writes through this source. Today it is always
+    // the lane's global sound; swapping it for a `PlockSource` is what will make
+    // the same rows edit one step's p-lock.
+    let panel_algo = PanelAlgo {
+        param: params.algos()[state.selected_instrument],
+        setter,
+    };
+    let mut src = GlobalSource::new(
+        sound_settings,
+        state.selected_instrument,
+        voice_idx,
+        &panel_algo,
+    );
+    let std_value = |src: &GlobalSource, field| src.get(ParamId::Std(field));
+    let mut freq = std_value(&src, StandardField::Freq);
+    let mut decay = std_value(&src, StandardField::Decay);
+    let mut vol = std_value(&src, StandardField::Volume);
+    let mut filt = std_value(&src, StandardField::FilterFreq);
+    let mut attack = std_value(&src, StandardField::Attack);
+    let mut release = std_value(&src, StandardField::Release);
+    let mut decay_curve = std_value(&src, StandardField::DecayCurve);
+    let mut release_curve = std_value(&src, StandardField::ReleaseCurve);
+    let mut hold = std_value(&src, StandardField::Hold);
+    let mut filter_env_amount = std_value(&src, StandardField::FilterEnvAmount);
+    let mut filter_env_decay = std_value(&src, StandardField::FilterEnvDecay);
+    let mut analog = std_value(&src, StandardField::Analog);
+    let mut stereo = std_value(&src, StandardField::Stereo);
     let mut changed = false;
 
     // One-shot migration for sampler builds that persisted pitch in Hz.
@@ -1050,7 +1083,7 @@ pub fn draw_sound_panel(
                 })
                 .inner;
             if vol_changed {
-                store_field(inst, crate::instrument_registry::StandardField::Volume, vol);
+                src.set(ParamId::Std(StandardField::Volume), vol);
                 changed = true;
             }
             ui.add(egui::Separator::default().spacing(6.0));
@@ -1119,7 +1152,7 @@ pub fn draw_sound_panel(
                     // rendered below, and stays enabled).
                     let env_disabled = family == crate::instrument_registry::ParamFamily::Env
                         && matches!(voice_idx, 13 | 14 | 15)
-                        && inst.special_value(2) > 0.5;
+                        && src.get(ParamId::Special(2)) > 0.5;
                     ui.add_enabled_ui(!env_disabled, |ui| {
                     for def in standard_defs.iter().filter(|d| {
                         d.family == family
@@ -1147,7 +1180,7 @@ pub fn draw_sound_panel(
                                 let is_bass_drum = voice_idx == 0 || voice_idx == 11;
                                 let freq_in_notes = is_bass_drum
                                     && def.field == crate::instrument_registry::StandardField::Freq
-                                    && inst.freq_mode();
+                                    && src.get(ParamId::FreqMode) >= 0.5;
 
                                      match (&def.widget, def.field) {
                                  (crate::instrument_registry::ParamWidget::Slider { min, max, logarithmic, suffix }, field) => {
@@ -1167,16 +1200,15 @@ pub fn draw_sound_panel(
                                             freq_in_notes,
                                         );
                                         if row.value_changed || row.response.changed() {
-                                            store_field(inst, field, freq);
+                                            src.set(ParamId::Std(field), freq);
                                             changed = true;
                                         }
                                         if let Some(new_mode) = row.mode_change {
-                                            inst.set_freq_mode(new_mode);
-                                            sound_settings.bump_version();
+                                            src.set(ParamId::FreqMode, new_mode as u8 as f32);
                                             if new_mode {
                                                 let snapped_note = freq_to_note(freq * ratio).round();
                                                 freq = note_to_freq(snapped_note) / ratio;
-                                                store_field(inst, field, freq);
+                                                src.set(ParamId::Std(field), freq);
                                                 changed = true;
                                             }
                                         }
@@ -1196,27 +1228,11 @@ pub fn draw_sound_panel(
                                             crate::instrument_registry::StandardField::Analog => &mut analog,
                                             crate::instrument_registry::StandardField::Stereo => &mut stereo,
                                         };
-                                        let default_value = if matches!(voice_idx, 13 | 14 | 15)
-                                            || voice_idx == 17
-                                        {
-                                            instrument.sound_settings_default[field as usize]
-                                        } else {
-                                            match field {
-                                                crate::instrument_registry::StandardField::Freq => VoiceSettings::default().frequency,
-                                                crate::instrument_registry::StandardField::Decay => VoiceSettings::default().decay,
-                                                crate::instrument_registry::StandardField::Volume => VoiceSettings::default().volume,
-                                                crate::instrument_registry::StandardField::FilterFreq => VoiceSettings::default().filter_freq,
-                                                crate::instrument_registry::StandardField::Attack => VoiceSettings::default().attack,
-                                                crate::instrument_registry::StandardField::Release => VoiceSettings::default().release,
-                                                crate::instrument_registry::StandardField::DecayCurve => VoiceSettings::default().decay_curve,
-                                                crate::instrument_registry::StandardField::ReleaseCurve => VoiceSettings::default().release_curve,
-                                                crate::instrument_registry::StandardField::Hold => VoiceSettings::default().hold,
-                                                crate::instrument_registry::StandardField::FilterEnvAmount => VoiceSettings::default().filter_env_amount,
-                                                crate::instrument_registry::StandardField::FilterEnvDecay => VoiceSettings::default().filter_env_decay,
-                                                crate::instrument_registry::StandardField::Analog => VoiceSettings::default().analog,
-                                                crate::instrument_registry::StandardField::Stereo => VoiceSettings::default().stereo,
-                                            }
-                                        };
+                                        // [184] One definition of "the default":
+                                        // `param_default` keeps both branches
+                                        // (per-voice table for the samplers and
+                                        // SDrex, shared defaults otherwise).
+                                        let default_value = src.inherited(ParamId::Std(field));
                                         // Relative-pitch voices: the Pitch slider
                                         // steps by 1 semitone (Pitch Fine covers
                                         // the cents).
@@ -1236,7 +1252,7 @@ pub fn draw_sound_panel(
                                         )
                                         .changed()
                                         {
-                                            store_field(inst, field, *value);
+                                            src.set(ParamId::Std(field), *value);
                                             changed = true;
                                         }
                                     }
@@ -1247,7 +1263,7 @@ pub fn draw_sound_panel(
                                         _ => &mut stereo,
                                     };
                                     if draw_editor_switch_row(ui, &label_text, value).changed() {
-                                        store_field(inst, field, *value);
+                                        src.set(ParamId::Std(field), *value);
                                         changed = true;
                                     }
                                 }
@@ -1258,7 +1274,7 @@ pub fn draw_sound_panel(
                         if def.field == crate::instrument_registry::StandardField::Freq
                             && matches!(voice_idx, 13 | 14 | 15)
                         {
-                            let mut fine = inst.special_value(9);
+                            let mut fine = src.get(ParamId::Special(9));
                             if draw_editor_slider_row(
                                 ui,
                                 "Pitch Fine",
@@ -1271,8 +1287,7 @@ pub fn draw_sound_panel(
                             )
                             .changed()
                             {
-                                inst.set_special(9, fine);
-                                sound_settings.bump_version();
+                                src.set(ParamId::Special(9), fine);
                             }
                         }
                     }
@@ -1295,15 +1310,15 @@ pub fn draw_sound_panel(
                         // it, to keep the layout stable) while Analog Mode
                         // (random multisample) is on.
                         let sample_disabled =
-                            def.name.ends_with("_sample") && inst.special_value(0) > 0.5;
-                        let filter_mod_active = voice_idx == 17 && inst.special_value(17) > 0.5;
+                            def.name.ends_with("_sample") && src.get(ParamId::Special(0)) > 0.5;
+                        let filter_mod_active = voice_idx == 17 && src.get(ParamId::Special(17)) > 0.5;
                         // [181] Only Feedback is flanger-specific now: the
                         // Fade-in (index 1) applies to both modulation modes.
                         let modulation_disabled =
                             filter_mod_active && def.special_index == 3;
                         ui.add_enabled_ui(!(sample_disabled || modulation_disabled), |ui| {
                         ui.horizontal(|ui| {
-                            let current = inst.special_value(def.special_index);
+                            let current = src.get(ParamId::Special(def.special_index));
                             let mut new_value = None;
                             // Boolean mode switches, including SDrex's modulation
                             // target and free-running LFO phase.
@@ -1402,7 +1417,7 @@ pub fn draw_sound_panel(
                                     &mut value,
                                     def.min,
                                     def.max,
-                                    def.default,
+                                    src.inherited(ParamId::Special(def.special_index)),
                                     logarithmic,
                                     def.unit, // [182] specials carry a unit too
                                 )
@@ -1412,8 +1427,7 @@ pub fn draw_sound_panel(
                                 }
                             }
                             if let Some(value) = new_value {
-                                inst.set_special(def.special_index, value);
-                                sound_settings.bump_version();
+                                src.set(ParamId::Special(def.special_index), value);
                             }
                         });
                         });
@@ -1430,11 +1444,7 @@ pub fn draw_sound_panel(
                                 )
                                 .changed()
                             {
-                                store_field(
-                                    inst,
-                                    crate::instrument_registry::StandardField::Stereo,
-                                    stereo,
-                                );
+                                src.set(ParamId::Std(StandardField::Stereo), stereo);
                                 changed = true;
                             }
                         }
@@ -1472,14 +1482,14 @@ pub fn draw_sound_panel(
                     } else {
                         crate::synthesis::sample_bank::ch606()
                     };
-                    let hit_idx = (inst.special_value(1).round() as usize).clamp(1, 8) - 1;
+                    let hit_idx = (src.get(ParamId::Special(1)).round() as usize).clamp(1, 8) - 1;
                     // Legacy sessions (pitch marker unset) predate End: full length.
-                    let end = if inst.special_value(10) < 0.5 {
+                    let end = if src.get(ParamId::Special(10)) < 0.5 {
                         1.0
                     } else {
-                        inst.special_value(11)
+                        src.get(ParamId::Special(11))
                     };
-                    Some((&bank.hits[hit_idx][..], inst.special_value(3), end))
+                    Some((&bank.hits[hit_idx][..], src.get(ParamId::Special(3)), end))
                 } else {
                     None
                 };
@@ -1496,7 +1506,7 @@ pub fn draw_sound_panel(
                                 decay,
                                 release_curve, // repurposed as the bipolar attack curve
                                 decay_curve,
-                                inst.special_value(2) > 0.5,
+                                src.get(ParamId::Special(2)) > 0.5,
                             );
                         } else {
                             // A-H-D bipolar: `release_curve` is repurposed as the
@@ -1528,11 +1538,11 @@ pub fn draw_sound_panel(
                                     ui,
                                     filt,
                                     filter_env_amount,
-                                    inst.special_value(12), // Filter Attack
-                                    inst.special_value(13), // Filter Hold
+                                    src.get(ParamId::Special(12)), // Filter Attack
+                                    src.get(ParamId::Special(13)), // Filter Hold
                                     filter_env_decay,
-                                    inst.special_value(16), // Filter Atk Curve
-                                    inst.special_value(15), // Filter Dec Curve
+                                    src.get(ParamId::Special(16)), // Filter Atk Curve
+                                    src.get(ParamId::Special(15)), // Filter Dec Curve
                                 );
                             } else if voice_idx == 17 {
                                 // SDrex: A-H-D filter envelope.
@@ -1540,11 +1550,11 @@ pub fn draw_sound_panel(
                                     ui,
                                     filt,
                                     filter_env_amount,
-                                    inst.special_value(13), // Filter Attack
-                                    inst.special_value(16), // Filter Hold
+                                    src.get(ParamId::Special(13)), // Filter Attack
+                                    src.get(ParamId::Special(16)), // Filter Hold
                                     filter_env_decay,
-                                    inst.special_value(14), // Filter Atk Curve
-                                    inst.special_value(15), // Filter Dec Curve
+                                    src.get(ParamId::Special(14)), // Filter Atk Curve
+                                    src.get(ParamId::Special(15)), // Filter Dec Curve
                                 );
                             } else {
                                 draw_filter_envelope(
@@ -1574,7 +1584,7 @@ pub fn draw_sound_panel(
                             .iter()
                             .filter(|d| d.family == family && d.name.starts_with("buzz_gate"))
                         {
-                            let mut value = inst.special_value(def.special_index);
+                            let mut value = src.get(ParamId::Special(def.special_index));
                             let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
                             if draw_editor_slider_row(
                                 ui,
@@ -1588,8 +1598,7 @@ pub fn draw_sound_panel(
                             )
                             .changed()
                             {
-                                inst.set_special(def.special_index, value);
-                                sound_settings.bump_version();
+                                src.set(ParamId::Special(def.special_index), value);
                             }
                         }
                     });
@@ -1597,9 +1606,9 @@ pub fn draw_sound_panel(
                     draw_buzz_gate_graph(
                         ui,
                         params.algos()[state.selected_instrument].value() == 1,
-                        inst.special_value(0),
-                        inst.special_value(1),
-                        inst.special_value(2),
+                        src.get(ParamId::Special(0)),
+                        src.get(ParamId::Special(1)),
+                        src.get(ParamId::Special(2)),
                     );
                 });
             }
@@ -1612,9 +1621,12 @@ pub fn draw_sound_panel(
                 });
         });
 
-    if changed {
-        sound_settings.bump_version();
-    }
+    // [184] One flush per frame, whatever the scope wrote. The source tracks its
+    // own dirty flag, which is stricter than the old `changed` bool: it also
+    // covers the special-param rows, which used to bump the version each on their
+    // own. `changed` is kept only as a local record that a row was edited.
+    src.commit();
+    let _ = changed;
 }
 
 pub fn store_field(
