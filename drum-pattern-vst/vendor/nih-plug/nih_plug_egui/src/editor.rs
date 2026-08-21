@@ -53,7 +53,23 @@ pub mod win_keyboard {
 
     /// Temporary diagnostic log for the Windows keyboard workaround.
     /// Writes to %TEMP%\flash_drum_kbd.log. Remove once keyboard input is stable.
+    /// Keyboard-interception trace, **debug builds only**.
+    ///
+    /// Kept rather than deleted because swallowing plugin key events is a
+    /// per-host problem: Studio One, REAPER, Ableton and Cubase each filter
+    /// differently, so this trace is what makes the next host debuggable. But it
+    /// must not run in a shipped build: it used to open, append to and close a
+    /// file in `%TEMP%` **on the UI thread** at every keyboard-focus change, and
+    /// the file grew without bound (471 KB after a single testing session).
+    ///
+    /// The `format!` at the call sites still runs in release — an ordinary
+    /// UI-thread allocation on a focus change, which is not worth turning nine
+    /// call sites into a macro for.
     fn kbd_log(msg: &str) {
+        if !cfg!(debug_assertions) {
+            let _ = msg;
+            return;
+        }
         use std::fs::OpenOptions;
         use std::io::Write;
         let path = std::env::temp_dir().join("flash_drum_kbd.log");
