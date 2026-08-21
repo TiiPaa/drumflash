@@ -3,7 +3,7 @@
 use crate::sequencer::SharedPattern;
 use crate::instrument_registry::StandardField;
 use crate::param_id::ParamId;
-use crate::ui::param_source::{GlobalSource, ParamSource};
+use crate::ui::param_source::{GlobalSource, ParamSource, PlockSource};
 use crate::sound_settings::SoundSettingsState;
 use crate::synthesis::{self, DrumVoice, VoiceSettings};
 use crate::track::TrackLayoutState;
@@ -706,6 +706,8 @@ pub fn draw_sound_panel(
     params: &DrumFlashParams,
     setter: &ParamSetter,
     state: &mut EditorUIState,
+    plock: &crate::plock::PlockState,
+    pattern: &SharedPattern,
 ) {
     state.selected_instrument = state.selected_instrument.min(crate::track::MAX_TRACKS - 1);
     state.selected_track_slot = state.selected_instrument;
@@ -727,6 +729,65 @@ pub fn draw_sound_panel(
         header_rect.bottom(),
         egui::Stroke::new(1.0, LINE()),
     );
+    let panel_algo = PanelAlgo {
+        param: params.algos()[state.selected_instrument],
+        setter,
+    };
+
+    // [184] Which store do the rows edit this frame? A cell selected with a
+    // right-click puts the panel on that step's p-lock; anything else falls back
+    // to the lane's global sound. `resolve_edit_scope` is pure and unit-tested,
+    // so the rules (another lane, Song/Follow mode, dead lane, fused cell) live
+    // in one place instead of being re-derived here.
+    let slot = state.selected_instrument;
+    let lane_master_length = params.pattern_length.value().clamp(1, 64) as usize;
+    let lane_length = crate::ui::editor_state::effective_lane_length_for_ui(
+        params,
+        slot,
+        lane_master_length,
+    );
+    let fusions = pattern.load_fusions(slot);
+    let resolved = crate::ui::editor_state::resolve_edit_scope(
+        state.sound_edit_target,
+        slot,
+        params.track_layout.state.is_active(slot),
+        lane_length,
+        |step| {
+            fusions
+                .iter()
+                .find(|group| {
+                    step >= group.start_cell as usize && step <= group.end_cell as usize
+                })
+                .map(|group| group.start_cell as usize)
+        },
+        // Follow ON is fine ([184]): the selection targets a fixed (lane, step),
+        // whatever page the grid happens to be showing. Song mode is not: the
+        // pattern itself changes underneath.
+        !params.song_mode.value(),
+    );
+    if resolved.drop_selection {
+        state.sound_edit_target = None;
+    }
+    let mut src: Box<dyn ParamSource + '_> = match resolved.scope {
+        crate::ui::editor_state::EditScope::LaneGlobal => Box::new(GlobalSource::new(
+            sound_settings,
+            slot,
+            voice_idx,
+            &panel_algo,
+        )),
+        crate::ui::editor_state::EditScope::StepPlock { step } => Box::new(PlockSource::new(
+            plock,
+            step,
+            GlobalSource::new(sound_settings, slot, voice_idx, &panel_algo),
+        )),
+    };
+    // Badge content for the header below: `Some(step)` = editing that step's
+    // p-lock, `None` = editing the lane.
+    let scope_badge = match resolved.scope {
+        crate::ui::editor_state::EditScope::StepPlock { step } => Some(step),
+        crate::ui::editor_state::EditScope::LaneGlobal => None,
+    };
+
     ui.allocate_new_ui(
         egui::UiBuilder::new()
             .max_rect(header_rect.shrink2(Vec2::new(14.0, 0.0)))
@@ -753,6 +814,52 @@ pub fn draw_sound_panel(
                 };
                 ui.label(RichText::new(header_name).font(f_mono(11.0)).color(INK3()));
                 // (Engine selector belongs to the future modular phase — omitted for now.)
+
+                // [184] Scope badge, flush right: says whether the rows below edit
+                // the lane's sound or one step's p-lock, and offers the way back.
+                // Always drawn, so the header never changes height.
+                ui.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),
+                    |ui| match scope_badge {
+                        Some(step) => {
+                            let cleared = ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("x").font(f_mono_sb(11.0)).color(INK()),
+                                    )
+                                    .min_size(Vec2::new(20.0, 20.0))
+                                    .fill(PANEL2())
+                                    .stroke(egui::Stroke::new(1.0, LINE2())),
+                                )
+                                .on_hover_text("Back to the lane's own sound")
+                                .clicked();
+                            if cleared {
+                                state.sound_edit_target = None;
+                            }
+                            ui.add_space(6.0);
+                            ui.label(
+                                RichText::new(format!("Step {}", step + 1))
+                                    .font(f_mono_sb(11.0))
+                                    .color(PL_LINK()),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new("P-Lock")
+                                    .font(f_sans_sb(11.0))
+                                    .color(PL_LINK()),
+                            )
+                            .on_hover_text(
+                                "Editing this step's sound p-lock. Rows in accent colour                                  override the lane; the others follow it.",
+                            );
+                        }
+                        None => {
+                            ui.label(RichText::new("Lane").font(f_sans_sb(11.0)).color(INK3()))
+                                .on_hover_text(
+                                    "Editing the lane's own sound. Right-click a step in the                                      grid to edit that step's p-lock instead.",
+                                );
+                        }
+                    },
+                );
             });
         },
     );
@@ -810,6 +917,18 @@ pub fn draw_sound_panel(
             state.sound_editor_tab = tab;
         }
     }
+
+    // [184] In p-lock scope, an accent rule under the tabs. The rows below edit
+    // ONE step, not the lane, and that has to be unmistakable at a glance — the
+    // header badge alone is easy to miss. Painted over the existing seam, so it
+    // costs no height and cannot shift the scroll area.
+    if scope_badge.is_some() {
+        let rule = egui::Rect::from_min_size(
+            egui::pos2(tabs_rect.left(), tabs_rect.bottom() - 2.0),
+            Vec2::new(tabs_rect.width(), 2.0),
+        );
+        ui.painter().rect_filled(rule, 0.0, PL_LINK());
+    }
     // Hairline between the two tabs + bottom border of the toggle band.
     ui.painter().vline(
         tabs_rect.center().x,
@@ -826,30 +945,19 @@ pub fn draw_sound_panel(
     // [184] Every row reads and writes through this source. Today it is always
     // the lane's global sound; swapping it for a `PlockSource` is what will make
     // the same rows edit one step's p-lock.
-    let panel_algo = PanelAlgo {
-        param: params.algos()[state.selected_instrument],
-        setter,
-    };
-    let mut src = GlobalSource::new(
-        sound_settings,
-        state.selected_instrument,
-        voice_idx,
-        &panel_algo,
-    );
-    let std_value = |src: &GlobalSource, field| src.get(ParamId::Std(field));
-    let mut freq = std_value(&src, StandardField::Freq);
-    let mut decay = std_value(&src, StandardField::Decay);
-    let mut vol = std_value(&src, StandardField::Volume);
-    let mut filt = std_value(&src, StandardField::FilterFreq);
-    let mut attack = std_value(&src, StandardField::Attack);
-    let mut release = std_value(&src, StandardField::Release);
-    let mut decay_curve = std_value(&src, StandardField::DecayCurve);
-    let mut release_curve = std_value(&src, StandardField::ReleaseCurve);
-    let mut hold = std_value(&src, StandardField::Hold);
-    let mut filter_env_amount = std_value(&src, StandardField::FilterEnvAmount);
-    let mut filter_env_decay = std_value(&src, StandardField::FilterEnvDecay);
-    let mut analog = std_value(&src, StandardField::Analog);
-    let mut stereo = std_value(&src, StandardField::Stereo);
+    let mut freq = src.get(ParamId::Std(StandardField::Freq));
+    let mut decay = src.get(ParamId::Std(StandardField::Decay));
+    let mut vol = src.get(ParamId::Std(StandardField::Volume));
+    let mut filt = src.get(ParamId::Std(StandardField::FilterFreq));
+    let mut attack = src.get(ParamId::Std(StandardField::Attack));
+    let mut release = src.get(ParamId::Std(StandardField::Release));
+    let mut decay_curve = src.get(ParamId::Std(StandardField::DecayCurve));
+    let mut release_curve = src.get(ParamId::Std(StandardField::ReleaseCurve));
+    let mut hold = src.get(ParamId::Std(StandardField::Hold));
+    let mut filter_env_amount = src.get(ParamId::Std(StandardField::FilterEnvAmount));
+    let mut filter_env_decay = src.get(ParamId::Std(StandardField::FilterEnvDecay));
+    let mut analog = src.get(ParamId::Std(StandardField::Analog));
+    let mut stereo = src.get(ParamId::Std(StandardField::Stereo));
     let mut changed = false;
 
     // One-shot migration for sampler builds that persisted pitch in Hz.

@@ -82,6 +82,22 @@ New-Item -ItemType Directory -Force -Path $contentDir | Out-Null
 Copy-Item -Path $sourceDll -Destination $destFile -Force
 Copy-Item -Path $sourceDragHelper -Destination $destDragHelper -Force
 
+# Archive the debug symbols under the build id. The .pdb is NOT shipped inside
+# the bundle (it stays out of the VST3), but each build overwrites
+# target/release/*.pdb, so without this a crash dump from an older build can no
+# longer be symbolised. See task [186]: a stripped-looking stack cost an hour.
+$symbolDir = Join-Path $PSScriptRoot "build/symbols"
+$sourcePdb = Join-Path $PSScriptRoot "target/release/drum_pattern_vst.pdb"
+if (Test-Path $sourcePdb) {
+    New-Item -ItemType Directory -Force -Path $symbolDir | Out-Null
+    Copy-Item -Path $sourcePdb -Destination (Join-Path $symbolDir "drum_pattern_vst-$buildId.pdb") -Force
+    # Keep the 10 most recent so the folder does not grow without bound.
+    Get-ChildItem $symbolDir -Filter "drum_pattern_vst-*.pdb" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -Skip 10 |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
 $dllInfo = Get-Item $sourceDll
 $bundleInfo = Get-Item $destFile
 $helperInfo = Get-Item $destDragHelper

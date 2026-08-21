@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-21 — [184] phase 2 : éditer le p-lock d'un pas depuis l'onglet Sound (build 20260821-124406)
+
+**Branche:** `main` · **Build:** `20260821-124406`, corrigé par `20260821-141012`
+**Validation:** `cargo test` 327+1+203 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-21)** : 9 points sur 10, le 10ᵉ ayant révélé un verrou d'origine (voir la dernière puce).
+
+- **Le clic droit sur une cellule pointe l'onglet Sound sur ce pas.** Le panneau édite alors le **p-lock du pas** au lieu du son global de la lane ; toutes ses rangées, y compris les six graphes, suivent. Le menu contextuel s'ouvre toujours et garde ses rangées : les deux éditeurs écrivent le même stockage, ce qui permet de les comparer sur la même valeur pendant cette phase.
+- **Sélection persistante et sûre** : nouvel état `sound_edit_target` (`SelectedCell`), distinct de `PlockPopup` — la popup sert aussi de drapeau modal qui neutralise les clics de la grille, ce que la sélection ne doit **jamais** faire. Le pas est stocké **brut** et normalisé au démarrage d'une fusion à la lecture, donc supprimer une fusion restitue la cellule exacte.
+- **Un résolveur pur et testé**, `resolve_edit_scope` : les règles vivent en un seul endroit au lieu d'être redérivées dans l'UI — aucune sélection → global ; sélection sur une autre lane → global mais **conservée** (revenir la restitue) ; Song mode ou grid Follow → global, conservée aussi (la création de p-lock y est déjà interdite) ; lane inactive ou pas au-delà de la longueur de lane → sélection abandonnée ; cellule couverte par une fusion → normalisée sur la cellule de départ, seule porteuse du son du groupe. **6 tests.**
+- **Invalidations** aux endroits qui rapiéçaient déjà `plock_popup` : réordonnancement de lane (la sélection suit son slot), suppression de lane, Clear/Randomize d'une lane, changement de lane sélectionnée. Les `clear_all()` en masse n'ont **pas** besoin de crochet : la cellule existe toujours, elle n'a simplement plus d'override, et c'est exactement ce que renvoie le résolveur.
+- **Repères visuels** : badge `P-Lock / Step N` aligné à droite dans l'en-tête, avec un bouton `x` qui rend la main à la lane, et un **filet d'accent sous les onglets** en mode p-lock — le badge seul est trop facile à manquer alors que la distinction « j'édite un pas » / « j'édite la lane » est critique. Aucun décalage de mise en page : le filet est peint sur la couture existante.
+- **Le clic droit en mode Sequencer ne retargette pas le panneau** : ce geste concerne probabilité/stutter/nudge, il ne doit pas déplacer silencieusement l'édition du son.
+- Sous le capot, la source de valeurs devient polymorphe (`Box<dyn ParamSource>`) : `GlobalSource` ou `PlockSource` selon la portée, le reste du panneau ignore la différence.
+- **Verrou Follow levé** (build `20260821-141012`) : le clic droit était interdit en mode Follow **et** en mode Song depuis l'origine, au motif que la grille défile sous le curseur. La validation a montré que c'était surtout gênant. Follow est donc rouvert — la cellule sous le curseur **au moment du clic** est bien celle qu'on visait, la popup s'ancre à ce point, et le badge nomme le pas même quand sa page a défilé. **Song mode reste verrouillé** : là, c'est le pattern entier qui change sous vous, donc le pas pourrait appartenir à un autre pattern une seconde plus tard — un vrai danger, pas un inconfort visuel.
+- **Pas encore fait, en phase 2c** : le marquage par rangée des paramètres surchargés et le ↺ de retour au global. Ça demande de traverser cinq helpers de rangée et huit sites d'appel, donc c'est livré à part plutôt que bâclé ici.
+
 ## 2026-08-21 — [186] CRASH de l'hôte au rechargement du plugin : classe de fenêtre fantôme (build 20260821-120829)
 
 **Branche:** `main` · **Build:** `20260821-120829`

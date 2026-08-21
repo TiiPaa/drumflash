@@ -816,11 +816,29 @@ fn draw_legacy_slot_lane_v2(
                 }
 
                 if !beyond_len && response.secondary_clicked() {
-                    // Plock editing is only allowed in Pattern mode with grid Follow OFF.
-                    // Song mode switches patterns automatically and Follow ON scrolls pages,
-                    // both of which make the grid unstable under the cursor.
-                    if !params.song_mode.value() && !state.follow_mode {
+                    // P-lock editing is allowed in Pattern mode, Follow ON included
+                    // ([184]): the cell under the cursor AT CLICK TIME is the cell
+                    // the user aimed at, the popup anchors to that point, and the
+                    // panel's badge names the step even once its page has scrolled
+                    // away. Song mode stays locked out — there the whole PATTERN
+                    // changes under you, so the step could belong to another
+                    // pattern a second later, which is a real hazard rather than a
+                    // cosmetic one.
+                    if !params.song_mode.value() {
                         select_legacy_track(state, slot_idx);
+                        // [184] The same gesture points the Lane Editor at this
+                        // cell. Only in Sound p-lock mode: a right-click in
+                        // Sequencer mode is about probability/stutter/nudge and
+                        // must not silently retarget the sound panel.
+                        if !state.sequencer_mode {
+                            state.sound_edit_target =
+                                Some(crate::ui::editor_state::SelectedCell {
+                                    slot: slot_idx,
+                                    step: source_step,
+                                });
+                            state.sound_editor_tab =
+                                crate::ui::editor_state::SoundEditorTab::Sound;
+                        }
                         if let Some(pos) = response.interact_pointer_pos() {
                             state.plock_popup = Some(PlockPopup {
                                 instrument: slot_idx,
@@ -1295,6 +1313,12 @@ fn apply_lane_reorder_move(
         popup.instrument = remap_slot_index(&order, popup.instrument);
         popup
     });
+    // [184] The cell selection follows its lane too, or it would suddenly point
+    // at whichever lane took that slot.
+    state.sound_edit_target = state.sound_edit_target.map(|mut cell| {
+        cell.slot = remap_slot_index(&order, cell.slot);
+        cell
+    });
 
     let mut new_layout =
         PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
@@ -1395,6 +1419,10 @@ fn deactivate_slot(
     state.plock_popup = state
         .plock_popup
         .filter(|popup| popup.instrument != slot_idx);
+    // [184] The lane's p-locks go with it, so the cell selection must too.
+    state.sound_edit_target = state
+        .sound_edit_target
+        .filter(|cell| cell.slot != slot_idx);
     state.lane_clear_grid_confirm = None;
     state.lane_delete_confirm = None;
 
