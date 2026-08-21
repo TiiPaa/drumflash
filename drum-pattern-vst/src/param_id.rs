@@ -30,18 +30,21 @@
 //! Confusing the two silently shifts every value, which is exactly what this
 //! module makes impossible.
 //!
-//! # The Attack / special-4 collision
+//! # The Attack / special-4 collision, and how it was repaired
 //!
-//! Because Attack landed on 18 == `SPECIAL_FIELD_START + 4`, the special of
-//! index 4 shares Attack's storage slot and is therefore **not** independently
-//! p-lockable (see [`ParamId::is_lockable`]). Both `PlockState::get_settings`
-//! and `set_settings` skip it, so no existing blob holds a value for it.
+//! Attack landed on field 18 == `SPECIAL_FIELD_START + 4`, so the special of
+//! index 4 shared its slot and was silently ignored on every voice - the
+//! Kick's Saturation Output Gain, SDrex's Wet, Buzz's Noise Type...
 //!
-//! It **can** be repaired without touching the format — the highest
-//! `special_index` declared by any voice is 17, so slots 18..31 are free and
-//! `Special(4)` could be re-homed on field 45 — but a legacy full snapshot has
-//! all 46 mask bits set, so the mask needs a version marker before that value
-//! can be trusted. That is deliberately a separate task, not part of [184].
+//! [187] re-homed it on field **45**, the slot of special index
+//! [`RESERVED_SPECIAL_INDEX`], which **no voice declares** (the highest index
+//! across the 18 instruments is 17). The blob length is unchanged, so there is
+//! no new persistence version - and field 12 stays untouched for the Clap's own
+//! legacy echo fallback, which is precisely why that slot was NOT the one
+//! chosen.
+//!
+//! The one hazard was old full snapshots: they set all 46 mask bits, field 45
+//! included, with the value `0.0`. See [`sanitize_field_mask`].
 
 use crate::instrument_registry::StandardField;
 
@@ -64,8 +67,48 @@ pub const ATTACK_FIELD: usize = 18;
 /// Dead storage: only the Clap still reads it, as a legacy fallback.
 pub const LEGACY_CLAP_ECHO_FIELD: usize = 12;
 
+/// Where the special that Attack shadowed is re-homed ([187]).
+///
+/// Attack sits on field 18 == `SPECIAL_FIELD_START + 4`, so special index 4 had
+/// nowhere to live and was simply dropped. It now uses the slot of special index
+/// **31**, which **no voice declares** — the highest index across all 18
+/// instruments is 17 — so nothing is displaced and the dead legacy clap-echo
+/// field 12 stays untouched for the Clap's own fallback.
+pub const SPECIAL_4_FIELD: usize = SPECIAL_FIELD_START + RESERVED_SPECIAL_INDEX;
+/// Reserved: its slot is lent to special index 4. Never declare it in the registry.
+pub const RESERVED_SPECIAL_INDEX: usize = 31;
+
+/// Every field a parameter can own. The only hole is field 12, the dead legacy
+/// clap-echo slot, which is not a parameter.
+pub const ADDRESSABLE_MASK: u64 =
+    (((1u64 << FIELD_COUNT) - 1)) & !(1u64 << LEGACY_CLAP_ECHO_FIELD);
+/// What `set_all()` used to write: all 46 bits, field 12 included. Because a
+/// snapshot taken since [187] writes [`ADDRESSABLE_MASK`] instead, this exact
+/// value now identifies a mask written by an **older build** — which is what lets
+/// [`sanitize_field_mask`] refuse to trust its field 45.
+pub const LEGACY_ALL_BITS: u64 = (1u64 << FIELD_COUNT) - 1;
+
+/// Repair a raw field mask coming from persistence, a pattern-bank slot, a preset
+/// or the clipboard.
+///
+/// An old full snapshot has all 46 bits set, field 45 included, with the value
+/// `0.0` written there by the old `set_settings` (it stored `special[31]`, which
+/// no voice uses). Reading that as the re-homed special index 4 would silently
+/// zero, say, the Kick's Saturation Output Gain on every snapshot step. So for
+/// that one mask value — and only that one — bit 45 is cleared, which reproduces
+/// the old behaviour exactly: the parameter simply follows the lane.
+pub const fn sanitize_field_mask(mask: u64) -> u64 {
+    if mask == LEGACY_ALL_BITS {
+        ADDRESSABLE_MASK & !(1u64 << SPECIAL_4_FIELD)
+    } else {
+        mask
+    }
+}
+
 const _: () = assert!(ATTACK_FIELD == SPECIAL_FIELD_START + 4);
 const _: () = assert!(FIELD_COUNT == SPECIAL_FIELD_START + SPECIAL_FIELD_COUNT);
+const _: () = assert!(SPECIAL_4_FIELD == FIELD_COUNT - 1);
+const _: () = assert!(SPECIAL_4_FIELD != ATTACK_FIELD);
 
 /// Identity of one editable per-slot parameter, independent of which store
 /// holds its value.
@@ -91,6 +134,10 @@ impl ParamId {
         match self {
             ParamId::Std(field) => Some(field.plock_field_index()),
             ParamId::Algo => Some(ALGO_FIELD),
+            // Index 4 is re-homed on the reserved slot; index 31 lends it and is
+            // therefore not addressable itself ([187]).
+            ParamId::Special(4) => Some(SPECIAL_4_FIELD),
+            ParamId::Special(RESERVED_SPECIAL_INDEX) => None,
             ParamId::Special(index) => {
                 if index < SPECIAL_FIELD_COUNT {
                     Some(SPECIAL_FIELD_START + index)
@@ -114,6 +161,9 @@ impl ParamId {
         if field == ALGO_FIELD {
             return Some(ParamId::Algo);
         }
+        if field == SPECIAL_4_FIELD {
+            return Some(ParamId::Special(4));
+        }
         if let Some(std_field) = StandardField::ALL
             .iter()
             .copied()
@@ -134,22 +184,18 @@ impl ParamId {
     /// reason**, never hide it — hiding is what makes today's behaviour
     /// inexplicable to the user.
     pub const fn is_lockable(self) -> bool {
-        match self {
-            ParamId::FreqMode => false,
-            ParamId::Special(index) => {
-                index < SPECIAL_FIELD_COUNT
-                    && SPECIAL_FIELD_START + index != StandardField::Attack.plock_field_index()
-            }
-            _ => true,
-        }
+        self.plock_field().is_some()
     }
 
     /// Why this parameter has no per-step slot, for the greyed row's tooltip.
     pub const fn unlockable_reason(self) -> Option<&'static str> {
         match self {
             ParamId::FreqMode => Some("Display mode: applies to the whole lane"),
+            ParamId::Special(RESERVED_SPECIAL_INDEX) => Some(
+                "Reserved slot: no instrument declares this parameter, and its                  storage is lent to another one",
+            ),
             ParamId::Special(_) if !self.is_lockable() => {
-                Some("Shares its p-lock slot with Attack - lock Attack instead")
+                Some("Cannot be locked per step: no slot in the p-lock storage format")
             }
             _ => None,
         }
@@ -160,10 +206,11 @@ impl ParamId {
 mod tests {
     use super::*;
 
-    /// The exact table the six hand-written mappings agreed on, frozen so their
-    /// removal is provably behaviour-preserving.
+    /// The table the six hand-written mappings agreed on, frozen so their removal
+    /// is provably behaviour-preserving. Special index 4 is the one deliberate
+    /// change ([187]): it moved from "nowhere" to the reserved slot.
     #[test]
-    fn plock_field_mapping_is_unchanged() {
+    fn plock_field_mapping_is_pinned() {
         let expect = [
             (StandardField::Freq, 0usize),
             (StandardField::Decay, 1),
@@ -186,13 +233,25 @@ mod tests {
         assert_eq!(ParamId::Algo.plock_field(), Some(13));
         assert_eq!(ParamId::FreqMode.plock_field(), None);
         for index in 0..SPECIAL_FIELD_COUNT {
+            let expected = match index {
+                // Attack owns field 18, so index 4 borrows the reserved slot...
+                4 => Some(SPECIAL_4_FIELD),
+                // ...which is why index 31 has none of its own.
+                RESERVED_SPECIAL_INDEX => None,
+                _ => Some(SPECIAL_FIELD_START + index),
+            };
             assert_eq!(
                 ParamId::Special(index).plock_field(),
-                Some(SPECIAL_FIELD_START + index),
+                expected,
                 "special {index}"
             );
         }
         assert_eq!(ParamId::Special(SPECIAL_FIELD_COUNT).plock_field(), None);
+        assert_ne!(
+            ParamId::Special(4).plock_field(),
+            ParamId::Std(StandardField::Attack).plock_field(),
+            "special 4 must no longer collide with Attack"
+        );
     }
 
     #[test]
@@ -204,15 +263,25 @@ mod tests {
         }
         assert_eq!(ParamId::from_plock_field(ALGO_FIELD), Some(ParamId::Algo));
         for index in 0..SPECIAL_FIELD_COUNT {
-            let field = SPECIAL_FIELD_START + index;
-            let expected = if field == StandardField::Attack.plock_field_index() {
-                // The collision: field 18 belongs to Attack, not to special 4.
-                ParamId::Std(StandardField::Attack)
-            } else {
-                ParamId::Special(index)
+            let Some(field) = ParamId::Special(index).plock_field() else {
+                assert_eq!(index, RESERVED_SPECIAL_INDEX);
+                continue;
             };
-            assert_eq!(ParamId::from_plock_field(field), Some(expected), "field {field}");
+            assert_eq!(
+                ParamId::from_plock_field(field),
+                Some(ParamId::Special(index)),
+                "special {index} -> field {field}"
+            );
         }
+        // Field 18 belongs to Attack; special 4 lives on the reserved slot.
+        assert_eq!(
+            ParamId::from_plock_field(ATTACK_FIELD),
+            Some(ParamId::Std(StandardField::Attack))
+        );
+        assert_eq!(
+            ParamId::from_plock_field(SPECIAL_4_FIELD),
+            Some(ParamId::Special(4))
+        );
         // Field 12 is the dead legacy clap-echo slot: no parameter claims it.
         assert_eq!(ParamId::from_plock_field(12), None);
         assert_eq!(ParamId::from_plock_field(FIELD_COUNT), None);
@@ -243,28 +312,60 @@ mod tests {
         let unclaimed: Vec<usize> = (0..FIELD_COUNT).filter(|f| owner[*f].is_none()).collect();
         assert_eq!(
             unclaimed,
-            vec![12],
-            "only the legacy clap-echo field may be unclaimed"
+            vec![LEGACY_CLAP_ECHO_FIELD],
+            "only the legacy clap-echo field may be unclaimed - it belongs to the              Clap's own fallback, not to a parameter"
         );
     }
 
+    /// Since [187] the only special without a slot is the reserved one, which no
+    /// instrument declares — so in practice every declared parameter is lockable.
     #[test]
-    fn only_the_colliding_special_is_unlockable() {
+    fn only_the_reserved_special_is_unlockable() {
         let unlockable: Vec<usize> = (0..SPECIAL_FIELD_COUNT)
             .filter(|i| !ParamId::Special(*i).is_lockable())
             .collect();
-        assert_eq!(
-            unlockable,
-            vec![StandardField::Attack.plock_field_index() - SPECIAL_FIELD_START],
-            "exactly one special may be shadowed by the Attack field"
+        assert_eq!(unlockable, vec![RESERVED_SPECIAL_INDEX]);
+        assert!(
+            ParamId::Special(4).is_lockable(),
+            "the special Attack used to shadow is lockable again"
         );
         assert!(ParamId::Std(StandardField::Attack).is_lockable());
         assert!(ParamId::Algo.is_lockable());
         assert!(!ParamId::FreqMode.is_lockable());
-        // Every unlockable id must be able to explain itself to the user.
-        for id in [ParamId::FreqMode, ParamId::Special(4)] {
+        for id in [ParamId::FreqMode, ParamId::Special(RESERVED_SPECIAL_INDEX)] {
             assert!(id.unlockable_reason().is_some(), "{id:?} needs a reason");
         }
         assert!(ParamId::Std(StandardField::Freq).unlockable_reason().is_none());
+    }
+
+    /// An old full snapshot wrote all 46 mask bits, field 45 included, with the
+    /// value 0.0 (it stored `special[31]`, which no voice uses). Trusting that
+    /// would zero the re-homed special index 4 — the Kick's Saturation Output
+    /// Gain, for instance — on every snapshot step.
+    #[test]
+    fn a_legacy_full_snapshot_mask_does_not_claim_the_rehomed_special() {
+        let repaired = sanitize_field_mask(LEGACY_ALL_BITS);
+        assert_eq!(repaired & (1u64 << SPECIAL_4_FIELD), 0, "field 45 not trusted");
+        assert_eq!(repaired & (1u64 << LEGACY_CLAP_ECHO_FIELD), 0, "field 12 is not a param");
+        // Everything else the old snapshot claimed is still claimed.
+        for field in 0..FIELD_COUNT {
+            if field == SPECIAL_4_FIELD || field == LEGACY_CLAP_ECHO_FIELD {
+                continue;
+            }
+            assert_ne!(repaired & (1u64 << field), 0, "field {field} must survive");
+        }
+    }
+
+    /// A snapshot taken since [187] marks the addressable fields, which is a
+    /// DIFFERENT value from the legacy all-bits mask — that difference is the
+    /// version marker, so it must not be sanitised away.
+    #[test]
+    fn a_current_snapshot_mask_is_left_alone() {
+        assert_ne!(ADDRESSABLE_MASK, LEGACY_ALL_BITS);
+        assert_eq!(sanitize_field_mask(ADDRESSABLE_MASK), ADDRESSABLE_MASK);
+        assert_ne!(ADDRESSABLE_MASK & (1u64 << SPECIAL_4_FIELD), 0);
+        // An ordinary partial mask passes through untouched.
+        let partial = (1u64 << 1) | (1u64 << SPECIAL_4_FIELD);
+        assert_eq!(sanitize_field_mask(partial), partial);
     }
 }
