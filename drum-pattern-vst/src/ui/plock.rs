@@ -158,23 +158,9 @@ fn draw_plock_menu(
         }
 
         // ------ Standard fields ------
-        let get_global_value = |field: crate::instrument_registry::StandardField| -> f32 {
-            match field {
-                crate::instrument_registry::StandardField::Freq => global.0,
-                crate::instrument_registry::StandardField::Decay => global.1,
-                crate::instrument_registry::StandardField::Volume => global.2,
-                crate::instrument_registry::StandardField::FilterFreq => global.3,
-                crate::instrument_registry::StandardField::Attack => global.4,
-                crate::instrument_registry::StandardField::Release => global.5,
-                crate::instrument_registry::StandardField::DecayCurve => global.6,
-                crate::instrument_registry::StandardField::ReleaseCurve => global.7,
-                crate::instrument_registry::StandardField::Hold => global.8,
-                crate::instrument_registry::StandardField::FilterEnvAmount => global.9,
-                crate::instrument_registry::StandardField::FilterEnvDecay => global.10,
-                crate::instrument_registry::StandardField::Analog => global.11,
-                crate::instrument_registry::StandardField::Stereo => global.12,
-            }
-        };
+        // [184] One mapping, in `InstrumentSettingsState::standard`.
+        let get_global_value =
+            |field: crate::instrument_registry::StandardField| -> f32 { inst.standard(field) };
 
         let is_bass_drum_plock = matches!(voice_idx, 0 | 11);
         let freq_in_notes_plock =

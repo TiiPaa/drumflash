@@ -45,7 +45,7 @@ impl ParamFamily {
 }
 
 /// Standard sound-setting field index (matches the persistent f32 array order).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StandardField {
     Freq = 0,
     Decay = 1,
@@ -63,6 +63,25 @@ pub enum StandardField {
 }
 
 impl StandardField {
+    /// Every standard field, in discriminant order (= the order of
+    /// `InstrumentSettingsState::load()` and of `sound_settings_default`).
+    /// Lets code iterate the fields without re-listing them ([184]).
+    pub const ALL: [StandardField; 13] = [
+        StandardField::Freq,
+        StandardField::Decay,
+        StandardField::Volume,
+        StandardField::FilterFreq,
+        StandardField::Attack,
+        StandardField::Release,
+        StandardField::DecayCurve,
+        StandardField::ReleaseCurve,
+        StandardField::Hold,
+        StandardField::FilterEnvAmount,
+        StandardField::FilterEnvDecay,
+        StandardField::Analog,
+        StandardField::Stereo,
+    ];
+
     /// Returns the plock field index used in `PlockState`.
     /// This mapping aligns with how `PlockState::get_settings` and `set_settings`
     /// store values internally (see `plock.rs`).

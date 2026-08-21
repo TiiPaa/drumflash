@@ -113,6 +113,87 @@ impl InstrumentSettingsState {
         std::array::from_fn(|i| f32::from_bits(self.special[i].load(Ordering::Relaxed)))
     }
 
+    /// Read one parameter of this slot by its canonical id ([184]).
+    ///
+    /// `ParamId::Algo` is NOT owned here — the algo is a nih-plug `IntParam`, so
+    /// the UI layer routes it. Reading it here returns 0.0 rather than lying.
+    pub fn get(&self, id: crate::param_id::ParamId) -> f32 {
+        use crate::param_id::ParamId;
+        match id {
+            ParamId::Std(field) => self.standard(field),
+            ParamId::Special(index) => self.special_value(index),
+            ParamId::FreqMode => {
+                if self.freq_mode() {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            ParamId::Algo => {
+                debug_assert!(false, "the algo lives in a nih-plug param, not in the atomics");
+                0.0
+            }
+        }
+    }
+
+    /// Write one parameter of this slot by its canonical id ([184]).
+    /// Does **not** bump the version — the caller batches that once per frame.
+    pub fn set(&self, id: crate::param_id::ParamId, value: f32) {
+        use crate::param_id::ParamId;
+        match id {
+            ParamId::Std(field) => self.set_standard(field, value),
+            ParamId::Special(index) => self.set_special(index, value),
+            ParamId::FreqMode => self.set_freq_mode(value >= 0.5),
+            ParamId::Algo => {
+                debug_assert!(false, "the algo lives in a nih-plug param, not in the atomics")
+            }
+        }
+    }
+
+    /// One standard field, by name. The single mapping of `StandardField` onto
+    /// the per-slot atomics — the counterpart of `set_standard`, and the reason
+    /// the `load()` tuple order (Attack at 4) can no longer be confused with the
+    /// p-lock index (Attack at 18).
+    pub fn standard(&self, field: crate::instrument_registry::StandardField) -> f32 {
+        use crate::instrument_registry::StandardField as F;
+        let raw = match field {
+            F::Freq => &self.frequency,
+            F::Decay => &self.decay,
+            F::Volume => &self.volume,
+            F::FilterFreq => &self.filter_freq,
+            F::Attack => &self.attack,
+            F::Release => &self.release,
+            F::DecayCurve => &self.decay_curve,
+            F::ReleaseCurve => &self.release_curve,
+            F::Hold => &self.hold,
+            F::FilterEnvAmount => &self.filter_env_amount,
+            F::FilterEnvDecay => &self.filter_env_decay,
+            F::Analog => &self.analog,
+            F::Stereo => &self.stereo,
+        };
+        f32::from_bits(raw.load(Ordering::Relaxed))
+    }
+
+    pub fn set_standard(&self, field: crate::instrument_registry::StandardField, value: f32) {
+        use crate::instrument_registry::StandardField as F;
+        let raw = match field {
+            F::Freq => &self.frequency,
+            F::Decay => &self.decay,
+            F::Volume => &self.volume,
+            F::FilterFreq => &self.filter_freq,
+            F::Attack => &self.attack,
+            F::Release => &self.release,
+            F::DecayCurve => &self.decay_curve,
+            F::ReleaseCurve => &self.release_curve,
+            F::Hold => &self.hold,
+            F::FilterEnvAmount => &self.filter_env_amount,
+            F::FilterEnvDecay => &self.filter_env_decay,
+            F::Analog => &self.analog,
+            F::Stereo => &self.stereo,
+        };
+        raw.store(value.to_bits(), Ordering::Relaxed);
+    }
+
     pub fn freq_mode(&self) -> bool {
         f32::from_bits(self.freq_mode.load(Ordering::Relaxed)) >= 0.5
     }
