@@ -2240,36 +2240,12 @@ fn current_field_value_for_fusion(
             return plock.values.get(instrument, step, field_index);
         }
     }
-    match field_index {
-        0..=11 | 18 => {
-            let inst = &sound_settings.instruments[instrument];
-            let (freq, decay, vol, filt, attack, release, dc, rc, hold, fea, fed, analog, stereo) =
-                inst.load();
-            match field_index {
-                0 => freq,
-                1 => decay,
-                2 => vol,
-                3 => filt,
-                4 => release,
-                5 => dc,
-                6 => rc,
-                7 => hold,
-                8 => fea,
-                9 => fed,
-                10 => analog,
-                11 => stereo,
-                18 => attack,
-                _ => 0.0,
-            }
-        }
-        _ => {
-            if field_index >= crate::plock::SPECIAL_FIELD_START {
-                let special_index = field_index - crate::plock::SPECIAL_FIELD_START;
-                sound_settings.instruments[instrument].special_value(special_index)
-            } else {
-                0.0
-            }
-        }
+    // [184] One mapping: `ParamId` resolves the field, the accessor reads it.
+    // The algo is excluded on purpose: it lives in a nih-plug param, not in the
+    // atomics, and it is not morphable — so 0.0, exactly as before.
+    match crate::param_id::ParamId::from_plock_field(field_index) {
+        Some(crate::param_id::ParamId::Algo) | None => 0.0,
+        Some(id) => sound_settings.instruments[instrument].get(id),
     }
 }
 

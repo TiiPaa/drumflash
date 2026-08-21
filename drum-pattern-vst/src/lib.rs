@@ -17,6 +17,7 @@ mod groove;
 mod instrument_registry;
 mod midi_export;
 mod pattern_bank;
+mod param_id;
 mod plock;
 mod preset_dumps;
 mod presets;
@@ -2028,40 +2029,23 @@ impl DrumFlashVst {
     }
 
     /// Read the current value of a plock field from VoiceSettings.
+    /// Read the morph source value for a p-lock field index.
+    ///
+    /// [184] The field-to-member mapping lives in `VoiceSettings::get`; this used
+    /// to be a hand-written index list that had to stay in sync with four other
+    /// copies. Still audio-thread safe: a plain match, no allocation.
     fn read_morph_value(
         &self,
         settings: &synthesis::VoiceSettings,
         field_index: usize,
         _voice_idx: usize,
     ) -> f32 {
-        match field_index {
-            0 => settings.frequency,
-            1 => settings.decay,
-            2 => settings.volume,
-            3 => settings.filter_freq,
-            4 => settings.release,
-            5 => settings.decay_curve,
-            6 => settings.release_curve,
-            7 => settings.hold,
-            8 => settings.filter_env_amount,
-            9 => settings.filter_env_decay,
-            10 => settings.analog,
-            11 => settings.stereo,
-            18 => settings.attack,
-            _ => {
-                if field_index >= crate::plock::SPECIAL_FIELD_START
-                    && field_index < crate::plock::FIELD_COUNT
-                {
-                    let special_index = field_index - crate::plock::SPECIAL_FIELD_START;
-                    settings.special.get(special_index).copied().unwrap_or(0.0)
-                } else {
-                    0.0
-                }
-            }
-        }
+        crate::param_id::ParamId::from_plock_field(field_index)
+            .map(|id| settings.get(id))
+            .unwrap_or(0.0)
     }
 
-    /// Apply a morphed value to the given VoiceSettings field.
+    /// Apply a morphed value to the given VoiceSettings field ([184]).
     fn apply_morph_value(
         &self,
         settings: &mut synthesis::VoiceSettings,
@@ -2069,30 +2053,8 @@ impl DrumFlashVst {
         _voice_idx: usize,
         value: f32,
     ) {
-        match field_index {
-            0 => settings.frequency = value,
-            1 => settings.decay = value,
-            2 => settings.volume = value,
-            3 => settings.filter_freq = value,
-            4 => settings.release = value,
-            5 => settings.decay_curve = value,
-            6 => settings.release_curve = value,
-            7 => settings.hold = value,
-            8 => settings.filter_env_amount = value,
-            9 => settings.filter_env_decay = value,
-            10 => settings.analog = value,
-            11 => settings.stereo = value,
-            18 => settings.attack = value,
-            _ => {
-                if field_index >= crate::plock::SPECIAL_FIELD_START
-                    && field_index < crate::plock::FIELD_COUNT
-                {
-                    let special_index = field_index - crate::plock::SPECIAL_FIELD_START;
-                    if special_index < settings.special.len() {
-                        settings.special[special_index] = value;
-                    }
-                }
-            }
+        if let Some(id) = crate::param_id::ParamId::from_plock_field(field_index) {
+            settings.set(id, value);
         }
     }
 

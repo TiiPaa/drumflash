@@ -18,13 +18,14 @@ use crate::sequencer::pattern::INSTRUMENT_COUNT;
 use crate::synthesis::VoiceSettings;
 
 pub const STEP_COUNT: usize = 64;
-pub const FIELD_COUNT: usize = 46; // 13 standard + 1 algo + 32 special
+// The field layout is defined by `param_id`, the module that owns the mapping
+// between a parameter and its slot ([184]); re-exported here so every existing
+// `crate::plock::FIELD_COUNT`-style path keeps working.
+pub use crate::param_id::{
+    ALGO_FIELD, ATTACK_FIELD, FIELD_COUNT, LEGACY_CLAP_ECHO_FIELD, SPECIAL_FIELD_COUNT,
+    SPECIAL_FIELD_START,
+};
 const LEGACY_FIELD_COUNT: usize = 18;
-const LEGACY_CLAP_ECHO_FIELD: usize = 12;
-const ALGO_FIELD: usize = 13;
-pub const SPECIAL_FIELD_START: usize = 14;
-pub const SPECIAL_FIELD_COUNT: usize = 32;
-const ATTACK_FIELD: usize = 18;
 
 /// Active-bit mask: one u64 per instrument (bit = step has a plock).
 /// Stored as atomic so the UI can toggle bits without locking.
@@ -320,6 +321,13 @@ impl PlockState {
     }
 
     /// Clear the plock for a specific step/instrument.
+    /// Drop ONE field's override, keeping the p-lock itself active — the
+    /// per-row revert affordance ([184]). The step keeps following the lane's
+    /// global value for that field (Link semantics).
+    pub fn clear_field(&self, instrument: usize, step: usize, field: usize) {
+        self.field_masks.clear(instrument, step, field);
+    }
+
     pub fn clear(&self, instrument: usize, step: usize) {
         self.masks.set_active(instrument, step, false);
         self.field_masks.clear_all(instrument, step);
