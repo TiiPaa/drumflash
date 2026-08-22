@@ -172,6 +172,9 @@ pub struct EditorUIState {
     /// Cell whose p-lock the Lane Editor edits ([184]). `None` = the lane global.
     #[serde(default)]
     pub sound_edit_target: Option<SelectedCell>,
+    /// Which end of a fused group's morph the panel edits ([184] phase 3).
+    #[serde(skip)]
+    pub morph_edit_end: crate::ui::param_source::MorphEnd,
     /// When true, a click occurred while the p-lock popup was open; suppress step-cell
     /// toggles this frame so the popup (not the cell underneath) handles the click.
     #[serde(skip)]
@@ -210,6 +213,11 @@ pub struct EditorUIState {
     /// Visual flash timer for the Test (T) button when triggered by external MIDI.
     #[serde(skip)]
     pub slot_flash_until: [f64; crate::track::MAX_TRACKS],
+    /// The panel's notice strip was dismissed by hand ([184] ph. 3). Re-armed as
+    /// soon as the situation it describes clears, so a dismissal hides the strip
+    /// for this occurrence and not for good.
+    #[serde(skip)]
+    pub scope_notice_dismissed: bool,
     /// Long-press drag state for a step cell (move step with its plocks).
     #[serde(skip)]
     pub step_drag: Option<DragStepState>,
@@ -322,8 +330,15 @@ pub struct SelectedCell {
 pub enum EditScope {
     /// The lane's global sound: no cell selected, or editing is not allowed here.
     LaneGlobal,
-    /// The selected cell's sound p-lock.
+    /// The selected cell's sound p-lock. Also the "Start" end of a fused group's
+    /// morph, since that endpoint IS the start cell's p-lock.
     StepPlock { step: usize },
+    /// A fused group's morph, with the endpoint the user asked for ([184] ph. 3).
+    Morph {
+        step: usize,
+        fusion_index: usize,
+        end: crate::ui::param_source::MorphEnd,
+    },
 }
 
 /// Outcome of resolving the selection against the current pattern.
@@ -334,6 +349,10 @@ pub struct ResolvedScope {
     pub highlight_step: Option<usize>,
     /// The selection no longer points at anything editable: the caller drops it.
     pub drop_selection: bool,
+    /// The Start/End switch is meaningful here: the cell is fused AND its group
+    /// emits more than one pulse (with a single pulse the engine disables
+    /// morphing outright, so offering the switch would promise nothing).
+    pub morph_available: bool,
 }
 
 /// Resolve the selected cell into an edit scope. Pure, so it is unit-testable
@@ -352,13 +371,17 @@ pub fn resolve_edit_scope(
     panel_slot: usize,
     lane_active: bool,
     lane_length: usize,
-    fusion_start_for_step: impl Fn(usize) -> Option<usize>,
+    // `fusion_for_step(step)` -> the group covering it, as
+    // `(start cell, fusion index, pulses)`.
+    fusion_for_step: impl Fn(usize) -> Option<(usize, usize, u8)>,
     plock_editing_allowed: bool,
+    morph_end: crate::ui::param_source::MorphEnd,
 ) -> ResolvedScope {
     let global = ResolvedScope {
         scope: EditScope::LaneGlobal,
         highlight_step: None,
         drop_selection: false,
+        morph_available: false,
     };
     let Some(cell) = selected else {
         return global;
@@ -377,11 +400,40 @@ pub fn resolve_edit_scope(
     if !plock_editing_allowed {
         return global;
     }
-    let step = fusion_start_for_step(cell.step).unwrap_or(cell.step);
+    let fusion = fusion_for_step(cell.step);
+    let step = fusion.map(|(start, _, _)| start).unwrap_or(cell.step);
+    // A single-pulse group cannot morph: `lib.rs` skips the interpolation when
+    // `pulse_count == 1`, so the switch must not pretend otherwise.
+    let morph_available = fusion.is_some_and(|(_, _, pulses)| pulses > 1);
+    let scope = match (fusion, morph_end) {
+        (Some((_, fusion_index, _)), crate::ui::param_source::MorphEnd::End)
+            if morph_available =>
+        {
+            EditScope::Morph {
+                step,
+                fusion_index,
+                end: crate::ui::param_source::MorphEnd::End,
+            }
+        }
+        // "Start" on a fused cell is the start cell's p-lock for most fields, but
+        // an inherited `Source` target stores ITS value in the group — so the
+        // morph source handles that endpoint too and routes per field.
+        (Some((_, fusion_index, _)), crate::ui::param_source::MorphEnd::Start)
+            if morph_available =>
+        {
+            EditScope::Morph {
+                step,
+                fusion_index,
+                end: crate::ui::param_source::MorphEnd::Start,
+            }
+        }
+        _ => EditScope::StepPlock { step },
+    };
     ResolvedScope {
-        scope: EditScope::StepPlock { step },
+        scope,
         highlight_step: Some(step),
         drop_selection: false,
+        morph_available,
     }
 }
 
@@ -782,13 +834,26 @@ mod tests {
     }
 
     /// No fusion anywhere.
-    fn no_fusion(_step: usize) -> Option<usize> {
+    fn no_fusion(_step: usize) -> Option<(usize, usize, u8)> {
         None
+    }
+
+    use crate::ui::param_source::MorphEnd;
+
+    /// Cells 4..=7 form fusion 0, emitting `pulses` pulses.
+    fn fusion_4_to_7(pulses: u8) -> impl Fn(usize) -> Option<(usize, usize, u8)> {
+        move |step| {
+            if (4..=7).contains(&step) {
+                Some((4, 0, pulses))
+            } else {
+                None
+            }
+        }
     }
 
     #[test]
     fn no_selection_edits_the_lane_global() {
-        let r = resolve_edit_scope(None, PANEL_SLOT, true, LANE_LEN, no_fusion, true);
+        let r = resolve_edit_scope(None, PANEL_SLOT, true, LANE_LEN, no_fusion, true, MorphEnd::Start);
         assert_eq!(r.scope, EditScope::LaneGlobal);
         assert_eq!(r.highlight_step, None);
         assert!(!r.drop_selection);
@@ -796,7 +861,7 @@ mod tests {
 
     #[test]
     fn a_plain_cell_edits_its_plock() {
-        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true);
+        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true, MorphEnd::Start);
         assert_eq!(r.scope, EditScope::StepPlock { step: 5 });
         assert_eq!(r.highlight_step, Some(5));
         assert!(!r.drop_selection);
@@ -806,7 +871,7 @@ mod tests {
     /// kept so coming back restores it.
     #[test]
     fn a_selection_on_another_lane_is_kept_but_inactive() {
-        let r = resolve_edit_scope(cell(7, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true);
+        let r = resolve_edit_scope(cell(7, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true, MorphEnd::Start);
         assert_eq!(r.scope, EditScope::LaneGlobal);
         assert!(!r.drop_selection, "switching lanes must not lose the selection");
     }
@@ -815,7 +880,7 @@ mod tests {
     /// must bring the selection back — so it is kept, not dropped.
     #[test]
     fn disabled_editing_falls_back_to_global_without_losing_the_selection() {
-        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, false);
+        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, false, MorphEnd::Start);
         assert_eq!(r.scope, EditScope::LaneGlobal);
         assert_eq!(r.highlight_step, None);
         assert!(!r.drop_selection);
@@ -823,15 +888,78 @@ mod tests {
 
     #[test]
     fn an_inactive_lane_or_an_out_of_range_step_drops_the_selection() {
-        let inactive = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, false, LANE_LEN, no_fusion, true);
+        let inactive = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, false, LANE_LEN, no_fusion, true, MorphEnd::Start);
         assert!(inactive.drop_selection);
         assert_eq!(inactive.scope, EditScope::LaneGlobal);
 
-        let past_len = resolve_edit_scope(cell(PANEL_SLOT, 20), PANEL_SLOT, true, LANE_LEN, no_fusion, true);
+        let past_len = resolve_edit_scope(cell(PANEL_SLOT, 20), PANEL_SLOT, true, LANE_LEN, no_fusion, true, MorphEnd::Start);
         assert!(past_len.drop_selection, "a step past the lane length is unreachable");
 
-        let past_grid = resolve_edit_scope(cell(PANEL_SLOT, 99), PANEL_SLOT, true, 64, no_fusion, true);
+        let past_grid = resolve_edit_scope(cell(PANEL_SLOT, 99), PANEL_SLOT, true, 64, no_fusion, true, MorphEnd::Start);
         assert!(past_grid.drop_selection);
+    }
+
+    /// A multi-pulse fused group offers both endpoints, always anchored on the
+    /// start cell — which is the only cell that carries the group's sound.
+    #[test]
+    fn a_multi_pulse_fusion_offers_both_morph_endpoints() {
+        let group = fusion_4_to_7(4);
+        for step in 4..=7 {
+            let start = resolve_edit_scope(
+                cell(PANEL_SLOT, step),
+                PANEL_SLOT,
+                true,
+                LANE_LEN,
+                &group,
+                true,
+                MorphEnd::Start,
+            );
+            assert_eq!(
+                start.scope,
+                EditScope::Morph {
+                    step: 4,
+                    fusion_index: 0,
+                    end: MorphEnd::Start
+                },
+                "step {step}"
+            );
+            assert!(start.morph_available);
+
+            let end = resolve_edit_scope(
+                cell(PANEL_SLOT, step),
+                PANEL_SLOT,
+                true,
+                LANE_LEN,
+                &group,
+                true,
+                MorphEnd::End,
+            );
+            assert_eq!(
+                end.scope,
+                EditScope::Morph {
+                    step: 4,
+                    fusion_index: 0,
+                    end: MorphEnd::End
+                }
+            );
+        }
+    }
+
+    /// Asking for the End endpoint on a cell that is not fused must fall back to
+    /// the plain p-lock rather than pretend a morph exists.
+    #[test]
+    fn the_end_endpoint_is_ignored_without_a_fusion() {
+        let r = resolve_edit_scope(
+            cell(PANEL_SLOT, 5),
+            PANEL_SLOT,
+            true,
+            LANE_LEN,
+            no_fusion,
+            true,
+            MorphEnd::End,
+        );
+        assert_eq!(r.scope, EditScope::StepPlock { step: 5 });
+        assert!(!r.morph_available);
     }
 
     /// A fused group carries sound only on its start cell, so any covered cell
@@ -839,20 +967,33 @@ mod tests {
     /// fusion later restores the exact cell.
     #[test]
     fn a_covered_cell_resolves_to_the_fusion_start() {
-        let fusion = |step: usize| -> Option<usize> {
-            if (4..=7).contains(&step) {
-                Some(4)
-            } else {
-                None
-            }
-        };
+        // A single-pulse group cannot morph, so Start resolves to a plain p-lock
+        // on the start cell.
+        let single = fusion_4_to_7(1);
         for step in 4..=7 {
-            let r = resolve_edit_scope(cell(PANEL_SLOT, step), PANEL_SLOT, true, LANE_LEN, fusion, true);
+            let r = resolve_edit_scope(
+                cell(PANEL_SLOT, step),
+                PANEL_SLOT,
+                true,
+                LANE_LEN,
+                &single,
+                true,
+                MorphEnd::Start,
+            );
             assert_eq!(r.scope, EditScope::StepPlock { step: 4 }, "step {step}");
             assert_eq!(r.highlight_step, Some(4));
+            assert!(!r.morph_available, "one pulse cannot morph");
         }
         // Outside the group, nothing is normalised.
-        let r = resolve_edit_scope(cell(PANEL_SLOT, 8), PANEL_SLOT, true, LANE_LEN, fusion, true);
+        let r = resolve_edit_scope(
+            cell(PANEL_SLOT, 8),
+            PANEL_SLOT,
+            true,
+            LANE_LEN,
+            &single,
+            true,
+            MorphEnd::Start,
+        );
         assert_eq!(r.scope, EditScope::StepPlock { step: 8 });
     }
 }

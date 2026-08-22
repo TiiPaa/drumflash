@@ -3719,7 +3719,7 @@ mod tests {
             .fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
         assert!(
             tail_diff > 1e-3,
-            "re-pushing the lane algo mid-tail must change the sound, otherwise this              regression would be invisible: {tail_diff}"
+            "re-pushing the lane algo mid-tail must change the sound, otherwise this regression would be invisible: {tail_diff}"
         );
     }
 
