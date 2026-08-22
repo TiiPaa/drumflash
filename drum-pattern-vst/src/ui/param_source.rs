@@ -73,6 +73,15 @@ pub trait ParamSource {
     fn salt(&self) -> (u8, usize, usize);
     /// Flush anything this source batches. Called once per frame by the panel.
     fn commit(&mut self) {}
+    /// A standing explanation for the panel's notice strip, e.g. "this group
+    /// cannot take another morph target".
+    ///
+    /// A state, not an event: with every non-target row greyed, the user needs to
+    /// know WHY the panel looks inert, and needs it available as long as it is
+    /// true. The strip is dismissable, and re-arms when the situation clears.
+    fn notice(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 // ── Lane global ─────────────────────────────────────────────────────────────
@@ -236,6 +245,235 @@ impl ParamSource for PlockSource<'_> {
         // time, not through the version counter), but the lane fallback may have
         // been touched by a FreqMode change.
         self.base.commit();
+    }
+}
+
+// ── Fusion morph endpoint ───────────────────────────────────────────────────
+
+/// Which end of a fused group's morph the panel is editing ([184] phase 3).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum MorphEnd {
+    /// The value the group starts from.
+    #[default]
+    Start,
+    /// The value it reaches on its last pulse.
+    End,
+}
+
+/// Edits a fused group's morph, either endpoint.
+///
+/// # Why one source handles both ends
+///
+/// Only **one** endpoint is stored (`MorphTarget::end_value`); the other is
+/// resolved at trigger time from the start cell's merged settings, and
+/// `MorphDirection` says which side the stored number sits on. So the endpoint
+/// the user asks for and the store to write compose as a 2×2:
+///
+/// | tab | direction | the row writes |
+/// |---|---|---|
+/// | End | `Target` | the group's stored value |
+/// | Start | `Target` | the start cell's p-lock (the live end) |
+/// | Start | `Source` | the group's stored value |
+/// | End | `Source` | the start cell's p-lock |
+///
+/// That is one boolean, not four cases — and it makes inherited `Source` targets
+/// work with **no data migration**, which is why the direction flag is kept.
+/// A field that is not yet a target reports `Target` by default, so a first drag
+/// in the End tab creates the morph while the same drag in the Start tab writes
+/// the p-lock.
+pub struct MorphSource<'a> {
+    pub base: PlockSource<'a>,
+    pattern: &'a crate::sequencer::SharedPattern,
+    fusion_index: usize,
+    end: MorphEnd,
+    /// Working copy: loaded once, published once by `commit`. The old morph menu
+    /// re-published the lane's whole fusion array on **every slider frame**.
+    group: crate::sequencer::pattern::FusedGroup,
+    dirty: bool,
+}
+
+impl<'a> MorphSource<'a> {
+    pub fn new(
+        pattern: &'a crate::sequencer::SharedPattern,
+        fusion_index: usize,
+        group: crate::sequencer::pattern::FusedGroup,
+        end: MorphEnd,
+        base: PlockSource<'a>,
+    ) -> Self {
+        Self {
+            base,
+            pattern,
+            fusion_index,
+            end,
+            group,
+            dirty: false,
+        }
+    }
+
+    /// The 2×2 above, plus the creation case.
+    fn writes_group(&self, id: ParamId) -> bool {
+        let Some(field) = self.field(id) else {
+            return false;
+        };
+        if !self.group.has_morph_target(field) {
+            // No morph on this field yet: EITHER tab creates one, so that setting
+            // an endpoint always produces an audible ramp toward the live value.
+            // Writing the p-lock instead would just play that value flat on every
+            // pulse — nothing would morph, which is what made "set Start, hear no
+            // ramp" so confusing.
+            return true;
+        }
+        let stored_is_end = self.group.morph_target_direction(field)
+            == crate::sequencer::pattern::MorphDirection::Target;
+        matches!(
+            (self.end, stored_is_end),
+            (MorphEnd::End, true) | (MorphEnd::Start, false)
+        )
+    }
+
+    /// Which side the stored value sits on when this tab creates a target.
+    ///
+    /// `End` stores the arrival value (`Target`: the ramp runs live -> stored),
+    /// `Start` stores the departure value (`Source`: stored -> live). The other
+    /// end is the start cell's merged value, i.e. its p-lock if it has one and
+    /// the lane's sound otherwise — so editing one endpoint in the panel and the
+    /// other on the lane behaves the way it reads.
+    fn direction_for_tab(&self) -> crate::sequencer::pattern::MorphDirection {
+        match self.end {
+            MorphEnd::End => crate::sequencer::pattern::MorphDirection::Target,
+            MorphEnd::Start => crate::sequencer::pattern::MorphDirection::Source,
+        }
+    }
+
+    fn field(&self, id: ParamId) -> Option<usize> {
+        if id.is_lockable() {
+            id.plock_field()
+        } else {
+            None
+        }
+    }
+
+    fn stored_value(&self, field: usize) -> Option<f32> {
+        self.group.morph_targets[..self.group.morph_count as usize]
+            .iter()
+            .find(|target| target.field == field as u8)
+            .map(|target| target.end_value)
+    }
+
+    /// How many more fields this group can morph. Reads better than
+    /// `group.morph_capacity_left()` at the call site; currently only the tests
+    /// use it, `supports` going straight to the group.
+    #[allow(dead_code)]
+    pub fn capacity_left(&self) -> usize {
+        self.group.morph_capacity_left()
+    }
+}
+
+impl ParamSource for MorphSource<'_> {
+    fn get(&self, id: ParamId) -> f32 {
+        match self.field(id) {
+            Some(field) if self.writes_group(id) => self
+                .stored_value(field)
+                // Not a target yet: show the live value as the starting point, so
+                // the first drag begins where the sound already is.
+                .unwrap_or_else(|| self.base.get(id)),
+            _ => self.base.get(id),
+        }
+    }
+
+    fn set(&mut self, id: ParamId, value: f32) {
+        if !self.writes_group(id) {
+            return self.base.set(id, value);
+        }
+        let Some(field) = self.field(id) else { return };
+        let creating = !self.group.has_morph_target(field);
+        if self.group.set_morph_target(field, value) {
+            if creating {
+                // `set_morph_target` defaults to `Target`; the Start tab needs the
+                // opposite side.
+                self.group
+                    .set_morph_target_direction(field, self.direction_for_tab());
+            }
+            self.dirty = true;
+        }
+        // A refusal (the cap) leaves the group untouched. It should not be
+        // reachable any more: `supports` greys such a row up front, and `notice`
+        // explains the situation.
+    }
+
+    fn is_overridden(&self, id: ParamId) -> bool {
+        if self.writes_group(id) {
+            self.field(id)
+                .is_some_and(|field| self.group.has_morph_target(field))
+        } else {
+            self.base.is_overridden(id)
+        }
+    }
+
+    fn clear(&mut self, id: ParamId) {
+        if !self.writes_group(id) {
+            return self.base.clear(id);
+        }
+        if let Some(field) = self.field(id) {
+            self.group.remove_morph_target(field);
+            self.dirty = true;
+        }
+    }
+
+    fn inherited(&self, id: ParamId) -> f32 {
+        self.base.inherited(id)
+    }
+
+    fn supports(&self, id: ParamId) -> Support {
+        if !self.writes_group(id) {
+            return self.base.supports(id);
+        }
+        let Some(field) = self.field(id) else {
+            return self.base.supports(id);
+        };
+        if !crate::instrument_registry::param_is_morphable(self.base.base.voice_idx, id) {
+            return Support::Disabled("Morph interpolates: continuous parameters only");
+        }
+        if !self.group.has_morph_target(field) && self.group.morph_capacity_left() == 0 {
+            return Support::Disabled("Morph is full (4 targets) - remove one first");
+        }
+        Support::Editable
+    }
+
+    fn salt(&self) -> (u8, usize, usize) {
+        // Distinct from the p-lock scope AND between the two tabs, so a dropdown
+        // left open in one never reopens in the other.
+        (
+            2 + self.end as u8,
+            self.base.base.slot,
+            self.base.step,
+        )
+    }
+
+    fn notice(&self) -> Option<&'static str> {
+        (self.capacity_left() == 0).then_some(
+            "Morph limit: 4 targets per fused group. Click a target's accent bar to free a slot.",
+        )
+    }
+
+    fn commit(&mut self) {
+        self.base.commit();
+        if !self.dirty {
+            return;
+        }
+        // `store_fusions` silently DROPS any group failing `is_valid()`, which is
+        // how a fusion could vanish mid-drag. Refuse to publish rather than lose
+        // the group.
+        if !self.group.is_valid() {
+            debug_assert!(false, "refusing to publish an invalid fused group");
+            return;
+        }
+        let mut groups = self.pattern.load_fusions(self.base.base.slot);
+        if let Some(slot) = groups.get_mut(self.fusion_index) {
+            *slot = self.group;
+            self.pattern.store_fusions(self.base.base.slot, &groups);
+        }
+        self.dirty = false;
     }
 }
 
@@ -423,6 +661,278 @@ mod tests {
         assert!(src.supports(reserved).reason().is_some());
         src.set(reserved, 0.5);
         assert!(!src.is_overridden(reserved));
+    }
+
+    // ── Morph ───────────────────────────────────────────────────────────────
+
+    use crate::sequencer::pattern::{FusedGroup, MorphDirection};
+    use crate::sequencer::{Pattern, SharedPattern};
+
+    /// A 4-cell group emitting 4 pulses, so morphing is active.
+    fn fused_group() -> FusedGroup {
+        FusedGroup {
+            start_cell: 0,
+            end_cell: 3,
+            step_count: 4,
+            ..Default::default()
+        }
+    }
+
+    fn morph<'a>(
+        pattern: &'a SharedPattern,
+        group: FusedGroup,
+        end: MorphEnd,
+        base: PlockSource<'a>,
+    ) -> MorphSource<'a> {
+        MorphSource::new(pattern, 0, group, end, base)
+    }
+
+    /// The 2x2 that makes one source serve both endpoints: which store a row
+    /// writes depends on the tab AND on where the single stored value sits.
+    #[test]
+    fn the_endpoint_and_the_direction_decide_which_store_a_row_writes() {
+        let layout = TrackLayoutState::default_layout();
+        let settings = SoundSettingsState::new(&layout);
+        let algo = CellAlgo(Cell::new(0));
+        let plock = PlockState::new();
+        let pattern = SharedPattern::new(&Pattern::empty());
+        let decay = ParamId::Std(StandardField::Decay);
+        let field = decay.plock_field().unwrap();
+
+        // Direction `Target` (the default): the stored value is the END.
+        let group = fused_group();
+        let mut end_tab = morph(
+            &pattern,
+            group,
+            MorphEnd::End,
+            PlockSource::new(&plock, 0, global(&settings, &algo)),
+        );
+        end_tab.set(decay, 0.9);
+        assert!(end_tab.is_overridden(decay), "End tab writes the morph target");
+        assert!(!plock.field_masks.is_set(SLOT, 0, field), "...not the p-lock");
+
+        // On a field that ALREADY has a `Target` target, the start is the live
+        // endpoint, so the Start tab writes the start cell's p-lock.
+        let mut existing = fused_group();
+        assert!(existing.set_morph_target(field, 0.9));
+        let mut start_tab = morph(
+            &pattern,
+            existing,
+            MorphEnd::Start,
+            PlockSource::new(&plock, 0, global(&settings, &algo)),
+        );
+        start_tab.set(decay, 0.2);
+        assert!(
+            plock.field_masks.is_set(SLOT, 0, field),
+            "with a Target target, Start edits the live endpoint"
+        );
+
+        // Direction `Source`: the stored value is the START, so the tabs swap.
+        let mut inverted = fused_group();
+        assert!(inverted.set_morph_target(field, 0.5));
+        inverted.set_morph_target_direction(field, MorphDirection::Source);
+        let plock2 = PlockState::new();
+        let mut start_tab = morph(
+            &pattern,
+            inverted,
+            MorphEnd::Start,
+            PlockSource::new(&plock2, 0, global(&settings, &algo)),
+        );
+        start_tab.set(decay, 0.7);
+        assert!(
+            !plock2.field_masks.is_set(SLOT, 0, field),
+            "with an inverted target, Start edits the stored value"
+        );
+        let mut end_tab = morph(
+            &pattern,
+            inverted,
+            MorphEnd::End,
+            PlockSource::new(&plock2, 0, global(&settings, &algo)),
+        );
+        end_tab.set(decay, 0.7);
+        assert!(
+            plock2.field_masks.is_set(SLOT, 0, field),
+            "...and End edits the live endpoint, i.e. the p-lock"
+        );
+    }
+
+    /// The first drag in the End tab is what CREATES the morph, and the row starts
+    /// from the value the sound already has rather than from zero.
+    #[test]
+    fn a_first_drag_in_the_end_tab_creates_the_target_from_the_live_value() {
+        let layout = TrackLayoutState::default_layout();
+        let settings = SoundSettingsState::new(&layout);
+        let algo = CellAlgo(Cell::new(0));
+        let plock = PlockState::new();
+        let pattern = SharedPattern::new(&Pattern::empty());
+        {
+            let mut lane = global(&settings, &algo);
+            lane.set(ParamId::Std(StandardField::Decay), 0.33);
+            lane.commit();
+        }
+        let mut src = morph(
+            &pattern,
+            fused_group(),
+            MorphEnd::End,
+            PlockSource::new(&plock, 0, global(&settings, &algo)),
+        );
+        let decay = ParamId::Std(StandardField::Decay);
+        assert!(!src.is_overridden(decay));
+        assert_eq!(src.get(decay), 0.33, "shows the live value before any drag");
+        src.set(decay, 0.8);
+        assert!(src.is_overridden(decay));
+        assert_eq!(src.get(decay), 0.8);
+        src.clear(decay);
+        assert!(!src.is_overridden(decay), "the target can be removed again");
+    }
+
+    /// Setting an endpoint must always produce an audible ramp, whichever tab is
+    /// used. Before this, the Start tab wrote the start cell's p-lock, so with no
+    /// End value the step simply played that value flat on every pulse and nothing
+    /// morphed — which is exactly how it was reported.
+    #[test]
+    fn either_tab_creates_a_morph_that_ramps_toward_the_live_value() {
+        let layout = TrackLayoutState::default_layout();
+        let settings = SoundSettingsState::new(&layout);
+        let algo = CellAlgo(Cell::new(0));
+        let pattern = SharedPattern::new(&Pattern::empty());
+        let decay = ParamId::Std(StandardField::Decay);
+        let field = decay.plock_field().unwrap();
+        use crate::sequencer::pattern::MorphDirection;
+
+        for (tab, expected_direction) in [
+            (MorphEnd::End, MorphDirection::Target),
+            (MorphEnd::Start, MorphDirection::Source),
+        ] {
+            let plock = PlockState::new();
+            let mut src = morph(
+                &pattern,
+                fused_group(),
+                tab,
+                PlockSource::new(&plock, 0, global(&settings, &algo)),
+            );
+            src.set(decay, 0.66);
+
+            assert!(src.is_overridden(decay), "{tab:?} must create the morph");
+            assert_eq!(src.get(decay), 0.66, "{tab:?} shows what was just set");
+            assert_eq!(
+                src.group.morph_target_direction(field),
+                expected_direction,
+                "{tab:?} stores its value on the right side of the ramp"
+            );
+            assert!(
+                !plock.field_masks.is_set(SLOT, 0, field),
+                "{tab:?} must not pin the live endpoint, or there is nothing to ramp to"
+            );
+        }
+    }
+
+    /// The packed format holds 4 targets. The old code dropped the fifth silently;
+    /// now the row is greyed with a reason and the panel carries a notice.
+    #[test]
+    fn the_fifth_morph_target_is_refused_visibly() {
+        let layout = TrackLayoutState::default_layout();
+        let settings = SoundSettingsState::new(&layout);
+        let algo = CellAlgo(Cell::new(0));
+        let plock = PlockState::new();
+        let pattern = SharedPattern::new(&Pattern::empty());
+        let mut src = morph(
+            &pattern,
+            fused_group(),
+            MorphEnd::End,
+            PlockSource::new(&plock, 0, global(&settings, &algo)),
+        );
+        let four = [
+            ParamId::Std(StandardField::Decay),
+            ParamId::Std(StandardField::Volume),
+            ParamId::Std(StandardField::Hold),
+            ParamId::Std(StandardField::Analog),
+        ];
+        for id in four {
+            src.set(id, 0.5);
+            assert!(src.is_overridden(id));
+        }
+        assert_eq!(src.capacity_left(), 0);
+        assert!(
+            src.notice().is_some(),
+            "a full group explains itself as soon as it is full"
+        );
+
+        let fifth = ParamId::Std(StandardField::FilterFreq);
+        assert!(
+            src.supports(fifth).reason().is_some(),
+            "a fifth field must be greyed, not silently ignored"
+        );
+        src.set(fifth, 900.0);
+        assert!(!src.is_overridden(fifth), "and the write is refused");
+        for id in four {
+            assert!(src.is_overridden(id), "the four that fit are untouched");
+        }
+    }
+
+    /// Morph interpolates, so a discrete parameter has no business being a target.
+    #[test]
+    fn a_discrete_parameter_cannot_be_morphed() {
+        let layout = TrackLayoutState::default_layout();
+        let settings = SoundSettingsState::new(&layout);
+        let algo = CellAlgo(Cell::new(0));
+        let plock = PlockState::new();
+        let pattern = SharedPattern::new(&Pattern::empty());
+        let src = morph(
+            &pattern,
+            fused_group(),
+            MorphEnd::End,
+            PlockSource::new(&plock, 0, global(&settings, &algo)),
+        );
+        // Kick special 1 is the saturation TYPE: `sp_discrete`, so not continuous.
+        let discrete = ParamId::Special(1);
+        assert!(!crate::instrument_registry::param_is_morphable(VOICE, discrete));
+        assert!(src.supports(discrete).reason().is_some());
+        assert_eq!(
+            src.supports(ParamId::Std(StandardField::Decay)),
+            Support::Editable
+        );
+    }
+
+    /// The old morph menu re-published the lane's whole fusion array on every
+    /// slider frame. One publish per frame, and only when something changed.
+    #[test]
+    fn commit_publishes_once_and_preserves_the_other_groups() {
+        let layout = TrackLayoutState::default_layout();
+        let settings = SoundSettingsState::new(&layout);
+        let algo = CellAlgo(Cell::new(0));
+        let plock = PlockState::new();
+        let pattern = SharedPattern::new(&Pattern::empty());
+
+        let second = FusedGroup {
+            start_cell: 8,
+            end_cell: 11,
+            step_count: 2,
+            ..Default::default()
+        };
+        pattern.store_fusions(SLOT, &[fused_group(), second]);
+
+        let mut src = MorphSource::new(
+            &pattern,
+            0,
+            fused_group(),
+            MorphEnd::End,
+            PlockSource::new(&plock, 0, global(&settings, &algo)),
+        );
+        src.commit();
+        assert_eq!(
+            pattern.load_fusions(SLOT).len(),
+            2,
+            "a clean commit must not touch the pattern"
+        );
+
+        src.set(ParamId::Std(StandardField::Decay), 0.75);
+        src.commit();
+        let groups = pattern.load_fusions(SLOT);
+        assert_eq!(groups.len(), 2, "the other group survives the publish");
+        assert_eq!(groups[1].start_cell, 8);
+        assert!(groups[0].morph_active(), "the edited group carries its target");
+        assert_eq!(groups[0].morph_count, 1);
     }
 
     #[test]

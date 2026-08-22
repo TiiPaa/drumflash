@@ -247,6 +247,32 @@ pub fn param_default(voice_idx: usize, id: crate::param_id::ParamId) -> f32 {
     }
 }
 
+/// Can this parameter be morphed across a fused group ([184] phase 3)?
+///
+/// Morphing interpolates linearly between two endpoints, which only means
+/// something for a continuous quantity: a `Saturation Type` halfway between
+/// Valve and Tape is not a sound, it is a rounding accident. The registry
+/// already declares that distinction as `SpecialParamDef::continuous`.
+pub fn param_is_morphable(voice_idx: usize, id: crate::param_id::ParamId) -> bool {
+    use crate::param_id::ParamId;
+    match id {
+        // The algo is a discrete selector, and a display mode is not a sound.
+        ParamId::Algo | ParamId::FreqMode => false,
+        // Every standard field interpolates, checkboxes included (a switch
+        // crossing 0.5 mid-roll is a legitimate effect).
+        ParamId::Std(_) => true,
+        ParamId::Special(index) => INSTRUMENTS
+            .get(voice_idx)
+            .and_then(|inst| {
+                inst.special_params
+                    .iter()
+                    .find(|def| def.special_index == index)
+            })
+            .map(|def| def.continuous)
+            .unwrap_or(false),
+    }
+}
+
 /// Metadata for an instrument in the registry.
 #[allow(dead_code)]
 pub struct InstrumentDef {
