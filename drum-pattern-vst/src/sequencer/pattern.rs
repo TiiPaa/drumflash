@@ -284,6 +284,10 @@ impl Step {
     }
 }
 
+/// Morph targets a single fused group can carry (the packed format has room for
+/// exactly this many).
+pub const MAX_MORPH_TARGETS: usize = 4;
+
 /// A fused cell group for Step Fusion (tuplets / micro-rhythms).
 ///
 /// A group is one UI button spanning consecutive cells on a single 16-step
@@ -347,24 +351,35 @@ impl FusedGroup {
     }
 
     /// Add or update a morph target, preserving order and capping at 4.
-    /// New targets default to `MorphDirection::Cible`.
-    pub fn set_morph_target(&mut self, field: usize, end_value: f32) {
+    /// New targets default to `MorphDirection::Target`.
+    ///
+    /// Returns `false` when the cap refused a NEW target ([184] phase 3) — the
+    /// old signature dropped it silently, so a fifth drag simply did nothing with
+    /// no way for the UI to say why.
+    pub fn set_morph_target(&mut self, field: usize, end_value: f32) -> bool {
         let field = field as u8;
         if let Some(existing) = self.morph_targets[..self.morph_count as usize]
             .iter_mut()
             .find(|t| t.field == field)
         {
             existing.end_value = end_value;
-            return;
+            return true;
         }
-        if self.morph_count < 4 {
+        if self.morph_count < MAX_MORPH_TARGETS as u8 {
             self.morph_targets[self.morph_count as usize] = MorphTarget {
                 field,
                 end_value,
                 direction: MorphDirection::Target,
             };
             self.morph_count += 1;
+            return true;
         }
+        false
+    }
+
+    /// How many more fields this group can morph.
+    pub fn morph_capacity_left(&self) -> usize {
+        MAX_MORPH_TARGETS.saturating_sub(self.morph_count as usize)
     }
 
     /// Change the direction of an existing morph target without touching its value.
@@ -378,7 +393,7 @@ impl FusedGroup {
         }
     }
 
-    /// Returns the direction of an existing morph target, or `Cible` if absent.
+    /// Returns the direction of an existing morph target, or `Target` if absent.
     pub fn morph_target_direction(&self, field: usize) -> MorphDirection {
         let field = field as u8;
         self.morph_targets[..self.morph_count as usize]

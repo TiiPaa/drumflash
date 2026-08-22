@@ -337,6 +337,10 @@ fn draw_legacy_slot_lane_v2(
         let name_response = draw_lane_name_v2(ui, name_w, selected, &slot_name);
         if name_response.clicked() {
             select_legacy_track(state, slot_idx);
+            // [184] Clicking a lane's NAME means "show me this lane": it always
+            // hands the panel back to the lane's own sound, even when the cell
+            // already selected belongs to this very lane.
+            state.sound_edit_target = None;
         }
         if name_response.double_clicked() {
             select_legacy_track(state, slot_idx);

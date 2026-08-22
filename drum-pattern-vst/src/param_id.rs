@@ -192,7 +192,7 @@ impl ParamId {
         match self {
             ParamId::FreqMode => Some("Display mode: applies to the whole lane"),
             ParamId::Special(RESERVED_SPECIAL_INDEX) => Some(
-                "Reserved slot: no instrument declares this parameter, and its                  storage is lent to another one",
+                "Reserved slot: no instrument declares this parameter, and its storage is lent to another one",
             ),
             ParamId::Special(_) if !self.is_lockable() => {
                 Some("Cannot be locked per step: no slot in the p-lock storage format")
@@ -313,7 +313,7 @@ mod tests {
         assert_eq!(
             unclaimed,
             vec![LEGACY_CLAP_ECHO_FIELD],
-            "only the legacy clap-echo field may be unclaimed - it belongs to the              Clap's own fallback, not to a parameter"
+            "only the legacy clap-echo field may be unclaimed - it belongs to the Clap's own fallback, not to a parameter"
         );
     }
 

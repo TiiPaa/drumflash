@@ -309,9 +309,11 @@ fn row_gutter(ui: &mut egui::Ui, overridden: bool) -> bool {
         return false;
     }
     let hovered = response.hovered();
+    // 18 px: the top stays where the label's cap-height starts, the bottom runs
+    // 4 px lower so the mark reads as belonging to the whole row.
     let bar = egui::Rect::from_min_size(
         egui::pos2(rect.left() + 3.0, rect.center().y - 7.0),
-        Vec2::new(3.0, 14.0),
+        Vec2::new(3.0, 18.0),
     );
     ui.painter().rect_filled(
         bar,
@@ -321,6 +323,27 @@ fn row_gutter(ui: &mut egui::Ui, overridden: bool) -> bool {
     response
         .on_hover_text("Overrides the lane - click to follow the lane again")
         .clicked()
+}
+
+/// One row with BOTH its gutter and its greying.
+///
+/// `supports()` used to be consulted only by the special-param rows, so a
+/// standard row like Filter accepted a drag that the scope then refused in
+/// silence. Every row now goes through here, which is what makes "greyed with a
+/// reason" a rule rather than a special case.
+fn row_scoped<R>(
+    ui: &mut egui::Ui,
+    overridden: bool,
+    unsupported: Option<&'static str>,
+    row: impl FnOnce(&mut egui::Ui) -> R,
+) -> (bool, R) {
+    let inner = ui.add_enabled_ui(unsupported.is_none(), |ui| {
+        with_gutter(ui, overridden, row)
+    });
+    if let Some(reason) = unsupported {
+        inner.response.on_hover_text(reason);
+    }
+    inner.inner
 }
 
 /// Wraps one row so it carries its gutter, without touching the row helpers'
@@ -815,15 +838,19 @@ pub fn draw_sound_panel(
         |step| {
             fusions
                 .iter()
-                .find(|group| {
+                .enumerate()
+                .find(|(_, group)| {
                     step >= group.start_cell as usize && step <= group.end_cell as usize
                 })
-                .map(|group| group.start_cell as usize)
+                .map(|(index, group)| {
+                    (group.start_cell as usize, index, group.step_count)
+                })
         },
         // Follow ON is fine ([184]): the selection targets a fixed (lane, step),
         // whatever page the grid happens to be showing. Song mode is not: the
         // pattern itself changes underneath.
         !params.song_mode.value(),
+        state.morph_edit_end,
     );
     if resolved.drop_selection {
         state.sound_edit_target = None;
@@ -840,13 +867,31 @@ pub fn draw_sound_panel(
             step,
             GlobalSource::new(sound_settings, slot, voice_idx, &panel_algo),
         )),
+        crate::ui::editor_state::EditScope::Morph {
+            step,
+            fusion_index,
+            end,
+        } => Box::new(crate::ui::param_source::MorphSource::new(
+            pattern,
+            fusion_index,
+            fusions[fusion_index],
+            end,
+            PlockSource::new(
+                plock,
+                step,
+                GlobalSource::new(sound_settings, slot, voice_idx, &panel_algo),
+            ),
+        )),
     };
     // Badge content for the header below: `Some(step)` = editing that step's
     // p-lock, `None` = editing the lane.
     let scope_badge = match resolved.scope {
         crate::ui::editor_state::EditScope::StepPlock { step } => Some(step),
+        crate::ui::editor_state::EditScope::Morph { step, .. } => Some(step),
         crate::ui::editor_state::EditScope::LaneGlobal => None,
     };
+    // The Start/End switch is only meaningful on a fused, multi-pulse group.
+    let morph_available = resolved.morph_available;
 
     ui.allocate_new_ui(
         egui::UiBuilder::new()
@@ -904,18 +949,45 @@ pub fn draw_sound_panel(
                             );
                             ui.add_space(4.0);
                             ui.label(
-                                RichText::new("P-Lock")
+                                RichText::new(if morph_available { "Morph" } else { "P-Lock" })
                                     .font(f_sans_sb(11.0))
                                     .color(PL_LINK()),
                             )
-                            .on_hover_text(
-                                "Editing this step's sound p-lock. Rows in accent colour                                  override the lane; the others follow it.",
-                            );
+                            .on_hover_text(if morph_available {
+                                "Editing one end of this fused group's morph. Rows in accent colour are morph targets or step overrides; the others follow the lane."
+                            } else {
+                                "Editing this step's sound p-lock. Rows in accent colour override the lane; the others follow it."
+                            });
+                            // [184] ph. 3 — Start/End. Always drawn so the header
+                            // never changes width; greyed when the cell is not a
+                            // fused, multi-pulse group (a single pulse cannot
+                            // morph: the engine skips the interpolation).
+                            ui.add_space(6.0);
+                            let selected =
+                                (state.morph_edit_end == crate::ui::param_source::MorphEnd::End)
+                                    as usize;
+                            let picked = ui
+                                .add_enabled_ui(morph_available, |ui| {
+                                    crate::ui::skeuo::segmented(
+                                        ui,
+                                        ("morph_end", slot),
+                                        &["Start", "End"],
+                                        selected,
+                                    )
+                                })
+                                .inner;
+                            if morph_available && picked != selected {
+                                state.morph_edit_end = if picked == 1 {
+                                    crate::ui::param_source::MorphEnd::End
+                                } else {
+                                    crate::ui::param_source::MorphEnd::Start
+                                };
+                            }
                         }
                         None => {
                             ui.label(RichText::new("Lane").font(f_sans_sb(11.0)).color(INK3()))
                                 .on_hover_text(
-                                    "Editing the lane's own sound. Right-click a step in the                                      grid to edit that step's p-lock instead.",
+                                    "Editing the lane's own sound. Right-click a step in the grid to edit that step's p-lock instead.",
                                 );
                         }
                     },
@@ -1049,6 +1121,9 @@ pub fn draw_sound_panel(
         changed = true;
     }
 
+    // [184] Kept for the floating notice below, which must sit at the panel's
+    // bottom edge rather than scroll away with the content.
+    let panel_rect = ui.max_rect();
     let scroll_height = ui.available_height().max(120.0);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -1240,8 +1315,11 @@ pub fn draw_sound_panel(
             // Volume en tête (sans titre de section) — pleine largeur, comme les
             // sections sans graphe.
             let vol_id = ParamId::Std(StandardField::Volume);
-            let (vol_reverted, vol_changed) =
-                with_gutter(ui, src.is_overridden(vol_id), |ui| {
+            let (vol_reverted, vol_changed) = row_scoped(
+                ui,
+                src.is_overridden(vol_id),
+                src.supports(vol_id).reason(),
+                |ui| {
                     draw_editor_slider_row(
                         ui,
                         "Volume",
@@ -1363,9 +1441,10 @@ pub fn draw_sound_panel(
                                     if is_bass_drum && field == crate::instrument_registry::StandardField::Freq {
                                         let ratio = instrument.freq_display_ratio;
                                         let id = ParamId::Std(field);
-                                        let (reverted, row) = with_gutter(
+                                        let (reverted, row) = row_scoped(
                                             ui,
                                             src.is_overridden(id),
+                                            src.supports(id).reason(),
                                             |ui| {
                                                 draw_editor_frequency_row(
                                                     ui,
@@ -1425,9 +1504,10 @@ pub fn draw_sound_panel(
                                             == crate::instrument_registry::StandardField::Freq
                                             && matches!(voice_idx, 13 | 14 | 15);
                                         let id = ParamId::Std(field);
-                                        let (reverted, edited) = with_gutter(
+                                        let (reverted, edited) = row_scoped(
                                             ui,
                                             src.is_overridden(id),
+                                            src.supports(id).reason(),
                                             |ui| {
                                                 draw_editor_slider_row_full(
                                                     ui,
@@ -1458,8 +1538,11 @@ pub fn draw_sound_panel(
                                         _ => &mut stereo,
                                     };
                                     let id = ParamId::Std(field);
-                                    let (reverted, edited) =
-                                        with_gutter(ui, src.is_overridden(id), |ui| {
+                                    let (reverted, edited) = row_scoped(
+                                        ui,
+                                        src.is_overridden(id),
+                                        src.supports(id).reason(),
+                                        |ui| {
                                             draw_editor_switch_row(ui, &label_text, value).changed()
                                         });
                                     if reverted {
@@ -1479,8 +1562,11 @@ pub fn draw_sound_panel(
                         {
                             let fine_id = ParamId::Special(9);
                             let mut fine = src.get(fine_id);
-                            let (reverted, edited) =
-                                with_gutter(ui, src.is_overridden(fine_id), |ui| {
+                            let (reverted, edited) = row_scoped(
+                                ui,
+                                src.is_overridden(fine_id),
+                                src.supports(fine_id).reason(),
+                                |ui| {
                                     draw_editor_slider_row(
                                         ui,
                                         "Pitch Fine",
@@ -1663,8 +1749,11 @@ pub fn draw_sound_panel(
                         // Analog Mode a random pair plays on every hit.
                         if def.name.ends_with("_sample") && matches!(voice_idx, 13 | 14 | 15) {
                             let stereo_id = ParamId::Std(StandardField::Stereo);
-                            let (reverted, edited) =
-                                with_gutter(ui, src.is_overridden(stereo_id), |ui| {
+                            let (reverted, edited) = row_scoped(
+                                ui,
+                                src.is_overridden(stereo_id),
+                                src.supports(stereo_id).reason(),
+                                |ui| {
                                     draw_editor_switch_row(ui, "Stereo", &mut stereo)
                                         .on_hover_text(
                                     "Stereo: plays two DIFFERENT samples per hit — the left \
@@ -1821,8 +1910,11 @@ pub fn draw_sound_panel(
                             let gate_id = ParamId::Special(def.special_index);
                             let mut value = src.get(gate_id);
                             let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
-                            let (reverted, edited) =
-                                with_gutter(ui, src.is_overridden(gate_id), |ui| {
+                            let (reverted, edited) = row_scoped(
+                                ui,
+                                src.is_overridden(gate_id),
+                                src.supports(gate_id).reason(),
+                                |ui| {
                                     draw_editor_slider_row(
                                         ui,
                                         def.label,
@@ -1860,6 +1952,88 @@ pub fn draw_sound_panel(
                     }
                 });
         });
+
+    // [184] ph. 3 — scope notice, pinned to the panel's bottom edge.
+    //
+    // It used to be the first row of the scroll body, where it scrolled out of
+    // sight exactly when it mattered. A modal was the other candidate, but
+    // "this group is full" is a STATE, not an event: a modal would either
+    // reappear on every frame or need dismissing for something the user must be
+    // able to re-read. So: painted after the scroll area, therefore above it, and
+    // outside its layout — no shift, no click capture.
+    // The notice stands as long as its situation does, and re-arms once that
+    // situation clears — so dismissing it does not hide it forever.
+    let scope_notice = src.notice();
+    if scope_notice.is_none() {
+        state.scope_notice_dismissed = false;
+    }
+    if let Some(notice) = scope_notice.filter(|_| !state.scope_notice_dismissed) {
+        let pad = 10.0;
+        let strip_w = panel_rect.width() - 2.0 * pad;
+        // Laid out as a WRAPPED galley rather than painted as a single line:
+        // `painter.text` does not wrap, so a message longer than the strip simply
+        // ran off its right edge. The strip's height follows the text instead.
+        let text_inset = 10.0;
+        // Room kept for the "click to dismiss" hint so the two never overlap.
+        let hint_w = 78.0;
+        let text_max_w = (strip_w - 2.0 * text_inset - hint_w).max(80.0);
+        let galley = ui.fonts(|fonts| {
+            fonts.layout(
+                notice.to_owned(),
+                f_sans_med(10.5),
+                PL_LINK(),
+                text_max_w,
+            )
+        });
+        let height = (galley.size().y + 12.0).max(26.0);
+        let strip = egui::Rect::from_min_size(
+            egui::pos2(panel_rect.left() + pad, panel_rect.bottom() - height - pad),
+            Vec2::new(strip_w, height),
+        );
+        // Clickable so it can be dismissed before its timeout. The trade-off is
+        // deliberate: while it shows, this strip swallows clicks meant for the row
+        // underneath. Acceptable because it is transient AND dismissing it is
+        // exactly what a click there means.
+        let response = ui.interact(
+            strip,
+            ui.id().with("scope_refusal"),
+            egui::Sense::click(),
+        );
+        let hovered = response.hovered();
+        let painter = ui.painter();
+        painter.rect_filled(strip, 6.0, if hovered { PANEL() } else { PANEL2() });
+        painter.rect_stroke(
+            strip,
+            6.0,
+            egui::Stroke::new(1.0, PL_LINK()),
+            egui::StrokeKind::Inside,
+        );
+        painter.galley(
+            egui::pos2(
+                strip.left() + text_inset,
+                strip.center().y - galley.size().y * 0.5,
+            ),
+            galley,
+            PL_LINK(),
+        );
+        if hovered {
+            // The dismiss hint replaces nothing: it sits at the right edge, which
+            // the message never reaches.
+            painter.text(
+                egui::pos2(strip.right() - 10.0, strip.center().y),
+                egui::Align2::RIGHT_CENTER,
+                "click to dismiss",
+                f_sans_med(9.5),
+                INK3(),
+            );
+        }
+        if response.clicked() {
+            state.scope_notice_dismissed = true;
+        }
+        if hovered {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+    }
 
     // [184] One flush per frame, whatever the scope wrote. The source tracks its
     // own dirty flag, which is stricter than the old `changed` bool: it also
