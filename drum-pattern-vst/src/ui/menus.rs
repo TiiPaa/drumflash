@@ -2,7 +2,6 @@
 //! and add-module popups.
 
 use crate::ui::theme::*;
-use crate::ui::widgets::styled_select;
 use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
 
 pub fn plock_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mut egui::Ui)) {
@@ -240,24 +239,3 @@ pub fn context_menu_separator(ui: &mut egui::Ui) {
     ui.add_space(2.0);
 }
 
-pub fn plock_menu_enum_row(
-    ui: &mut egui::Ui,
-    label: &str,
-    accent: Color32,
-    overridden: bool,
-    current_value: f32,
-    options: &[&str],
-    id_salt: &str,
-) -> (egui::Response, Option<f32>) {
-    let current_idx = (current_value as usize).min(options.len().saturating_sub(1));
-    let value_text = options[current_idx];
-    let mut picked = None;
-    let response = plock_menu_row(ui, label, accent, overridden, Some(value_text), |ui| {
-        let (resp, p) = styled_select(ui, id_salt, current_idx, options, 120.0);
-        if let Some(p) = p {
-            picked = Some(p as f32);
-        }
-        resp
-    });
-    (response, picked)
-}

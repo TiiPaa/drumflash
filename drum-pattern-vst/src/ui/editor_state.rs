@@ -172,9 +172,9 @@ pub struct EditorUIState {
     /// Cell whose p-lock the Lane Editor edits ([184]). `None` = the lane global.
     #[serde(default)]
     pub sound_edit_target: Option<SelectedCell>,
-    /// Which end of a fused group's morph the panel edits ([184] phase 3).
+    /// Which of a fused group's three stores the panel edits ([184] ph. 3-4).
     #[serde(skip)]
-    pub morph_edit_end: crate::ui::param_source::MorphEnd,
+    pub fusion_tab: FusionTab,
     /// When true, a click occurred while the p-lock popup was open; suppress step-cell
     /// toggles this frame so the popup (not the cell underneath) handles the click.
     #[serde(skip)]
@@ -325,6 +325,21 @@ pub struct SelectedCell {
     pub step: usize,
 }
 
+/// Which store the panel edits on a FUSED cell ([184] phase 4).
+///
+/// A fused group has three: the start cell's own p-lock, and the two ends of the
+/// morph. Phase 3 exposed only the two ends, which left no way to give a fused
+/// step a flat override — the context menu was the only route, and phase 4
+/// removes it. `Step` is the default because creating a ramp should be a
+/// deliberate act, not what happens the first time you touch a slider.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum FusionTab {
+    #[default]
+    Step,
+    Start,
+    End,
+}
+
 /// What the Lane Editor's rows read and write this frame.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum EditScope {
@@ -375,7 +390,7 @@ pub fn resolve_edit_scope(
     // `(start cell, fusion index, pulses)`.
     fusion_for_step: impl Fn(usize) -> Option<(usize, usize, u8)>,
     plock_editing_allowed: bool,
-    morph_end: crate::ui::param_source::MorphEnd,
+    tab: FusionTab,
 ) -> ResolvedScope {
     let global = ResolvedScope {
         scope: EditScope::LaneGlobal,
@@ -405,28 +420,21 @@ pub fn resolve_edit_scope(
     // A single-pulse group cannot morph: `lib.rs` skips the interpolation when
     // `pulse_count == 1`, so the switch must not pretend otherwise.
     let morph_available = fusion.is_some_and(|(_, _, pulses)| pulses > 1);
-    let scope = match (fusion, morph_end) {
-        (Some((_, fusion_index, _)), crate::ui::param_source::MorphEnd::End)
-            if morph_available =>
-        {
-            EditScope::Morph {
-                step,
-                fusion_index,
-                end: crate::ui::param_source::MorphEnd::End,
-            }
-        }
-        // "Start" on a fused cell is the start cell's p-lock for most fields, but
-        // an inherited `Source` target stores ITS value in the group — so the
-        // morph source handles that endpoint too and routes per field.
-        (Some((_, fusion_index, _)), crate::ui::param_source::MorphEnd::Start)
-            if morph_available =>
-        {
-            EditScope::Morph {
-                step,
-                fusion_index,
-                end: crate::ui::param_source::MorphEnd::Start,
-            }
-        }
+    let scope = match (fusion, tab) {
+        // The two morph ends. `Start` also goes through the morph source: an
+        // inherited `Source` target stores ITS value in the group, so the routing
+        // is per field, not per tab.
+        (Some((_, fusion_index, _)), FusionTab::End) if morph_available => EditScope::Morph {
+            step,
+            fusion_index,
+            end: crate::ui::param_source::MorphEnd::End,
+        },
+        (Some((_, fusion_index, _)), FusionTab::Start) if morph_available => EditScope::Morph {
+            step,
+            fusion_index,
+            end: crate::ui::param_source::MorphEnd::Start,
+        },
+        // `Step`, and every non-morphable case: the start cell's own p-lock.
         _ => EditScope::StepPlock { step },
     };
     ResolvedScope {
@@ -447,9 +455,7 @@ pub struct PlockPopup {
     pub step_was_active: bool,
     #[serde(with = "serde_pos2")]
     pub screen_pos: egui::Pos2,
-    /// When right-clicking a fused cell, true shows the morph-target submenu.
-    #[serde(default)]
-    pub morph_menu: bool,
+
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -838,7 +844,6 @@ mod tests {
         None
     }
 
-    use crate::ui::param_source::MorphEnd;
 
     /// Cells 4..=7 form fusion 0, emitting `pulses` pulses.
     fn fusion_4_to_7(pulses: u8) -> impl Fn(usize) -> Option<(usize, usize, u8)> {
@@ -853,7 +858,7 @@ mod tests {
 
     #[test]
     fn no_selection_edits_the_lane_global() {
-        let r = resolve_edit_scope(None, PANEL_SLOT, true, LANE_LEN, no_fusion, true, MorphEnd::Start);
+        let r = resolve_edit_scope(None, PANEL_SLOT, true, LANE_LEN, no_fusion, true, FusionTab::Step);
         assert_eq!(r.scope, EditScope::LaneGlobal);
         assert_eq!(r.highlight_step, None);
         assert!(!r.drop_selection);
@@ -861,7 +866,7 @@ mod tests {
 
     #[test]
     fn a_plain_cell_edits_its_plock() {
-        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true, MorphEnd::Start);
+        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true, FusionTab::Step);
         assert_eq!(r.scope, EditScope::StepPlock { step: 5 });
         assert_eq!(r.highlight_step, Some(5));
         assert!(!r.drop_selection);
@@ -871,7 +876,7 @@ mod tests {
     /// kept so coming back restores it.
     #[test]
     fn a_selection_on_another_lane_is_kept_but_inactive() {
-        let r = resolve_edit_scope(cell(7, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true, MorphEnd::Start);
+        let r = resolve_edit_scope(cell(7, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true, FusionTab::Step);
         assert_eq!(r.scope, EditScope::LaneGlobal);
         assert!(!r.drop_selection, "switching lanes must not lose the selection");
     }
@@ -880,7 +885,7 @@ mod tests {
     /// must bring the selection back — so it is kept, not dropped.
     #[test]
     fn disabled_editing_falls_back_to_global_without_losing_the_selection() {
-        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, false, MorphEnd::Start);
+        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, false, FusionTab::Step);
         assert_eq!(r.scope, EditScope::LaneGlobal);
         assert_eq!(r.highlight_step, None);
         assert!(!r.drop_selection);
@@ -888,14 +893,14 @@ mod tests {
 
     #[test]
     fn an_inactive_lane_or_an_out_of_range_step_drops_the_selection() {
-        let inactive = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, false, LANE_LEN, no_fusion, true, MorphEnd::Start);
+        let inactive = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, false, LANE_LEN, no_fusion, true, FusionTab::Step);
         assert!(inactive.drop_selection);
         assert_eq!(inactive.scope, EditScope::LaneGlobal);
 
-        let past_len = resolve_edit_scope(cell(PANEL_SLOT, 20), PANEL_SLOT, true, LANE_LEN, no_fusion, true, MorphEnd::Start);
+        let past_len = resolve_edit_scope(cell(PANEL_SLOT, 20), PANEL_SLOT, true, LANE_LEN, no_fusion, true, FusionTab::Step);
         assert!(past_len.drop_selection, "a step past the lane length is unreachable");
 
-        let past_grid = resolve_edit_scope(cell(PANEL_SLOT, 99), PANEL_SLOT, true, 64, no_fusion, true, MorphEnd::Start);
+        let past_grid = resolve_edit_scope(cell(PANEL_SLOT, 99), PANEL_SLOT, true, 64, no_fusion, true, FusionTab::Step);
         assert!(past_grid.drop_selection);
     }
 
@@ -912,14 +917,14 @@ mod tests {
                 LANE_LEN,
                 &group,
                 true,
-                MorphEnd::Start,
+                FusionTab::Start,
             );
             assert_eq!(
                 start.scope,
                 EditScope::Morph {
                     step: 4,
                     fusion_index: 0,
-                    end: MorphEnd::Start
+                    end: crate::ui::param_source::MorphEnd::Start
                 },
                 "step {step}"
             );
@@ -932,17 +937,42 @@ mod tests {
                 LANE_LEN,
                 &group,
                 true,
-                MorphEnd::End,
+                FusionTab::End,
             );
             assert_eq!(
                 end.scope,
                 EditScope::Morph {
                     step: 4,
                     fusion_index: 0,
-                    end: MorphEnd::End
+                    end: crate::ui::param_source::MorphEnd::End
                 }
             );
         }
+    }
+
+    /// [184] ph. 4 — the `Step` tab gives a fused cell its own p-lock back, which
+    /// is what the context menu used to be the only route to.
+    #[test]
+    fn the_step_tab_edits_a_fused_cells_own_plock() {
+        let group = fusion_4_to_7(4);
+        let r = resolve_edit_scope(
+            cell(PANEL_SLOT, 6),
+            PANEL_SLOT,
+            true,
+            LANE_LEN,
+            &group,
+            true,
+            FusionTab::Step,
+        );
+        assert_eq!(
+            r.scope,
+            EditScope::StepPlock { step: 4 },
+            "Step edits the start cell's p-lock, not the morph"
+        );
+        assert!(
+            r.morph_available,
+            "the two morph tabs stay offered - Step is a choice, not a fallback"
+        );
     }
 
     /// Asking for the End endpoint on a cell that is not fused must fall back to
@@ -956,7 +986,7 @@ mod tests {
             LANE_LEN,
             no_fusion,
             true,
-            MorphEnd::End,
+            FusionTab::End,
         );
         assert_eq!(r.scope, EditScope::StepPlock { step: 5 });
         assert!(!r.morph_available);
@@ -978,7 +1008,7 @@ mod tests {
                 LANE_LEN,
                 &single,
                 true,
-                MorphEnd::Start,
+                FusionTab::Step,
             );
             assert_eq!(r.scope, EditScope::StepPlock { step: 4 }, "step {step}");
             assert_eq!(r.highlight_step, Some(4));
@@ -992,7 +1022,7 @@ mod tests {
             LANE_LEN,
             &single,
             true,
-            MorphEnd::Start,
+            FusionTab::Step,
         );
         assert_eq!(r.scope, EditScope::StepPlock { step: 8 });
     }

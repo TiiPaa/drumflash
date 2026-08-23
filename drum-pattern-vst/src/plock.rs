@@ -21,6 +21,7 @@ pub const STEP_COUNT: usize = 64;
 // The field layout is defined by `param_id`, the module that owns the mapping
 // between a parameter and its slot ([184]); re-exported here so every existing
 // `crate::plock::FIELD_COUNT`-style path keeps working.
+#[allow(unused_imports)] // part of this module's public surface, by history
 pub use crate::param_id::{
     ALGO_FIELD, ATTACK_FIELD, FIELD_COUNT, LEGACY_CLAP_ECHO_FIELD, SPECIAL_FIELD_COUNT,
     SPECIAL_FIELD_START,

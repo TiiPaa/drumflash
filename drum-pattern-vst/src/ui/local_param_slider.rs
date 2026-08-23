@@ -34,11 +34,6 @@ impl<'a> LocalParamSlider<'a> {
         }
     }
 
-    /// Set logarithmic scaling for the slider.
-    pub fn logarithmic(mut self, logarithmic: bool) -> Self {
-        self.logarithmic = logarithmic;
-        self
-    }
 
     #[allow(dead_code)]
     /// Set a suffix to display after the value.
