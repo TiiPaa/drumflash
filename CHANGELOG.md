@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-22 — [184] phase 4 : troisième onglet Step et suppression des menus redondants (build 20260822-115906)
+
+**Branche:** `main` · **Build:** `20260822-115906`, complété par `20260823-091039`
+**Validation:** `cargo test` 340+1+205 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-08-23)**, 10/10 puis 5/5.
+
+- **Le sélecteur d'une cellule fusionnée devient `Step | Start | End`.** `Step` édite le p-lock de la cellule de départ — un override plat, sans rampe. La phase 3 n'exposait que les deux extrémités, ce qui laissait le menu contextuel seul capable de ça ; supprimer ses rangées aurait donc supprimé la possibilité. `Step` réutilise exactement la portée p-lock existante : aucun changement de modèle de données.
+- **`Step` est l'onglet par défaut**, parce que créer une rampe doit être un acte délibéré et non ce qui arrive la première fois qu'on touche un slider.
+- **~930 lignes supprimées**, pour 161 ajoutées :
+  - `draw_fusion_morph_menu` et `draw_morph_target_action_buttons` (372 lignes) : le morphing s'édite dans le panneau, avec ses graphes et ses marqueurs d'override. La rangée « Morphing (…) » du menu de fusion pointe désormais le panneau sur la fusion et se ferme.
+  - **Les rangées de valeurs de `draw_plock_menu` (274 lignes)** : deux implémentations du même écran sur le même stockage. Le menu garde ce que lui seul sait faire — créer, copier, coller, vider un p-lock **entier** — plus une rangée « Edit In Panel ». `ui/plock.rs` passe de **1257 à 603 lignes**.
+  - `fusion_morph_state` et `current_field_value_for_fusion` (`grid.rs`, 54 lignes), les quatre formateurs de valeur du menu p-lock (`ui/fmt.rs`, 66 lignes), `plock_menu_enum_row` (`ui/menus.rs`), la méthode `logarithmic` de `LocalParamSlider`, et le champ `PlockPopup::morph_menu`.
+- Ce qui **reste** dans le menu contextuel, comme prévu : les p-locks séquenceur (probabilité, stutter, nudge, condition, solo), le menu de groupe de fusion (Morphing / Edit Fusion Steps / Delete Fusion) et les actions structurelles du p-lock sound.
+- `LocalParamSlider` est conservé : les rangées de p-lock séquenceur l'utilisent toujours.
+- **Le menu se ferme après Copy et après Paste** (build `20260823-091039`, les trois emplacements dont celui du bloc de création) : le geste est terminé, le suivant se fait sur une autre cellule. **Clear** garde le menu ouvert sur ses options de création, puisque le pas n'a plus de p-lock et qu'enchaîner sur « Link to Global » ou « Snapshot » est le cas courant.
+
 ## 2026-08-21 — [184] phase 3 : le morphing s'édite dans le panneau (build 20260821-171425)
 
 **Branche:** `main` · **Build:** `20260821-171425`, affiné jusqu'à `20260822-112337`

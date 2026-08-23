@@ -850,7 +850,7 @@ pub fn draw_sound_panel(
         // whatever page the grid happens to be showing. Song mode is not: the
         // pattern itself changes underneath.
         !params.song_mode.value(),
-        state.morph_edit_end,
+        state.fusion_tab,
     );
     if resolved.drop_selection {
         state.sound_edit_target = None;
@@ -948,40 +948,43 @@ pub fn draw_sound_panel(
                                     .color(PL_LINK()),
                             );
                             ui.add_space(4.0);
+                            let badge = match resolved.scope {
+                                crate::ui::editor_state::EditScope::Morph { .. } => "Morph",
+                                _ => "P-Lock",
+                            };
                             ui.label(
-                                RichText::new(if morph_available { "Morph" } else { "P-Lock" })
-                                    .font(f_sans_sb(11.0))
-                                    .color(PL_LINK()),
+                                RichText::new(badge).font(f_sans_sb(11.0)).color(PL_LINK()),
                             )
-                            .on_hover_text(if morph_available {
+                            .on_hover_text(if badge == "Morph" {
                                 "Editing one end of this fused group's morph. Rows in accent colour are morph targets or step overrides; the others follow the lane."
                             } else {
                                 "Editing this step's sound p-lock. Rows in accent colour override the lane; the others follow it."
                             });
-                            // [184] ph. 3 — Start/End. Always drawn so the header
-                            // never changes width; greyed when the cell is not a
-                            // fused, multi-pulse group (a single pulse cannot
-                            // morph: the engine skips the interpolation).
+                            // [184] ph. 4 — Step / Start / End: a fused group's
+                            // three stores. Always drawn so the header never
+                            // changes width; the two morph ends are greyed when
+                            // the cell is not a fused, multi-pulse group (a single
+                            // pulse cannot morph, the engine skips the
+                            // interpolation), leaving `Step` as the only choice.
                             ui.add_space(6.0);
-                            let selected =
-                                (state.morph_edit_end == crate::ui::param_source::MorphEnd::End)
-                                    as usize;
+                            use crate::ui::editor_state::FusionTab;
+                            let tabs = [FusionTab::Step, FusionTab::Start, FusionTab::End];
+                            let selected = tabs
+                                .iter()
+                                .position(|tab| *tab == state.fusion_tab)
+                                .unwrap_or(0);
                             let picked = ui
                                 .add_enabled_ui(morph_available, |ui| {
                                     crate::ui::skeuo::segmented(
                                         ui,
-                                        ("morph_end", slot),
-                                        &["Start", "End"],
+                                        ("fusion_tab", slot),
+                                        &["Step", "Start", "End"],
                                         selected,
                                     )
                                 })
                                 .inner;
                             if morph_available && picked != selected {
-                                state.morph_edit_end = if picked == 1 {
-                                    crate::ui::param_source::MorphEnd::End
-                                } else {
-                                    crate::ui::param_source::MorphEnd::Start
-                                };
+                                state.fusion_tab = tabs[picked.min(tabs.len() - 1)];
                             }
                         }
                         None => {

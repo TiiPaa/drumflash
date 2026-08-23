@@ -849,7 +849,6 @@ fn draw_legacy_slot_lane_v2(
                                 step: source_step,
                                 step_was_active: active,
                                 screen_pos: pos,
-                                morph_menu: false,
                             });
                         }
                     }
@@ -2256,60 +2255,7 @@ fn fusion_key(
     resp
 }
 
-fn current_field_value_for_fusion(
-    params: &DrumFlashParams,
-    sound_settings: &SoundSettingsState,
-    instrument: usize,
-    field_index: usize,
-    step: usize,
-) -> f32 {
-    // If the start cell of the fusion has a sound plock for this field, use it
-    // as the default value instead of the global lane value.
-    let plock = &params.plock_state.state;
-    if plock.masks.is_active(instrument, step) {
-        let mask = plock.field_masks.get(instrument, step);
-        if mask & (1u64 << field_index) != 0 {
-            return plock.values.get(instrument, step, field_index);
-        }
-    }
-    // [184] One mapping: `ParamId` resolves the field, the accessor reads it.
-    // The algo is excluded on purpose: it lives in a nih-plug param, not in the
-    // atomics, and it is not morphable — so 0.0, exactly as before.
-    match crate::param_id::ParamId::from_plock_field(field_index) {
-        Some(crate::param_id::ParamId::Algo) | None => 0.0,
-        Some(id) => sound_settings.instruments[instrument].get(id),
-    }
-}
 
-/// Read the current end value for a morph target, or the global/plock value if
-/// the field is not a target. Uses the live `new_fusions` slice so mutations
-/// made earlier in the same frame are visible.
-pub fn fusion_morph_state(
-    new_fusions: &[crate::sequencer::pattern::FusedGroup],
-    fusion_index: usize,
-    field_index: usize,
-    params: &DrumFlashParams,
-    sound_settings: &SoundSettingsState,
-    instrument: usize,
-    step: usize,
-) -> (f32, bool) {
-    let Some(group) = new_fusions.get(fusion_index) else {
-        return (0.0, false);
-    };
-    if group.has_morph_target(field_index) {
-        let end = group.morph_targets[..group.morph_count as usize]
-            .iter()
-            .find(|t| t.field == field_index as u8)
-            .map(|t| t.end_value)
-            .unwrap_or(0.0);
-        (end, true)
-    } else {
-        (
-            current_field_value_for_fusion(params, sound_settings, instrument, field_index, step),
-            false,
-        )
-    }
-}
 
 fn draw_fusion_edit_box(
     ui: &mut egui::Ui,
