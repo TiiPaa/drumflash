@@ -1,5 +1,172 @@
 # Changelog
 
+## 2026-09-09 - [206] One Shot actif par defaut sur les trois samplers (build 20260909-094534)
+
+**Branche:** `main` - **Build:** `20260909-094534` (porte aussi [205], dont l'install de `20260909-092632` avait ete refaite)
+**Validation:** `cargo test` 362+1+222 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- `One Shot` passe a **1.0 par defaut** sur BD6smp, SD6smp et CH6smp : le sample joue jusqu'a sa fin au lieu d'etre coupe par l'enveloppe d'ampli.
+- Change aux **deux** endroits, sinon le defaut du registre et celui du DSP se contredisent : `sp_discrete("<v>_one_shot", ...)` dans `instrument_registry.rs` (ce que lisent une nouvelle lane et le bouton **Default**) et `special[2]` dans `VoiceSettings::{bd606, sd606, ch606}()` (avec quoi la voix est construite).
+- **Les sessions et presets existants gardent leur valeur** : les speciaux sont stockes par slot dans `sound-settings-v2`, donc seules les lanes nouvellement creees et le bouton Default prennent le nouveau defaut. Les voix **AC606** ne sont pas concernees (synthese, pas de sample, pas de parametre One Shot).
+- Un test de `bd606` prenait les defauts comme reference *gated* ; il demande desormais `special[2] = 0.0` explicitement, sinon ses deux branches devenaient identiques et il ne verifiait plus rien.
+
+## 2026-09-09 - [205] Une lane qui recoit un instrument est vide sur les 16 patterns (build 20260909-092632)
+
+**Branche:** `main` - **Build:** `20260909-092632`
+**Validation:** `cargo test` 362+1+222 OK (4 nouveaux tests), `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- **Le bug.** Supprimer une lane ne retire que son drapeau `active` (`ui/grid.rs`, `deactivate_slot`) : ses pas, fusions, p-locks sound et p-locks sequenceur restent en place. Ils sont invisibles et muets tant que le slot est vide, puis **ressuscitent des qu'un nouvel instrument est pose la** - `activate_slot` ne remettait a zero que les *reglages de son*, aucune donnee musicale.
+- **Le bug, deuxieme moitie.** Chaque `PatternSlot` de la bank stocke les masques de pas des 64 pas et les blobs de p-locks/fusions **pour les 14 lanes**. Aucune operation de lane ne les touchait : ni l'activation, ni la suppression, ni le deplacement. Le fantome apparaissait donc ou non selon que le pattern rappele avait ete enregistre avant ou apres la chirurgie de lane - d'ou le cote intermittent.
+- **Adressage par lane dans la bank** (`pattern_bank.rs`) : tout ce que `capture` ecrit est positionnel et emet les 14 lanes a pas fixe, donc une lane s'efface ou se deplace sans deserialiser le reste. `LaneRegions` decrit un blob comme des regions `(offset de la lane 0, octets par lane)`, et les trois sondes de disposition (`plock_lane_regions`, `seq_plock_lane_regions`, `fusion_lane_regions`) reconnaissent **les memes variantes de longueur que le chemin de restauration** - dont le blob p-lock legacy a 18 champs, edite avec SA foulee et non celle de 46. De la : `PatternSlot::clear_lane` / `permute_lanes`, `PatternBank::clear_lane_everywhere` / `permute_lanes_everywhere`, et sur `PersistentPatternBank` les deux entrees qui prennent le verrou et rafraichissent le snapshot.
+- **Poser un instrument sur une lane vide nettoie la lane partout** : pattern vivant (pas, fusions, p-locks sound et sequenceur) **et** les 16 patterns sauvegardes. Vaut pour le selecteur `+N` (`activate_slot`) et pour un **Paste Lane sur une lane vide** - meme geste, meme garantie : le presse-papier remplit le pattern affiche, les 15 autres sont vierges.
+- **La suppression reste non destructive** (choix explicite) : un `Delete Lane` de trop ne detruit rien, les donnees dorment jusqu'a ce qu'un nouvel instrument prenne la place. Corollaire : les fantomes deja presents sur une lane **deja occupee** ne sont pas nettoyes retroactivement - supprimer la lane puis reposer l'instrument le fait.
+- **Le deplacement de lane permute aussi les 16 patterns.** `apply_lane_reorder_move` permutait meticuleusement tout l'etat vivant et laissait les patterns sauvegardes sur l'ancienne affectation : rappeler un pattern apres un glisser remettait les pas de chaque instrument sur la lane qu'il occupait avant. Meme trou, meme correctif.
+- **Non touche, volontairement** : `Clear Grid` d'une lane (il vide la lane du pattern **courant**, pas des 16) et l'application d'un kit/preset de layout (re-instrumenter des patterns existants est un acte creatif legitime).
+- Tests : effacement d'une lane dans un pattern sauvegarde avec voisines intactes ; permutation qui suit le glisser ; **blob p-lock de longueur legacy non corrompu** ; slot vide et lane hors bornes sans panique.
+
+## 2026-09-02 — [200f] Le chargeur de presets d'instrument rejoint le bandeau d'actions (build 20260902-155102)
+
+**Branche:** `main` · **Build:** `20260902-155102`
+**Validation:** `cargo test` 356+1+221 OK. **Validé dans Studio One (2026-09-09).**
+
+- La section **Preset** (dropdown « Load preset… » des presets d'instrument de la lane) quitte l'onglet Track pour la **section droite du bandeau d'actions** de l'onglet Sound, avec Store/Restore/Default : `[Step|Start/End] … [Preset▾] [Store] [Restore] [Default]`. L'onglet Track perd cette section (Instrument / Routing / MIDI restent).
+
+## 2026-09-02 — [200e] Step/Start/End rejoint le bandeau d'actions (build 20260902-145616)
+
+**Branche:** `main` · **Build:** `20260902-145616`
+**Validation:** `cargo test` 356+1+221 OK. **Validé dans Studio One (2026-09-09).**
+
+- Le segmenté **Step / Start / End** quitte l'en-tête (où il était dessiné même dans l'onglet Track, qui ne le concerne pas) pour le **bandeau d'actions** de l'onglet Sound, en deux sections propres : à gauche le choix de portée (Step/Start/End), à droite les actions (Store/Restore/Default). Toujours dessiné, grisé quand la cellule n'est pas morphable (règle zones stables). L'en-tête ne garde que le badge de scope.
+
+## 2026-09-02 — [200d] Default/Store/Restore déménagent dans un bandeau d'actions (build 20260902-143620)
+
+**Branche:** `main` · **Build:** `20260902-143620`
+**Validation:** `cargo test` 356+1+221 OK. **Validé dans Studio One (2026-09-09).**
+
+- Retour utilisateur (capture) : dans l'en-tête, les trois boutons surchargaient la zone (titre « Lane Editor » tronqué, nom de lane poussé dehors). Nouvelle disposition : l'en-tête redevient comme avant ([184]) ; **Default / Store / Restore** vivent dans un **bandeau d'actions fin aligné à droite, juste sous les onglets Sound/Track** — toujours visible dans l'onglet Sound, jamais scrollé, absent de l'onglet Track.
+
+## 2026-09-02 — [200c] Default devient scope-aware (build 20260902-141717)
+
+**Branche:** `main` · **Build:** `20260902-141717`
+**Validation:** `cargo test` 356+1+221 OK, warning-clean. **Validé dans Studio One (2026-09-09).**
+
+- Retour utilisateur : sur un pas avec p-lock sound, Default ne ramenait pas les valeurs verrouillées aux défauts. Le bouton suit désormais **la portée éditée** :
+  - **Lane** : reset de la lane aux défauts d'usine (comportement [200], inchangé) ;
+  - **P-lock (Step)** : les champs **verrouillés** du pas reviennent aux défauts d'usine de l'instrument — **masque intact** (écriture directe dans le magasin de valeurs, jamais via `PlockSource::set` qui verrouillerait chaque champ écrit et transformerait un p-lock Link en snapshot complet) ;
+  - **Morph** : les **cibles existantes** du groupe reviennent aux défauts (aucune nouvelle cible créée).
+- L'infobulle du bouton décrit l'action selon la portée.
+
+## 2026-09-02 — [200b] « Sure? » du bouton Default se désarme (build 20260902-124917)
+
+**Branche:** `main` · **Build:** `20260902-124917`
+**Validation:** `cargo test` 356+1+221 OK. **Validé dans Studio One (2026-09-09).**
+
+- Retour utilisateur : une fois armé, « Sure? » ne proposait aucune issue. Désormais il se **désarme après 3 s** (avec repaint programmé, le libellé revient seul à « Default ») **ou dès un clic ailleurs** dans l'interface. L'infobulle documente les deux sorties.
+
+## 2026-09-01 — [199] [200] [201] Quick wins Lane Editor (build 20260901-203831)
+
+**Branche:** `main` · **Build:** `20260901-203831`
+**Validation:** `cargo test` 356+1+221 OK, warning-clean. **Validé dans Studio One (2026-09-09).**
+
+- **[199] BUG** : créer un **seq plock** laissait le panneau Sound sur l'onglet **Step** (p-lock son). Cause : la sélection de cellule posée par un clic droit en mode Sound persistait quand on passait en mode Sequencer sur la même lane. Fix : un clic droit en mode Sequencer **efface explicitement** la sélection sound.
+- **[200] Bouton Default** dans l'en-tête du Lane Editor : remet les paramètres de la lane aux **défauts d'usine de l'instrument** (`reset_slot_to_defaults`). Deux clics (« Sure? », comme Clear All). Les p-locks des pas sont conservés.
+- **[201] Boutons Store / Restore** : snapshot A/B rapide des paramètres (settings + algo) **par lane** pendant l'édition — non persisté, aide à l'édition. Restore grisé tant que rien n'est stocké pour la lane.
+- Les trois boutons sont **accessibles dans tous les scopes** (Lane / P-Lock / Morph) — retour utilisateur : grisés en scope p-lock à la première itération, corrigé.
+
+## 2026-08-27 — [198b] BD6(AC) : Decay Curve accentuée (build 20260827-163841)
+
+**Branche:** `main` · **Build:** `20260827-163841`
+**Validation:** `cargo test` 356+1+221 OK (golden intact). **Validé dans Studio One (2026-09-09).**
+
+- Curve portée à **γ = 2^(3c)** (était 2^(2c)) : +1 = concave ×8 (très punchy), −1 = convexe ×0,125 (queue très étirée). Mesures à decay 0,05 s : +1 → queue 58 ms, 0 → 241 ms, −1 → 694 ms.
+- Rappel sémantique (convention identique aux autres voix) : **Decay = la durée** de la chute, **Decay Curve = sa forme** — +1 creuse le début (queue perçue plus courte), −1 garde l'énergie puis plonge (queue perçue plus longue). À decay très court, c'est le −1 qui donne une longue queue, pas le +1.
+
+## 2026-08-27 — [198] BD6(AC) : Decay Curve bipolaire + Decay plafonné à 1 s (build 20260827-162051)
+
+**Branche:** `main` · **Build:** `20260827-162051`
+**Validation:** `cargo test` 356+1+221 OK (+1 test), warning-clean. **Validé dans Studio One (2026-09-09).**
+
+- **Decay Curve** sur BD6(AC) (slider bipolaire −1..1, famille Env, comme les autres voix) : exponent γ = 2^(2c) sur l'enveloppe d'ampli du corps — **+1 = concave ×4** (plus punchy), **−1 = convexe ×0,25** (queue qui paraît plus longue). Défaut 0 = exponentielle fittée, golden bit-exact préservé (shortcut ×1).
+- **Decay plafonné à 1 s** (était 2 s) dans `AC_BD_STD` — au-delà le moteur saturait déjà sa queue.
+
+## 2026-08-27 — [197] Kits d'usine AC 4 / AC 12 (build 20260827-160721)
+
+**Branche:** `main` · **Build:** `20260827-160721`
+**Validation:** `cargo test` 355+1+220 OK (+1 test), warning-clean. **Validé dans Studio One (2026-09-09).**
+
+- **Deux nouveaux kits d'usine dans le preset browser (onglet Grid)** : **AC 4** (BD6(AC)/SD6(AC)/HH6(AC)/TM6(AC)) et **AC 12** (les 6 voix AC + Ride, Cymbal, Snare606, 808 pour ce que le set AC ne couvre pas). Les kits classiques 4/12 Lanes sont inchangés.
+- Les hats AC (**HH6(AC)/OH6(AC)**) héritent du **choke group 1** dans les kits qui en contiennent (`from_kinds` élargi), comme HH/OH classiques.
+
+## 2026-08-27 — [196d] BD6(AC) : Tone descend à 80 Hz (build 20260827-144429)
+
+**Branche:** `main` · **Build:** `20260827-144429`
+**Validation:** `cargo test` 354+1+219 OK (golden bit-exact préservé). **Validé dans Studio One (2026-09-09).**
+
+- **Pourquoi Tone était inaudible** : il règle le passe-bas du **corps** du kick (la sinus qui balaye ~120→53 Hz) entre 620 et 1200 Hz — or le corps est une sinus quasi pure très en dessous, donc le filtre ne changeait rien. **Tone est un filtre de corps, pas un EQ général.**
+- **La plage descend désormais à 80 Hz** sous le point fitté (0,34 → 817 Hz préservé bit-exact) : en dessous de ~400 Hz le filtre mange le haut de l'attaque (kick plus sourd/subbie), et au-delà de 1 il ouvre toujours jusqu'à 6 kHz.
+
+## 2026-08-27 — [196c] BD6(AC) : retrait d'Attack et Punch Decay (build 20260827-142925)
+
+**Branche:** `main` · **Build:** `20260827-142925`
+**Validation:** `cargo test` 354+1+219 OK (golden bit-exact préservé). **Validé dans Studio One (2026-09-09).**
+
+Retours utilisateur sur [196b] :
+
+- **Attack retiré** de BD6(AC) — quasi inaudible sur ce moteur ; l'attaque du moteur est figée à la valeur fittée effective (0,2). Le slider standard disparaît du panneau (table `AC_BD_STD` allégée).
+- **Punch Decay retiré** — idem ; le decay de l'impulsion est figé au fitté (2,4 ms). L'indice `special[6]` reste inerte (aucune renumérotation, sessions intactes).
+- **Punch conservé** (0–2, boost [196b]) : c'est le « thud » initial — l'impulsion dérivée de la pente du corps qui fait percer le kick dans un mix ; au-delà de 1 il gonfle aussi le corps.
+
+Contient aussi [196b] (plages étendues + Sat Mix/Gain au milieu), jamais installé : ce build est la première mise en ligne de ces deux lots.
+
+## 2026-08-27 — [196b] Retours AC606 : plages BD6 étendues + défauts saturation (build 20260827-140855)
+
+**Branche:** `main` · **Build:** `20260827-140855`
+**Validation:** `cargo test` 354+1+219 OK (golden bit-exact préservé — les défauts ne changent pas). **Validé dans Studio One (2026-09-09).**
+
+Retours utilisateur sur [196], tous traités côté BD6(AC) — les plages étaient câblées mais trop timides pour être audibles ; tout dépasse désormais le fitté **sans toucher au son par défaut** (coude au-delà de la valeur fittée, golden intact) :
+
+- **Punch** : slider étendu à 0–2 (le niveau d'impulsion double par rapport à l'ancien max, et nourrit aussi le corps via `thud_shape`).
+- **Punch Decay** : 0–2, avec extension au-delà de 1.0 → jusqu'à ~39 ms (était 8,8 ms max).
+- **Drive** : 0–2, avec coude de boost quadratique au-delà du fitté 0,18 → ~8× de drive à fond (était ~1,36×, quasi inaudible).
+- **Tone** : 0–2, le filtre du corps ouvre au-delà de 1200 Hz jusqu'à 6 kHz (620–1200 Hz en dessous, comme avant).
+- **Sweep** : 0–2 → étendue ×0 à ×4 (était ×2 max).
+- **Attack** : effet étendu au-delà de 10 ms (transient ×2 max — c'est le niveau/la durée du « tick » initial + un peu de corps, désormais clairement audible à forte valeur).
+- **Tous les (AC)** : **Saturation Mix** et **Saturation Output Gain** au milieu par défaut (0,5 et 1,25) au lieu de 1,0 / 1,0.
+
+## 2026-08-27 — [196] Exploration des paramètres AC606 + saturation partagée (build 20260827-094426)
+
+**Branche:** `main` · **Build:** `20260827-094426`
+**Validation:** `cargo test` 354+1+219 OK (+14 tests), warning-clean. **Validé dans Studio One (2026-09-09).**
+
+Sur décision utilisateur, la fidélité hardware n'est plus une contrainte : les moteurs AC606 deviennent des points de départ explorables. **~30 nouveaux paramètres**, tous en `special[]` (donc **p-lockables et morphables** gratuitement), défauts = valeurs fittées (le son d'origine est au centre des plages) :
+
+- **BD6(AC)** : Sweep (étendue du balayage de pitch), Bend (vitesse de chute), Click + **Click Tone** (400–4000 Hz), Punch + Punch Decay, Tone (LPF du corps), Drive. Attack/Click/Punch sont désormais **découplés** (avant, un seul « transient » pilotait les trois).
+- **SD6(AC)** : Wire Color (déplace les bandes 3k/4,6k sans toucher le shell), Shell Bend, Impact (le dip négatif initial), Ring (le ring grave qui colle wires et shell).
+- **HH6(AC) / OH6(AC)** : Metal (partiels vs bruit), Click, Bell (accent des 3 lignes), Wobble (×4 : anti-accord → chorus métallique), **Spread** (désaccord déterministe des 47 partiels — nouveau, pas dans l'original), **Brightness** (tilt spectral — nouveau).
+- **CL6(AC)** : Noise (corps sec → air/densité), Spread (écartement des 4 bursts ×0,25–3), Tail (queue diffuse), Air (couche HP forcée même à Noise ≤ 0,5).
+- **TM6(AC)** : **Model** Auto/Low/High (discret — forcer la spec grave pitchée haut, etc.), Strike, Snap, Glide (au-delà de ×1, le tom aigu gagne la chute du grave), Modes (résonances hautes), Tail Noise.
+- **Pack saturation partagé** (Type/Amount/Mix/Output Gain, indices 10–13) sur les six kinds — les voix AC contournait la chaîne commune, elles la traversent désormais comme les autres (sans Pre-Filter : pas d'étage de filtre à contourner).
+
+**Filet de sécurité** : test **golden bit-exact** (hash FNV-1a du rendu à défauts) — les 5 kinds SD/HH/OH/CL/TM reproduisent le son d'origine au bit près ; BD6 a été recapturé après mesure : le découplage Click/Punch déplaçait ces niveaux d'exactement **1 ulp** (inaudible, sémantique voulue). Tests de câblage : chaque param aux deux extrêmes doit rendre différemment (avec sensibilisateurs pour Punch Decay et Modes) + sortie finie ; saturation vérifiée audible.
+
+## 2026-08-26 — [195] Six nouveaux instruments AC606 (voix analogcode portées) (build 20260826-224038)
+
+**Branche:** `main` · **Build:** `20260826-224038` (première itération `20260826-202054` en algos, réorientée en instruments dédiés sur demande utilisateur)
+**Validation:** `cargo test` 351+1+216 OK (+11 tests), warning-clean. **Validé dans Studio One (2026-09-09).**
+
+- **Portage Rust fidèle du repo [`analogcode/606-Inspired-Synth-Drums`](https://github.com/analogcode/606-Inspired-Synth-Drums) (MIT, © 2026 Matthew Fecher)** dans `src/synthesis/ac606/` : constantes fittées par mesure sur hardware, flux RNG et topologies de filtres inchangés. Les 768 taps FIR du Clap sont **vérifiés bit-à-bit** contre la source C++ par script (20 typos de transcription initiale attrapées et corrigées avant intégration).
+- **Six nouveaux instruments** (kinds 16-21 / voix 18-23), visibles dans le sélecteur Type, le popup Add Module et le menu clic-droit « Instrument », groupés par catégorie :
+  - **BD6(AC)** (BD) — « 608 XL » : sweep sine + click + impulsion dérivée de la pente du corps ; Attack → transient
+  - **SD6(AC)** (SD) — shell accordé 201 Hz + wires en 2 biquads bandpass fittés sur le sample hardware ; spécial **Snap** → Snappy
+  - **HH6(AC)** / **OH6(AC)** (HH) — même source **47 partiels** extraits par FFT (3 lignes « bell » accentuées, wobble corrélé anti-accord), specs closed/open
+  - **CL6(AC)** (SD) — RD-6 : 4 bursts timés + 4 FIR de 192 taps sur un flux de bruit unique + upsampler sinc 128 taps quand le pitch bouge
+  - **TM6(AC)** (PERC) — spec **Low** sous 166 Hz, **High** au-dessus (glide de 40 Hz sur le grave, ring à 135,6 Hz sur l'aigu)
+- **Un seul wrapper `AcVoice`** (`src/synthesis/ac_voice.rs`) + settings partagés `AcVoiceSettings`. Mapping : Frequency/Tone → pitch ratio (1,0 = son fitté au défaut), Decay → longueur normalisée sur la durée fittée, Analog → jitter de pitch par coup, Volume → niveau final. Chaque hit est unique par construction (bruit/phases libres), comme le hardware.
+- **Anti-click [179] étendu** : chaque moteur repart d'un état fitté neuf à chaque coup, la queue coupée est fondue par `RetrigDeclick` (3 ms) — test de retrigger auto-calibré sur les six kinds.
+- **Crédit** : section **About** dans le popup Settings (remerciement + lien), notice MIT complète dans `src/synthesis/ac606/LICENSE-MIT.txt`, en-têtes des fichiers portés. La table sinc du Clap est pré-calculée dans `initialize_with_layout` (pas d'allocation sur le thread audio).
+- **Générateur** : chaque kind AC emprunte le rôle de son équivalent acoustique (Kick/Snare/HiHat/OpenHiHat/Clap/Tom). **Sessions existantes** : inchangées (variants ajoutés à la fin des enums sérialisés, réglages par slot).
+- Note : une première itération branchait ces moteurs en **algos** des voix existantes ; réorientée en instruments dédiés sur demande utilisateur.
+
 ## 2026-08-22 — [184] phase 4 : troisième onglet Step et suppression des menus redondants (build 20260822-115906)
 
 **Branche:** `main` · **Build:** `20260822-115906`, complété par `20260823-091039`
@@ -132,7 +299,7 @@
 ## 2026-08-21 — [183] Filter LFO SDrex : modulation vers le haut depuis la base (build 20260821-091344)
 
 **Branche:** `main` · **Build:** `20260821-091344`
-**Validation:** `cargo test` 310+1+199 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 310+1+199 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **Symptôme** : en mode Filter LFO, avec Filter au minimum (20 Hz) et Depth à fond, on n'entendait plus rien — l'inverse de ce qu'une modulation à pleine profondeur devrait donner.
 - **Cause** : le cutoff était modulé de façon **bipolaire et multiplicative autour** de la base (`filter × 2^(sin × depth × wet)`). À 20 Hz de base et 3 octaves, le balayage allait de 2,5 Hz à 160 Hz : **la moitié basse de chaque cycle était écrasée par le clamp à 20 Hz**, et le sommet de l'autre moitié (160 Hz) restait sous le corps de la voix (185 Hz), loin du metal (620/910 Hz). Mesuré : **−15,8 dB** sous la voix filtre ouvert, contre −35,4 dB filtre fermé sans modulation. La profondeur étant exprimée en octaves *relatives à la base*, aucun réglage de Depth ne pouvait ouvrir assez depuis une base basse.
@@ -143,7 +310,7 @@
 ## 2026-08-20 — [182] Unités affichées sur les paramètres spéciaux et dans le menu plock (build 20260820-184818)
 
 **Branche:** `main` · **Build:** `20260820-184818`
-**Validation:** `cargo test` 309+1+198 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 309+1+198 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **Cause du manque d'unités** : les deux catégories de paramètres sont deux structures distinctes. `ParamWidget::Slider` (paramètres standard) porte un `suffix`, mais **`SpecialParamDef` n'avait aucun champ d'unité** — le Sound Panel passait `None` en dur pour tous les spéciaux, donc aucun ne pouvait afficher son unité, même quand il s'agissait de Hz, de secondes ou de ms.
 - **`SpecialParamDef` gagne `unit: Option<&'static str>`** + un helper `sp_unit(...)`. `sp()` et `sp_discrete()` restent pour les grandeurs sans dimension (depth, wet, mix, amount…), donc seules les 12 lignes concernées changent : **Hz** — `Gate Rate` (Buzz), `Rate` (LFO SDrex), `Click Tone` (BD808), `Shimmer Freq` (Cymbal) ; **s** — `Filter Attack` et `Filter Hold` (Buzz et SDrex) ; **ms** — `Fade-in` (SDrex) ; **ct** (cents) — `Pitch Fine` des trois samplers 606.
@@ -153,7 +320,7 @@
 ## 2026-08-20 — [181] Fine-tune des sliders, Modulation SDrex explicite, Fade-in, plages d'enveloppes (build 20260820-172925)
 
 **Branche:** `main` · **Build:** `20260820-172925`
-**Validation:** `cargo test` 308+1+197 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 308+1+197 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **Fine-tune des sliders réparé** — la modulation fine avait disparu lors de l'unification des sliders : `slider::draw_track` ne faisait que du positionnement absolu (saut à la position du curseur). **Shift ou Alt + glisser** fait maintenant un déplacement *relatif* à la valeur courante, ~4× plus fin (0,0015 unité normalisée par pixel, la même sensibilité que le slider du menu plock). Un simple Shift/Alt+clic ne saute plus. Détection du modificateur via `controls::fine_tune_modifier_pressed`, qui double le test egui d'une lecture clavier plateforme (`GetAsyncKeyState`) — les hôtes qui interceptent le clavier (Studio One, REAPER) empêchaient egui de voir le modificateur, ce qui est très probablement la cause de la panne. Le slider du menu plock utilise désormais la même détection. Maths du drag fin isolée dans `apply_fine_drag` + 4 tests unitaires (relatif, clamp aux bornes, mapping log, respect du pas de quantification).
 - **SDrex : le switch « Filter Mod » devient un vrai choix « Flanger / Filter LFO »** — un interrupteur on/off ne disait pas entre quoi il choisissait. Nouveau helper `segmented_row` (label + sélecteur segmenté aligné à droite), le libellé du paramètre passe à « Modulation ».
@@ -207,7 +374,7 @@
 ## 2026-08-19 — SDrex : Holds, Decays 2 s, Free Phase flanger (build 20260819-165918)
 
 **Branche:** `main` · **Build:** `20260819-165918`
-**Validation:** `cargo test` 295+1+187 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 295+1+187 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **Enveloppe volume A-H-D** : ajout de `Hold` (0-2 s) entre Attack et Decay ; `Decay` monte désormais jusqu’à **2 s**. Le hold retarde les trois décroissances body/noise/metal sans figer le pitch drop.
 - **Enveloppe filtre A-H-D** : ajout de `Filter Hold` (0-2 s) ; `Filter Decay` monte désormais jusqu’à **2 s**. DSP et graphe utilisent Attack → Hold → Decay avec les courbes bipolaires existantes.
@@ -217,7 +384,7 @@
 ## 2026-08-19 — SDrex : section Flanger + enveloppe volume A-D (build 20260819-164808)
 
 **Branche:** `main` · **Build:** `20260819-164808`
-**Validation:** `cargo test` 292+1+184 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 292+1+184 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **Filter et Flanger séparés** : nouvelle famille data-driven `ParamFamily::Flanger`; Rate, Delay, Depth, Feedback et Wet apparaissent désormais dans une section **Flanger** autonome. Les paramètres cutoff et enveloppe LP restent seuls dans **Filter**.
 - **Enveloppe volume SDrex enrichie** : ajout de `Attack`, `Attack Curve` et `Decay Curve` dans la section **Envelope**, avec graphe A-D. Attack applique une rampe commune aux couches body/noise/metal ; Attack Curve façonne cette rampe et Decay Curve façonne les trois décroissances caractéristiques sans ajouter une seconde enveloppe qui raccourcirait la recette.
@@ -227,7 +394,7 @@
 ## 2026-08-19 — Correctif stabilité Clear All / SDrex (build 20260819-163329)
 
 **Branche:** `main` · **Build:** `20260819-163329`
-**Validation:** `cargo test` 290+1+182 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 290+1+182 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **Risque de crash natif supprimé dans la persistence Pattern Bank / Clear All** : l'ancien snapshot JSON publié par `AtomicPtr<Vec<u8>>` libérait immédiatement l'ancien buffer pendant qu'un autre thread pouvait encore le lire. Remplacé par un snapshot partagé protégé par `RwLock`, avec test de lecture/rafraîchissement concurrents.
 - **Thread audio assaini** : une sauvegarde de pattern ne clone/sérialise plus toute la banque dans `process()` ; elle pose uniquement un drapeau atomique, consommé au prochain accès de persistence hors callback audio.
@@ -238,7 +405,7 @@
 ## 2026-08-19 — [175] Nouvel instrument SDrex + fix Algo Perc1 + légendes/grilles graphes (build 20260819-145510)
 
 **Branche:** `main` · **Build:** `20260819-145510`
-**Validation:** `cargo test` 284+1+178 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 284+1+178 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **[175] SDrex** (kind 15 / voice 17, catégorie SD) : recette « drex_snare » de l'utilisateur portée en voix temps réel — corps sine (pitch drop +95 Hz → base, env rate 32), noise HP par soustraction LP (env 18), metal ring-mod 620×910 Hz (env 25), mix 0.50/0.80/0.18, **flanger** (Rate 0.1-20 Hz / Delay 0-3 ms / Depth 0-3 ms / Fdbk 0-0.9 / Wet 0-1 — les 5 params demandés, en special params famille Filter), drive tanh ×2.2×0.8 fixe dans la chaîne de saturation standard. `Frequency` = base du corps (déplace aussi la paire metal), `Decay` scale les 3 enveloppes, `Analog` = drift par coup. Note MIDI 48, rôle Snare au GENERATE, mono. Enveloppes en formules temporelles → `set_settings` sans recréation (anti-click natif). Tests : son/fini/silence, wet flanger audible, decay étire la queue, roundtrip settings.
 - **Fix Perc1 Algorithm** : `set_algo()` ne recréait pas les oscillateurs et faisait échouer la détection de changement dans `set_settings` → Perc1 jouait toujours Sine. `set_algo` reconstruit maintenant les 4 oscs sur changement réel. Test de régression (`perc1_algo_changes_the_output`, chemin moteur bit-identique à une voix Saw fraîche).
@@ -247,7 +414,7 @@
 ## 2026-08-19 — Filtre Tom : câblage corrigé + sweep exponentiel 20k (build 20260819-114620)
 
 **Branche:** `main` · **Build:** `20260819-114620`
-**Validation:** `cargo test` 278+1+172 OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 278+1+172 OK. **Validé dans Studio One (2026-09-09).**
 
 Diagnostic utilisateur (« le filtre du Tom ne fonctionne pas ») — 5 corrections en chaîne sur `tom.rs` :
 - **Bug pitch** : `pitch_env.next()` appelé 2× par sample (top + branches algo) → sweep de pitch à **double vitesse**. Corrigé (1 appel, réutilisé).
@@ -261,7 +428,7 @@ Diagnostic utilisateur (« le filtre du Tom ne fonctionne pas ») — 5 correcti
 ## 2026-08-18 — [174] Fixes graphes/DSP env filtre + BUG plocks sound perdus au chargement de pattern (build 20260818-182234)
 
 **Branche:** `main` · **Build:** `20260818-182234`
-**Validation:** `cargo test` 278+1+172 OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 278+1+172 OK. **Validé dans Studio One (2026-09-09).**
 
 - **BUG (P1) — plocks sound perdus au chargement d'un pattern** (bank slots ET presets) : `restore_from_buffers` écrivait le field mask via `field_masks.set(inst, step, mask as usize)` — or `set()` attend un **index de champ** (`1 << field`), pas un masque → le masque était corrompu à chaque restore (snapshot `(1<<46)-1` → no-op → masque vide → le plock devenait un link sans champ = muet). Remplacé par `set_raw`. La persistence projet (`plock-v1`) utilisait déjà `set_raw` — seul le chargement de patterns était cassé. Test de régression `pattern_preset_roundtrip_preserves_sound_plock`.
 - **[174/F1] Toms** : `draw_filter_envelope` normalise la courbe sur toute la largeur (avant : plancher 100 ms sur l'axe X → courbe écrasée à gauche quand Filter Decay < 100 ms).
@@ -271,7 +438,7 @@ Diagnostic utilisateur (« le filtre du Tom ne fonctionne pas ») — 5 correcti
 ## 2026-08-16 — [167] densité Randomize Lane + [170] curves renforcées + [168] stéréo 2 samples smp (build 20260816-185337)
 
 **Branche:** `main` · **Build:** `20260816-185337` (retour utilisateur intégré : paires + compatible Analog)
-**Validation:** `cargo test` 277+1+172 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 277+1+172 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **[167] Densité réglable pour Randomize Lane** : slider « Density » (5-100 %, défaut 30 %) dans le menu clic droit du nom de lane, au-dessus de « Randomize Lane ». Persisté dans l'état éditeur (`randomize_density`, fallback 30 % si 0/legacy).
 - **[170] Courbes bipolaires renforcées** (tous les instruments) : exposant `1+3|c|` → `1+5|c|` dans `dsp::shape_curve` (enveloppes d'ampli A-H-D), `buzz::shape_curve` (enveloppe de filtre Buzz) et le graphe `envelope_viz`. Les réglages de courbe existants sonnent plus extrêmes aux bords (voulu).
@@ -280,7 +447,7 @@ Diagnostic utilisateur (« le filtre du Tom ne fonctionne pas ») — 5 correcti
 ## 2026-08-16 — [171] MIDI Pat sans retrig + [172] temps forts éclaircis + [169] Clap plus fort (build 20260816-151800)
 
 **Branche:** `main` · **Build:** `20260816-151800`
-**Validation:** `cargo test` 273+1+168 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 273+1+168 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **[171] MIDI Pat : plus de retrig au changement de pattern.** Le switch par note MIDI (60-75) ne lève plus `pending_song_pattern_restart` : le nouveau pattern **reprend à la volée** (position conservée). Si la longueur change, le resync host existant (`sync_to_host`, `rem_euclid` sur la nouvelle longueur) ramène la lecture dans le pattern — une page courante qui n'existe plus retombe dans le pattern (page 1 pour un pattern 1 page). Le mode Song conserve son restart (avancée par bloc).
 - **[172] Temps forts 1/5/9/13 éclaircis** : voile `white_a(26)` sur les cellules OFF des temps forts dans `draw_step_cell_v2` (le sprite `pad-off-beat` seul était trop subtil).
@@ -345,7 +512,7 @@ Diagnostic utilisateur (« le filtre du Tom ne fonctionne pas ») — 5 correcti
 ## 2026-08-14 — [150] Gestion des presets (instruments / patterns / grid / songs) + outil factory (build 20260814-171844)
 
 **Branche:** `main` · **Build:** `20260814-171844`
-**Validation:** `cargo test` 271+1+168 OK, `build.ps1 -Install` OK. **À valider dans Studio One.**
+**Validation:** `cargo test` 271+1+168 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
 
 - **Retours post-v1** : bouton **« Presets » déplacé dans le header**, entre « MIDI Pat » et « Settings », encadré de barres de séparation (vbar épaissies 1→2 px) ; le bouton de la barre Pattern Bank est retiré.
 - **Type de preset « Grid »** (4e onglet du modal) : capture/charge le kit de lanes (kinds par slot, `.fdgrid.json`). Les 3 layouts d'usine de l'ancien dropdown **« Preset » de la page-bar — supprimé** — y vivent désormais : **Clear All** (2 clics, efface la grille) / **4 Lanes** / **12 Lanes**. `LanePresetAction`, le dropdown et le warning popup associés sont supprimés ; `apply_lane_layout_preset` est partagé avec le modal.

@@ -614,6 +614,9 @@ mod tests {
         let mut settings = VoiceSettings::bd606();
         settings.decay = 0.001; // near-instant amp decay
         settings.release = 0.0;
+        // One Shot is ON by default on the samplers, so the gated reference has
+        // to ask for the envelope explicitly.
+        settings.special[2] = 0.0;
 
         let mut gated = voice_with(settings);
         gated.trigger();

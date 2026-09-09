@@ -229,6 +229,29 @@ pub fn draw_settings_popup_if_any(
                     state.global_config.skin = name.to_string();
                     let _ = state.global_config.save();
                 }
+
+                ui.add_space(14.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                // About — credit for the ported *(AC) voices (MIT license:
+                // attribution required, and well deserved).
+                ui.label(RichText::new("About").font(f_sans_sb(11.0)).color(BLUE()));
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(
+                        "The (AC) drum voices are ported from '606 Inspired Synth Drums' by Matthew Fecher (analogcode / AudioKit Pro), MIT License. Thank you Matthew!",
+                    )
+                    .font(f_sans_med(9.5))
+                    .color(INK3()),
+                );
+                ui.add_space(2.0);
+                ui.hyperlink_to(
+                    RichText::new("github.com/analogcode/606-Inspired-Synth-Drums")
+                        .font(f_sans_med(9.5))
+                        .color(BLUE()),
+                    "https://github.com/analogcode/606-Inspired-Synth-Drums",
+                );
             });
         })
         .response;

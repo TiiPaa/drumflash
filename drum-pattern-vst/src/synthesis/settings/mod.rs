@@ -18,6 +18,7 @@ pub mod perc1;
 pub mod ride;
 pub mod sd606;
 pub mod sdrex;
+pub mod ac_voice;
 pub mod snare;
 pub mod snare606;
 pub mod tom;

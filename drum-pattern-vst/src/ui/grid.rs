@@ -834,6 +834,10 @@ fn draw_legacy_slot_lane_v2(
                         // cell. Only in Sound p-lock mode: a right-click in
                         // Sequencer mode is about probability/stutter/nudge and
                         // must not silently retarget the sound panel.
+                        // [199] It must also CLEAR any cell selection left by an
+                        // earlier Sound-mode right-click on the same lane —
+                        // otherwise creating a seq plock leaves the panel stuck
+                        // on the sound plock Step tab.
                         if !state.sequencer_mode {
                             state.sound_edit_target =
                                 Some(crate::ui::editor_state::SelectedCell {
@@ -842,6 +846,8 @@ fn draw_legacy_slot_lane_v2(
                                 });
                             state.sound_editor_tab =
                                 crate::ui::editor_state::SoundEditorTab::Sound;
+                        } else {
+                            state.sound_edit_target = None;
                         }
                         if let Some(pos) = response.interact_pointer_pos() {
                             state.plock_popup = Some(PlockPopup {
@@ -945,7 +951,15 @@ fn draw_empty_slot_lane_v2(
             crate::ui::menus::instrument_category_menu(ui, None)
         });
         if let Some(kind) = picker.inner.flatten() {
-            activate_slot(params, sound_settings, state, slot_idx, kind);
+            activate_slot(
+                params,
+                sound_settings,
+                state,
+                slot_idx,
+                kind,
+                pattern,
+                plock,
+            );
         }
         picker
             .response
@@ -1327,6 +1341,11 @@ fn apply_lane_reorder_move(
         PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
     new_layout.move_slot(from, to);
     PersistentField::<TrackLayoutState>::set(&params.track_layout, new_layout);
+
+    // The 16 saved patterns hold their own copy of every lane's steps, fusions
+    // and p-locks. Permute them with the same order, or recalling a pattern
+    // would put each instrument's steps back on the lane it used to occupy.
+    params.pattern_bank.permute_lanes_in_saved_patterns(&order);
 }
 
 /// Change an active slot's instrument kind (lane-name context menu). Same
@@ -1365,6 +1384,8 @@ pub fn activate_slot(
     state: &mut EditorUIState,
     slot_idx: usize,
     kind: TrackInstrumentKind,
+    pattern: &SharedPattern,
+    plock: &PlockState,
 ) {
     if slot_idx >= crate::track::MAX_TRACKS {
         return;
@@ -1379,7 +1400,29 @@ pub fn activate_slot(
     // The slot's settings still hold whatever they were initialized with
     // (legacy defaults of the same index) — align them with the new kind.
     sound_settings.reset_slot_to_defaults(slot_idx, kind, state.global_config.default_analog);
+    // Deleting a lane leaves its musical data behind on purpose, so a slot
+    // reused for a new instrument would inherit the previous lane's steps.
+    // Wipe them here, in the live pattern and in the saved ones alike, so a
+    // freshly placed instrument starts blank on all 16 patterns.
+    clear_lane_musical_data(params, pattern, plock, slot_idx);
     select_legacy_track(state, slot_idx);
+}
+
+/// Wipe one lane's steps, fusions and p-locks from the live pattern AND from
+/// the 16 saved patterns.
+pub fn clear_lane_musical_data(
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    plock: &PlockState,
+    slot_idx: usize,
+) {
+    crate::ui::editor_state::clear_grid_steps(pattern, slot_idx);
+    pattern.store_fusions(slot_idx, &[]);
+    crate::ui::editor_state::clear_grid_sound_plocks(plock, slot_idx);
+    crate::ui::editor_state::clear_grid_seq_plocks(&params.seq_plock_state.state, slot_idx);
+    params
+        .pattern_bank
+        .clear_lane_in_saved_patterns(slot_idx);
 }
 
 /// Deactivate an active slot so it becomes an empty lane again.
