@@ -1,5 +1,141 @@
 # Changelog
 
+## 2026-09-09 - [193] [194] Routing des sorties : Main deconnecte, sortie partageable (build 20260909-162500)
+
+**Branche:** `main` - **Build:** `20260909-162500` (l'etiquette du selecteur corrigee apres retour utilisateur sur `20260909-161422`)
+**Validation:** `cargo test` 377+1+230 OK (2 tests, 1 reecrit), warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+L'etude a montre que les deux taches etaient bien plus petites qu'annonce : la capacite de [193] existait deja, et l'audio de [194] aussi.
+
+- **[193] Une sortie aux sort la lane du mix principal.** L'interrupteur **Main Mix** par lane et son effet (`main_on` -> `compute_mix_gating`) existaient deja ; il manquait le **couplage**. Choisir `Out N` baisse l'interrupteur, revenir a `No Aux` le remonte - sinon la lane ne sortirait plus nulle part. **Un defaut, pas un verrou** : l'interrupteur reste utilisable, donc une lane peut encore aller dans le mix ET sur son canal, pour du traitement parallele.
+- **[194] Plusieurs lanes peuvent partager une sortie.** Rien a faire cote DSP : la boucle de mixage aux itere toutes les lanes et **additionne** deja dans le bus choisi. Le seul obstacle etait `assign_slot_output_exclusive`, qui **volait** la sortie a son detenteur, silencieusement. Devenue `assign_slot_output`, elle se contente d'assigner.
+- **La regle d'exclusivite de [117] (« un `Out N` est exclusif a une lane ») est donc levee.** Rien ailleurs n'en dependait : aucune recherche inverse « quelle lane possede Out N », et les noms de bus exposes a l'hote sont statiques.
+- **Le selecteur dit ce qui est deja pris** : `Out 3`, `Out 3 - 1 lane`, `Out 3 - 2 lanes`, via `lanes_on_output()`. Le decompte inclut **toutes** les lanes, donc l'etiquette decrit la **sortie** et non celui qui la lit : « 2 lanes » est vrai vu de n'importe ou. Une premiere version comptait les *autres* lanes, ce qui affichait « 1 lane » sur une sortie qui en portait deux - retour utilisateur, corrige avant validation. Partager devient un choix, pas une sommation accidentelle.
+- **Les sessions existantes ne sont pas reecrites** : une lane deja en `Out N` *et* dans le Main y reste. Appliquer la nouvelle regle au chargement la ferait disparaitre du mix principal sans que l'utilisateur l'ait demande - meme raisonnement que la migration de [203] [204].
+- A savoir : deux lanes sur la meme sortie **somment leurs niveaux**. C'est le comportement attendu d'un bus partage, mais le bus sature plus vite qu'avec une lane seule.
+
+## 2026-09-09 - [191b] Le deplacement de lane ne casse plus les liens (build 20260909-154202)
+
+**Branche:** `main` - **Build:** `20260909-154202`
+**Validation:** `cargo test` 376+1+229 OK (4 nouveaux tests), warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+Un lien est **positionnel** - « je joue la lane juste au-dessus de moi » - donc tout deplacement qui casse l'adjacence re-pointe silencieusement le lien vers un autre instrument. Le glisser-deposer ignorait completement cette contrainte. Trois regles, plus une quatrieme que le probleme implique :
+
+- **Une lane esclave ne se deplace plus.** Sa poignee refuse le glisser, affiche le curseur d'interdiction et explique pourquoi au survol : deplacer la lane suivie, elle emmene ses liees.
+- **Une maitresse emporte toute sa chaine.** `chain_len()` mesure la maitresse plus la suite ininterrompue d'esclaves en dessous, et `lane_move_order_block()` deplace le bloc d'un seul tenant. C'est la generalisation de l'ancienne permutation : pour `len == 1` elle donne **exactement** le meme resultat, verifie sur les 196 couples (from, to) - le glisser d'une lane seule n'a donc pas change de comportement.
+- **Aucun depot au milieu d'une chaine.** Sans ca, une lane laissee entre une maitresse et son esclave se glissait entre elles et volait le lien. `snap_gap_out_of_chains()` ramene le point de chute a l'extremite la plus proche, et **l'indicateur de depot applique le meme calage** : le trait bleu est dessine ou la lane va reellement atterrir.
+- **Deposer une chaine dans elle-meme** ne fait plus rien, au lieu de produire une permutation partielle.
+
+Le layout suivait auparavant `move_slot(from, to)`, qui ne connait qu'une lane ; il applique desormais la meme permutation de bloc que le reste de l'etat (pas, fusions, p-locks, reglages de son, parametres de lane), donc tout reste solidaire.
+
+## 2026-09-09 - [191] Lane liee : une fleche retour sur la seule esclave (build 20260909-152610)
+
+**Branche:** `main` - **Build:** `20260909-152610`
+**Validation:** `cargo test` 372+1+229 OK, warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- **Ce qui n'allait pas.** Le filet bleu de 2 px colle au bord gauche de la rangee echouait sur trois points : a la limite du visible, muet sur la lane d'origine, et **identique sur deux lanes liees a la meme maitresse** - impossible de lire un groupe ni de reperer la source.
+- **Choisi apres maquettes** : une **fleche retour** (glyphe de type `L` inverse), posee sur la **seule lane esclave**. Elle sort de la rangee du dessus, tourne, et pointe dans la lane : « ma grille vient de la-haut ». La lane d'origine ne porte **aucune** marque - la presence de la fleche suffit a dire « liee », et sa direction dit d'ou.
+- **Ecartees** : une accolade reliant la maitresse a ses suiveuses (elle disait le groupe mais alourdissait la gouttiere), les cellules ternies (« terni » veut dire *lecture seule* partout ailleurs, alors qu'editer une lane liee **ecrit** dans la grille partagee, et ca se confond avec une lane mutee), et le nom en retrait (il rétrécissait la plaque de nom sur les lanes liees seulement - une zone qui bouge selon un etat, interdit par la regle des zones stables).
+- **Zero pixel de mise en page.** Le glyphe (9 x 16 px) tient dans l'espace deja libre entre la matrice de points de la poignee - large de ~6 px dans une gouttiere de 14 - et la plaque de nom, en empietant sur l'ecart de 7 px qui les separait. Aucune rangee ne bouge.
+- Rendu dans `skeuo::link_arrow`, comme tout le reste du dessin ([SK]), et juge sur un rendu PNG **a taille reelle** avant build : la premiere version frolait la matrice de points et sa hampe, trop courte, se lisait comme un L trapu.
+
+## 2026-09-09 - [207] Compensation de gain de la saturation : egalisation en energie (build 20260909-150755)
+
+**Branche:** `main` - **Build:** `20260909-150755`
+**Validation:** `cargo test` 372+1+229 OK (3 gardes remplacant l'ancien test de contrat), warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- **Le defaut.** La compensation normalisait la courbe de saturation en **un seul point** (entree 0,5), ce qui derive des que le signal reel sort de ce point - et un coup de batterie culmine plutot vers 0,8-1,0. Mesure sur un sinus 110 Hz d'amplitude 0,8, ecart maximal au signal sec sur la course de l'Amount :
+
+| type | avant | apres |
+|---|---|---|
+| SoftClip | -1,68 dB | -1,09 dB |
+| Valve | **+3,53 dB** | +0,58 dB |
+| Transistor | -1,71 dB | -0,92 dB |
+| Tape | -1,51 dB | -1,00 dB |
+| HardClip | -2,33 dB | -1,08 dB |
+
+- **Les trois symptomes disparaissent.** Le sens de la derive ne depend plus du type (SoftClip perdait ~4 dB de pic pendant que Valve gagnait), la **dispersion entre types a mi-course passe de 3,16 dB a 0,64 dB** - changer de type auditionne un caractere et non un volume -, et le **pic du Valve a fond descend de 1,357 a 0,899**, donc il ne sort plus au-dela de 1,0. Le saut de -0,69 dB du HardClip et le pas de 1,0 a 1,08 au depart de zero sont absorbes.
+- **Comment.** `update_compensation` egalise le **RMS** du signal sature sur celui du sec, mesure sur un cycle de sinus de 32 points a 0,7 de pic (RMS 0,5, le niveau que visait l'ancienne reference ponctuelle). Cout : 32 evaluations de courbe **par changement de parametre**, jamais par echantillon - les appelants sont les constructeurs et `set_settings`, soit au plus une fois par bloc.
+- **Le caractere est intact** : les taux de distorsion mesures sont identiques a ceux d'avant (SoftClip 14,9 / 32,2 / 43,4 % au quart, moitie et bout de course). Seul le niveau change.
+- **Il reste ~1 dB de derive** sur quatre types, et c'est irreductible : une non-linearite comprime d'autant plus que le signal est fort, donc aucune compensation calculee sur un signal de test ne peut annuler l'ecart pour tous les niveaux. Le garde-fou autorise 2 dB.
+- **L'ancien test affirmait le defaut** (« une entree 0,5 ressort a ~0,5 ») : remplace par trois gardes qui pinent le contrat reel - le niveau tient sur toute la course de l'Amount, ne saute pas en quittant zero, et les cinq types atterrissent au meme niveau.
+
+**Ce build change le son des sessions existantes** partout ou une saturation est active : c'etait l'objet de la tache. Le Valve baisse nettement (il etait trop fort de ~3,5 dB), les autres remontent legerement. L'Output Gain manuel de chaque voix reste disponible pour rattraper au gout.
+
+## 2026-09-09 - [208] Nouvel instrument OH6smp (charley ouvert multisample) (build 20260909-144136)
+
+**Branche:** `main` - **Build:** `20260909-144136`
+**Validation:** `cargo test` 370+1+227 OK (3 nouveaux tests), warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- **Nouvel instrument OH6smp** (kind 22 / voix 24, categorie HH, note MIDI 46, label `o6`), a partir de `wav/OH.wav` copie en `assets/oh606.wav` : mono 44,1 kHz float32, 8 s, soit **8 coups de ~1 s** - deux fois plus longs que ceux du charley ferme, ce qui est le propre d'un charley ouvert.
+- **Un seul moteur pour les deux charleys.** Plutot que dupliquer les 655 lignes de `ch606.rs`, la voix porte desormais son banc en champ (`Ch606Voice::with_bank`), resolu une fois a la construction ; sur le thread audio ce n'est qu'une lecture de pointeur. Meme approche que la facade `AcVoice` de [195]. `new()` garde le banc ferme, `DrumVoiceKind::Oh606` est le meme type de voix sur l'autre banc.
+- **Defauts identiques a CH6smp sauf le decay**, ouvert a 0,9 s (contre 0,2) - le reste du comportement sampler est partage : Analog Mode (tirage sans repetition immediate), Sample 1..8, One Shot actif ([206]), Start/End, Pitch Fine en cents, et le pack saturation.
+- **Banc prechauffe** dans `initialize_with_layout()` comme les trois autres : `create_voice_for_kind()` peut etre appele depuis `process()` via `reinitialize_slot()`, donc le decodage du WAV ne doit jamais arriver la.
+- **Onze listes codees en dur remplacees par un predicat nomme.** L'appartenance a la famille sampler s'ecrivait `matches!(voice_idx, 13 | 14 | 15)` dans onze endroits (registre, `sound_settings`, huit dans le panneau Sound) : ajouter OH6smp en aurait fait douze. C'est maintenant `instrument_registry::is_sampler()`, une seule definition.
+- **Generateur** : OH6smp emprunte le role 3 (l'OpenHiHat), comme OH6(AC) - GENERATE ecrit donc bien une ligne sur sa lane.
+- Tests : le banc ouvert se decode en 8 coups audibles et finis, plus longs que ceux du ferme ; la voix construite sur le banc ouvert **suit bien les samples ouverts** (comparaison par correlation de forme, la seule valable puisque la sortie porte le volume et la rampe d'attaque) et pas les fermes ; elle sonne, reste finie et se tait.
+
+### Corrige au passage
+
+Deux messages d'assertion (`kick.rs`, `sdrex.rs`) contenaient des **paquets d'espaces** laisses par des continuations de ligne avalees lors de sessions precedentes. Le motif de detection que j'utilisais exigeait une lettre avant les espaces et ratait donc les cas suivant une ponctuation ; il est corrige en `'"[^"]*[^ "] {3,}[^ "]'`.
+
+## 2026-09-09 - [203] [204] Snare606 et OpenHiHat retires des menus, lanes migrees (build 20260909-142638)
+
+**Branche:** `main` - **Build:** `20260909-142638`
+**Validation:** `cargo test` 367+1+224 OK (3 nouveaux tests), warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- **Les deux kinds quittent les pickers, le code les garde.** `index()` vaut `self as usize` et cet index est **persiste** dans les sessions et les presets : supprimer les variantes aurait renumerote tous les kinds suivants et change silencieusement l'instrument de chaque lane sauvegardee. Nouveau `retired_replacement()` (Snare606 -> Sd6Ac, OpenHiHat -> HiHat) et `selectable()`, consulte par `kinds_in()` - donc les **trois** pickers (pastille `+N`, menu de lane, onglet Track) les perdent d'un coup. Les voix DSP restent en place.
+- **Migration des lanes sauvegardees** dans `PersistentField::set`, le **seul entonnoir** de toute ecriture de layout : restauration de session, edition UI, presets de layout, kit embarque dans un preset de pattern. Idempotente (test dedie).
+- **La lane garde sa note MIDI**, pour qu'un projet qui la pilote depuis le DAW continue de frapper la meme lane. Un nom reste au defaut suit le nouveau kind (une lane affichant « Open Hi-Hat » alors qu'elle est un Hi-Hat mentirait) ; un nom saisi par l'utilisateur est conserve.
+- **Les reglages de son ne sont pas retouches.** Ils avaient ete stockes contre la forme de parametres de l'ancienne voix, donc une lane migree ne sonne pas exactement comme la voix retiree - c'est le principe meme du retrait. A noter pour l'OpenHiHat : un decay stocke au-dela de 1,5 s depasse le nouveau plafond du HiHat ([188]) et reste joue tel quel jusqu'a ce que le slider soit touche.
+- **Kit 12 lanes** : la lane 4 (OpenHiHat) devient un **second HiHat**, qui choke toujours avec le premier - a allonger pour le son ouvert ; la lane 11 (Snare606) devient **SD6(AC)**.
+- **Cas limite traite** : un **preset d'instrument** capture pour une voix retiree bascule la lane sur son remplacant mais **n'ecrit pas ses valeurs** (ses 32 speciaux signifient autre chose sur la nouvelle voix), donc la lane arrive sur le son d'usine du remplacant. C'est la prudence que le chemin des presets de pattern applique deja en sautant une lane dont le kind ne correspond pas.
+- **Rien a changer cote generateur** : `Oh6Ac` emprunte le role 3 du pattern de roles, qui existe independamment du kind selectionnable. Et `effective_choke_group` continue de donner le groupe 1 aux sessions legacy : une lane OpenHiHat devenue HiHat y reste.
+- Le test de partition des categories garde sa garantie, reformule : il epingle desormais que **seuls** ces deux kinds manquent aux pickers, et verifie a part que `category()` repond toujours pour les 22 kinds.
+
+## 2026-09-09 - [190] Barre de scroll du panneau Sound : sillon skeuo et poignee permanente (build 20260909-115534)
+
+**Branche:** `main` - **Build:** `20260909-115534`
+**Validation:** `cargo test` 365+1+222 OK, warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- **La cause n'etait pas le style, c'etait l'absence de barre.** Le `ScrollStyle` par defaut d'egui est `floating` avec `dormant_handle_opacity: 0.0` : au repos la poignee ET son fond ne sont **pas dessines du tout**, il n'y avait rien a voir avant que le pointeur entre dans le panneau.
+- **Poignee permanente** : les six opacites sont epinglees a 1.0. Elles auraient sinon rendu la poignee *plus terne* au survol qu'au repos (`active_handle_opacity` 0,6 contre 1,0) ; le retour de survol passe donc par la **couleur**, comme partout ailleurs dans le panneau.
+- **Look skeuo** : le fond de la barre prend la teinte du sillon d'un slider et la poignee devient une pilule (rayon 5) FAINT au repos, INK3 au survol, INK2 pendant le glisser - assez discrete pour ne pas concurrencer les remplissages bleus des valeurs. Largeur 10 px, longueur minimale 24 px.
+- **Une seule definition du sillon** : `skeuo::groove_fill()` / `groove_border()` remplacent les `rgb(16,17,21)` et `rgb(9,9,12)` en dur de `slider_track`, et la barre de scroll les reutilise - les deux ne peuvent plus deriver.
+- **Aucun decalage de mise en page** : la barre reste `floating` avec `floating_allocated_width: 0.0`, donc la rendre permanente ne coute pas un pixel aux rangees (l'encart de contenu existant les tenait deja a l'ecart). Regle des zones stables respectee.
+- **Le style est confine a la barre** : le style d'origine est restaure en tete de la fermeture de contenu, pour qu'aucune rangee n'herite des remplissages de la poignee.
+- Maquettes PNG comparees avant de coder (`ui-preview/`, ignore par git) : FAINT retenu contre INK3 (trop present) et LINE2 (illisible).
+
+### Limite de ce build
+
+**Le relief skeuo n'est pas obtenu.** egui ne peint la barre qu'en deux rectangles plats : regler ses couleurs et sa largeur rend la barre visible mais pas creusee. Retour utilisateur : « juste plus epaisse mais completement unie » - d'autant qu'un contenu depassant a peine la hauteur visible donne une poignee longue de ~85 %, qui se lit comme un bloc uni. Obtenir le creux et le degrade demande de peindre la barre soi-meme dans `skeuo.rs` et de reprendre a egui le clic-glisser (molette, clic-page et contenu de hauteur variable inclus). **Mis en attente sur decision utilisateur.**
+
+## 2026-09-09 - [189] Slider Saturation Amount : loi de reponse progressive (build 20260909-114633)
+
+**Branche:** `main` - **Build:** `20260909-114633`
+**Validation:** `cargo test` 365+1+222 OK (3 nouveaux tests), warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- **Mesure d'abord.** Le DSP mappe l'amount sur la drive en `1 + amount^2 * 19`, mais ce que l'oreille suit c'est le taux de distorsion, et lui s'aplatit vite. Sonde temporaire sur un sinus 110 Hz d'amplitude 0,8, fenetre alignee sur un nombre entier de cycles : en SoftClip la course lineaire atteignait **15 % de THD au quart**, **32 % a la moitie** et seulement **43 % au bout** - presque tout se jouait dans la premiere moitie, et la seconde ne servait a rien. Meme forme concave sur Valve, Transistor, Tape et HardClip.
+- **Loi de reponse `exposant 1,5`** sur les 24 definitions de Saturation Amount, ce qui donne 7 % / 23 % / 38 % aux memes points : l'ecart moyen a une rampe reguliere passe de 7,3 a 3,4 points. Les exposants 2,0 et 2,5, essayes aussi, sur-corrigent (4,9 et 6,9).
+- **La loi vit dans le registre**, pas dans une devinette sur le libelle : nouveau champ `SpecialParamDef::curve` (1.0 par defaut), helper `sp_curved`, constante `SAT_AMOUNT_CURVE` documentee avec les mesures. La rangee des speciaux du panneau passe `def.curve`.
+- **Cote widget**, la loi vit dans `TrackStyle` a cote du pas de quantification deja present : `with_curve()`, plus `normalize_value_curved` / `denormalize_value_curved` et le drag fin qui reste **uniforme en course** quelle que soit la loi. Aucun site d'appel existant modifie, `curve = 1.0` est bit-identique a l'ancien mapping (test dedie).
+- **Aucun son ne change** : la loi ne fait que deplacer la poignee sur la piste, elle ne touche ni la valeur stockee ni le DSP. Le test d'aller-retour le verifie sur trois exposants.
+
+### Constate au passage, pas corrige
+
+La compensation automatique de gain est calibree sur une **entree de reference unique (0,5)** alors qu'un coup de batterie culmine vers 0,8-1,0, ce qui rend le niveau incoherent d'un type a l'autre quand on monte l'amount : sur le meme sinus 0,8, **SoftClip perd** (pic 0,80 -> 0,50, et -0,58 dB des le premier cran au-dessus de zero, car la compensation saute de 1,0 a 1,08) tandis que **Valve gagne** (pic 0,80 -> 1,36, +3,5 dB de RMS sur la course, donc au-dela de 1,0). HardClip a une zone morte jusqu'a ~0,15 puis un saut de -0,69 dB. C'est probablement ce qui contribue le plus a la sensation de saut ; toucher a la compensation change le son de 12 voix, donc c'est une decision a prendre separement.
+
+## 2026-09-09 - [188] HiHat : decay plafonne a 1,5 s (build 20260909-113627)
+
+**Branche:** `main` - **Build:** `20260909-113627`
+**Validation:** `cargo test` 362+1+222 OK, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+- Le decay du HiHat passe de **5 s a 1,5 s** dans `HIHAT_STD`, comme le clap en [181] : au-dela la queue est inaudible et la course du slider ne servait a rien. Toute la resolution du slider se retrouve sur la plage utile.
+- **L'OpenHiHat garde ses 5 s**, deliberement : une queue longue est precisement ce qui fait un charley OUVERT. `HIHAT_STD` n'etant partage par aucune autre voix (contrairement a `NO_FREQ_STD` que le Cymbal partage avec le clap), aucun dommage collatoral - le test le verifie dans les deux sens.
+- Pas de clamp DSP a aligner : l'enveloppe d'ampli du HiHat prend le temps qu'on lui donne, seul `filter_env_decay` avait un plancher.
+- Les hats AC606 (HH6/OH6) ne sont pas concernes : ils plafonnent deja a 2 s dans `AC_TONE_STD`.
+- **Sessions existantes** : une valeur stockee au-dela de 1,5 s reste jouee telle quelle jusqu'a ce que le slider soit touche - meme comportement que le plafonnement du clap en [181].
+
 ## 2026-09-09 - [206] One Shot actif par defaut sur les trois samplers (build 20260909-094534)
 
 **Branche:** `main` - **Build:** `20260909-094534` (porte aussi [205], dont l'install de `20260909-092632` avait ete refaite)

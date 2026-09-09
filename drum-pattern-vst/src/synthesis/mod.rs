@@ -95,11 +95,12 @@ pub enum DrumVoice {
     Oh6Ac = 21,
     Cl6Ac = 22,
     Tm6Ac = 23,
+    Oh606 = 24,
 }
 
 #[allow(dead_code)]
 impl DrumVoice {
-    pub const COUNT: usize = 24;
+    pub const COUNT: usize = 25;
 
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
@@ -127,6 +128,7 @@ impl DrumVoice {
             21 => Some(Self::Oh6Ac),
             22 => Some(Self::Cl6Ac),
             23 => Some(Self::Tm6Ac),
+            24 => Some(Self::Oh606),
             _ => None,
         }
     }
@@ -680,6 +682,17 @@ impl VoiceSettings {
         }
     }
 
+    pub fn oh606() -> Self {
+        // [208] TR-606 OPEN hi-hat sampler: the closed hat's engine and
+        // defaults, with the decay opened up - the whole point of an open hat
+        // is that it rings. One Shot is on, like every sampler ([206]), so the
+        // slice plays to its end.
+        Self {
+            decay: 0.9,
+            ..Self::ch606()
+        }
+    }
+
     pub fn buzz() -> Self {
         // Tonal percussion + adjustable noise, chopped by a fast amplitude gate.
         // Mirror of the registry `sound_settings_default` + special defaults.
@@ -900,6 +913,8 @@ pub enum DrumVoiceKind {
     Bd606(Bd606Voice),
     Sd606(Sd606Voice),
     Ch606(Ch606Voice),
+    /// [208] OH6smp: the same hat engine as `Ch606`, on the open-hat bank.
+    Oh606(Ch606Voice),
     Buzz(BuzzVoice),
     Sdrex(SdrexVoice),
     Bd6Ac(AcVoice),
@@ -927,6 +942,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.trigger(),
             DrumVoiceKind::Sd606(v) => v.trigger(),
             DrumVoiceKind::Ch606(v) => v.trigger(),
+            DrumVoiceKind::Oh606(v) => v.trigger(),
             DrumVoiceKind::Buzz(v) => v.trigger(),
             DrumVoiceKind::Sdrex(v) => v.trigger(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.trigger(),
@@ -949,6 +965,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.trigger_hard(),
             DrumVoiceKind::Sd606(v) => v.trigger_hard(),
             DrumVoiceKind::Ch606(v) => v.trigger_hard(),
+            DrumVoiceKind::Oh606(v) => v.trigger_hard(),
             DrumVoiceKind::Buzz(v) => v.trigger_hard(),
             DrumVoiceKind::Sdrex(v) => v.trigger_hard(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.trigger_hard(),
@@ -971,6 +988,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.process_sample(),
             DrumVoiceKind::Sd606(v) => v.process_sample(),
             DrumVoiceKind::Ch606(v) => v.process_sample(),
+            DrumVoiceKind::Oh606(v) => v.process_sample(),
             DrumVoiceKind::Buzz(v) => v.process_sample(),
             DrumVoiceKind::Sdrex(v) => v.process_sample(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.process_sample(),
@@ -993,6 +1011,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Sd606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Ch606(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Oh606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Buzz(v) => v.process_sample_stereo(),
             DrumVoiceKind::Sdrex(v) => v.process_sample_stereo(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.process_sample_stereo(),
@@ -1015,6 +1034,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.is_active(),
             DrumVoiceKind::Sd606(v) => v.is_active(),
             DrumVoiceKind::Ch606(v) => v.is_active(),
+            DrumVoiceKind::Oh606(v) => v.is_active(),
             DrumVoiceKind::Buzz(v) => v.is_active(),
             DrumVoiceKind::Sdrex(v) => v.is_active(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.is_active(),
@@ -1037,6 +1057,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.reset(),
             DrumVoiceKind::Sd606(v) => v.reset(),
             DrumVoiceKind::Ch606(v) => v.reset(),
+            DrumVoiceKind::Oh606(v) => v.reset(),
             DrumVoiceKind::Buzz(v) => v.reset(),
             DrumVoiceKind::Sdrex(v) => v.reset(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.reset(),
@@ -1059,6 +1080,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.set_settings(settings),
             DrumVoiceKind::Sd606(v) => v.set_settings(settings),
             DrumVoiceKind::Ch606(v) => v.set_settings(settings),
+            DrumVoiceKind::Oh606(v) => v.set_settings(settings),
             DrumVoiceKind::Buzz(v) => v.set_settings(settings),
             DrumVoiceKind::Sdrex(v) => v.set_settings(settings),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_settings(settings),
@@ -1081,6 +1103,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.set_algo(algo),
             DrumVoiceKind::Sd606(v) => v.set_algo(algo),
             DrumVoiceKind::Ch606(v) => v.set_algo(algo),
+            DrumVoiceKind::Oh606(v) => v.set_algo(algo),
             DrumVoiceKind::Buzz(v) => v.set_algo(algo),
             DrumVoiceKind::Sdrex(v) => v.set_algo(algo),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_algo(algo),
@@ -1103,6 +1126,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Bd606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Sd606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Ch606(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Oh606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Buzz(v) => v.set_special_param(index, value),
             DrumVoiceKind::Sdrex(v) => v.set_special_param(index, value),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_special_param(index, value),
@@ -1171,6 +1195,11 @@ fn create_voice_for_kind(
         K::Ch6smp => DrumVoiceKind::Ch606(Ch606Voice::new(
             sample_rate,
             Ch606Settings::from(VoiceSettings::ch606()),
+        )),
+        K::Oh6smp => DrumVoiceKind::Oh606(Ch606Voice::with_bank(
+            sample_rate,
+            Ch606Settings::from(VoiceSettings::oh606()),
+            sample_bank::oh606(),
         )),
         K::Buzz => DrumVoiceKind::Buzz(BuzzVoice::new(
             sample_rate,
@@ -1263,6 +1292,7 @@ impl DrumSynthesizer {
         let _ = sample_bank::bd606();
         let _ = sample_bank::sd606();
         let _ = sample_bank::ch606();
+        let _ = sample_bank::oh606();
         // Pre-build the AC606 clap's reconstruction table (non-RT too).
         ac606::prewarm();
 

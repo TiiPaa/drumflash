@@ -465,7 +465,7 @@ mod tests {
             );
             assert!(
                 max_step <= reference_step * 1.25,
-                "click parasite after plock retrigger (analog={}): max step={} vs {}                  for the same hit played in isolation",
+                "click parasite after plock retrigger (analog={}): max step={} vs {} for the same hit played in isolation",
                 analog,
                 max_step,
                 reference_step

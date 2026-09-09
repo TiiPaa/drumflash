@@ -35,6 +35,8 @@ pub enum TrackInstrumentKind {
     Oh6Ac = 19,
     Cl6Ac = 20,
     Tm6Ac = 21,
+    /// [208] TR-606 open hi-hat sampler - the CH6smp engine on the open bank.
+    Oh6smp = 22,
 }
 
 /// Instrument category used to group the kind pickers/menus
@@ -72,7 +74,7 @@ impl InstrumentCategory {
 }
 
 impl TrackInstrumentKind {
-    pub const COUNT: usize = 22;
+    pub const COUNT: usize = 23;
 
     /// Every kind, in stable declaration order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -98,6 +100,7 @@ impl TrackInstrumentKind {
         Self::Oh6Ac,
         Self::Cl6Ac,
         Self::Tm6Ac,
+        Self::Oh6smp,
     ];
 
     /// Musical family of this kind (grouping for pickers/menus).
@@ -108,7 +111,8 @@ impl TrackInstrumentKind {
             }
             Self::Snare | Self::Snare606 | Self::Sd6smp | Self::Clap | Self::Sdrex
             | Self::Sd6Ac | Self::Cl6Ac => InstrumentCategory::Snare,
-            Self::HiHat | Self::OpenHiHat | Self::Ch6smp | Self::Hh6Ac | Self::Oh6Ac => {
+            Self::HiHat | Self::OpenHiHat | Self::Ch6smp | Self::Oh6smp | Self::Hh6Ac
+            | Self::Oh6Ac => {
                 InstrumentCategory::HiHat
             }
             Self::Tom | Self::Perc1 | Self::Tm6Ac => InstrumentCategory::Perc,
@@ -117,11 +121,36 @@ impl TrackInstrumentKind {
         }
     }
 
-    /// Kinds of one category, in `ALL` order.
+    /// Kinds retired from the pickers, and what a saved lane becomes instead
+    /// ([203] Snare606, [204] OpenHiHat).
+    ///
+    /// The enum variants and their DSP voices **stay**: `index()` is `self as
+    /// usize` and it is persisted in sessions and in presets, so deleting a
+    /// variant would renumber every kind after it and silently turn every saved
+    /// lane into a different instrument. They simply can no longer be chosen,
+    /// and a session that still holds one is rewritten on load.
+    pub fn retired_replacement(self) -> Option<Self> {
+        match self {
+            // [203] Superseded by the analogcode snare.
+            Self::Snare606 => Some(Self::Sd6Ac),
+            // [204] The closed hat is enough; an open hat is a hat with a long
+            // decay, and its lane keeps that decay through the migration.
+            Self::OpenHiHat => Some(Self::HiHat),
+            _ => None,
+        }
+    }
+
+    /// Can this kind still be picked in the instrument menus?
+    pub fn selectable(self) -> bool {
+        self.retired_replacement().is_none()
+    }
+
+    /// Kinds of one category, in `ALL` order. Retired kinds are left out, so
+    /// every picker drops them at once.
     pub fn kinds_in(category: InstrumentCategory) -> impl Iterator<Item = Self> {
         Self::ALL
             .into_iter()
-            .filter(move |k| k.category() == category)
+            .filter(move |k| k.selectable() && k.category() == category)
     }
 
     pub fn from_index(index: usize) -> Option<Self> {
@@ -148,6 +177,7 @@ impl TrackInstrumentKind {
             19 => Some(Self::Oh6Ac),
             20 => Some(Self::Cl6Ac),
             21 => Some(Self::Tm6Ac),
+            22 => Some(Self::Oh6smp),
             _ => None,
         }
     }
@@ -180,6 +210,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Oh6Ac => "OA",
             TrackInstrumentKind::Cl6Ac => "CA",
             TrackInstrumentKind::Tm6Ac => "TA",
+            TrackInstrumentKind::Oh6smp => "o6",
         }
     }
 
@@ -207,6 +238,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Oh6Ac => "OH6(AC)",
             TrackInstrumentKind::Cl6Ac => "CL6(AC)",
             TrackInstrumentKind::Tm6Ac => "TM6(AC)",
+            TrackInstrumentKind::Oh6smp => "OH6smp",
         }
     }
 
@@ -235,6 +267,8 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Oh6Ac => 55,
             TrackInstrumentKind::Cl6Ac => 56,
             TrackInstrumentKind::Tm6Ac => 57,
+            // GM open hi-hat, like Ch6smp reuses the closed hat's 42.
+            TrackInstrumentKind::Oh6smp => 46,
         }
     }
 
@@ -266,6 +300,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Oh6Ac => 21,
             TrackInstrumentKind::Cl6Ac => 22,
             TrackInstrumentKind::Tm6Ac => 23,
+            TrackInstrumentKind::Oh6smp => 24,
         }
     }
 
@@ -294,6 +329,7 @@ impl TrackInstrumentKind {
             21 => Some(Self::Oh6Ac),
             22 => Some(Self::Cl6Ac),
             23 => Some(Self::Tm6Ac),
+            24 => Some(Self::Oh6smp),
             _ => None,
         }
     }
@@ -510,23 +546,23 @@ impl TrackLayoutState {
             TrackInstrumentKind::Kick,
             TrackInstrumentKind::Snare,
             TrackInstrumentKind::HiHat,
-            TrackInstrumentKind::OpenHiHat,
+            // [204] Was OpenHiHat: a second hat, to be lengthened for the open
+            // sound. It still chokes against the first one.
+            TrackInstrumentKind::HiHat,
             TrackInstrumentKind::Tom,
             TrackInstrumentKind::Tom,
             TrackInstrumentKind::Tom,
             TrackInstrumentKind::Clap,
             TrackInstrumentKind::Ride,
             TrackInstrumentKind::Cymbal,
-            TrackInstrumentKind::Snare606,
+            // [203] Was Snare606.
+            TrackInstrumentKind::Sd6Ac,
             TrackInstrumentKind::BassDrum808,
         ];
         for (slot, kind) in slots.iter_mut().zip(kinds) {
             *slot = TrackSlot::active_with_kind(kind);
-            // Classic HH↔OH choke out of the box.
-            if matches!(
-                kind,
-                TrackInstrumentKind::HiHat | TrackInstrumentKind::OpenHiHat
-            ) {
+            // Classic closed/open hat choke out of the box.
+            if matches!(kind, TrackInstrumentKind::HiHat) {
                 slot.routing.choke_group = 1;
             }
         }
@@ -591,6 +627,83 @@ impl TrackLayoutState {
             global_midi_channel: 10,
             global_base_note: 36,
         }
+    }
+
+    /// Does this lane mirror the grid of the lane above ([191])?
+    ///
+    /// A link is **positional** - "I play the lane directly above me" - so this
+    /// is exactly what forbids moving such a lane on its own: displacing it, or
+    /// slipping another lane above it, would silently re-point the link at a
+    /// different instrument.
+    pub fn is_grid_follower(&self, slot: usize) -> bool {
+        slot < MAX_TRACKS && self.grid_slot(slot) != slot
+    }
+
+    /// How many lanes travel together when `slot` is dragged: the lane itself
+    /// plus the unbroken run of followers directly below it. 1 when it leads
+    /// nothing.
+    pub fn chain_len(&self, slot: usize) -> usize {
+        if slot >= MAX_TRACKS {
+            return 0;
+        }
+        let mut len = 1;
+        while slot + len < MAX_TRACKS && self.is_grid_follower(slot + len) {
+            len += 1;
+        }
+        len
+    }
+
+    /// Move a drop point out of the middle of a chain, to the nearer of its two
+    /// ends ([191]).
+    ///
+    /// `gap` means "insert before the lane currently at this index". A gap whose
+    /// lane is a follower sits between that follower and what it follows, so
+    /// anything dropped there would come between a master and its slaves.
+    pub fn snap_gap_out_of_chains(&self, gap: usize) -> usize {
+        let gap = gap.min(MAX_TRACKS);
+        if gap == 0 || gap >= MAX_TRACKS || !self.is_grid_follower(gap) {
+            return gap;
+        }
+        let mut start = gap;
+        while start > 0 && self.is_grid_follower(start) {
+            start -= 1;
+        }
+        let mut end = gap;
+        while end < MAX_TRACKS && self.is_grid_follower(end) {
+            end += 1;
+        }
+        if gap - start <= end - gap {
+            start
+        } else {
+            end
+        }
+    }
+
+    /// Rewrite every lane holding a retired kind ([203] [204]). Returns whether
+    /// anything changed.
+    ///
+    /// The lane **keeps its MIDI note**, so a project already driving it from
+    /// the DAW keeps triggering the same lane. Only a name still equal to the
+    /// retired kind's default follows the new one: a lane labelled
+    /// "Open Hi-Hat" that is now a Hi-Hat would just be lying, while a name the
+    /// user typed is theirs to keep.
+    ///
+    /// The sound settings are left untouched. They were stored against the old
+    /// voice's parameter shape, so a migrated lane does not sound exactly like
+    /// the retired voice did - that is the point of retiring it.
+    pub fn migrate_retired_kinds(&mut self) -> bool {
+        let mut changed = false;
+        for slot in self.slots.iter_mut() {
+            let Some(replacement) = slot.kind.retired_replacement() else {
+                continue;
+            };
+            if slot.name == slot.kind.default_name() {
+                slot.name = replacement.default_name().to_string();
+            }
+            slot.kind = replacement;
+            changed = true;
+        }
+        changed
     }
 
     /// Migrate a legacy 13-voice session into 14 slots.
@@ -670,20 +783,41 @@ impl TrackLayoutState {
         self.slots.iter().position(|s| !s.active)
     }
 
-    pub fn assign_slot_output_exclusive(&mut self, slot: usize, output: TrackAudioOut) {
+    /// How many active lanes send to this aux output ([194]).
+    ///
+    /// Counts **every** lane, the one being edited included, so the picker's
+    /// label is a statement about the output rather than about who is reading
+    /// it: "Out 3 - 2 lanes" means the bus carries two lanes, full stop. An
+    /// earlier version counted only the *others*, which read as "1 lane" on an
+    /// output that actually carried two.
+    pub fn lanes_on_output(&self, out_number: u8) -> usize {
+        self.slots
+            .iter()
+            .filter(|slot| {
+                slot.active && slot.routing.out_select == TrackAudioOut::Out(out_number)
+            })
+            .count()
+    }
+
+    /// Route one lane to an output.
+    ///
+    /// [194] Several lanes may now target the **same** aux output: the audio
+    /// path already sums every lane into the bus it selects, so sharing needs
+    /// nothing more than letting it happen. Until then this method stole the
+    /// output from whoever held it - silently, which is what [117] called
+    /// exclusivity and what made a shared bus impossible.
+    pub fn assign_slot_output(&mut self, slot: usize, output: TrackAudioOut) {
         if slot >= MAX_TRACKS {
             return;
         }
 
-        if let TrackAudioOut::Out(out_number) = output {
-            for (other_idx, other_slot) in self.slots.iter_mut().enumerate() {
-                if other_idx != slot
-                    && other_slot.routing.out_select == TrackAudioOut::Out(out_number)
-                {
-                    other_slot.routing.out_select = TrackAudioOut::Main;
-                }
-            }
-        }
+        // [193] Sending a lane to its own output takes it out of the main mix,
+        // so it is heard ONCE - on its own channel - instead of twice.
+        //
+        // A default, not a rule: the Main Mix switch stays usable, so a lane can
+        // still go to both for parallel treatment. Going back to `No Aux`
+        // restores the main mix, or the lane would be audible nowhere.
+        self.slots[slot].routing.main_on = matches!(output, TrackAudioOut::Main);
 
         self.slots[slot].routing.out_select = output;
     }
@@ -884,6 +1018,11 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
     for PersistentTrackLayout
 {
     fn set(&self, new_value: TrackLayoutState) {
+        // Single funnel for every layout write - session restore, UI edits,
+        // layout presets, pattern-preset kits - so a retired kind cannot reach
+        // the atomic layout from anywhere ([203] [204]).
+        let mut new_value = new_value;
+        new_value.migrate_retired_kinds();
         self.state.update_from_state(&new_value);
         if let Ok(mut names) = self.slot_names.lock() {
             for (i, slot) in new_value.slots.iter().enumerate() {
@@ -940,7 +1079,9 @@ mod tests {
 
     #[test]
     fn categories_partition_all_kinds() {
-        // Every kind appears in exactly one category; no category is empty.
+        // Every SELECTABLE kind appears in exactly one picker category, and no
+        // category is empty. Retired kinds ([203] [204]) are deliberately
+        // absent from the pickers - the assertion below pins exactly which.
         let mut seen = [false; TrackInstrumentKind::COUNT];
         for cat in InstrumentCategory::ALL {
             let kinds: Vec<_> = TrackInstrumentKind::kinds_in(cat).collect();
@@ -954,9 +1095,79 @@ mod tests {
                 seen[kind.index()] = true;
             }
         }
+        let missing: Vec<_> = TrackInstrumentKind::ALL
+            .into_iter()
+            .filter(|k| !seen[k.index()])
+            .collect();
+        assert_eq!(
+            missing,
+            vec![
+                TrackInstrumentKind::OpenHiHat,
+                TrackInstrumentKind::Snare606
+            ],
+            "only the retired kinds may be missing from the pickers"
+        );
+        // ...and `category()` itself still answers for every kind, retired
+        // included, because saved lanes are still read through it.
+        for kind in TrackInstrumentKind::ALL {
+            let cat = kind.category();
+            assert!(InstrumentCategory::ALL.contains(&cat), "{kind:?}");
+        }
+    }
+
+    /// [203] [204] A retired kind cannot be picked, but it must still decode
+    /// from a saved session and say what it becomes.
+    #[test]
+    fn retired_kinds_are_unpickable_but_still_decodable() {
+        for (retired, replacement) in [
+            (TrackInstrumentKind::Snare606, TrackInstrumentKind::Sd6Ac),
+            (TrackInstrumentKind::OpenHiHat, TrackInstrumentKind::HiHat),
+        ] {
+            assert!(!retired.selectable(), "{retired:?} must leave the pickers");
+            assert_eq!(retired.retired_replacement(), Some(replacement));
+            // The persisted index still resolves, or every saved lane after it
+            // would decode as another instrument.
+            assert_eq!(
+                TrackInstrumentKind::from_index(retired.index()),
+                Some(retired)
+            );
+            assert!(replacement.selectable(), "{replacement:?} must stay");
+            assert_eq!(replacement.retired_replacement(), None);
+        }
+    }
+
+    /// A saved layout is rewritten on load: the kind changes, the MIDI note is
+    /// preserved, and only a default name follows the new kind.
+    #[test]
+    fn loading_a_layout_migrates_retired_lanes() {
+        let mut layout = TrackLayoutState::empty_layout();
+        layout.slots[0] = TrackSlot::active_with_kind(TrackInstrumentKind::OpenHiHat);
+        layout.slots[0].midi_note = 61;
+        layout.slots[1] = TrackSlot::active_with_kind(TrackInstrumentKind::Snare606);
+        layout.slots[1].name = "Ma caisse".to_string();
+        layout.slots[2] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+
+        assert!(layout.migrate_retired_kinds());
+
+        assert_eq!(layout.slots[0].kind, TrackInstrumentKind::HiHat);
+        assert_eq!(
+            layout.slots[0].name,
+            TrackInstrumentKind::HiHat.default_name(),
+            "a default name follows the new kind"
+        );
+        assert_eq!(
+            layout.slots[0].midi_note, 61,
+            "the MIDI note is preserved so the DAW keeps hitting this lane"
+        );
+        assert_eq!(layout.slots[1].kind, TrackInstrumentKind::Sd6Ac);
+        assert_eq!(
+            layout.slots[1].name, "Ma caisse",
+            "a name the user typed is theirs"
+        );
+        assert_eq!(layout.slots[2].kind, TrackInstrumentKind::Kick);
         assert!(
-            seen.iter().all(|s| *s),
-            "some kinds have no category: {seen:?}"
+            !layout.migrate_retired_kinds(),
+            "a migrated layout is stable"
         );
     }
 
@@ -1036,7 +1247,12 @@ mod tests {
         assert_eq!(layout.slots[0].kind, TrackInstrumentKind::Kick);
         assert_eq!(layout.slots[1].kind, TrackInstrumentKind::Snare);
         assert_eq!(layout.slots[2].kind, TrackInstrumentKind::HiHat);
-        assert_eq!(layout.slots[3].kind, TrackInstrumentKind::OpenHiHat);
+        // [204] Was OpenHiHat: a second hat, choking against the first.
+        assert_eq!(layout.slots[3].kind, TrackInstrumentKind::HiHat);
+        assert_eq!(layout.slots[2].routing.choke_group, 1);
+        assert_eq!(layout.slots[3].routing.choke_group, 1);
+        // [203] Was Snare606.
+        assert_eq!(layout.slots[10].kind, TrackInstrumentKind::Sd6Ac);
         assert_eq!(layout.slots[4].kind, TrackInstrumentKind::Tom);
         assert_eq!(layout.slots[5].kind, TrackInstrumentKind::Tom);
         assert_eq!(layout.slots[6].kind, TrackInstrumentKind::Tom);
@@ -1196,23 +1412,62 @@ mod tests {
         assert_eq!(atomic.choke_group_for_slot(1), 0);
     }
 
+    /// [193] Choosing an aux output drops the lane from the main mix, and going
+    /// back to "No Aux" puts it back. The switch itself stays free: this is the
+    /// default the assignment sets, not a lock.
     #[test]
-    fn assigning_aux_output_is_exclusive_between_slots() {
+    fn assigning_an_aux_output_takes_the_lane_out_of_the_main_mix() {
+        let mut layout = TrackLayoutState::default_layout();
+        assert!(layout.slots[0].routing.main_on, "a fresh lane is in the mix");
+
+        layout.assign_slot_output(0, TrackAudioOut::Out(3));
+        assert!(
+            !layout.slots[0].routing.main_on,
+            "an aux-routed lane leaves the main mix"
+        );
+
+        // The user can still put it back by hand - nothing locks the switch.
+        layout.slots[0].routing.main_on = true;
+        assert_eq!(layout.slots[0].routing.out_select, TrackAudioOut::Out(3));
+
+        layout.assign_slot_output(0, TrackAudioOut::Main);
+        assert!(
+            layout.slots[0].routing.main_on,
+            "back to No Aux, the lane must be audible somewhere again"
+        );
+    }
+
+    /// [194] Two lanes may share one aux output - the audio path sums them -
+    /// where assigning used to steal it from whoever held it. The picker counts
+    /// the sharers so it can say so.
+    #[test]
+    fn several_lanes_can_share_one_aux_output() {
         let mut layout = TrackLayoutState::default_layout();
 
-        layout.assign_slot_output_exclusive(2, TrackAudioOut::Out(2));
-        layout.assign_slot_output_exclusive(3, TrackAudioOut::Out(2));
+        layout.assign_slot_output(2, TrackAudioOut::Out(2));
+        layout.assign_slot_output(3, TrackAudioOut::Out(2));
 
-        assert_eq!(layout.slots[2].routing.out_select, TrackAudioOut::Main);
+        assert_eq!(layout.slots[2].routing.out_select, TrackAudioOut::Out(2));
         assert_eq!(layout.slots[3].routing.out_select, TrackAudioOut::Out(2));
+        assert_eq!(
+            layout.lanes_on_output(2),
+            2,
+            "the bus carries both lanes, whoever is asking"
+        );
+        assert_eq!(layout.lanes_on_output(5), 0, "nothing is on Out 5");
+
+        // Freeing one lane leaves the other in place.
+        layout.assign_slot_output(2, TrackAudioOut::Main);
+        assert_eq!(layout.slots[3].routing.out_select, TrackAudioOut::Out(2));
+        assert_eq!(layout.lanes_on_output(2), 1);
     }
 
     #[test]
     fn assigning_main_does_not_clear_other_outputs() {
         let mut layout = TrackLayoutState::default_layout();
 
-        layout.assign_slot_output_exclusive(2, TrackAudioOut::Out(2));
-        layout.assign_slot_output_exclusive(3, TrackAudioOut::Main);
+        layout.assign_slot_output(2, TrackAudioOut::Out(2));
+        layout.assign_slot_output(3, TrackAudioOut::Main);
 
         assert_eq!(layout.slots[2].routing.out_select, TrackAudioOut::Out(2));
         assert_eq!(layout.slots[3].routing.out_select, TrackAudioOut::Main);

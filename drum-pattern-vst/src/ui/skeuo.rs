@@ -209,12 +209,23 @@ fn segmented_impl(
 // track Vol/Hum/Push, sound-editor ENV). Recessed groove (dark pill + inner top
 // shadow) + a pill value fill. `handle` = Some(radius) draws the round knob.
 // ============================================================
+/// The recessed channel every control is cut into: slider tracks, and the
+/// Sound panel's scroll bar ([190]). One definition so they cannot drift apart.
+pub fn groove_fill() -> Color32 {
+    rgb(16, 17, 21)
+}
+
+/// The darker lip around a groove.
+pub fn groove_border() -> Color32 {
+    rgb(9, 9, 12)
+}
+
 pub fn slider_track(ui: &egui::Ui, track: egui::Rect, norm: f32, fill: Color32, cap: bool) {
     let p = ui.painter();
     let rr = track.height() * 0.5;
     // recessed groove: dark pill + a dark border + thin inner top shadow
-    p.rect_filled(track, rr, rgb(16, 17, 21));
-    p.rect_stroke(track, rr, egui::Stroke::new(1.0, rgb(9, 9, 12)), egui::StrokeKind::Inside);
+    p.rect_filled(track, rr, groove_fill());
+    p.rect_stroke(track, rr, egui::Stroke::new(1.0, groove_border()), egui::StrokeKind::Inside);
     let mx = track.left() + rr;
     let gw = (track.width() - 2.0 * rr).max(0.0);
     p.rect_filled(
@@ -260,6 +271,54 @@ fn fader_cap(p: &egui::Painter, cx: f32, cy: f32, h: f32) {
 // Wall shadows on top + left + right that fade inward and hug the rounded
 // corners; the floor (bottom) stays lit. Draw this AFTER the well's content.
 // ============================================================
+/// Grid-link marker for a lane that plays the lane above ([191]).
+///
+/// A return arrow: it rises out of the row above, turns, and points into this
+/// lane - "my grid comes from up there". Drawn only on the **follower**; the
+/// lane it borrows from carries no mark, so the arrow alone means "linked".
+///
+/// It replaces a 2 px stripe on the row's left edge that was almost invisible
+/// and said nothing about direction. `rect` is the free space between the drag
+/// grip and the name plate; the glyph is centred in it and never wider, so no
+/// zone moves.
+pub fn link_arrow(p: &egui::Painter, rect: egui::Rect, color: Color32) {
+    let stroke = (rect.width() * 0.22).clamp(1.5, 2.5);
+    let head = (rect.width() * 0.34).clamp(2.5, 4.0);
+    // The corner sits low-left; the stem rises from it toward the row above.
+    let x = rect.left() + stroke * 0.5;
+    let y = rect.center().y + stroke * 0.5;
+    let top = rect.top() + stroke;
+    // Stem, drawn past the corner so the turn has no notch.
+    p.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(x - stroke * 0.5, top),
+            egui::pos2(x + stroke * 0.5, y + stroke * 0.5),
+        ),
+        stroke * 0.5,
+        color,
+    );
+    // Elbow running right, stopping where the head begins.
+    let tip = rect.right() - stroke * 0.5;
+    p.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(x - stroke * 0.5, y - stroke * 0.5),
+            egui::pos2(tip - head, y + stroke * 0.5),
+        ),
+        stroke * 0.5,
+        color,
+    );
+    // Head, pointing into the lane.
+    p.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(tip, y),
+            egui::pos2(tip - head, y - head * 0.72),
+            egui::pos2(tip - head, y + head * 0.72),
+        ],
+        color,
+        egui::Stroke::NONE,
+    ));
+}
+
 pub fn well_recess(ui: &egui::Ui, rect: egui::Rect, radius: f32) {
     let p = ui.painter_at(rect);
     inner_top_shadow(&p, rect, radius, 5.0, 150);
