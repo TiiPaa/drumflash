@@ -510,22 +510,32 @@ pub fn apply_instrument_preset_to_slot(
     if slot >= crate::track::MAX_TRACKS {
         return;
     }
-    let Some(kind) = TrackInstrumentKind::from_index(preset.kind) else {
+    let Some(saved_kind) = TrackInstrumentKind::from_index(preset.kind) else {
         return;
     };
+    // [203] [204] A preset captured for a retired voice lands on its
+    // replacement. Its VALUES are not written: they were captured against the
+    // old voice's parameter shape, and its 32 specials mean something else on
+    // the new one. The lane therefore comes up on the replacement's factory
+    // sound - the same prudence the pattern-preset path already applies by
+    // skipping a lane whose kind does not match.
+    let retired = saved_kind.retired_replacement();
+    let kind = retired.unwrap_or(saved_kind);
     if params.track_layout.state.kind_for_slot(slot) != Some(kind) {
         change_slot_kind(params, sound_settings, state, slot, kind);
     }
-    write_slot_sound(
-        setter,
-        params,
-        sound_settings,
-        slot,
-        kind,
-        &preset.standards,
-        preset.algo,
-        &preset.specials,
-    );
+    if retired.is_none() {
+        write_slot_sound(
+            setter,
+            params,
+            sound_settings,
+            slot,
+            kind,
+            &preset.standards,
+            preset.algo,
+            &preset.specials,
+        );
+    }
     sound_settings.bump_version();
 }
 

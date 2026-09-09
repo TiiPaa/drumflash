@@ -185,6 +185,12 @@ pub fn draw_grid_v2(
             if state.lane_drag_source.is_some() {
                 if let Some(pointer_pos) = ui.input(|input| input.pointer.interact_pos()) {
                     if let Some(gap) = compute_reorder_gap(&lane_row_rects, pointer_pos) {
+                        // [191] Same snap as the drop, so the line is drawn where
+                        // the lane will actually land - never inside a chain.
+                        let gap = PersistentField::<TrackLayoutState>::map(
+                            &params.track_layout,
+                            |s| s.snap_gap_out_of_chains(gap),
+                        );
                         draw_lane_reorder_indicator(ui, &lane_row_rects, gap);
                     }
                 }
@@ -285,9 +291,27 @@ fn draw_legacy_slot_lane_v2(
         ui.spacing_mut().item_spacing.x = gap;
         ui.set_height(LANE_H);
 
-        let grip_response =
-            draw_seq_grip_v2(ui, grip_w, LANE_H).on_hover_cursor(egui::CursorIcon::Grab);
-        if grip_response.is_pointer_button_down_on() || grip_response.drag_started() {
+        let layout_state =
+            PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+
+        // [191] A link is positional, so a follower cannot travel on its own:
+        // moving it, or slipping a lane above it, would re-point the link at
+        // another instrument. Its grip refuses the drag and says why; the lane
+        // it follows stays draggable and takes the whole run along.
+        let is_follower = layout_state.is_grid_follower(slot_idx);
+        let grip_response = draw_seq_grip_v2(ui, grip_w, LANE_H);
+        let grip_response = if is_follower {
+            grip_response
+                .on_hover_cursor(egui::CursorIcon::NotAllowed)
+                .on_hover_text(
+                    "A linked lane follows the one above it, so it cannot be moved on its own. Move that lane instead: it takes its linked lanes with it.",
+                )
+        } else {
+            grip_response.on_hover_cursor(egui::CursorIcon::Grab)
+        };
+        if !is_follower
+            && (grip_response.is_pointer_button_down_on() || grip_response.drag_started())
+        {
             state.lane_drag_source = Some(slot_idx);
             select_legacy_track(state, slot_idx);
         }
@@ -296,8 +320,6 @@ fn draw_legacy_slot_lane_v2(
         }
 
         let selected = state.selected_track_slot == slot_idx;
-        let layout_state =
-            PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
 
         // Grid linking (layering): a lane linked to the one above SHOWS and EDITS
         // that lane's steps + fusions. All pattern step/fusion reads and writes
@@ -313,15 +335,21 @@ fn draw_legacy_slot_lane_v2(
             fusions
         };
 
-        // Link indicator: a clean 2px accent stripe on the lane's left edge,
-        // marking that its grid mirrors the lane above (layering).
+        // [191] Link indicator: a return arrow on the FOLLOWER only, saying its
+        // grid comes from the lane above. The lane it borrows from carries no
+        // mark - the arrow alone means "linked", and its direction says where
+        // from, which the old 2 px edge stripe could not.
+        //
+        // It lives in the free space between the grip's dot matrix and the name
+        // plate: the matrix is ~6 px wide inside a 14 px grip, so the right
+        // margin plus the 7 px item spacing give ~10 px, taken from nothing.
         if is_linked {
             let r = grip_response.rect;
-            let bar = egui::Rect::from_min_max(
-                egui::pos2(r.left(), r.top()),
-                egui::pos2(r.left() + 2.0, r.bottom()),
+            let slot = egui::Rect::from_min_max(
+                egui::pos2(r.right() - 2.0, r.top() + 4.0),
+                egui::pos2(r.right() + gap, r.bottom() - 4.0),
             );
-            ui.painter().rect_filled(bar, 1.0, BLUE());
+            crate::ui::skeuo::link_arrow(ui.painter(), slot, BLUE());
         }
 
         let slot_name = {
@@ -1027,25 +1055,28 @@ fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::
     response
 }
 
-fn lane_move_order(from: usize, to: usize) -> [usize; crate::track::MAX_TRACKS] {
-    let mut order = std::array::from_fn(|i| i);
-    if from >= crate::track::MAX_TRACKS || to >= crate::track::MAX_TRACKS || from == to {
-        return order;
+/// [191] Permutation deplacant un **bloc** de `len` lanes consecutives, pour
+/// qu'une maitresse emporte ses esclaves. `to` est l'index final de la premiere
+/// lane du bloc, la meme convention que `lane_move_order`, dont ceci est la
+/// generalisation (`len == 1` donne exactement le meme resultat - test dedie).
+fn lane_move_order_block(
+    from: usize,
+    len: usize,
+    to: usize,
+) -> [usize; crate::track::MAX_TRACKS] {
+    let count = crate::track::MAX_TRACKS;
+    if len == 0 || from >= count || from + len > count {
+        return std::array::from_fn(|i| i);
     }
-
-    let moved = order[from];
-    if from < to {
-        for idx in from..to {
-            order[idx] = order[idx + 1];
-        }
-    } else {
-        for idx in (to + 1..=from).rev() {
-            order[idx] = order[idx - 1];
-        }
+    let mut ids: Vec<usize> = (0..count).collect();
+    let block: Vec<usize> = ids.drain(from..from + len).collect();
+    let insert = to.min(ids.len());
+    for (k, id) in block.into_iter().enumerate() {
+        ids.insert(insert + k, id);
     }
-    order[to] = moved;
-    order
+    std::array::from_fn(|i| ids[i])
 }
+
 
 fn moved_slot_index(order: &[usize; crate::track::MAX_TRACKS], old_idx: usize) -> usize {
     order
@@ -1144,8 +1175,18 @@ fn handle_lane_reorder_drop(
     let Some(gap) = compute_reorder_gap(lane_row_rects, pointer_pos) else {
         return;
     };
-    let to = gap.min(crate::track::MAX_TRACKS - 1);
+    let layout = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+    // [191] Never land between a master and its followers: that lane would come
+    // between them and steal the link. The gap snaps to the nearer chain end -
+    // the same snap the drop indicator draws, so what is shown is what happens.
+    let gap = layout.snap_gap_out_of_chains(gap);
+    let len = layout.chain_len(from).max(1);
+    let to = gap.min(crate::track::MAX_TRACKS.saturating_sub(len));
 
+    // Dropping a chain inside itself changes nothing.
+    if to >= from && to < from + len {
+        return;
+    }
     if from != to {
         apply_lane_reorder_move(
             setter,
@@ -1156,6 +1197,7 @@ fn handle_lane_reorder_drop(
             state,
             from,
             to,
+            len,
         );
     }
 }
@@ -1170,12 +1212,13 @@ fn apply_lane_reorder_move(
     state: &mut EditorUIState,
     from: usize,
     to: usize,
+    len: usize,
 ) {
     if from >= crate::track::MAX_TRACKS || to >= crate::track::MAX_TRACKS || from == to {
         return;
     }
-
-    let order = lane_move_order(from, to);
+    // [191] A master carries its followers, so the whole run moves as one.
+    let order = lane_move_order_block(from, len.max(1), to);
 
     let old_step_masks = pattern.step_masks();
     let old_fusions: [Vec<FusedGroup>; crate::track::MAX_TRACKS] =
@@ -1339,7 +1382,10 @@ fn apply_lane_reorder_move(
 
     let mut new_layout =
         PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
-    new_layout.move_slot(from, to);
+    let old_slots = new_layout.slots.clone();
+    for (new_idx, &old_idx) in order.iter().enumerate() {
+        new_layout.slots[new_idx] = old_slots[old_idx].clone();
+    }
     PersistentField::<TrackLayoutState>::set(&params.track_layout, new_layout);
 
     // The 16 saved patterns hold their own copy of every lane's steps, fusions
@@ -2790,3 +2836,99 @@ fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; crate::track::MAX_TRAC
 // Plock context menu
 // ---------------------------------------------------------------------------------------------------------------
 
+#[cfg(test)]
+mod tests {
+    use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot, MAX_TRACKS};
+
+    /// The permutation the lane drag used before [191], kept as the reference
+    /// the block version must reproduce for a single lane - proof that giving a
+    /// master its followers did not change how one lane alone drags.
+    fn reference_single_move(from: usize, to: usize) -> [usize; MAX_TRACKS] {
+        let mut order = std::array::from_fn(|i| i);
+        if from >= MAX_TRACKS || to >= MAX_TRACKS || from == to {
+            return order;
+        }
+    
+        let moved = order[from];
+        if from < to {
+            for idx in from..to {
+                order[idx] = order[idx + 1];
+            }
+        } else {
+            for idx in (to + 1..=from).rev() {
+                order[idx] = order[idx - 1];
+            }
+        }
+        order[to] = moved;
+        order
+    }
+
+    #[test]
+    fn a_single_lane_block_move_matches_the_old_permutation() {
+        for from in 0..MAX_TRACKS {
+            for to in 0..MAX_TRACKS {
+                assert_eq!(
+                    super::lane_move_order_block(from, 1, to),
+                    reference_single_move(from, to),
+                    "from {from} to {to}"
+                );
+            }
+        }
+    }
+
+    /// [191] A master travels with its followers, in order and contiguous.
+    #[test]
+    fn a_master_carries_its_followers_as_one_block() {
+        // Lanes 4, 5, 6 are one chain; drag it to the top.
+        let order = super::lane_move_order_block(4, 3, 0);
+        assert_eq!(&order[..3], &[4, 5, 6], "the run stays whole and in order");
+        assert_eq!(&order[3..7], &[0, 1, 2, 3], "the lanes above shift down");
+
+        // ...and downwards.
+        let order = super::lane_move_order_block(0, 2, 5);
+        assert_eq!(&order[5..7], &[0, 1]);
+        assert_eq!(&order[..5], &[2, 3, 4, 5, 6]);
+    }
+
+    fn layout_with_chain() -> TrackLayoutState {
+        // 0 free, 1 master with followers 2 and 3, 4 free.
+        let mut layout = TrackLayoutState::empty_layout();
+        for slot in 0..5 {
+            layout.slots[slot] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+        }
+        layout.slots[2].linked_up = true;
+        layout.slots[3].linked_up = true;
+        layout
+    }
+
+    #[test]
+    fn a_chain_reports_its_length_and_its_followers() {
+        let layout = layout_with_chain();
+        assert!(!layout.is_grid_follower(1), "the master is not a follower");
+        assert!(layout.is_grid_follower(2));
+        assert!(layout.is_grid_follower(3));
+        assert!(!layout.is_grid_follower(4));
+        assert_eq!(layout.chain_len(1), 3, "the master carries two followers");
+        assert_eq!(layout.chain_len(2), 2, "seen from a follower, the run below");
+        assert_eq!(layout.chain_len(0), 1, "a lone lane travels alone");
+        assert_eq!(layout.chain_len(4), 1);
+    }
+
+    /// A drop between a master and its followers would steal the link, so the
+    /// gap snaps to the nearer end of the chain.
+    #[test]
+    fn a_drop_point_never_lands_inside_a_chain() {
+        let layout = layout_with_chain();
+        // Gaps 2 and 3 are interior: before follower 2, and between 2 and 3.
+        assert_eq!(layout.snap_gap_out_of_chains(2), 1, "snaps above the master");
+        assert_eq!(layout.snap_gap_out_of_chains(3), 4, "snaps below the run");
+        // Everything outside is left alone.
+        for gap in [0usize, 1, 4, 5, MAX_TRACKS] {
+            assert_eq!(
+                layout.snap_gap_out_of_chains(gap),
+                gap,
+                "gap {gap} is outside any chain"
+            );
+        }
+    }
+}

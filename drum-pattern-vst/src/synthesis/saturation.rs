@@ -100,9 +100,29 @@ impl SaturationConfig {
         }
     }
 
-    /// Recalcule le gain de compensation à chaque changement de type ou d'amount.
-    /// La compensation est définie pour que l'entrée de référence 0.5 donne
-    /// approximativement 0.5 en sortie (wet), quelle que soit la drive.
+    /// Recalcule le gain de compensation a chaque changement de type ou d'amount.
+    ///
+    /// [207] La compensation egalise l'**energie** (RMS) du signal sature sur
+    /// celle du signal sec, mesuree sur un petit signal de test. L'ancienne
+    /// version normalisait la courbe en **un seul point** (entree 0.5), ce qui
+    /// se tenait mal des que le signal reel sortait de ce point - et un coup de
+    /// batterie culmine plutot vers 0,8-1,0 :
+    ///
+    /// - SoftClip **perdait** ~4 dB quand on montait l'amount (pic 0,80 -> 0,50),
+    ///   parce que la courbe compresse plus a 0,8 qu'a 0,5 : sous-compense.
+    /// - Valve **gagnait** au contraire (pic 0,80 -> 1,36, donc au-dela de 1,0),
+    ///   sa courbe asymetrique ayant un gain > 1 autour du point de reference :
+    ///   sur-compense.
+    /// - Et la compensation sautait de 1,0 a ~1,08 des qu'on quittait zero,
+    ///   puisque les courbes colorent deja a drive = 1 (`tanh(0.5)` = 0,462).
+    ///
+    /// Normaliser en RMS supprime les trois : le niveau ne bouge plus quand on
+    /// tourne l'Amount, il ne depend plus du type choisi, et il est continu au
+    /// depart de zero. Le caractere - les harmoniques - reste entier.
+    ///
+    /// Cout : `COMP_TEST_POINTS` evaluations de la courbe par changement de
+    /// parametre. Jamais par echantillon - les appelants sont les
+    /// constructeurs et `set_settings`, soit au plus une fois par bloc.
     pub fn update_compensation(&mut self) {
         if self.saturation_type == SaturationType::None || self.amount <= 0.001 {
             self.compensation_gain = 1.0;
@@ -110,18 +130,38 @@ impl SaturationConfig {
         }
 
         let drive = 1.0 + self.amount * self.amount * 19.0;
-        let reference = 0.5;
-        let wet = match self.saturation_type {
-            SaturationType::SoftClip => soft_clip(reference, drive),
-            SaturationType::Valve => valve(reference, drive),
-            SaturationType::Transistor => transistor(reference, drive),
-            SaturationType::HardClip => hard_clip(reference, drive),
-            SaturationType::Tape => tape(reference, drive),
-            _ => reference,
-        };
-        self.compensation_gain = reference / wet.max(0.0001);
+        let mut dry_energy = 0.0f32;
+        let mut wet_energy = 0.0f32;
+        for i in 0..COMP_TEST_POINTS {
+            let phase =
+                std::f32::consts::TAU * i as f32 / COMP_TEST_POINTS as f32;
+            let dry = COMP_TEST_AMPLITUDE * phase.sin();
+            let wet = match self.saturation_type {
+                SaturationType::SoftClip => soft_clip(dry, drive),
+                SaturationType::Valve => valve(dry, drive),
+                SaturationType::Transistor => transistor(dry, drive),
+                SaturationType::HardClip => hard_clip(dry, drive),
+                SaturationType::Tape => tape(dry, drive),
+                _ => dry,
+            };
+            dry_energy += dry * dry;
+            wet_energy += wet * wet;
+        }
+        // Borne large : elle n'existe que pour qu'une courbe pathologique ne
+        // produise pas un gain absurde, pas pour faconner le son.
+        self.compensation_gain =
+            (dry_energy / wet_energy.max(1e-9)).sqrt().clamp(0.05, 20.0);
     }
 }
+
+/// [207] Points du signal de test de la compensation : un cycle de sinus.
+/// 32 points suffisent a estimer un RMS et la boucle ne tourne qu'au
+/// changement de parametre.
+const COMP_TEST_POINTS: usize = 32;
+
+/// Amplitude de ce sinus. Un coup de batterie culmine pres de 1,0 ; un pic a
+/// 0,7 donne un RMS de 0,5, le niveau que visait l'ancienne reference ponctuelle.
+const COMP_TEST_AMPLITUDE: f32 = 0.7;
 
 // ── 1. SoftClip ──────────────────────────────────────────────────────────
 // Classic tanh — round, smooth, the "safest" saturation.
@@ -303,10 +343,66 @@ mod tests {
         assert_eq!(pre.process_at(false, 0.9), 0.9, "post stage must pass through");
     }
 
+    /// [207] The contract the compensation actually owes the user: turning the
+    /// Amount knob changes the CHARACTER, not the level.
+    ///
+    /// This replaces a test that pinned the old single-point rule ("a 0.5 input
+    /// gives ~0.5 out"), which was the defect itself: normalising the curve at
+    /// one input point drifted as soon as the real signal sat elsewhere, and a
+    /// drum hit peaks near 0.8-1.0, not 0.5. Measured then: SoftClip lost ~4 dB
+    /// across the sweep while Valve gained ~3.5 dB and pushed past 1.0.
     #[test]
-    fn compensation_keeps_reference_level_stable() {
-        // With compensation, a 0.5 input at amount=0.5 should stay near 0.5
-        // at full wet / unity output gain.
+    fn compensation_keeps_the_level_steady_across_the_amount_sweep() {
+        const TYPES: [SaturationType; 5] = [
+            SaturationType::SoftClip,
+            SaturationType::Valve,
+            SaturationType::Transistor,
+            SaturationType::HardClip,
+            SaturationType::Tape,
+        ];
+        // A hit-sized test signal, deliberately louder than the compensation's
+        // own reference so the test would catch a single-point calibration.
+        let signal: Vec<f32> = (0..512)
+            .map(|i| 0.85 * (std::f32::consts::TAU * i as f32 / 64.0).sin())
+            .collect();
+        let rms = |cfg: &SaturationConfig| {
+            let sum: f32 = signal.iter().map(|&x| cfg.process(x).powi(2)).sum();
+            (sum / signal.len() as f32).sqrt()
+        };
+        let cfg_at = |t: SaturationType, amount: f32| {
+            let mut cfg = SaturationConfig {
+                saturation_type: t,
+                amount,
+                mix: 1.0,
+                output_gain: 1.0,
+                pre_filter: false,
+                compensation_gain: 1.0,
+            };
+            cfg.update_compensation();
+            cfg
+        };
+
+        let dry = rms(&cfg_at(SaturationType::None, 0.0));
+        for t in TYPES {
+            let mut worst = 0.0f32;
+            for step in 0..=20 {
+                let amount = step as f32 / 20.0;
+                let db = 20.0 * (rms(&cfg_at(t, amount)) / dry).log10();
+                worst = worst.max(db.abs());
+            }
+            assert!(
+                worst <= 2.0,
+                "{t:?} drifts {worst:.2} dB across the Amount sweep - the level \
+                 must not follow the knob (SoftClip measured ~4 dB before [207])"
+            );
+        }
+    }
+
+    /// The level must not jump the instant the knob leaves zero. It used to:
+    /// `process` bypasses entirely at amount <= 0.001 while the curves already
+    /// colour at drive = 1, so the compensation stepped from 1.0 to ~1.08.
+    #[test]
+    fn leaving_zero_amount_does_not_step_the_level() {
         for t in [
             SaturationType::SoftClip,
             SaturationType::Valve,
@@ -314,22 +410,71 @@ mod tests {
             SaturationType::HardClip,
             SaturationType::Tape,
         ] {
+            let mk = |amount: f32| {
+                let mut cfg = SaturationConfig {
+                    saturation_type: t,
+                    amount,
+                    mix: 1.0,
+                    output_gain: 1.0,
+                    pre_filter: false,
+                    compensation_gain: 1.0,
+                };
+                cfg.update_compensation();
+                cfg
+            };
+            let signal: Vec<f32> = (0..256)
+                .map(|i| 0.85 * (std::f32::consts::TAU * i as f32 / 64.0).sin())
+                .collect();
+            let rms = |cfg: &SaturationConfig| {
+                let sum: f32 = signal.iter().map(|&x| cfg.process(x).powi(2)).sum();
+                (sum / signal.len() as f32).sqrt()
+            };
+            let off = rms(&mk(0.0));
+            let barely_on = rms(&mk(0.02));
+            let step_db = 20.0 * (barely_on / off).log10();
+            assert!(
+                step_db.abs() <= 1.0,
+                "{t:?} steps {step_db:.2} dB on leaving zero"
+            );
+        }
+    }
+
+    /// Two types at the same Amount must sit at the same level, so switching
+    /// type auditions a character instead of a volume change.
+    #[test]
+    fn every_saturation_type_lands_at_the_same_level() {
+        let signal: Vec<f32> = (0..512)
+            .map(|i| 0.85 * (std::f32::consts::TAU * i as f32 / 64.0).sin())
+            .collect();
+        let level = |t: SaturationType| {
             let mut cfg = SaturationConfig {
                 saturation_type: t,
-                amount: 0.5,
+                amount: 0.6,
                 mix: 1.0,
                 output_gain: 1.0,
                 pre_filter: false,
                 compensation_gain: 1.0,
             };
             cfg.update_compensation();
-            let out = cfg.process(0.5);
-            assert!(
-                (out - 0.5).abs() < 0.05,
-                "compensation should keep reference level near 0.5 for {:?}, got {}",
-                t,
-                out
-            );
-        }
+            let sum: f32 = signal.iter().map(|&x| cfg.process(x).powi(2)).sum();
+            20.0 * ((sum / signal.len() as f32).sqrt()).log10()
+        };
+        let levels: Vec<f32> = [
+            SaturationType::SoftClip,
+            SaturationType::Valve,
+            SaturationType::Transistor,
+            SaturationType::HardClip,
+            SaturationType::Tape,
+        ]
+        .into_iter()
+        .map(level)
+        .collect();
+        let min = levels.iter().cloned().fold(f32::MAX, f32::min);
+        let max = levels.iter().cloned().fold(f32::MIN, f32::max);
+        assert!(
+            max - min <= 2.0,
+            "the types spread {:.2} dB at the same Amount: {levels:?}",
+            max - min
+        );
     }
 }

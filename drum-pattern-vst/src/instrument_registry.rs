@@ -139,6 +139,10 @@ pub struct SpecialParamDef {
     /// Display unit, e.g. `Some(" Hz")` ([182]). `None` for dimensionless
     /// amounts (depth, wet, mix…), exactly like a standard param's `suffix`.
     pub unit: Option<&'static str>,
+    /// Slider response curve ([189]). 1.0 = linear travel; above 1 the low end
+    /// of the range gets more of the travel. Purely ergonomic: it changes where
+    /// a value sits on the track, never the value itself nor the sound.
+    pub curve: f32,
 }
 
 /// Helper for continuous special parameters (morphable).
@@ -162,6 +166,7 @@ const fn sp(
         family,
         continuous: true,
         unit: None,
+        curve: 1.0,
     }
 }
 
@@ -187,6 +192,43 @@ const fn sp_unit(
         family,
         continuous: true,
         unit: Some(unit),
+        curve: 1.0,
+    }
+}
+
+/// Slider response curve of every **Saturation Amount** ([189]).
+///
+/// The DSP maps the amount to drive as `1 + amount^2 * 19`, and the audible
+/// distortion then flattens out: measured on a 0.8 sine through SoftClip, a
+/// linear slider reached 15 % THD at a quarter of its travel, 32 % at half, and
+/// only 43 % at the end - almost everything happened in the first half. An
+/// exponent of 1.5 spreads it out (7 % / 23 % / 38 %), which is the closest fit
+/// to an even ramp among the exponents tried.
+pub const SAT_AMOUNT_CURVE: f32 = 1.5;
+
+/// Helper for a continuous special parameter with a slider response curve.
+#[allow(dead_code)]
+const fn sp_curved(
+    name: &'static str,
+    label: &'static str,
+    default: f32,
+    min: f32,
+    max: f32,
+    special_index: usize,
+    family: ParamFamily,
+    curve: f32,
+) -> SpecialParamDef {
+    SpecialParamDef {
+        name,
+        label,
+        default,
+        min,
+        max,
+        special_index,
+        family,
+        continuous: true,
+        unit: None,
+        curve,
     }
 }
 
@@ -211,7 +253,19 @@ const fn sp_discrete(
         family,
         continuous: false,
         unit: None,
+        curve: 1.0,
     }
+}
+
+/// Is this voice one of the embedded multisample samplers?
+///
+/// They share a parameter shape the synthesised voices do not have: pitch in
+/// relative semitones, a sample index, One Shot, Start/End offsets, and a
+/// waveform graph instead of an envelope one. The list used to be spelled
+/// `13 | 14 | 15` in eleven places; adding OH6smp ([208]) made that a
+/// twelve-site edit, so it lives here once.
+pub fn is_sampler(voice_idx: usize) -> bool {
+    matches!(voice_idx, 13 | 14 | 15 | 24)
 }
 
 /// The factory default of one parameter on one voice ([184]).
@@ -230,7 +284,7 @@ pub fn param_default(voice_idx: usize, id: crate::param_id::ParamId) -> f32 {
         // Voices with their own default table (the samplers and SDrex) read it;
         // the rest fall back to the shared `VoiceSettings` defaults.
         ParamId::Std(field) => {
-            if matches!(voice_idx, 13 | 14 | 15) || voice_idx == 17 {
+            if is_sampler(voice_idx) || voice_idx == 17 {
                 instrument.sound_settings_default[field as usize]
             } else {
                 crate::synthesis::VoiceSettings::default().get(id)
@@ -506,6 +560,9 @@ const BUZZ_STD: &[StandardParamDef] = &[
 
 /// HiHat-specific: like FULL_STD but the Freq knob controls the peaking filter
 /// center (the "metallic tone" of the noise) rather than an oscillator pitch.
+/// HiHat: the decay caps at 1.5 s ([188]), like the clap in [181] — past that
+/// the tail is inaudible and the slider travel did nothing. The OpenHiHat keeps
+/// its 5 s on purpose: a long tail is what makes it "open".
 const HIHAT_STD: &[StandardParamDef] = &[
     s(
         StandardField::Freq,
@@ -530,7 +587,7 @@ const HIHAT_STD: &[StandardParamDef] = &[
         "Decay",
         ParamFamily::Env,
         0.001,
-        5.0,
+        1.5,
         false,
         Some(" s"),
     ),
@@ -1476,7 +1533,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "kick_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -1484,6 +1541,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 2,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "kick_saturation_mix",
@@ -1539,7 +1597,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "snare_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -1547,6 +1605,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 2,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "snare_saturation_mix",
@@ -1628,7 +1687,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 0,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "hihat_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -1636,6 +1695,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 1,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "hihat_saturation_mix",
@@ -1717,7 +1777,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 0,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "openhihat_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -1725,6 +1785,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 1,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "openhihat_saturation_mix",
@@ -1788,7 +1849,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "tom_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -1796,6 +1857,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 2,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "tom_saturation_mix",
@@ -1859,7 +1921,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "tom_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -1867,6 +1929,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 2,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "tom_saturation_mix",
@@ -1930,7 +1993,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "tom_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -1938,6 +2001,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 2,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "tom_saturation_mix",
@@ -1993,7 +2057,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "clap_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2001,6 +2065,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 2,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "clap_saturation_mix",
@@ -2055,7 +2120,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 0,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "ride_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2063,6 +2128,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 1,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "ride_saturation_mix",
@@ -2145,7 +2211,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 3,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "cymbal_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2153,6 +2219,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 4,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "cymbal_saturation_mix",
@@ -2218,7 +2285,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 3,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "snare606_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2226,6 +2293,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 4,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "snare606_saturation_mix",
@@ -2317,7 +2385,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 4,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "bassdrum808_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2325,6 +2393,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 5,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "bassdrum808_saturation_mix",
@@ -2399,7 +2468,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 4,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "perc1_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2407,6 +2476,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 5,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "perc1_saturation_mix",
@@ -2507,7 +2577,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 4,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "bd606_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2515,6 +2585,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 5,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "bd606_saturation_mix",
@@ -2617,7 +2688,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 4,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "sd606_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2625,6 +2696,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 5,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "sd606_saturation_mix",
@@ -2727,7 +2799,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 4,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "ch606_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2735,6 +2807,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 5,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "ch606_saturation_mix",
@@ -2852,7 +2925,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 6,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "buzz_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2860,6 +2933,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 7,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "buzz_saturation_mix",
@@ -2971,7 +3045,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 5,
                 ParamFamily::Saturation,
             ),
-            sp(
+            sp_curved(
                 "sdrex_saturation_amount",
                 "Saturation Amount",
                 0.0,
@@ -2979,6 +3053,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 1.0,
                 6,
                 ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
             ),
             sp(
                 "sdrex_saturation_mix",
@@ -3093,7 +3168,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp("ac_bd_tone", "Tone", 0.34, 0.0, 2.0, 7, ParamFamily::Osc),
             sp("ac_bd_drive", "Drive", 0.18, 0.0, 2.0, 8, ParamFamily::Osc),
             sp_discrete("ac_bd_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
-            sp("ac_bd_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp_curved("ac_bd_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation, SAT_AMOUNT_CURVE),
             sp("ac_bd_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
             sp("ac_bd_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
         ],
@@ -3118,7 +3193,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp("ac_sd_impact", "Impact", 0.5, 0.0, 1.0, 3, ParamFamily::Osc),
             sp("ac_sd_ring", "Ring", 0.5, 0.0, 1.0, 4, ParamFamily::Osc),
             sp_discrete("ac_sd_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
-            sp("ac_sd_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp_curved("ac_sd_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation, SAT_AMOUNT_CURVE),
             sp("ac_sd_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
             sp("ac_sd_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
         ],
@@ -3144,7 +3219,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp("ac_hh_spread", "Spread", 0.0, 0.0, 1.0, 4, ParamFamily::Osc),
             sp("ac_hh_brightness", "Brightness", 0.0, -1.0, 1.0, 5, ParamFamily::Osc),
             sp_discrete("ac_hh_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
-            sp("ac_hh_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp_curved("ac_hh_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation, SAT_AMOUNT_CURVE),
             sp("ac_hh_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
             sp("ac_hh_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
         ],
@@ -3170,7 +3245,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp("ac_oh_spread", "Spread", 0.0, 0.0, 1.0, 4, ParamFamily::Osc),
             sp("ac_oh_brightness", "Brightness", 0.0, -1.0, 1.0, 5, ParamFamily::Osc),
             sp_discrete("ac_oh_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
-            sp("ac_oh_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp_curved("ac_oh_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation, SAT_AMOUNT_CURVE),
             sp("ac_oh_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
             sp("ac_oh_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
         ],
@@ -3194,7 +3269,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp("ac_cl_tail", "Tail", 0.5, 0.0, 1.0, 2, ParamFamily::Env),
             sp("ac_cl_air", "Air", 0.0, 0.0, 1.0, 3, ParamFamily::Osc),
             sp_discrete("ac_cl_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
-            sp("ac_cl_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp_curved("ac_cl_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation, SAT_AMOUNT_CURVE),
             sp("ac_cl_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
             sp("ac_cl_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
         ],
@@ -3220,7 +3295,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp("ac_tm_modes", "Modes", 0.5, 0.0, 1.0, 4, ParamFamily::Osc),
             sp("ac_tm_tail_noise", "Tail Noise", 0.5, 0.0, 1.0, 5, ParamFamily::Osc),
             sp_discrete("ac_tm_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
-            sp("ac_tm_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp_curved("ac_tm_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation, SAT_AMOUNT_CURVE),
             sp("ac_tm_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
             sp("ac_tm_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
         ],
@@ -3229,6 +3304,118 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+    },
+    // [208] OH6smp: the CH6smp definition on the open-hat bank. Only the
+    // decay default differs - the point of an open hat is that it rings.
+    InstrumentDef {
+        index: 24,
+        name: "OH606",
+        label: "o6",
+        full_name: "OH6smp",
+        midi_note: 46,
+        algo_count: 1,
+        standard_params: SMP606_STD,
+        special_params: &[
+            sp_discrete(
+                "oh606_analog_mode",
+                "Analog Mode",
+                1.0,
+                0.0,
+                1.0,
+                0,
+                ParamFamily::Osc,
+            ),
+            sp_discrete("oh606_sample", "Sample", 1.0, 1.0, 8.0, 1, ParamFamily::Osc),
+            sp_discrete(
+                "oh606_one_shot",
+                "One Shot",
+                1.0,
+                0.0,
+                1.0,
+                2,
+                ParamFamily::Env,
+            ),
+            sp(
+                "oh606_start_offset",
+                "Start",
+                0.0,
+                0.0,
+                1.0,
+                3,
+                ParamFamily::Osc,
+            ),
+            sp_unit(
+                "oh606_fine_tune", "Pitch Fine",
+                0.0,
+                -100.0,
+                100.0,
+                9,
+                ParamFamily::Osc,
+                " ct",
+            ),
+            sp(
+                "oh606_end",
+                "End",
+                1.0,
+                0.0,
+                1.0,
+                11,
+                ParamFamily::Osc,
+            ),
+            sp_discrete(
+                "oh606_saturation_type",
+                "Saturation Type",
+                0.0,
+                0.0,
+                5.0,
+                4,
+                ParamFamily::Saturation,
+            ),
+            sp_curved(
+                "oh606_saturation_amount",
+                "Saturation Amount",
+                0.0,
+                0.0,
+                1.0,
+                5,
+                ParamFamily::Saturation,
+                SAT_AMOUNT_CURVE,
+            ),
+            sp(
+                "oh606_saturation_mix",
+                "Saturation Mix",
+                1.0,
+                0.0,
+                1.0,
+                6,
+                ParamFamily::Saturation,
+            ),
+            sp(
+                "oh606_saturation_output_gain",
+                "Saturation Output Gain",
+                1.0,
+                0.5,
+                2.0,
+                7,
+                ParamFamily::Saturation,
+            ),
+            sp_discrete(
+                "oh606_saturation_pre_filter",
+                "Saturation Pre-Filter",
+                0.0,
+                0.0,
+                1.0,
+                8,
+                ParamFamily::Saturation,
+            ),
+        ],
+        // [freq, decay, vol, filter_freq, attack, release, decay_curve,
+        //  release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]
+        sound_settings_default: [
+            0.0, 0.9, 0.6, 20000.0, 0.001, 0.0, 4.0, 3.0, 0.0, 0.0, 0.15, 1.0, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        filter_type_label: "LP",
     },
 ];
 
@@ -3464,6 +3651,7 @@ mod tests {
                 ("sdrex_filter_attack", " s"),
                 ("sdrex_filter_hold", " s"),
                 ("ac_bd_click_tone", " Hz"),
+            ("oh606_fine_tune", " ct"),
             ]
         );
 
@@ -3510,6 +3698,14 @@ mod tests {
         assert_eq!(decay_max("BassDrum808"), 2.0);
         assert_eq!(decay_max("Clap"), 1.5);
         assert_eq!(decay_max("Cymbal"), 5.0, "the cymbal needs its long tail");
+        // [188] Same treatment for the closed hat — and the open one keeps its
+        // range, since the long tail is the point of an OPEN hi-hat.
+        assert_eq!(decay_max("HiHat"), 1.5);
+        assert_eq!(
+            decay_max("OpenHiHat"),
+            5.0,
+            "the open hat needs its long tail"
+        );
     }
 
     /// Decays reach 1.5 s; the holds are deliberately capped at 1 s ([181] — 2 s

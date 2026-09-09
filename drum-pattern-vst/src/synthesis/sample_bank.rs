@@ -17,6 +17,7 @@ pub const HIT_COUNT: usize = 8;
 static BD606_BYTES: &[u8] = include_bytes!("../../assets/bd606.wav");
 static SD606_BYTES: &[u8] = include_bytes!("../../assets/sd606.wav");
 static CH606_BYTES: &[u8] = include_bytes!("../../assets/ch606.wav");
+static OH606_BYTES: &[u8] = include_bytes!("../../assets/oh606.wav");
 
 pub struct SampleBank {
     pub source_rate: f32,
@@ -26,6 +27,7 @@ pub struct SampleBank {
 static BD606_BANK: OnceLock<SampleBank> = OnceLock::new();
 static SD606_BANK: OnceLock<SampleBank> = OnceLock::new();
 static CH606_BANK: OnceLock<SampleBank> = OnceLock::new();
+static OH606_BANK: OnceLock<SampleBank> = OnceLock::new();
 
 /// TR-606 bass drum bank (8 × 1 s hits).
 pub fn bd606() -> &'static SampleBank {
@@ -40,6 +42,12 @@ pub fn sd606() -> &'static SampleBank {
 /// TR-606 closed hi-hat bank (8 × 0.5 s hits).
 pub fn ch606() -> &'static SampleBank {
     CH606_BANK.get_or_init(|| load_bank(CH606_BYTES))
+}
+
+/// TR-606 OPEN hi-hat bank (8 × 1 s hits — an open hat rings longer, so the
+/// slices are twice as long as the closed one's).
+pub fn oh606() -> &'static SampleBank {
+    OH606_BANK.get_or_init(|| load_bank(OH606_BYTES))
 }
 
 fn read_u16_le(bytes: &[u8], off: usize) -> Option<u16> {
