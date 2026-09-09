@@ -624,6 +624,24 @@ mod tests {
         assert!(state.needs_param_seed.load(Ordering::Relaxed));
     }
 
+    /// [201b] The Lane Editor's Store/Restore relies on this roundtrip:
+    /// get_settings_for_slot → tweak → set_settings_for_slot must restore
+    /// standards AND specials exactly.
+    #[test]
+    fn slot_settings_roundtrip_restores_standards_and_specials() {
+        let layout = TrackLayoutState::default_layout();
+        let state = SoundSettingsState::new(&layout);
+        let snap = state.get_settings_for_slot(0);
+        // Tweak a standard and a special.
+        state.instruments[0].frequency.store(4321.5f32.to_bits(), Ordering::Relaxed);
+        state.instruments[0].set_special(3, 7.25);
+        state.set_settings_for_slot(0, &snap);
+        let back = state.get_settings_for_slot(0);
+        assert_eq!(back.frequency, snap.frequency);
+        assert_eq!(back.special[3], snap.special[3]);
+        assert_eq!(back.decay, snap.decay);
+    }
+
     #[test]
     fn reset_slot_to_defaults_applies_kind_specials() {
         let layout = TrackLayoutState::default_layout();

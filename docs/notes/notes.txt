@@ -1,6 +1,7 @@
-- Refaire la représentation graphique du link lane
-- virer open-hihat
-- hihat decay : 1.5s
-- possibilité de router plusieurs tracks vers une meme output
-- quand on assigne une output -> déconnecter main
-- Améliorer le visuel du sound editor (déjà un barre de scroll plus sympa)
+- Refaire la représentation graphique du link lane — ticketé [191]
+- virer open-hihat — ticketé [192] (à clarifier : voix ou preset ?)
+- hihat decay : 1.5s — ticketé [188]
+- possibilité de router plusieurs tracks vers une meme output — ticketé [194]
+- quand on assigne une output -> déconnecter main — ticketé [193]
+- Améliorer le visuel du sound editor (déjà un barre de scroll plus sympa) — ticketé [190]
+- rendre le slider saturation amount plus progressif — ticketé [189]

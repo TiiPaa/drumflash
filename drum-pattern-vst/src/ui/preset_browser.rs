@@ -51,7 +51,7 @@ pub fn draw_preset_browser_if_any(
     let mut load_user: Option<std::path::PathBuf> = None;
     let mut load_factory: Option<&'static str> = None;
     let mut delete_user: Option<std::path::PathBuf> = None;
-    let mut apply_builtin_grid: Option<usize> = None; // 0=Clear All, 1=4, 2=12
+    let mut apply_builtin_grid: Option<usize> = None; // 0=Clear All, 1=4, 2=12, 3=AC 4, 4=AC 12
 
     let response = egui::Area::new(area_id)
         .kind(egui::UiKind::Popup)
@@ -156,7 +156,7 @@ pub fn draw_preset_browser_if_any(
                         );
                         ui.add_space(4.0);
                         for (idx, label) in
-                            ["Clear All", "4 Lanes", "12 Lanes"].iter().enumerate()
+                            ["Clear All", "4 Lanes", "12 Lanes", "AC 4", "AC 12"].iter().enumerate()
                         {
                             ui.horizontal(|ui| {
                                 ui.label(
@@ -335,7 +335,9 @@ pub fn draw_preset_browser_if_any(
             let (layout, clear) = match idx {
                 0 => (TrackLayoutState::empty_layout(), true),
                 1 => (TrackLayoutState::modular_default_layout(), false),
-                _ => (TrackLayoutState::preset_12_layout(), false),
+                2 => (TrackLayoutState::preset_12_layout(), false),
+                3 => (TrackLayoutState::preset_ac4_layout(), false),
+                _ => (TrackLayoutState::preset_ac12_layout(), false),
             };
             apply_lane_layout_preset(setter, params, sound_settings, pattern, state, layout, clear);
             if let Some(b) = state.preset_browser.as_mut() {
