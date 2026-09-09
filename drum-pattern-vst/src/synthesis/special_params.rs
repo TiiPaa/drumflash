@@ -76,6 +76,10 @@ pub const BUZZ_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Smooth" }, AlgoDef { name:
 
 pub const SDREX_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 
+// ── AC606 voices (ported analogcode engines) ────────────────────────────────
+
+pub const AC606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
+
 // ── Registry helpers ────────────────────────────────────────────────────────
 
 use super::DrumVoice;
@@ -101,5 +105,11 @@ pub fn algos_for(voice: DrumVoice) -> &'static [AlgoDef] {
         DrumVoice::Ch606 => CH606_ALGOS,
         DrumVoice::Buzz => BUZZ_ALGOS,
         DrumVoice::Sdrex => SDREX_ALGOS,
+        DrumVoice::Bd6Ac
+        | DrumVoice::Sd6Ac
+        | DrumVoice::Hh6Ac
+        | DrumVoice::Oh6Ac
+        | DrumVoice::Cl6Ac
+        | DrumVoice::Tm6Ac => AC606_ALGOS,
     }
 }

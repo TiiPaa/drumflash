@@ -286,6 +286,63 @@ impl PatternSlot {
         self.occupied = true;
     }
 
+    /// Erase every trace of one lane from this saved pattern: its steps, its
+    /// fusions, its sound p-locks and its sequencer p-locks. The other lanes
+    /// are untouched.
+    ///
+    /// Deleting a lane deliberately leaves its musical data in place (so an
+    /// accidental delete costs nothing), which means a freshly placed
+    /// instrument would otherwise inherit the previous lane's steps — in the
+    /// live pattern AND in every pattern saved before the deletion. This is
+    /// what makes a new lane come up blank on all 16 patterns.
+    pub fn clear_lane(&mut self, lane: usize) {
+        if lane >= INSTRUMENT_COUNT {
+            return;
+        }
+        for mask in self.step_masks.iter_mut() {
+            *mask &= !(1u16 << lane);
+        }
+        if let Some(regions) = plock_lane_regions(self.plock_bytes.len()) {
+            clear_lane_in_blob(&mut self.plock_bytes, regions, lane);
+        }
+        if let Some(regions) = seq_plock_lane_regions(self.seq_plock_bytes.len()) {
+            clear_lane_in_blob(&mut self.seq_plock_bytes, regions, lane);
+        }
+        if let Some(regions) = fusion_lane_regions(self.fusion_bytes.len()) {
+            // A zeroed block reads back as "no fusions": both formats take the
+            // group count from the low byte of the leading word.
+            clear_lane_in_blob(&mut self.fusion_bytes, regions, lane);
+        }
+    }
+
+    /// Reorder this saved pattern's lanes, `order[new] = old` — the convention
+    /// the grid's lane drag already uses.
+    ///
+    /// Without this, dragging a lane permuted the LIVE pattern only and every
+    /// saved pattern kept the old lane assignment, so recalling one put each
+    /// instrument's steps back on the lane it used to occupy.
+    pub fn permute_lanes(&mut self, order: &[usize; INSTRUMENT_COUNT]) {
+        for mask in self.step_masks.iter_mut() {
+            let previous = *mask;
+            let mut moved = 0u16;
+            for (new_lane, &old_lane) in order.iter().enumerate() {
+                if previous & (1u16 << old_lane) != 0 {
+                    moved |= 1u16 << new_lane;
+                }
+            }
+            *mask = moved;
+        }
+        if let Some(regions) = plock_lane_regions(self.plock_bytes.len()) {
+            permute_lanes_in_blob(&mut self.plock_bytes, regions, order);
+        }
+        if let Some(regions) = seq_plock_lane_regions(self.seq_plock_bytes.len()) {
+            permute_lanes_in_blob(&mut self.seq_plock_bytes, regions, order);
+        }
+        if let Some(regions) = fusion_lane_regions(self.fusion_bytes.len()) {
+            permute_lanes_in_blob(&mut self.fusion_bytes, regions, order);
+        }
+    }
+
     /// Copy slot data into temporary buffers so the caller can release the
     /// bank lock before doing the (expensive) restore. Returns the pattern
     /// length if the slot is occupied, otherwise None.
@@ -487,6 +544,126 @@ impl PatternSlot {
 /// Restore pattern / plock / seq-plock data from raw buffers.
 /// This is the same logic as `PatternSlot::restore` but decoupled from the
 /// slot so the bank lock can be released before the (expensive) restore runs.
+/// Field count of the legacy `plock` layout, still readable in saved sessions.
+/// Kept in step with the gate in [`restore_from_buffers`].
+const LEGACY_PLOCK_FIELD_COUNT: usize = 18;
+
+/// Byte layout of one serialized blob, seen as per-lane strided regions.
+///
+/// Everything [`PatternSlot::capture`] writes is positional and emits all
+/// `INSTRUMENT_COUNT` lanes at a fixed stride, so one lane's bytes can be
+/// zeroed or moved without deserializing the rest. Each region is
+/// `(byte offset of lane 0, bytes per lane)`.
+#[derive(Clone, Copy)]
+struct LaneRegions {
+    regions: [(usize, usize); 3],
+    count: usize,
+}
+
+impl LaneRegions {
+    fn new(regions: &[(usize, usize)]) -> Self {
+        let mut out = [(0usize, 0usize); 3];
+        out[..regions.len()].copy_from_slice(regions);
+        Self {
+            regions: out,
+            count: regions.len(),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.regions[..self.count].iter().copied()
+    }
+
+    /// Byte range of one lane inside a region.
+    fn range((offset, stride): (usize, usize), lane: usize) -> std::ops::Range<usize> {
+        let start = offset + lane * stride;
+        start..start + stride
+    }
+}
+
+/// Regions of `plock_bytes`: the values, the per-lane masks, then the per-step
+/// field masks. The current and legacy field counts are probed in the same
+/// order as [`restore_from_buffers`], so a legacy blob is edited with ITS
+/// stride instead of being corrupted by the current one.
+fn plock_lane_regions(len: usize) -> Option<LaneRegions> {
+    let masks = INSTRUMENT_COUNT * 8;
+    let field_masks = INSTRUMENT_COUNT * STEP_COUNT * 8;
+    for field_count in [crate::plock::FIELD_COUNT, LEGACY_PLOCK_FIELD_COUNT] {
+        let values = INSTRUMENT_COUNT * STEP_COUNT * field_count * 4;
+        if len >= values + masks + field_masks {
+            return Some(LaneRegions::new(&[
+                (0, STEP_COUNT * field_count * 4),
+                (values, 8),
+                (values + masks, STEP_COUNT * 8),
+            ]));
+        }
+    }
+    None
+}
+
+/// Regions of `seq_plock_bytes`: the interleaved per-step cells, the active
+/// masks, and the step-solo masks — that last block is optional, legacy blobs
+/// stop before it.
+fn seq_plock_lane_regions(len: usize) -> Option<LaneRegions> {
+    // probability, stutter, condition, microtiming — 4 bytes each.
+    const CELL_BYTES: usize = 4 * 4;
+    let cells = INSTRUMENT_COUNT * STEP_COUNT * CELL_BYTES;
+    let masks = INSTRUMENT_COUNT * 8;
+    if len < cells + masks {
+        return None;
+    }
+    let solos = cells + masks;
+    let cell_region = (0, STEP_COUNT * CELL_BYTES);
+    if len >= solos + INSTRUMENT_COUNT * 8 {
+        Some(LaneRegions::new(&[cell_region, (cells, 8), (solos, 8)]))
+    } else {
+        Some(LaneRegions::new(&[cell_region, (cells, 8)]))
+    }
+}
+
+/// Regions of `fusion_bytes`. Both the current format (a bare count word then
+/// `MAX_FUSIONS - 1` group slots) and the legacy one-word-per-group format are
+/// a single fixed-stride block per lane. Probed largest first, like
+/// [`deserialize_fusions`].
+fn fusion_lane_regions(len: usize) -> Option<LaneRegions> {
+    let current = 8 + (MAX_FUSIONS - 1) * FUSION_SLOT_COUNT * 8;
+    let legacy = MAX_FUSIONS * 8;
+    for stride in [current, legacy] {
+        if len >= INSTRUMENT_COUNT * stride {
+            return Some(LaneRegions::new(&[(0, stride)]));
+        }
+    }
+    None
+}
+
+/// Zero one lane's bytes in every region of a blob.
+fn clear_lane_in_blob(bytes: &mut [u8], regions: LaneRegions, lane: usize) {
+    for region in regions.iter() {
+        let range = LaneRegions::range(region, lane);
+        if range.end <= bytes.len() {
+            bytes[range].fill(0);
+        }
+    }
+}
+
+/// Reorder the lanes of a blob, `order[new] = old`.
+fn permute_lanes_in_blob(
+    bytes: &mut [u8],
+    regions: LaneRegions,
+    order: &[usize; INSTRUMENT_COUNT],
+) {
+    let previous = bytes.to_vec();
+    for region in regions.iter() {
+        for (new_lane, &old_lane) in order.iter().enumerate() {
+            let dst = LaneRegions::range(region, new_lane);
+            let src = LaneRegions::range(region, old_lane);
+            if dst.end <= bytes.len() && src.end <= previous.len() {
+                bytes[dst].copy_from_slice(&previous[src]);
+            }
+        }
+    }
+}
+
 pub fn restore_from_buffers(
     step_masks: &[u16; STEP_COUNT],
     plock_bytes: &[u8],
@@ -768,6 +945,23 @@ impl PatternBank {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Apply [`PatternSlot::clear_lane`] to all 16 saved patterns, so a lane
+    /// that just received an instrument is blank everywhere and not only in the
+    /// pattern on screen.
+    pub fn clear_lane_everywhere(&mut self, lane: usize) {
+        for slot in self.slots.iter_mut() {
+            slot.clear_lane(lane);
+        }
+    }
+
+    /// Apply [`PatternSlot::permute_lanes`] to all 16 saved patterns, so a lane
+    /// drag reorders the saved patterns the same way it reorders the live one.
+    pub fn permute_lanes_everywhere(&mut self, order: &[usize; INSTRUMENT_COUNT]) {
+        for slot in self.slots.iter_mut() {
+            slot.permute_lanes(order);
+        }
+    }
 }
 
 /// Wrapper around PatternBank for nih-plug persistence.
@@ -788,6 +982,38 @@ impl PersistentPatternBank {
             snapshot: Arc::new(RwLock::new(Vec::new())),
             snapshot_dirty: Arc::new(AtomicBool::new(true)),
         }
+    }
+
+    /// Wipe one lane from all 16 saved patterns and persist the change.
+    ///
+    /// Called from the UI when a lane becomes a new instrument, so the lane is
+    /// blank on every pattern and not only on the one displayed. The lock is
+    /// taken blocking: only the audio thread must stay non-blocking, and it
+    /// uses `try_lock` and retries on the next buffer.
+    pub fn clear_lane_in_saved_patterns(&self, lane: usize) {
+        {
+            let Ok(mut bank) = self.bank.lock() else {
+                return;
+            };
+            bank.clear_lane_everywhere(lane);
+        }
+        self.refresh_snapshot();
+    }
+
+    /// Reorder the lanes of all 16 saved patterns and persist the change,
+    /// `order[new] = old`. Keeps a lane drag from stranding the saved patterns
+    /// on the previous lane assignment.
+    pub fn permute_lanes_in_saved_patterns(
+        &self,
+        order: &[usize; crate::sequencer::pattern::INSTRUMENT_COUNT],
+    ) {
+        {
+            let Ok(mut bank) = self.bank.lock() else {
+                return;
+            };
+            bank.permute_lanes_everywhere(order);
+        }
+        self.refresh_snapshot();
     }
 
     /// Mark the persisted snapshot stale without allocating or blocking. This
@@ -1257,5 +1483,197 @@ mod tests {
             assert!(valid, "snapshot must always remain valid JSON");
         }
         writer_thread.join().unwrap();
+    }
+
+    // ── Per-lane editing of a saved pattern ─────────────────────────────────
+
+    /// The one step every lane is marked on, so a lane's mark keeps its
+    /// position when the lanes get permuted and only its VALUE says where it
+    /// came from.
+    const MARK_STEP: usize = 5;
+
+    /// Put a recognizable mark on one lane: a step, a fusion, a sound p-lock
+    /// and a sequencer p-lock.
+    fn mark_lane(
+        lane: usize,
+        pattern: &SharedPattern,
+        plock: &PlockState,
+        seq: &SequencerPlockState,
+    ) {
+        use std::sync::atomic::Ordering;
+        let step = MARK_STEP;
+        pattern.set_step_mask(step, pattern.load_step_mask(step) | (1u16 << lane));
+        pattern.store_fusions(
+            lane,
+            &[FusedGroup {
+                start_cell: 16,
+                end_cell: 19,
+                step_count: 4,
+                ..Default::default()
+            }],
+        );
+        plock.values.set(lane, step, 0, 0.25 + lane as f32);
+        plock.masks.masks[lane].store(1u64 << step, Ordering::Relaxed);
+        plock.field_masks.set_raw(lane, step, 0b11);
+        seq.probabilities[lane][step].store(0.5f32.to_bits(), Ordering::Relaxed);
+        seq.masks[lane].store(1u64 << step, Ordering::Relaxed);
+        seq.solo_masks[lane].store(1u64 << step, Ordering::Relaxed);
+    }
+
+    /// Read that mark back. `None` means the lane carries nothing at all.
+    fn lane_mark(
+        lane: usize,
+        pattern: &SharedPattern,
+        plock: &PlockState,
+        seq: &SequencerPlockState,
+    ) -> Option<(f32, u64, u64, usize)> {
+        use std::sync::atomic::Ordering;
+        let step = MARK_STEP;
+        let has_step = pattern.load_step_mask(step) & (1u16 << lane) != 0;
+        let value = plock.values.get(lane, step, 0);
+        let plock_mask = plock.masks.masks[lane].load(Ordering::Relaxed);
+        let seq_mask = seq.masks[lane].load(Ordering::Relaxed);
+        let fusions = pattern.load_fusions(lane).len();
+        if !has_step && value == 0.0 && plock_mask == 0 && seq_mask == 0 && fusions == 0 {
+            return None;
+        }
+        Some((value, plock_mask, seq_mask, fusions))
+    }
+
+    type FreshState = (
+        std::sync::Arc<SharedPattern>,
+        std::sync::Arc<PlockState>,
+        SequencerPlockState,
+    );
+
+    fn fresh_state() -> FreshState {
+        (
+            SharedPattern::new(&Pattern::empty()),
+            PlockState::new(),
+            SequencerPlockState::new(),
+        )
+    }
+
+    /// The guarantee: an instrument dropped on a reused lane must find that
+    /// lane blank in EVERY saved pattern, and the neighbours untouched.
+    #[test]
+    fn clearing_a_lane_wipes_it_from_a_saved_pattern_and_spares_the_others() {
+        let (pattern, plock, seq) = fresh_state();
+        for lane in [2usize, 3, 4] {
+            mark_lane(lane, &pattern, &plock, &seq);
+        }
+        let mut slot = PatternSlot::default();
+        slot.capture(&pattern, &plock, &seq, 64);
+
+        slot.clear_lane(3);
+
+        let (after, after_plock, after_seq) = fresh_state();
+        slot.restore(&after, &after_plock, &after_seq);
+        assert_eq!(
+            lane_mark(3, &after, &after_plock, &after_seq),
+            None,
+            "lane 3 must come back empty from the saved pattern"
+        );
+        for lane in [2usize, 4] {
+            assert_eq!(
+                lane_mark(lane, &after, &after_plock, &after_seq),
+                lane_mark(lane, &pattern, &plock, &seq),
+                "lane {lane} must survive its neighbour being cleared"
+            );
+        }
+    }
+
+    /// A lane drag permutes the live pattern; the saved ones have to follow, or
+    /// recalling a pattern puts each instrument's steps back on its old lane.
+    #[test]
+    fn permuting_lanes_moves_a_saved_pattern_the_same_way() {
+        let (pattern, plock, seq) = fresh_state();
+        for lane in [0usize, 1, 2] {
+            mark_lane(lane, &pattern, &plock, &seq);
+        }
+        let mut slot = PatternSlot::default();
+        slot.capture(&pattern, &plock, &seq, 64);
+
+        // Lane 0 dragged down to index 2: order[new] = old.
+        let mut order: [usize; INSTRUMENT_COUNT] = std::array::from_fn(|i| i);
+        order[0] = 1;
+        order[1] = 2;
+        order[2] = 0;
+        slot.permute_lanes(&order);
+
+        let (after, after_plock, after_seq) = fresh_state();
+        slot.restore(&after, &after_plock, &after_seq);
+        for (new_lane, &old_lane) in order.iter().enumerate().take(3) {
+            let moved = lane_mark(new_lane, &after, &after_plock, &after_seq);
+            assert!(moved.is_some(), "lane {new_lane} should carry data");
+            // The p-lock value is lane-specific, so it identifies the origin.
+            assert_eq!(
+                moved.unwrap().0,
+                0.25 + old_lane as f32,
+                "lane {new_lane} must now hold what lane {old_lane} held"
+            );
+            assert_eq!(moved.unwrap().3, 1, "its fusion travelled too");
+        }
+    }
+
+    /// A blob saved by an older build is shorter, so its per-lane stride is
+    /// smaller. Editing it with the CURRENT stride would shred the neighbours.
+    #[test]
+    fn clearing_a_lane_uses_the_stride_of_a_legacy_plock_blob() {
+        let stride = STEP_COUNT * LEGACY_PLOCK_FIELD_COUNT * 4;
+        let values = INSTRUMENT_COUNT * stride;
+        let masks = INSTRUMENT_COUNT * 8;
+        let field_masks = INSTRUMENT_COUNT * STEP_COUNT * 8;
+
+        // Every byte of a lane's block carries that lane's index + 1.
+        let mut bytes = vec![0u8; values + masks + field_masks];
+        for lane in 0..INSTRUMENT_COUNT {
+            let tag = (lane + 1) as u8;
+            bytes[lane * stride..(lane + 1) * stride].fill(tag);
+            bytes[values + lane * 8..values + (lane + 1) * 8].fill(tag);
+            let fm = values + masks;
+            bytes[fm + lane * STEP_COUNT * 8..fm + (lane + 1) * STEP_COUNT * 8].fill(tag);
+        }
+
+        let mut slot = PatternSlot::default();
+        slot.plock_bytes = bytes;
+        slot.occupied = true;
+        slot.clear_lane(3);
+
+        assert!(
+            slot.plock_bytes[3 * stride..4 * stride].iter().all(|b| *b == 0),
+            "lane 3's values must be zeroed"
+        );
+        for lane in [2usize, 4] {
+            let tag = (lane + 1) as u8;
+            assert!(
+                slot.plock_bytes[lane * stride..(lane + 1) * stride]
+                    .iter()
+                    .all(|b| *b == tag),
+                "lane {lane} must be untouched — the legacy stride was misread"
+            );
+            assert!(
+                slot.plock_bytes[values + lane * 8..values + (lane + 1) * 8]
+                    .iter()
+                    .all(|b| *b == tag),
+                "lane {lane}'s mask must be untouched"
+            );
+        }
+    }
+
+    /// An empty bank slot has empty blobs: the per-lane edits must be no-ops
+    /// rather than slicing out of bounds.
+    #[test]
+    fn per_lane_edits_are_harmless_on_an_empty_slot() {
+        let mut slot = PatternSlot::default();
+        slot.clear_lane(3);
+        let order: [usize; INSTRUMENT_COUNT] = std::array::from_fn(|i| i);
+        slot.permute_lanes(&order);
+        assert!(slot.step_masks.iter().all(|m| *m == 0));
+        assert!(slot.plock_bytes.is_empty());
+        assert!(!slot.occupied);
+        // Out-of-range lanes are ignored, not panics.
+        slot.clear_lane(INSTRUMENT_COUNT);
+        slot.clear_lane(usize::MAX);
     }
 }

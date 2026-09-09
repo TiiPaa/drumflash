@@ -172,6 +172,18 @@ pub struct EditorUIState {
     /// Cell whose p-lock the Lane Editor edits ([184]). `None` = the lane global.
     #[serde(default)]
     pub sound_edit_target: Option<SelectedCell>,
+    /// Slot waiting for a second click on the Lane Editor's Default button
+    /// before its sound settings are reset to the instrument's defaults [200].
+    /// `(slot, armed_at)` — auto-disarms after a few seconds or on any click
+    /// elsewhere, so an armed "Sure?" is never a dead end.
+    #[serde(skip)]
+    pub sound_default_confirm: Option<(usize, f64)>,
+    /// Per-slot A/B scratchpad for the Lane Editor's Store/Restore buttons
+    /// [201]: a quick snapshot of what the panel edits — lane, step p-lock,
+    /// or morph group, following the edit scope ([201b]). Not persisted —
+    /// editing aid only.
+    #[serde(skip)]
+    pub sound_scratchpad: [Option<SoundScratch>; crate::track::MAX_TRACKS],
     /// Which of a fused group's three stores the panel edits ([184] ph. 3-4).
     #[serde(skip)]
     pub fusion_tab: FusionTab,
@@ -472,6 +484,27 @@ pub struct PagePopup {
     pub confirm_action: Option<PageMenuAction>,
 }
 
+/// [201b] What the Store/Restore scratchpad holds — follows the panel's edit
+/// scope: the lane's sound, one step's p-lock, or a fusion's morph group.
+#[derive(Clone)]
+pub enum SoundScratch {
+    /// Lane scope: full sound settings + algo.
+    Lane(crate::sound_settings::SoundSettings, u8),
+    /// Step p-lock scope: the step's p-lock as-is (active bit, field mask,
+    /// field values).
+    Plock {
+        step: usize,
+        active: bool,
+        field_mask: u64,
+        values: [f32; crate::plock::FIELD_COUNT],
+    },
+    /// Morph scope: the fused group verbatim.
+    Morph {
+        fusion_index: usize,
+        group: crate::sequencer::pattern::FusedGroup,
+    },
+}
+
 impl EditorUIState {
     /// Randomize Lane density; 0.0 means "unset" (fresh/legacy state) → 30 %.
     pub fn randomize_density(&self) -> f32 {
@@ -550,6 +583,7 @@ impl EditorUIState {
 
         let mut layout =
             PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+        let filled_an_empty_lane = !layout.slots[target_slot].active;
         if layout.slots[target_slot].active {
             layout.slots[target_slot].kind = clipboard.kind;
             layout.slots[target_slot].name = clipboard.kind.default_name().to_string();
@@ -558,6 +592,18 @@ impl EditorUIState {
             layout.slots[target_slot] = TrackSlot::active_with_kind(clipboard.kind);
         }
         PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
+
+        // Pasting onto an EMPTY lane also turns a slot into a new instrument,
+        // so it owes the same guarantee as the instrument picker: the clipboard
+        // fills the pattern on screen, and the lane comes up blank on the other
+        // 15 instead of carrying the deleted lane's steps. The live pattern
+        // needs no wiping here — the paste below rewrites all 64 steps, every
+        // p-lock field and the fusions.
+        if filled_an_empty_lane {
+            params
+                .pattern_bank
+                .clear_lane_in_saved_patterns(target_slot);
+        }
 
         settings_state.set_settings_for_slot(target_slot, &clipboard.settings);
         set_int_param_if_changed(setter, params.algos()[target_slot], clipboard.algo);

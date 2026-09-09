@@ -139,13 +139,20 @@ fn remap_roles_to_slots(
 
         // The 606 multisample voices have no generator roles of their own:
         // they borrow the Kick / Snare roles so GENERATE still writes a line
-        // on their lanes.
+        // on their lanes. Same for the AC606 voices (ported analogcode
+        // engines): each borrows the role of its acoustic sibling.
         let base_voice = match kind {
             TrackInstrumentKind::Bd6smp => 0,
             TrackInstrumentKind::Sd6smp => 1,
             TrackInstrumentKind::Ch6smp => 2, // borrow the HiHat role
             TrackInstrumentKind::Buzz => 12, // borrow the Perc1 role
             TrackInstrumentKind::Sdrex => 1, // borrow the Snare role
+            TrackInstrumentKind::Bd6Ac => 0,
+            TrackInstrumentKind::Sd6Ac => 1,
+            TrackInstrumentKind::Hh6Ac => 2,
+            TrackInstrumentKind::Oh6Ac => 3,
+            TrackInstrumentKind::Cl6Ac => 7,
+            TrackInstrumentKind::Tm6Ac => 4,
             _ => kind.drum_voice_index(),
         };
         let duplicate_index = assigned_per_voice[base_voice];

@@ -1,3 +1,46 @@
+## Nouvelles tâches — session 2026-08-26
+
+> Ticketisation des notes utilisateur (`docs/notes/notes.txt`). Priorité : quick wins d'abord, features moyennes ensuite, gros chantier en fin.
+
+### Fait
+- [x] [200f] **Chargeur de presets d'instrument dans le bandeau d'actions** — section droite avec Store/Restore/Default ; retiré de l'onglet Track (build 20260902-155102, validé dans S1 le 2026-09-09).
+- [x] [200e] **Step/Start/End rejoint le bandeau d'actions** — deux sections : portée à gauche (Step/Start/End), actions à droite (Store/Restore/Default) ; l'en-tête ne garde que le badge de scope (build 20260902-145616, validé dans S1 le 2026-09-09).
+- [x] [200d] **Bandeau d'actions** — Default/Store/Restore sortent de l'en-tête (surchargée) vers un bandeau fin aligné à droite sous les onglets, onglet Sound uniquement (build 20260902-143620, validé dans S1 le 2026-09-09).
+- [x] [200c] **Default scope-aware** — Step : les champs verrouillés du pas reviennent aux défauts d'usine (masque intact) ; Morph : cibles existantes aux défauts ; Lane : inchangé (build 20260902-141717, validé dans S1 le 2026-09-09).
+- [x] [199] **BUG : créer un seq plock ouvrait l'onglet sound plock** — la sélection de cellule du mode Sound persistait en mode Sequencer ; un clic droit en mode Sequencer l'efface désormais explicitement (build 20260901-203831, validé dans S1 le 2026-09-09).
+- [x] [200] **Bouton Default dans le Lane Editor** — reset de la lane aux défauts de l'instrument, deux clics (« Sure? »), p-locks conservés (build 20260901-203831, validé dans S1 le 2026-09-09).
+- [x] [201] **Boutons Store/Restore** — snapshot A/B par lane (settings + algo), non persisté ; accessibles dans tous les scopes (build 20260901-203831, validé dans S1 le 2026-09-09).
+- [x] [198b] **BD6(AC) : Decay Curve accentuée** — γ = 2^(3c) (×8 / ×0,125) ; mesures : +1 → 58 ms, 0 → 241 ms, −1 → 694 ms à decay 0,05 s (build 20260827-163841, validé dans S1 le 2026-09-09).
+- [x] [198] **BD6(AC) : Decay Curve bipolaire + Decay max 1 s** — γ = 2^(2c) sur l'env d'ampli du corps (+1 punchy / −1 queue longue), défaut 0 = fitté (golden intact) ; Decay plafonné à 1 s (build 20260827-162051, validé dans S1 le 2026-09-09).
+- [x] [197] **Kits d'usine AC 4 / AC 12** dans le preset browser (onglet Grid) — AC 4 = BD6/SD6/HH6/TM6(AC) ; AC 12 = les 6 (AC) + Ride/Cymbal/Snare606/808 ; choke group 1 sur les hats AC (build 20260827-160721, validé dans S1 le 2026-09-09).
+- [x] [196d] **BD6(AC) : Tone descend à 80 Hz** — le filtre de corps (620–1200 Hz fitté) était structurellement inaudible sur une sinus à 53–120 Hz ; la plage basse est étendue, point fitté préservé bit-exact (build 20260827-144429, validé dans S1 le 2026-09-09).
+- [x] [196c] **BD6(AC) : retrait d'Attack et Punch Decay** — quasi inaudibles sur ce moteur (décision utilisateur) ; moteur figé aux valeurs fittées, `special[6]` inerte. Punch conservé (0–2) (build 20260827-142925, validé dans S1 le 2026-09-09).
+- [x] [196b] **Retours AC606 : plages BD6 étendues + défauts saturation** — Punch/Punch Decay/Tone/Drive/Sweep étendus à 0–2 avec coude au-delà du fitté (défauts inchangés, golden intact) ; Attack étendu au-delà de 10 ms ; Sat Mix 0,5 / Sat Gain 1,25 par défaut sur les 6 kinds (build 20260827-140855, validé dans S1 le 2026-09-09).
+- [x] [196] **Exploration des paramètres AC606 + saturation partagée** — ~30 nouveaux params en `special[]` (p-lockables/morphables, défauts = fittés) : BD6 (Sweep, Bend, Click+Click Tone, Punch+Punch Decay, Tone, Drive — découplés), SD6 (Wire Color, Shell Bend, Impact, Ring), HH6/OH6 (Metal, Click, Bell, Wobble, Spread, Brightness), CL6 (Noise, Spread, Tail, Air), TM6 (Model Auto/Low/High, Strike, Snap, Glide, Modes, Tail Noise) + pack saturation (indices 10-13) sur les 6 kinds. Golden bit-exact (5/6, BD recapturé : 1 ulp mesuré), tests de câblage aux extrêmes (build 20260827-094426, validé dans S1 le 2026-09-09).
+- [x] [195] **Six nouveaux instruments AC606 (voix analogcode portées)** — portage Rust fidèle de [analogcode/606-Inspired-Synth-Drums](https://github.com/analogcode/606-Inspired-Synth-Drums) (MIT, © 2026 Matthew Fecher) dans `src/synthesis/ac606/` + wrapper `AcVoice` : **BD6(AC), SD6(AC), HH6(AC), OH6(AC), CL6(AC), TM6(AC)** (kinds 16-21, visibles dans Type / Add Module / menu Instrument). Fidelité vérifiée : 768 taps FIR du Clap bit-à-bit vs la source C++. Mapping Frequency→pitch, Decay→longueur fittée, Analog→jitter, Snap (SD) → Snappy ; anti-click [179] via `RetrigDeclick`. Crédit : About dans Settings + `LICENSE-MIT.txt`. 11 tests. (build 20260826-224038, validé dans S1 le 2026-09-09).
+
+### P1 — Quick wins
+- [x] [206] **One Shot actif par defaut sur les samplers** - defaut a 1.0 pour BD6smp/SD6smp/CH6smp, dans le registre ET dans `VoiceSettings` ; sessions et presets existants inchanges (build 20260909-094534, validé dans S1 le 2026-09-09).
+- [x] [205] **Une lane qui reçoit un instrument est vide sur les 16 patterns** - poser un instrument sur une lane vide (sélecteur `+N` ou Paste Lane) efface désormais cette lane dans le pattern vivant **et** dans les 16 patterns sauvegardés ; le déplacement de lane permute aussi les 16 patterns (avant : les pas revenaient sur l'ancienne lane après un rappel). Adressage par lane des blobs de la bank (`LaneRegions` + 3 sondes de disposition, foulée legacy 18 champs respectée). La suppression reste **non destructive** par choix. 4 tests (build 20260909-092632, validé dans S1 le 2026-09-09).
+- [ ] [188] **HiHat decay : max 1,5 s** — resserrer la plage de decay du HiHat (même traitement que Clap 1,5 s en [181], nouveau `HIHAT_STD` si besoin ; vérifier l'impact sur `envelope_viz` et les plocks existants).
+- [ ] [189] **Slider Saturation Amount plus progressif** — loi de réponse non linéaire sur le slider (plus de résolution dans le bas de course) ; concerne les 12 voix saturées → faire ça au niveau du widget/registre, pas voix par voix.
+- [ ] [190] **Scrollbar du Sound Editor** — restyler la barre de scroll du panneau Sound (look skeuo cohérent avec `skeuo.rs`) ; première étape du point « améliorer le visuel du sound editor ».
+
+### P2 — Retraits d'instruments (décision utilisateur : retrait + migration)
+- [ ] [203] **Retirer Snare606** (remplacé par SD6(AC)) — retirer le kind des menus (`ALL`/`from_index` pickers) + **migration** des lanes sauvegardées vers Sd6Ac au chargement du layout + adapter `preset_12_layout` et `from_drum_voice_index` (placeholders). Le moteur reste (voix legacy).
+- [ ] [204] **Retirer OpenHiHat** (HH jugé suffisant par l'utilisateur) — même traitement, migration vers **HiHat**. Attention : `preset_12_layout` contient OpenHiHat (le remplacer — HH6(AC)/OH6(AC) ?), choke group 1 legacy HH/OH à revoir, rôle générateur 3 utilisé par Oh6Ac.
+
+### P2/P3 — Gros chantier
+- [x] [202] **Instruments + params par pattern (P1..P16)** - **ABANDONNE le 2026-09-09**, decision utilisateur : « ça va complexifier le séquenceur pour pas grand chose ». L'analyse reste utile si le sujet revient : la disposition vit dans un blob unique `track-layout-v1` (kind/active/routing/midi_note/linked_up par slot) alors qu'un `PatternSlot` ne porte que du musical (MG-6) ; le changement de kind à chaud existe déjà et tourne sur le thread audio (`lib.rs`, comparaison avec `last_slot_kinds` → `reinitialize_slot`) ; le format d'une disposition existe déjà (`kit: [i8; MAX_TRACKS]`, `presets.rs`). Le point dur était la cohérence p-locks/kit (les 32 spéciaux ont un sens **par voix**) et le fait que les sorties aux suivent le slot, donc `Out N` changerait d'instrument entre deux patterns.
+
+### P2 — Features moyennes (UI)
+- [ ] [191] **Refaire la représentation graphique du link lane** — l'indicateur actuel (barre + point, [151]) n'est pas satisfaisant ; revoir le rendu visuel des lanes linkées dans la grille.
+- [ ] [192] **Virer l'OpenHiHat** — ⚠️ à clarifier : retirer la voix OpenHiHat (instrument) tout court, ou seulement d'un preset/du kit par défaut ? Impact choke group 1 + migration sessions existantes si retrait complet.
+
+### P2/P3 — Routing des sorties (gros chantier, les deux points se touchent)
+- [ ] [193] **Assigner une output déconnecte le Main** — quand une lane est routée vers `Out N`, elle sort du Main Mix (aujourd'hui les deux). Attention aux sessions existantes (changement de comportement sonore au chargement).
+- [ ] [194] **Router plusieurs tracks vers la même output** — casse l'exclusivité aux-par-lane ([117], « un `Out N` est exclusif à une lane »). Étudier d'abord : UI de partage, migration des sessions, sommation des gains.
+
 ## Nouvelles tâches — session 2026-08-20
 
 ### Bugs
@@ -35,7 +78,12 @@
 - [ ] [166] **REPRENDRE ICI** — **Mixer le stutter avec les cellules fusionnées** — étudier attentivement l'interaction stutter × fusion (actuellement exclusifs) : sémantique temporelle, rendu audio, export MIDI [158], UI/plocks. **Bien étudier le point avant de coder.**
 
 ### Idées notées (2026-08-16)
-- [ ] [180] **Étendre le contrat de retrigger [179] aux autres voix** — Tom, Perc1, Snare, Snare606, SDrex, Buzz (mêmes causes : phase continue + enveloppes repartant de leur valeur courante), puis les 3 samplers 606 (ampli seulement). Vigilance sur HiHat/OpenHiHat/Clap/Cymbal/Ride : filtres résonnants, un reset peut changer le timbre → valider une voix à la fois avec `retrig_tests.rs`.
+- [x] [180] **Étendre le contrat de retrigger [179] aux autres voix** — **FERMÉ SANS SUITE le 2026-08-23**, décision utilisateur après mesure (aucun changement de code). Sonde temporaire sur les 16 voix, deux frappes espacées de 500/250/125/83/62/31 ms, comparées à la même frappe jouée seule (RMS 5 ms du transitoire ; le `t_peak` est inutilisable ici, les attaques font 0,3-2 ms donc le pic est un échantillon de bruit tiré au hasard).
+  - **Aucun click résiduel** : raideur au retrigger ≤ 1,1x celle d'une attaque à froid sur TOUTES les voix. Les kicks étaient un cas particulier (corps asymétrique + DC blocker + reset de phase) ; la machinerie `RetrigDeclick` n'a rien à réparer ailleurs. [180] n'était donc pas un correctif de bug.
+  - **Artefact résiduel, à `analog = 0`** : écart d'énergie du transitoire entre répétition rapprochée et frappe à froid — Cymbal 2,41 dB, HiHat 1,61, Ride 1,27, Snare606 1,17, OpenHiHat 1,08 ; puis Tom 0,80, Buzz 0,79, BD808 0,78, Sdrex 0,58, Snare 0,54, Clap 0,17, Perc1 0,11, Kick 0,02, samplers 606 ≈ 0. Les voix qui ont déjà la garde `was_active` (snare, snare606, tom, perc1, buzz, sdrex) sont donc déjà conformes ou presque.
+  - **Au défaut livré (`analog = 0.5`) la dérive volontaire domine** (1,8 à 4 dB sur les mêmes voix) : corriger l'artefact reviendrait à supprimer un défaut plus petit que le « breathing » voulu.
+  - Les 5 voix concernées sont exactement celles dont `trigger()` garde bruit + filtre continus par choix documenté → un reset changerait le timbre des roulements de charley. Cf. la règle « ne pas corriger la signature sonore ».
+  - **Variantes écartées** : (B) `trigger_hard()` + déclic 3 ms sur l'ampli seul — attaques identiques, timbre du filtre intact, mais chaque répétition coupe la queue de la précédente (roulements « choke » au lieu de « gonflants ») ; (C) contrat [179] complet avec reset d'état — aucun gain mesurable au-dessus de B, risque de timbre maximal.
 - [ ] [173] **Presets d'usine de départ** — composer et embarquer les premiers presets factory (instruments/patterns/grids/songs) via l'outil « Export factory (dev) » + `assets/presets/` + `factory_presets.rs`.
 
 ---

@@ -1400,6 +1400,45 @@ const MINIMAL_STD: &[StandardParamDef] = &[
     ),
 ];
 
+/// AC606 voices (ported analogcode engines): only the params the engines
+/// actually consume — no filter, no envelope curves (their shapes are fitted).
+const AC_BD_STD: &[StandardParamDef] = &[
+    s(StandardField::Freq, "Frequency", ParamFamily::Osc, 20.0, 500.0, true, None),
+    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 1.0, false, Some(" s")),
+    s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, -1.0, 1.0, false, None),
+    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 2.0, false, None),
+    s(StandardField::Analog, "Analog", ParamFamily::Analog, 0.0, 1.0, false, None),
+];
+
+const AC_SD_STD: &[StandardParamDef] = &[
+    s(StandardField::Freq, "Frequency", ParamFamily::Osc, 100.0, 600.0, true, None),
+    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 2.0, false, Some(" s")),
+    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 2.0, false, None),
+    s(StandardField::Analog, "Analog", ParamFamily::Analog, 0.0, 1.0, false, None),
+];
+
+/// HH6(AC) / OH6(AC): "Tone" = pitch of the metallic partials.
+const AC_TONE_STD: &[StandardParamDef] = &[
+    s(StandardField::Freq, "Tone", ParamFamily::Osc, 2000.0, 16000.0, true, None),
+    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 2.0, false, Some(" s")),
+    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 2.0, false, None),
+    s(StandardField::Analog, "Analog", ParamFamily::Analog, 0.0, 1.0, false, None),
+];
+
+const AC_CLAP_STD: &[StandardParamDef] = &[
+    s(StandardField::Freq, "Tone", ParamFamily::Osc, 500.0, 2000.0, true, None),
+    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 2.0, false, Some(" s")),
+    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 2.0, false, None),
+    s(StandardField::Analog, "Analog", ParamFamily::Analog, 0.0, 1.0, false, None),
+];
+
+const AC_TOM_STD: &[StandardParamDef] = &[
+    s(StandardField::Freq, "Frequency", ParamFamily::Osc, 50.0, 400.0, true, None),
+    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.001, 2.0, false, Some(" s")),
+    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 2.0, false, None),
+    s(StandardField::Analog, "Analog", ParamFamily::Analog, 0.0, 1.0, false, None),
+];
+
 pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
     InstrumentDef {
         index: 0,
@@ -2426,7 +2465,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp_discrete(
                 "bd606_one_shot",
                 "One Shot",
-                0.0,
+                1.0,
                 0.0,
                 1.0,
                 2,
@@ -2536,7 +2575,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp_discrete(
                 "sd606_one_shot",
                 "One Shot",
-                0.0,
+                1.0,
                 0.0,
                 1.0,
                 2,
@@ -2646,7 +2685,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
             sp_discrete(
                 "ch606_one_shot",
                 "One Shot",
-                0.0,
+                1.0,
                 0.0,
                 1.0,
                 2,
@@ -3036,6 +3075,161 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         freq_display_ratio: 1.0,
         filter_type_label: "",
     },
+    // ── AC606 voices (ported analogcode engines, MIT (c) 2026 Matthew Fecher)
+    InstrumentDef {
+        index: 18,
+        name: "BD6(AC)",
+        label: "BA",
+        full_name: "BD6 (analogcode)",
+        midi_note: 52,
+        algo_count: 1,
+        standard_params: AC_BD_STD,
+        special_params: &[
+            sp("ac_bd_sweep", "Sweep", 0.5, 0.0, 2.0, 1, ParamFamily::Env),
+            sp("ac_bd_bend", "Bend", 0.5, 0.0, 1.0, 2, ParamFamily::Env),
+            sp("ac_bd_click", "Click", 0.2, 0.0, 1.0, 3, ParamFamily::Osc),
+            sp_unit("ac_bd_click_tone", "Click Tone", 1400.0, 400.0, 4000.0, 4, ParamFamily::Osc, " Hz"),
+            sp("ac_bd_punch", "Punch", 0.2, 0.0, 2.0, 5, ParamFamily::Osc),
+            sp("ac_bd_tone", "Tone", 0.34, 0.0, 2.0, 7, ParamFamily::Osc),
+            sp("ac_bd_drive", "Drive", 0.18, 0.0, 2.0, 8, ParamFamily::Osc),
+            sp_discrete("ac_bd_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
+            sp("ac_bd_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp("ac_bd_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
+            sp("ac_bd_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
+        ],
+        sound_settings_default: [
+            60.0, 0.5, 1.0, 20000.0, 0.002, 0.0, 0.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+        ],
+        freq_display_ratio: 0.3,
+        filter_type_label: "",
+    },
+    InstrumentDef {
+        index: 19,
+        name: "SD6(AC)",
+        label: "SA",
+        full_name: "SD6 (analogcode)",
+        midi_note: 53,
+        algo_count: 1,
+        standard_params: AC_SD_STD,
+        special_params: &[
+            sp("ac_sd_snap", "Snap", 0.75, 0.0, 1.0, 0, ParamFamily::Osc),
+            sp("ac_sd_wire_color", "Wire Color", 1.0, 0.25, 4.0, 1, ParamFamily::Osc),
+            sp("ac_sd_shell_bend", "Shell Bend", 0.5, 0.0, 1.0, 2, ParamFamily::Osc),
+            sp("ac_sd_impact", "Impact", 0.5, 0.0, 1.0, 3, ParamFamily::Osc),
+            sp("ac_sd_ring", "Ring", 0.5, 0.0, 1.0, 4, ParamFamily::Osc),
+            sp_discrete("ac_sd_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
+            sp("ac_sd_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp("ac_sd_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
+            sp("ac_sd_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
+        ],
+        sound_settings_default: [
+            201.09, 0.25, 0.9, 20000.0, 0.0005, 0.0, 5.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        filter_type_label: "",
+    },
+    InstrumentDef {
+        index: 20,
+        name: "HH6(AC)",
+        label: "HA",
+        full_name: "HH6 (analogcode)",
+        midi_note: 54,
+        algo_count: 1,
+        standard_params: AC_TONE_STD,
+        special_params: &[
+            sp("ac_hh_metal", "Metal", 0.11, 0.0, 1.0, 0, ParamFamily::Osc),
+            sp("ac_hh_click", "Click", 0.35, 0.0, 1.0, 1, ParamFamily::Osc),
+            sp("ac_hh_bell", "Bell", 0.7, 0.0, 2.0, 2, ParamFamily::Osc),
+            sp("ac_hh_wobble", "Wobble", 0.25, 0.0, 1.0, 3, ParamFamily::Osc),
+            sp("ac_hh_spread", "Spread", 0.0, 0.0, 1.0, 4, ParamFamily::Osc),
+            sp("ac_hh_brightness", "Brightness", 0.0, -1.0, 1.0, 5, ParamFamily::Osc),
+            sp_discrete("ac_hh_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
+            sp("ac_hh_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp("ac_hh_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
+            sp("ac_hh_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
+        ],
+        sound_settings_default: [
+            8000.0, 0.15, 0.6, 20000.0, 0.0003, 0.0, 5.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        filter_type_label: "",
+    },
+    InstrumentDef {
+        index: 21,
+        name: "OH6(AC)",
+        label: "OA",
+        full_name: "OH6 (analogcode)",
+        midi_note: 55,
+        algo_count: 1,
+        standard_params: AC_TONE_STD,
+        special_params: &[
+            sp("ac_oh_metal", "Metal", 0.11, 0.0, 1.0, 0, ParamFamily::Osc),
+            sp("ac_oh_click", "Click", 0.35, 0.0, 1.0, 1, ParamFamily::Osc),
+            sp("ac_oh_bell", "Bell", 0.7, 0.0, 2.0, 2, ParamFamily::Osc),
+            sp("ac_oh_wobble", "Wobble", 0.25, 0.0, 1.0, 3, ParamFamily::Osc),
+            sp("ac_oh_spread", "Spread", 0.0, 0.0, 1.0, 4, ParamFamily::Osc),
+            sp("ac_oh_brightness", "Brightness", 0.0, -1.0, 1.0, 5, ParamFamily::Osc),
+            sp_discrete("ac_oh_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
+            sp("ac_oh_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp("ac_oh_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
+            sp("ac_oh_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
+        ],
+        sound_settings_default: [
+            8000.0, 0.8, 0.7, 20000.0, 0.0003, 0.0, 5.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        filter_type_label: "",
+    },
+    InstrumentDef {
+        index: 22,
+        name: "CL6(AC)",
+        label: "CA",
+        full_name: "CL6 (analogcode)",
+        midi_note: 56,
+        algo_count: 1,
+        standard_params: AC_CLAP_STD,
+        special_params: &[
+            sp("ac_cl_noise", "Noise", 0.5, 0.0, 1.0, 0, ParamFamily::Osc),
+            sp("ac_cl_spread", "Spread", 1.0, 0.25, 3.0, 1, ParamFamily::Osc),
+            sp("ac_cl_tail", "Tail", 0.5, 0.0, 1.0, 2, ParamFamily::Env),
+            sp("ac_cl_air", "Air", 0.0, 0.0, 1.0, 3, ParamFamily::Osc),
+            sp_discrete("ac_cl_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
+            sp("ac_cl_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp("ac_cl_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
+            sp("ac_cl_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
+        ],
+        sound_settings_default: [
+            1000.0, 0.25, 1.0, 20000.0, 0.0005, 0.0, 5.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        filter_type_label: "",
+    },
+    InstrumentDef {
+        index: 23,
+        name: "TM6(AC)",
+        label: "TA",
+        full_name: "TM6 (analogcode)",
+        midi_note: 57,
+        algo_count: 1,
+        standard_params: AC_TOM_STD,
+        special_params: &[
+            sp_discrete("ac_tm_model", "Model", 0.0, 0.0, 2.0, 0, ParamFamily::Osc),
+            sp("ac_tm_strike", "Strike", 0.5, 0.0, 1.0, 1, ParamFamily::Osc),
+            sp("ac_tm_snap", "Snap", 0.5, 0.0, 1.0, 2, ParamFamily::Osc),
+            sp("ac_tm_glide", "Glide", 0.5, 0.0, 1.0, 3, ParamFamily::Osc),
+            sp("ac_tm_modes", "Modes", 0.5, 0.0, 1.0, 4, ParamFamily::Osc),
+            sp("ac_tm_tail_noise", "Tail Noise", 0.5, 0.0, 1.0, 5, ParamFamily::Osc),
+            sp_discrete("ac_tm_sat_type", "Saturation Type", 0.0, 0.0, 5.0, 10, ParamFamily::Saturation),
+            sp("ac_tm_sat_amount", "Saturation Amount", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+            sp("ac_tm_sat_mix", "Saturation Mix", 0.5, 0.0, 1.0, 12, ParamFamily::Saturation),
+            sp("ac_tm_sat_gain", "Saturation Output Gain", 1.25, 0.5, 2.0, 13, ParamFamily::Saturation),
+        ],
+        sound_settings_default: [
+            150.0, 0.35, 0.8, 20000.0, 0.0005, 0.0, 5.0, 3.0, 0.0, 0.0, 0.05, 0.5, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        filter_type_label: "",
+    },
 ];
 
 #[allow(dead_code)]
@@ -3269,6 +3463,7 @@ mod tests {
                 ("sdrex_modulation_fade", " ms"),
                 ("sdrex_filter_attack", " s"),
                 ("sdrex_filter_hold", " s"),
+                ("ac_bd_click_tone", " Hz"),
             ]
         );
 

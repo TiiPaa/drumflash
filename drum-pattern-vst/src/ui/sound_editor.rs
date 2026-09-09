@@ -925,7 +925,8 @@ pub fn draw_sound_panel(
                 // Always drawn, so the header never changes height.
                 ui.with_layout(
                     egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| match scope_badge {
+                    |ui| {
+                        match scope_badge {
                         Some(step) => {
                             let cleared = ui
                                 .add(
@@ -958,34 +959,11 @@ pub fn draw_sound_panel(
                             .on_hover_text(if badge == "Morph" {
                                 "Editing one end of this fused group's morph. Rows in accent colour are morph targets or step overrides; the others follow the lane."
                             } else {
-                                "Editing this step's sound p-lock. Rows in accent colour override the lane; the others follow it."
+                                "Editing this step's sound p-lock. Rows in accent colour are morph targets or step overrides; the others follow the lane."
                             });
-                            // [184] ph. 4 — Step / Start / End: a fused group's
-                            // three stores. Always drawn so the header never
-                            // changes width; the two morph ends are greyed when
-                            // the cell is not a fused, multi-pulse group (a single
-                            // pulse cannot morph, the engine skips the
-                            // interpolation), leaving `Step` as the only choice.
-                            ui.add_space(6.0);
-                            use crate::ui::editor_state::FusionTab;
-                            let tabs = [FusionTab::Step, FusionTab::Start, FusionTab::End];
-                            let selected = tabs
-                                .iter()
-                                .position(|tab| *tab == state.fusion_tab)
-                                .unwrap_or(0);
-                            let picked = ui
-                                .add_enabled_ui(morph_available, |ui| {
-                                    crate::ui::skeuo::segmented(
-                                        ui,
-                                        ("fusion_tab", slot),
-                                        &["Step", "Start", "End"],
-                                        selected,
-                                    )
-                                })
-                                .inner;
-                            if morph_available && picked != selected {
-                                state.fusion_tab = tabs[picked.min(tabs.len() - 1)];
-                            }
+                            // [200e] The Step/Start/End switch moved to the
+                            // action strip under the tabs — it only concerns
+                            // the Sound tab, like Store/Restore/Default.
                         }
                         None => {
                             ui.label(RichText::new("Lane").font(f_sans_sb(11.0)).color(INK3()))
@@ -993,10 +971,11 @@ pub fn draw_sound_panel(
                                     "Editing the lane's own sound. Right-click a step in the grid to edit that step's p-lock instead.",
                                 );
                         }
-                    },
-                );
-            });
-        },
+                    }
+                },
+            );
+        });
+    },
     );
 
     // Mode toggle: two FLUSH tabs — full width, 50/50, no radius, hairline between,
@@ -1075,6 +1054,279 @@ pub fn draw_sound_panel(
         tabs_rect.bottom(),
         egui::Stroke::new(1.0, LINE()),
     );
+
+    // [200d] Action strip, Sound tab only: Default / Store / Restore live
+    // here (right-aligned) instead of the header — the scope badge and the
+    // Step/Start/End switch need the header's width. The strip is fixed
+    // (never scrolls away) and only exists in the Sound tab.
+    if state.sound_editor_tab == SoundEditorTab::Sound {
+        ui.add_space(3.0);
+        // The horizontal wrapper constrains the strip to its content height —
+        // a bare `with_layout` would grab ALL the panel's remaining height
+        // and squeeze the params scroll area to zero (seen 2026-09-03).
+        ui.horizontal(|ui| {
+            ui.add_space(14.0);
+            // [200e] Left section: the Step / Start / End switch ([184] ph. 4) —
+            // a fused group's three stores. Always drawn so the strip never
+            // changes width; the two morph ends are greyed when the cell is
+            // not a fused, multi-pulse group (a single pulse cannot morph,
+            // the engine skips the interpolation), leaving `Step` as the only
+            // choice.
+            use crate::ui::editor_state::FusionTab;
+            let tabs = [FusionTab::Step, FusionTab::Start, FusionTab::End];
+            let selected = tabs
+                .iter()
+                .position(|tab| *tab == state.fusion_tab)
+                .unwrap_or(0);
+            let picked = ui
+                .add_enabled_ui(morph_available, |ui| {
+                    crate::ui::skeuo::segmented(
+                        ui,
+                        ("fusion_tab", slot),
+                        &["Step", "Start", "End"],
+                        selected,
+                    )
+                })
+                .inner;
+            if morph_available && picked != selected {
+                state.fusion_tab = tabs[picked.min(tabs.len() - 1)];
+            }
+            // Right section: Store / Restore / Default.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(14.0);
+            // [200] Default: reset to the instrument's factory defaults,
+            // scoped to what the panel edits [200c]:
+            // - Lane: the lane's sound settings (step p-locks kept);
+            // - Step p-lock: the step's LOCKED fields go back to factory
+            //   defaults, mask untouched (a Link p-lock must not turn into
+            //   a full snapshot);
+            // - Morph: the group's existing morph targets go back to
+            //   factory defaults (no new target created).
+            // Accessible in every scope. Two clicks (like Clear All). An armed
+            // "Sure?" disarms after 3 s or on a click anywhere else [200b].
+            const CONFIRM_TIMEOUT_S: f64 = 3.0;
+            let now = ui.input(|i| i.time);
+            if let Some((_, armed_at)) = state.sound_default_confirm {
+                if now - armed_at >= CONFIRM_TIMEOUT_S {
+                    state.sound_default_confirm = None;
+                }
+            }
+            let armed = matches!(
+                state.sound_default_confirm,
+                Some((s, _)) if s == state.selected_instrument
+            );
+            if armed {
+                // So the label reverts to "Default" on its own.
+                ui.ctx().request_repaint_after(
+                    std::time::Duration::from_secs_f64(CONFIRM_TIMEOUT_S),
+                );
+            }
+            let default_resp = crate::ui::controls::keycap_button(
+                ui,
+                if armed { "Sure?" } else { "Default" },
+                52.0,
+                crate::ui::widgets::KeycapState::Rest,
+                true,
+                f_sans_med(9.5),
+            )
+            .on_hover_text(match resolved.scope {
+                crate::ui::editor_state::EditScope::LaneGlobal => {
+                    "Reset this lane's sound settings to the instrument's factory defaults (two clicks; step p-locks are kept). Click elsewhere or wait 3 s to cancel."
+                }
+                crate::ui::editor_state::EditScope::StepPlock { .. } => {
+                    "Reset this step's LOCKED parameters to the instrument's factory defaults (two clicks; which fields are locked is kept). Click elsewhere or wait 3 s to cancel."
+                }
+                crate::ui::editor_state::EditScope::Morph { .. } => {
+                    "Reset this group's morph targets to the instrument's factory defaults (two clicks). Click elsewhere or wait 3 s to cancel."
+                }
+            });
+            if default_resp.clicked() {
+                if armed {
+                    let slot = state.selected_instrument;
+                    match resolved.scope {
+                        crate::ui::editor_state::EditScope::LaneGlobal => {
+                            let kind = layout_snapshot.slots[slot].kind;
+                            sound_settings.reset_slot_to_defaults(
+                                slot,
+                                kind,
+                                state.global_config.default_analog,
+                            );
+                        }
+                        crate::ui::editor_state::EditScope::StepPlock { step } => {
+                            // Write factory defaults into the LOCKED fields
+                            // only, straight to the value store — NOT via
+                            // `PlockSource::set`, which locks every field it
+                            // writes.
+                            for field in 0..crate::plock::FIELD_COUNT {
+                                if !plock.field_masks.is_set(slot, step, field) {
+                                    continue;
+                                }
+                                if let Some(id) =
+                                    crate::param_id::ParamId::from_plock_field(field)
+                                {
+                                    plock.values.set(
+                                        slot,
+                                        step,
+                                        field,
+                                        crate::instrument_registry::param_default(
+                                            voice_idx, id,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                        crate::ui::editor_state::EditScope::Morph {
+                            fusion_index,
+                            ..
+                        } => {
+                            // Only the group's EXISTING targets, so no new
+                            // morph target is created.
+                            let group = fusions[fusion_index];
+                            for i in 0..group.morph_count as usize {
+                                let field = group.morph_targets[i].field as usize;
+                                if let Some(id) =
+                                    crate::param_id::ParamId::from_plock_field(field)
+                                {
+                                    src.set(
+                                        id,
+                                        crate::instrument_registry::param_default(
+                                            voice_idx, id,
+                                        ),
+                                    );
+                                }
+                            }
+                            src.commit();
+                        }
+                    }
+                    state.sound_default_confirm = None;
+                } else {
+                    state.sound_default_confirm =
+                        Some((state.selected_instrument, now));
+                }
+            } else if armed
+                && ui.input(|i| i.pointer.any_pressed())
+                && !default_resp.hovered()
+            {
+                // Clicked anywhere else while armed: cancel.
+                state.sound_default_confirm = None;
+            }
+            ui.add_space(3.0);
+            // [201] Store/Restore: quick A/B snapshot while tweaking (per
+            // slot, editing aid, not persisted). [201b] The snapshot follows
+            // the edit scope — lane, step p-lock, or morph group — like
+            // Default [200c]. Restore applies the SNAPSHOT's scope, whatever
+            // the panel shows now.
+            let slot = state.selected_instrument;
+            let stored = state.sound_scratchpad[slot].is_some();
+            let scope_name = match resolved.scope {
+                crate::ui::editor_state::EditScope::LaneGlobal => "lane's sound",
+                crate::ui::editor_state::EditScope::StepPlock { .. } => "step's p-lock",
+                crate::ui::editor_state::EditScope::Morph { .. } => "group's morph",
+            };
+            let restore_resp = ui
+                .add_enabled_ui(stored, |ui| {
+                    crate::ui::controls::keycap_button(
+                        ui,
+                        "Restore",
+                        52.0,
+                        crate::ui::widgets::KeycapState::Rest,
+                        true,
+                        f_sans_med(9.5),
+                    )
+                })
+                .inner
+                .on_hover_text(if stored {
+                    "Restore the snapshot saved with Store (A/B while tweaking)."
+                } else {
+                    "Nothing stored for this lane yet — use Store first."
+                });
+            if restore_resp.clicked() {
+                if let Some(scratch) = &state.sound_scratchpad[slot] {
+                    match scratch {
+                        crate::ui::editor_state::SoundScratch::Lane(snap, algo) => {
+                            sound_settings.set_settings_for_slot(slot, snap);
+                            let algo_param = params.algos()[slot];
+                            setter.set_parameter(algo_param, *algo as i32);
+                        }
+                        crate::ui::editor_state::SoundScratch::Plock {
+                            step,
+                            active,
+                            field_mask,
+                            values,
+                        } => {
+                            if *active {
+                                plock.masks.set_active(slot, *step, true);
+                                plock.field_masks.set_raw(slot, *step, *field_mask);
+                                for (field, value) in values.iter().enumerate() {
+                                    plock.values.set(slot, *step, field, *value);
+                                }
+                            } else {
+                                // Stored while the step had NO p-lock: restore
+                                // means back to none.
+                                plock.clear(slot, *step);
+                            }
+                        }
+                        crate::ui::editor_state::SoundScratch::Morph {
+                            fusion_index,
+                            group,
+                        } => {
+                            // Same publish path as MorphSource::commit:
+                            // load, replace, store (store_fusions drops invalid
+                            // groups, so only replace in place).
+                            let mut groups = pattern.load_fusions(slot);
+                            if let Some(existing) = groups.get_mut(*fusion_index) {
+                                *existing = *group;
+                                pattern.store_fusions(slot, &groups);
+                            }
+                        }
+                    }
+                }
+            }
+            ui.add_space(3.0);
+            let store_resp = crate::ui::controls::keycap_button(
+                ui,
+                "Store",
+                46.0,
+                crate::ui::widgets::KeycapState::Rest,
+                true,
+                f_sans_med(9.5),
+            )
+            .on_hover_text(format!(
+                "Save a quick snapshot of this {scope_name} (A/B while tweaking; not persisted)."
+            ));
+            if store_resp.clicked() {
+                let scratch = match resolved.scope {
+                    crate::ui::editor_state::EditScope::LaneGlobal => {
+                        crate::ui::editor_state::SoundScratch::Lane(
+                            sound_settings.get_settings_for_slot(slot),
+                            params.algos()[slot].value() as u8,
+                        )
+                    }
+                    crate::ui::editor_state::EditScope::StepPlock { step } => {
+                        let mut values = [0.0f32; crate::plock::FIELD_COUNT];
+                        for (field, v) in values.iter_mut().enumerate() {
+                            *v = plock.values.get(slot, step, field);
+                        }
+                        crate::ui::editor_state::SoundScratch::Plock {
+                            step,
+                            active: plock.masks.is_active(slot, step),
+                            field_mask: plock.field_masks.get_raw(slot, step),
+                            values,
+                        }
+                    }
+                    crate::ui::editor_state::EditScope::Morph {
+                        fusion_index, ..
+                    } => crate::ui::editor_state::SoundScratch::Morph {
+                        fusion_index,
+                        group: fusions[fusion_index],
+                    },
+                };
+                state.sound_scratchpad[slot] = Some(scratch);
+            }
+        });
+        });
+        ui.add_space(3.0);
+    }
 
     let inst = &sound_settings.instruments[state.selected_instrument];
     // [184] Every row reads and writes through this source. Today it is always
@@ -1433,7 +1685,7 @@ pub fn draw_sound_panel(
                                     def.label.to_string()
                                 };
 
-                                let is_bass_drum = voice_idx == 0 || voice_idx == 11;
+                                let is_bass_drum = voice_idx == 0 || voice_idx == 11 || voice_idx == 18;
                                 let freq_in_notes = is_bass_drum
                                     && def.field == crate::instrument_registry::StandardField::Freq
                                     && src.get(ParamId::FreqMode) >= 0.5;

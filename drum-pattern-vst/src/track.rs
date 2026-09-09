@@ -29,6 +29,12 @@ pub enum TrackInstrumentKind {
     Ch6smp = 13,
     Buzz = 14,
     Sdrex = 15,
+    Bd6Ac = 16,
+    Sd6Ac = 17,
+    Hh6Ac = 18,
+    Oh6Ac = 19,
+    Cl6Ac = 20,
+    Tm6Ac = 21,
 }
 
 /// Instrument category used to group the kind pickers/menus
@@ -66,7 +72,7 @@ impl InstrumentCategory {
 }
 
 impl TrackInstrumentKind {
-    pub const COUNT: usize = 16;
+    pub const COUNT: usize = 22;
 
     /// Every kind, in stable declaration order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -86,17 +92,26 @@ impl TrackInstrumentKind {
         Self::Ch6smp,
         Self::Buzz,
         Self::Sdrex,
+        Self::Bd6Ac,
+        Self::Sd6Ac,
+        Self::Hh6Ac,
+        Self::Oh6Ac,
+        Self::Cl6Ac,
+        Self::Tm6Ac,
     ];
 
     /// Musical family of this kind (grouping for pickers/menus).
     pub fn category(self) -> InstrumentCategory {
         match self {
-            Self::Kick | Self::BassDrum808 | Self::Bd6smp => InstrumentCategory::BassDrum,
-            Self::Snare | Self::Snare606 | Self::Sd6smp | Self::Clap | Self::Sdrex => {
-                InstrumentCategory::Snare
+            Self::Kick | Self::BassDrum808 | Self::Bd6smp | Self::Bd6Ac => {
+                InstrumentCategory::BassDrum
             }
-            Self::HiHat | Self::OpenHiHat | Self::Ch6smp => InstrumentCategory::HiHat,
-            Self::Tom | Self::Perc1 => InstrumentCategory::Perc,
+            Self::Snare | Self::Snare606 | Self::Sd6smp | Self::Clap | Self::Sdrex
+            | Self::Sd6Ac | Self::Cl6Ac => InstrumentCategory::Snare,
+            Self::HiHat | Self::OpenHiHat | Self::Ch6smp | Self::Hh6Ac | Self::Oh6Ac => {
+                InstrumentCategory::HiHat
+            }
+            Self::Tom | Self::Perc1 | Self::Tm6Ac => InstrumentCategory::Perc,
             Self::Buzz => InstrumentCategory::Fx,
             Self::Ride | Self::Cymbal => InstrumentCategory::Other,
         }
@@ -127,6 +142,12 @@ impl TrackInstrumentKind {
             13 => Some(Self::Ch6smp),
             14 => Some(Self::Buzz),
             15 => Some(Self::Sdrex),
+            16 => Some(Self::Bd6Ac),
+            17 => Some(Self::Sd6Ac),
+            18 => Some(Self::Hh6Ac),
+            19 => Some(Self::Oh6Ac),
+            20 => Some(Self::Cl6Ac),
+            21 => Some(Self::Tm6Ac),
             _ => None,
         }
     }
@@ -153,6 +174,12 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Ch6smp => "c6",
             TrackInstrumentKind::Buzz => "Bz",
             TrackInstrumentKind::Sdrex => "Sx",
+            TrackInstrumentKind::Bd6Ac => "BA",
+            TrackInstrumentKind::Sd6Ac => "SA",
+            TrackInstrumentKind::Hh6Ac => "HA",
+            TrackInstrumentKind::Oh6Ac => "OA",
+            TrackInstrumentKind::Cl6Ac => "CA",
+            TrackInstrumentKind::Tm6Ac => "TA",
         }
     }
 
@@ -174,6 +201,12 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Ch6smp => "CH6smp",
             TrackInstrumentKind::Buzz => "Buzz",
             TrackInstrumentKind::Sdrex => "SDrex",
+            TrackInstrumentKind::Bd6Ac => "BD6(AC)",
+            TrackInstrumentKind::Sd6Ac => "SD6(AC)",
+            TrackInstrumentKind::Hh6Ac => "HH6(AC)",
+            TrackInstrumentKind::Oh6Ac => "OH6(AC)",
+            TrackInstrumentKind::Cl6Ac => "CL6(AC)",
+            TrackInstrumentKind::Tm6Ac => "TM6(AC)",
         }
     }
 
@@ -196,6 +229,12 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Ch6smp => 42,
             TrackInstrumentKind::Buzz => 44,
             TrackInstrumentKind::Sdrex => 48,
+            TrackInstrumentKind::Bd6Ac => 52,
+            TrackInstrumentKind::Sd6Ac => 53,
+            TrackInstrumentKind::Hh6Ac => 54,
+            TrackInstrumentKind::Oh6Ac => 55,
+            TrackInstrumentKind::Cl6Ac => 56,
+            TrackInstrumentKind::Tm6Ac => 57,
         }
     }
 
@@ -221,6 +260,12 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Ch6smp => 15,
             TrackInstrumentKind::Buzz => 16,
             TrackInstrumentKind::Sdrex => 17,
+            TrackInstrumentKind::Bd6Ac => 18,
+            TrackInstrumentKind::Sd6Ac => 19,
+            TrackInstrumentKind::Hh6Ac => 20,
+            TrackInstrumentKind::Oh6Ac => 21,
+            TrackInstrumentKind::Cl6Ac => 22,
+            TrackInstrumentKind::Tm6Ac => 23,
         }
     }
 
@@ -243,6 +288,12 @@ impl TrackInstrumentKind {
             15 => Some(Self::Ch6smp),
             16 => Some(Self::Buzz),
             17 => Some(Self::Sdrex),
+            18 => Some(Self::Bd6Ac),
+            19 => Some(Self::Sd6Ac),
+            20 => Some(Self::Hh6Ac),
+            21 => Some(Self::Oh6Ac),
+            22 => Some(Self::Cl6Ac),
+            23 => Some(Self::Tm6Ac),
             _ => None,
         }
     }
@@ -486,6 +537,36 @@ impl TrackLayoutState {
         }
     }
 
+    /// AC kit ([195]): the analogcode voices wherever an equivalent exists.
+    /// 4 lanes: BD6(AC) / SD6(AC) / HH6(AC) / TM6(AC).
+    pub fn preset_ac4_layout() -> Self {
+        Self::from_kinds(&[
+            TrackInstrumentKind::Bd6Ac,
+            TrackInstrumentKind::Sd6Ac,
+            TrackInstrumentKind::Hh6Ac,
+            TrackInstrumentKind::Tm6Ac,
+        ])
+    }
+
+    /// AC 12-lane kit: AC voices where an equivalent exists, classic voices
+    /// (Snare606, 808, Ride, Cymbal) kept for what the AC set does not cover.
+    pub fn preset_ac12_layout() -> Self {
+        Self::from_kinds(&[
+            TrackInstrumentKind::Bd6Ac,
+            TrackInstrumentKind::Sd6Ac,
+            TrackInstrumentKind::Hh6Ac,
+            TrackInstrumentKind::Oh6Ac,
+            TrackInstrumentKind::Tm6Ac,
+            TrackInstrumentKind::Tm6Ac,
+            TrackInstrumentKind::Tm6Ac,
+            TrackInstrumentKind::Cl6Ac,
+            TrackInstrumentKind::Ride,
+            TrackInstrumentKind::Cymbal,
+            TrackInstrumentKind::Snare606,
+            TrackInstrumentKind::BassDrum808,
+        ])
+    }
+
     /// Build a layout that activates slots `0..kinds.len()` with the given
     /// instrument kinds (remaining slots inactive). Used by the style-preset
     /// chips to install an appropriate kit. HiHat/OpenHiHat get choke group 1
@@ -497,7 +578,10 @@ impl TrackLayoutState {
             *slot = TrackSlot::active_with_kind(kind);
             if matches!(
                 kind,
-                TrackInstrumentKind::HiHat | TrackInstrumentKind::OpenHiHat
+                TrackInstrumentKind::HiHat
+                    | TrackInstrumentKind::OpenHiHat
+                    | TrackInstrumentKind::Hh6Ac
+                    | TrackInstrumentKind::Oh6Ac
             ) {
                 slot.routing.choke_group = 1;
             }
@@ -959,6 +1043,29 @@ mod tests {
         assert_eq!(layout.slots[11].kind, TrackInstrumentKind::BassDrum808);
         assert!(!layout.slots[12].active);
         assert!(!layout.slots[13].active);
+    }
+
+    #[test]
+    fn preset_ac_layouts_use_ac_kinds_and_choke_the_ac_hats() {
+        let ac4 = TrackLayoutState::preset_ac4_layout();
+        assert_eq!(ac4.active_count(), 4);
+        assert_eq!(ac4.slots[0].kind, TrackInstrumentKind::Bd6Ac);
+        assert_eq!(ac4.slots[1].kind, TrackInstrumentKind::Sd6Ac);
+        assert_eq!(ac4.slots[2].kind, TrackInstrumentKind::Hh6Ac);
+        assert_eq!(ac4.slots[3].kind, TrackInstrumentKind::Tm6Ac);
+        assert_eq!(ac4.slots[2].routing.choke_group, 1);
+
+        let ac12 = TrackLayoutState::preset_ac12_layout();
+        assert_eq!(ac12.active_count(), 12);
+        assert_eq!(ac12.slots[0].kind, TrackInstrumentKind::Bd6Ac);
+        assert_eq!(ac12.slots[3].kind, TrackInstrumentKind::Oh6Ac);
+        assert_eq!(ac12.slots[7].kind, TrackInstrumentKind::Cl6Ac);
+        assert_eq!(ac12.slots[10].kind, TrackInstrumentKind::Snare606);
+        assert_eq!(ac12.slots[11].kind, TrackInstrumentKind::BassDrum808);
+        assert_eq!(ac12.slots[2].routing.choke_group, 1);
+        assert_eq!(ac12.slots[3].routing.choke_group, 1);
+        assert!(!ac12.slots[12].active);
+        assert!(!ac12.slots[13].active);
     }
 
     #[test]
