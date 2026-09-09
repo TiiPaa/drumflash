@@ -103,6 +103,8 @@ pub fn algos_for(voice: DrumVoice) -> &'static [AlgoDef] {
         DrumVoice::Bd606 => BD606_ALGOS,
         DrumVoice::Sd606 => SD606_ALGOS,
         DrumVoice::Ch606 => CH606_ALGOS,
+        // [208] Same sampler engine as the closed hat, same single algo.
+        DrumVoice::Oh606 => CH606_ALGOS,
         DrumVoice::Buzz => BUZZ_ALGOS,
         DrumVoice::Sdrex => SDREX_ALGOS,
         DrumVoice::Bd6Ac

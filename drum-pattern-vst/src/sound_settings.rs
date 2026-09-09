@@ -213,7 +213,7 @@ impl InstrumentSettingsState {
         for def in crate::instrument_registry::special_params(voice_idx) {
             self.set_special(def.special_index, def.default);
         }
-        if matches!(voice_idx, 13 | 14 | 15) {
+        if crate::instrument_registry::is_sampler(voice_idx) {
             // Multisample pitch is stored as relative semitones. Earlier
             // sampler builds used Hz and persist with this marker at zero.
             self.set_special(10, 1.0);

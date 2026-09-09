@@ -522,7 +522,7 @@ mod tests {
         let modulated_db = 20.0 * (modulated / open).log10();
         assert!(
             modulated_db > -6.0,
-            "full-depth Filter LFO at the lowest base is inaudible ({modulated_db:.1} dB              under the open filter; the bipolar law measured -15.8 dB)"
+            "full-depth Filter LFO at the lowest base is inaudible ({modulated_db:.1} dB under the open filter; the bipolar law measured -15.8 dB)"
         );
         // ...and it must still be a modulation, not a bypass.
         assert!(

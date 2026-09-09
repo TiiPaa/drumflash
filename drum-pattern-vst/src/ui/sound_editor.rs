@@ -87,6 +87,31 @@ pub fn draw_editor_slider_track(
     )
 }
 
+/// Same track with a response curve ([189]): the value moves more slowly at
+/// the low end of the range, so a parameter whose audible effect saturates
+/// early gets usable resolution where it matters.
+fn draw_editor_slider_track_curved(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    default: f32,
+    logarithmic: bool,
+    track_w: f32,
+    curve: f32,
+) -> egui::Response {
+    slider::draw_track(
+        ui,
+        value,
+        min,
+        max,
+        default,
+        logarithmic,
+        track_w.max(60.0),
+        slider::TrackStyle::editor().with_curve(curve),
+    )
+}
+
 /// Same track with a quantisation step (e.g. 1.0 for integer semitones).
 fn draw_editor_slider_track_stepped(
     ui: &mut egui::Ui,
@@ -243,7 +268,35 @@ pub fn draw_editor_slider_row(
     logarithmic: bool,
     suffix: Option<&str>,
 ) -> egui::Response {
-    draw_editor_slider_row_full(ui, label, value, min, max, default, logarithmic, suffix, 0.0)
+    draw_editor_slider_row_curved(ui, label, value, min, max, default, logarithmic, suffix, 1.0)
+}
+
+/// Editor slider row whose track carries a response curve ([189]).
+/// `curve == 1.0` is the plain linear row.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_editor_slider_row_curved(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    default: f32,
+    logarithmic: bool,
+    suffix: Option<&str>,
+    curve: f32,
+) -> egui::Response {
+    draw_editor_slider_row_inner(
+        ui,
+        label,
+        value,
+        min,
+        max,
+        default,
+        logarithmic,
+        suffix,
+        0.0,
+        curve,
+    )
 }
 
 /// Full editor slider row with an optional quantisation step (0 = continuous).
@@ -258,6 +311,36 @@ pub fn draw_editor_slider_row_full(
     suffix: Option<&str>,
     step: f32,
 ) -> egui::Response {
+    draw_editor_slider_row_inner(
+        ui,
+        label,
+        value,
+        min,
+        max,
+        default,
+        logarithmic,
+        suffix,
+        step,
+        1.0,
+    )
+}
+
+/// Shared body of every editor slider row. A row is either stepped or curved,
+/// never both: quantisation belongs to discrete-ish values, the curve to
+/// continuous amounts.
+#[allow(clippy::too_many_arguments)]
+fn draw_editor_slider_row_inner(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    default: f32,
+    logarithmic: bool,
+    suffix: Option<&str>,
+    step: f32,
+    curve: f32,
+) -> egui::Response {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         editor_label(ui, label);
@@ -266,6 +349,8 @@ pub fn draw_editor_slider_row_full(
         let track_w = (ui.available_width() - EDITOR_VALUE_W - 8.0).max(60.0);
         let response = if step > 0.0 {
             draw_editor_slider_track_stepped(ui, value, min, max, default, logarithmic, track_w, step)
+        } else if curve != 1.0 {
+            draw_editor_slider_track_curved(ui, value, min, max, default, logarithmic, track_w, curve)
         } else {
             draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w)
         };
@@ -280,6 +365,52 @@ pub fn draw_editor_slider_row_full(
         response
     })
     .inner
+}
+
+/// Width of the Sound panel's scroll bar ([190]).
+const SCROLLBAR_W: f32 = 10.0;
+
+/// Give the Sound panel's scroll bar the same recessed-groove-and-pill look as
+/// every slider ([190]).
+///
+/// egui's default scroll style is `floating` with a **dormant opacity of zero**,
+/// so at rest the bar was simply not drawn — there was nothing to see until the
+/// pointer entered the panel. It stays floating (`floating_allocated_width` 0),
+/// so making it permanent costs no layout: the content inset below already
+/// keeps the rows clear of it, and no row shifts by a pixel.
+///
+/// Every opacity is pinned to 1.0 because they would otherwise make the handle
+/// *dimmer* on hover than at rest; the hover feedback is a colour change
+/// instead, like the rest of the panel.
+fn style_scroll_bar(ui: &mut egui::Ui) {
+    let style = ui.style_mut();
+    style.spacing.scroll = egui::style::ScrollStyle {
+        floating: true,
+        floating_allocated_width: 0.0,
+        bar_width: SCROLLBAR_W,
+        floating_width: SCROLLBAR_W,
+        handle_min_length: 24.0,
+        // false = the handle takes its colour from the widget fills below.
+        foreground_color: false,
+        dormant_background_opacity: 1.0,
+        active_background_opacity: 1.0,
+        interact_background_opacity: 1.0,
+        dormant_handle_opacity: 1.0,
+        active_handle_opacity: 1.0,
+        interact_handle_opacity: 1.0,
+        ..egui::style::ScrollStyle::solid()
+    };
+    // The groove: the same channel colour as a slider track.
+    style.visuals.extreme_bg_color = crate::ui::skeuo::groove_fill();
+    let pill = |w: &mut egui::style::WidgetVisuals, fill: egui::Color32| {
+        w.bg_fill = fill;
+        w.corner_radius = egui::CornerRadius::same((SCROLLBAR_W * 0.5) as u8);
+    };
+    // Quiet at rest so it never competes with the blue value fills, brighter
+    // under the pointer, brightest while dragging.
+    pill(&mut style.visuals.widgets.inactive, FAINT());
+    pill(&mut style.visuals.widgets.hovered, INK3());
+    pill(&mut style.visuals.widgets.active, INK2());
 }
 
 /// [184] Width reserved at the left of every Lane Editor row, in **every** scope.
@@ -633,12 +764,19 @@ fn draw_track_tab(
 
     // Aux Out (dropdown)
     let current_out = slot.routing.out_select.index();
+    // [194] An output can be shared, so the picker says how many lanes each one
+    // already carries - sharing should be a deliberate choice, not an accidental
+    // sum. The count includes every lane, so the label describes the OUTPUT and
+    // not the reader: "Out 3 - 2 lanes" is true seen from anywhere.
     let out_labels: Vec<String> = (0..=crate::track::MAX_TRACKS)
         .map(|i| {
             if i == 0 {
-                "No Aux".to_string()
-            } else {
-                format!("Out {}", i)
+                return "No Aux".to_string();
+            }
+            match layout_state.lanes_on_output(i as u8) {
+                0 => format!("Out {}", i),
+                1 => format!("Out {} - 1 lane", i),
+                n => format!("Out {} - {} lanes", i, n),
             }
         })
         .collect();
@@ -655,7 +793,7 @@ fn draw_track_tab(
                 146.0,
             ) {
                 if i as u8 != current_out {
-                    new_state.assign_slot_output_exclusive(
+                    new_state.assign_slot_output(
                         slot_idx,
                         crate::track::TrackAudioOut::from_index(i as u8),
                     );
@@ -1354,7 +1492,7 @@ pub fn draw_sound_panel(
     // One-shot migration for sampler builds that persisted pitch in Hz.
     // The voice also understands the legacy marker, so audio is correct even
     // before the Sound tab is opened; opening it commits the semitone value.
-    if matches!(voice_idx, 13 | 14 | 15) && inst.special_value(10) < 0.5 {
+    if crate::instrument_registry::is_sampler(voice_idx) && inst.special_value(10) < 0.5 {
         let legacy_root = if voice_idx == 13 {
             60.0
         } else if voice_idx == 14 {
@@ -1380,10 +1518,15 @@ pub fn draw_sound_panel(
     // bottom edge rather than scroll away with the content.
     let panel_rect = ui.max_rect();
     let scroll_height = ui.available_height().max(120.0);
+    let content_style = ui.style().clone();
+    style_scroll_bar(ui);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .max_height(scroll_height)
         .show(ui, |ui| {
+            // The scroll styling above is for the BAR only; the rows keep the
+            // plain style so nothing inside picks up the handle's fills.
+            ui.set_style(content_style);
             ui.set_width(ui.available_width() - 20.0);
             egui::Frame::new()
                 .inner_margin(egui::Margin {
@@ -1410,9 +1553,11 @@ pub fn draw_sound_panel(
                     }
                     let algo = params.algos()[state.selected_instrument].value() as u8;
                     // Skip Analog for instruments that don't use it
-                    let standards = if matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12 | 13 | 14 | 15)
+                    let standards = if matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12)
+                        || crate::instrument_registry::is_sampler(voice_idx)
                     {
-                        // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap, BD606, SD606 - use 0.0 as placeholder
+                        // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap + the samplers:
+                        // no analog drift, so 0.0 is a placeholder
                         [
                             freq,
                             decay,
@@ -1528,10 +1673,9 @@ pub fn draw_sound_panel(
                                     dump.standards[10],
                                 );
                                 // Skip Analog for instruments that don't use it
-                                let is_analog_fixed = matches!(
-                                    dump_voice,
-                                    2 | 3 | 7 | 8 | 10 | 12 | 13 | 14 | 15 // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap, BD606, SD606
-                                );
+                                // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap + the samplers.
+                                let is_analog_fixed = matches!(dump_voice, 2 | 3 | 7 | 8 | 10 | 12)
+                                    || crate::instrument_registry::is_sampler(dump_voice);
                                 if !is_analog_fixed {
                                     store_field(
                                         target_inst,
@@ -1659,7 +1803,7 @@ pub fn draw_sound_panel(
                     // the Env sliders (the One Shot switch is a special param,
                     // rendered below, and stays enabled).
                     let env_disabled = family == crate::instrument_registry::ParamFamily::Env
-                        && matches!(voice_idx, 13 | 14 | 15)
+                        && crate::instrument_registry::is_sampler(voice_idx)
                         && src.get(ParamId::Special(2)) > 0.5;
                     ui.add_enabled_ui(!env_disabled, |ui| {
                     for def in standard_defs.iter().filter(|d| {
@@ -1668,7 +1812,7 @@ pub fn draw_sound_panel(
                     }) {
                             // smp voices: Stereo renders under the Sample
                             // select (Osc family), not in Output ([168]).
-                            if matches!(voice_idx, 13 | 14 | 15)
+                            if crate::instrument_registry::is_sampler(voice_idx)
                                 && def.field == crate::instrument_registry::StandardField::Stereo
                             {
                                 continue;
@@ -1757,7 +1901,7 @@ pub fn draw_sound_panel(
                                         // the cents).
                                         let smp_pitch = field
                                             == crate::instrument_registry::StandardField::Freq
-                                            && matches!(voice_idx, 13 | 14 | 15);
+                                            && crate::instrument_registry::is_sampler(voice_idx);
                                         let id = ParamId::Std(field);
                                         let (reverted, edited) = row_scoped(
                                             ui,
@@ -1813,7 +1957,7 @@ pub fn draw_sound_panel(
                         // Multisample voices: Pitch Fine lives directly under
                         // the Pitch slider (it tunes the same parameter).
                         if def.field == crate::instrument_registry::StandardField::Freq
-                            && matches!(voice_idx, 13 | 14 | 15)
+                            && crate::instrument_registry::is_sampler(voice_idx)
                         {
                             let fine_id = ParamId::Special(9);
                             let mut fine = src.get(fine_id);
@@ -1971,7 +2115,7 @@ pub fn draw_sound_panel(
                                 } else {
                                 let mut value = current;
                                 let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
-                                if draw_editor_slider_row(
+                                if draw_editor_slider_row_curved(
                                     ui,
                                     def.label,
                                     &mut value,
@@ -1980,6 +2124,7 @@ pub fn draw_sound_panel(
                                     src.inherited(ParamId::Special(def.special_index)),
                                     logarithmic,
                                     def.unit, // [182] specials carry a unit too
+                                    def.curve, // [189] response curve from the registry
                                 )
                                 .changed()
                                 {
@@ -2002,7 +2147,7 @@ pub fn draw_sound_panel(
                         // smp voices: the Stereo switch lives directly under the
                         // Sample select ([168]) and works in BOTH modes — in
                         // Analog Mode a random pair plays on every hit.
-                        if def.name.ends_with("_sample") && matches!(voice_idx, 13 | 14 | 15) {
+                        if def.name.ends_with("_sample") && crate::instrument_registry::is_sampler(voice_idx) {
                             let stereo_id = ParamId::Std(StandardField::Stereo);
                             let (reverted, edited) = row_scoped(
                                 ui,
@@ -2052,7 +2197,7 @@ pub fn draw_sound_panel(
                 if has_graph {
                     ui.add_space(16.0);
                 }
-                let sample_graph = if matches!(voice_idx, 13 | 14 | 15) {
+                let sample_graph = if crate::instrument_registry::is_sampler(voice_idx) {
                     let bank = if voice_idx == 13 {
                         crate::synthesis::sample_bank::bd606()
                     } else if voice_idx == 14 {

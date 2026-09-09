@@ -30,6 +30,44 @@ pub fn denormalize_value(norm: f32, min: f32, max: f32, logarithmic: bool) -> f3
     }
 }
 
+/// Same mapping, with a **response curve** on top of the normalized position.
+///
+/// `value = min + (max - min) * t^curve`, so `curve > 1` spends more of the
+/// travel on the low end. Unlike the logarithmic mapping this works when
+/// `min == 0`, which is what an "amount" parameter needs ([189]).
+/// `curve == 1.0` is exactly the plain mapping.
+pub fn normalize_value_curved(
+    value: f32,
+    min: f32,
+    max: f32,
+    logarithmic: bool,
+    curve: f32,
+) -> f32 {
+    let norm = normalize_value(value, min, max, logarithmic);
+    if curve > 0.0 && curve != 1.0 {
+        norm.powf(1.0 / curve)
+    } else {
+        norm
+    }
+}
+
+/// Inverse of [`normalize_value_curved`].
+pub fn denormalize_value_curved(
+    norm: f32,
+    min: f32,
+    max: f32,
+    logarithmic: bool,
+    curve: f32,
+) -> f32 {
+    let norm = norm.clamp(0.0, 1.0);
+    let shaped = if curve > 0.0 && curve != 1.0 {
+        norm.powf(curve)
+    } else {
+        norm
+    };
+    denormalize_value(shaped, min, max, logarithmic)
+}
+
 /// Normalized units travelled per pixel of fine drag. Mirrors the plock menu's
 /// `GRANULAR_DRAG_MULTIPLIER` so both fine-tune gestures feel the same — about
 /// 4x finer than the absolute mapping on a typical editor row.
@@ -38,6 +76,9 @@ pub const FINE_DRAG_NORM_PER_PX: f32 = 0.0015;
 /// Fine-tune drag: move `value` RELATIVE to itself instead of jumping to the
 /// pointer ([181]). Kept separate from `draw_track` so the maths is unit-testable
 /// without an egui context.
+/// The drag stays uniform in TRAVEL, so it feels the same everywhere on the
+/// slider whatever the response `curve` (1.0 = linear).
+#[allow(clippy::too_many_arguments)]
 pub fn apply_fine_drag(
     value: &mut f32,
     delta_px: f32,
@@ -45,13 +86,15 @@ pub fn apply_fine_drag(
     max: f32,
     logarithmic: bool,
     step: f32,
+    curve: f32,
 ) -> bool {
     if delta_px == 0.0 {
         return false;
     }
-    let norm = normalize_value(*value, min, max, logarithmic);
+    let norm = normalize_value_curved(*value, min, max, logarithmic, curve);
     let target = (norm + delta_px * FINE_DRAG_NORM_PER_PX).clamp(0.0, 1.0);
-    let mut new_value = denormalize_value(target, min, max, logarithmic).clamp(min, max);
+    let mut new_value =
+        denormalize_value_curved(target, min, max, logarithmic, curve).clamp(min, max);
     if step > 0.0 {
         new_value = ((new_value / step).round() * step).clamp(min, max);
     }
@@ -78,6 +121,9 @@ pub struct TrackStyle {
     /// Quantisation step (0 = continuous). The dragged value snaps to
     /// multiples of this step, e.g. 1.0 for integer semitones.
     pub step: f32,
+    /// Response curve exponent ([189]). 1.0 = linear travel; above 1 the low
+    /// end of the range gets more of the travel.
+    pub curve: f32,
 }
 
 impl TrackStyle {
@@ -88,6 +134,7 @@ impl TrackStyle {
             fill: BLUE(),
             cap: true,
             step: 0.0,
+            curve: 1.0,
         }
     }
 
@@ -98,11 +145,17 @@ impl TrackStyle {
             fill: BLUE(),
             cap: false,
             step: 0.0,
+            curve: 1.0,
         }
     }
 
     pub fn with_step(mut self, step: f32) -> Self {
         self.step = step;
+        self
+    }
+
+    pub fn with_curve(mut self, curve: f32) -> Self {
+        self.curve = curve;
         self
     }
 }
@@ -135,13 +188,15 @@ pub fn draw_track(
                     max,
                     logarithmic,
                     style.step,
+                    style.curve,
                 )
             {
                 response.mark_changed();
             }
         } else if response.clicked() || response.dragged() {
             let norm = egui::emath::remap_clamp(pos.x, rect.x_range(), 0.0..=1.0);
-            *value = denormalize_value(norm, min, max, logarithmic).clamp(min, max);
+            *value =
+                denormalize_value_curved(norm, min, max, logarithmic, style.curve).clamp(min, max);
             if style.step > 0.0 {
                 *value = (*value / style.step).round() * style.step;
                 *value = value.clamp(min, max);
@@ -155,7 +210,7 @@ pub fn draw_track(
     }
 
     let track = egui::Rect::from_center_size(rect.center(), Vec2::new(rect.width(), style.track_h));
-    let norm = normalize_value(*value, min, max, logarithmic);
+    let norm = normalize_value_curved(*value, min, max, logarithmic, style.curve);
     // All slider visuals live in one place: `skeuo::slider_track`.
     crate::ui::skeuo::slider_track(ui, track, norm, style.fill, style.cap);
 
@@ -175,6 +230,52 @@ mod tests {
         }
     }
 
+    /// [189] The curve is a pure re-mapping of the TRAVEL: any value still
+    /// round-trips exactly, so no stored sound is altered by it.
+    #[test]
+    fn curved_roundtrip_preserves_every_value() {
+        for curve in [1.0f32, 1.5, 2.0] {
+            for v in [0.0f32, 0.1, 0.25, 0.5, 0.75, 1.0] {
+                let norm = normalize_value_curved(v, 0.0, 1.0, false, curve);
+                let back = denormalize_value_curved(norm, 0.0, 1.0, false, curve);
+                assert!(
+                    (back - v).abs() < 1e-5,
+                    "curve={curve} v={v} norm={norm} back={back}"
+                );
+            }
+        }
+    }
+
+    /// The point of the curve: at mid-travel the value sits BELOW the middle of
+    /// the range, so the low end gets more of the slider.
+    #[test]
+    fn a_curve_above_one_gives_the_low_end_more_travel() {
+        let linear = denormalize_value_curved(0.5, 0.0, 1.0, false, 1.0);
+        let curved = denormalize_value_curved(0.5, 0.0, 1.0, false, 1.5);
+        assert!((linear - 0.5).abs() < 1e-6);
+        assert!(
+            curved < linear,
+            "mid-travel should sit lower than mid-range (got {curved})"
+        );
+        // Both ends stay pinned, whatever the curve.
+        assert_eq!(denormalize_value_curved(0.0, 0.0, 1.0, false, 1.5), 0.0);
+        assert_eq!(denormalize_value_curved(1.0, 0.0, 1.0, false, 1.5), 1.0);
+    }
+
+    /// A curve of 1.0 must be bit-identical to the plain mapping, so every
+    /// existing slider is untouched.
+    #[test]
+    fn a_curve_of_one_changes_nothing() {
+        for v in [20.0f32, 440.0, 20000.0] {
+            for log in [false, true] {
+                assert_eq!(
+                    normalize_value_curved(v, 20.0, 20000.0, log, 1.0),
+                    normalize_value(v, 20.0, 20000.0, log)
+                );
+            }
+        }
+    }
+
     #[test]
     fn logarithmic_roundtrip() {
         for v in [20.0f32, 100.0, 1000.0, 8000.0, 20000.0] {
@@ -189,31 +290,31 @@ mod tests {
         // 100 px of fine drag on a 0..1 range moves 0.15 — a 200 px absolute
         // track would have moved 0.5 over the same distance.
         let mut v = 0.5f32;
-        assert!(apply_fine_drag(&mut v, 100.0, 0.0, 1.0, false, 0.0));
+        assert!(apply_fine_drag(&mut v, 100.0, 0.0, 1.0, false, 0.0, 1.0));
         assert!((v - 0.65).abs() < 1e-5, "v={v}");
         // ...and backwards from wherever it now is.
-        assert!(apply_fine_drag(&mut v, -100.0, 0.0, 1.0, false, 0.0));
+        assert!(apply_fine_drag(&mut v, -100.0, 0.0, 1.0, false, 0.0, 1.0));
         assert!((v - 0.5).abs() < 1e-5, "v={v}");
     }
 
     #[test]
     fn fine_drag_clamps_at_the_bounds_and_reports_no_change() {
         let mut v = 1.0f32;
-        assert!(!apply_fine_drag(&mut v, 500.0, 0.0, 1.0, false, 0.0));
+        assert!(!apply_fine_drag(&mut v, 500.0, 0.0, 1.0, false, 0.0, 1.0));
         assert_eq!(v, 1.0);
         let mut v = 0.0f32;
-        assert!(!apply_fine_drag(&mut v, -500.0, 0.0, 1.0, false, 0.0));
+        assert!(!apply_fine_drag(&mut v, -500.0, 0.0, 1.0, false, 0.0, 1.0));
         assert_eq!(v, 0.0);
         // A zero-pixel drag is not a change either.
         let mut v = 0.5f32;
-        assert!(!apply_fine_drag(&mut v, 0.0, 0.0, 1.0, false, 0.0));
+        assert!(!apply_fine_drag(&mut v, 0.0, 0.0, 1.0, false, 0.0, 1.0));
     }
 
     #[test]
     fn fine_drag_follows_the_logarithmic_mapping() {
         // On a log range the same pixel delta moves proportionally, not linearly.
         let mut v = 100.0f32;
-        assert!(apply_fine_drag(&mut v, 50.0, 20.0, 20000.0, true, 0.0));
+        assert!(apply_fine_drag(&mut v, 50.0, 20.0, 20000.0, true, 0.0, 1.0));
         let ratio = v / 100.0;
         let expected = (20000.0f32 / 20.0).powf(50.0 * FINE_DRAG_NORM_PER_PX);
         assert!((ratio - expected).abs() < 1e-3, "ratio={ratio} expected={expected}");
@@ -224,9 +325,9 @@ mod tests {
         // Stepped sliders (integer semitones) stay on their grid: a small drag
         // that cannot reach the next step reports no change.
         let mut v = 5.0f32;
-        assert!(!apply_fine_drag(&mut v, 1.0, 0.0, 24.0, false, 1.0));
+        assert!(!apply_fine_drag(&mut v, 1.0, 0.0, 24.0, false, 1.0, 1.0));
         assert_eq!(v, 5.0);
-        assert!(apply_fine_drag(&mut v, 30.0, 0.0, 24.0, false, 1.0));
+        assert!(apply_fine_drag(&mut v, 30.0, 0.0, 24.0, false, 1.0, 1.0));
         assert_eq!(v, 6.0);
     }
 
