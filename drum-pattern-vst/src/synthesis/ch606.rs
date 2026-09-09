@@ -1,9 +1,13 @@
-//! SD606 — multisample TR-606 snare.
+//! CH606 / OH606 — multisample TR-606 hi-hats.
 //!
-//! Same playback engine as the BD606 (see `bd606.rs`), fed by the snare
-//! bank: 8 hits, random pick without immediate repeat in Analog Mode, fixed
+//! Same playback engine as the BD606 (see `bd606.rs`), fed by a hat bank:
+//! 8 hits, random pick without immediate repeat in Analog Mode, fixed
 //! user-selected sample otherwise. Pitch and envelope times are relative to
 //! the played sample, like BD6smp.
+//!
+//! One engine serves **both hats**: the bank is chosen at construction, so
+//! CH6smp and OH6smp are the same code on different samples. `new()` takes
+//! the closed bank, `with_bank()` any other.
 
 use super::{dsp, sample_bank, saturation, settings::ch606::Ch606Settings, Voice, VoiceSettings};
 
@@ -21,6 +25,9 @@ const FILTER_ENV_DEPTH_HZ: f32 = 8000.0;
 pub struct Ch606Voice {
     settings: Ch606Settings,
     sample_rate: f32,
+    /// Which hat bank this voice plays — closed or open. Resolved once at
+    /// construction; on the audio thread it is only a pointer read.
+    bank: &'static sample_bank::SampleBank,
 
     /// Playback position in SOURCE samples (fractional).
     pos: f32,
@@ -56,6 +63,15 @@ impl Ch606Voice {
     pub const FILTER_ENV_CURVE: f32 = 6.0;
 
     pub fn new(sample_rate: f32, settings: Ch606Settings) -> Self {
+        Self::with_bank(sample_rate, settings, sample_bank::ch606())
+    }
+
+    /// Same engine on another hat bank ([208] OH6smp).
+    pub fn with_bank(
+        sample_rate: f32,
+        settings: Ch606Settings,
+        bank: &'static sample_bank::SampleBank,
+    ) -> Self {
         let decay = settings.decay.max(0.01).min(5.0);
         let mut amp_env = dsp::DecayReleaseEnvelope::new(
             sample_rate,
@@ -77,6 +93,7 @@ impl Ch606Voice {
         let mut voice = Self {
             settings,
             sample_rate,
+            bank,
             pos: 0.0,
             end_pos: f32::MAX,
             step: 1.0,
@@ -144,7 +161,7 @@ impl Ch606Voice {
 
     /// Duration of the selected hit once the pitch (playback rate) is applied.
     fn played_secs(&self) -> f32 {
-        let bank = sample_bank::ch606();
+        let bank = self.bank;
         let hit_len = bank.hits[self.current_hit].len().max(1) as f32;
         hit_len / bank.source_rate / self.pitch_ratio()
     }
@@ -206,7 +223,7 @@ impl Voice for Ch606Voice {
             self.current_hit &= !1;
         }
         self.last_hit = self.current_hit;
-        let bank = sample_bank::ch606();
+        let bank = self.bank;
         let rate_ratio = bank.source_rate / self.sample_rate;
         self.step = rate_ratio * self.pitch_ratio();
         // Start/End: fractions of the selected sample's length.
@@ -246,7 +263,7 @@ impl Voice for Ch606Voice {
             return 0.0;
         }
 
-        let bank = sample_bank::ch606();
+        let bank = self.bank;
         let hit = &bank.hits[self.current_hit];
         if hit.len() < 2 {
             self.active = false;
@@ -302,7 +319,7 @@ impl Voice for Ch606Voice {
             return (0.0, 0.0);
         }
 
-        let bank = sample_bank::ch606();
+        let bank = self.bank;
         let hit_l = &bank.hits[self.current_hit];
         let hit_r = &bank.hits[self.hit_r];
 
@@ -651,5 +668,101 @@ mod tests {
             half < full * 3 / 4,
             "end 0.5 should halve the hit (full={full}, half={half})"
         );
+    }
+
+    // ── OH6smp: the same engine on the open-hat bank ([208]) ────────────────
+
+    fn open_voice_with(settings: VoiceSettings) -> Ch606Voice {
+        Ch606Voice::with_bank(
+            44100.0,
+            Ch606Settings::from(settings),
+            sample_bank::oh606(),
+        )
+    }
+
+    /// The open bank is embedded and sliced like the others: 8 usable hits.
+    #[test]
+    fn the_open_hat_bank_holds_eight_hits() {
+        let bank = sample_bank::oh606();
+        assert_eq!(bank.hits.len(), sample_bank::HIT_COUNT);
+        for (i, hit) in bank.hits.iter().enumerate() {
+            assert!(!hit.is_empty(), "hit {i} is empty - the WAV did not parse");
+            assert!(
+                hit.iter().any(|s| s.abs() > 0.01),
+                "hit {i} is silent"
+            );
+            assert!(
+                hit.iter().all(|s| s.is_finite()),
+                "hit {i} holds a non-finite sample"
+            );
+        }
+        // 8 s of source split in 8 -> ~1 s per hit, twice the closed hat's.
+        let open = bank.hits[0].len();
+        let closed = sample_bank::ch606().hits[0].len();
+        assert!(
+            open > closed,
+            "an open hat slice should be longer than a closed one ({open} vs {closed})"
+        );
+    }
+
+    /// The wiring test that matters: a voice built on the open bank must play
+    /// the OPEN samples, not the closed ones.
+    #[test]
+    fn the_open_voice_plays_the_open_bank() {
+        let mut settings = VoiceSettings::oh606();
+        settings.special[0] = 0.0; // fixed sample, no random pick
+        settings.special[1] = 1.0; // sample 1
+        settings.special[2] = 1.0; // one shot: raw playback
+        settings.special[3] = 0.0; // from the start
+
+        let mut open = open_voice_with(settings);
+        open.trigger();
+        let played: Vec<f32> = (0..256).map(|_| open.process_sample()).collect();
+
+        // Compared by SHAPE, not sample by sample: the output carries the
+        // voice's volume and its attack ramp, so only the correlation with
+        // each bank tells which samples are being read.
+        let correlation = |reference: &[f32]| {
+            let (mut dot, mut na, mut nb) = (0.0f32, 0.0f32, 0.0f32);
+            for (i, &s) in played.iter().enumerate() {
+                let r = reference[i];
+                dot += s * r;
+                na += s * s;
+                nb += r * r;
+            }
+            dot / (na.sqrt() * nb.sqrt()).max(1e-9)
+        };
+        let open = correlation(&sample_bank::oh606().hits[0]);
+        let closed = correlation(&sample_bank::ch606().hits[0]);
+        assert!(
+            open > 0.99,
+            "the open voice does not follow the open bank (correlation {open})"
+        );
+        assert!(
+            open > closed + 0.05,
+            "it matches the closed bank just as well ({open} vs {closed}) - the bank is probably not wired through"
+        );
+    }
+
+    /// It behaves like a voice: audible, finite, and it stops.
+    #[test]
+    fn the_open_voice_sounds_then_goes_quiet() {
+        let mut voice = open_voice_with(VoiceSettings::oh606());
+        voice.trigger();
+        let mut peak = 0.0f32;
+        for _ in 0..4410 {
+            let s = voice.process_sample();
+            assert!(s.is_finite());
+            peak = peak.max(s.abs());
+        }
+        assert!(peak > 0.01, "the open hat produced no sound (peak {peak})");
+
+        // Its default decay is longer than the closed hat's - that is the point.
+        assert!(VoiceSettings::oh606().decay > VoiceSettings::ch606().decay);
+
+        for _ in 0..(44100 * 6) {
+            voice.process_sample();
+        }
+        assert!(!voice.is_active(), "the voice never released");
     }
 }
