@@ -39,6 +39,21 @@ pub fn draw_page_popup_if_any(
             page_menu_frame(ui, accent, |ui| {
                 page_menu_header(ui, &format!("Page {}", page + 1), accent);
 
+                // [212] Loop this page alone / release it. Greyed in Song
+                // mode, where the loop is ignored.
+                let looped = params.page_loop.value() == page as i32 + 1;
+                let song_mode = params.song_mode.value();
+                let loop_label = if looped { "Stop page loop" } else { "Loop this page" };
+                let loop_color = if song_mode { INK3() } else { AMBER() };
+                if plock_menu_action_row(ui, loop_label, loop_color).clicked() && !song_mode {
+                    crate::ui::grid::set_page_loop_param(
+                        setter,
+                        params,
+                        if looped { None } else { Some(page) },
+                    );
+                    state.page_popup = None;
+                }
+
                 if plock_menu_action_row(ui, "Copy", accent).clicked() {
                     state.page_clipboard =
                         Some(crate::ui::grid::copy_page_to_clipboard(pattern, plock, params, page));
@@ -51,7 +66,7 @@ pub fn draw_page_popup_if_any(
                             .font(f_sans_med(10.0))
                             .color(INK3()),
                     );
-                    if plock_menu_action_row(ui, "Yes, overwrite", PL_LINK()).clicked() {
+                    if plock_menu_action_row(ui, "Yes, overwrite", AMBER()).clicked() {
                         if let Some(ref clipboard) = state.page_clipboard {
                             crate::ui::grid::paste_page_from_clipboard(
                                 pattern, plock, params, page, clipboard,
@@ -70,7 +85,7 @@ pub fn draw_page_popup_if_any(
                     }
                 } else {
                     let paste_enabled = has_clipboard;
-                    let paste_color = if paste_enabled { PL_LINK() } else { INK3() };
+                    let paste_color = if paste_enabled { AMBER() } else { INK3() };
                     if plock_menu_action_row(ui, "Paste", paste_color).clicked() && paste_enabled {
                         popup.confirm_action = Some(PageMenuAction::Paste);
                         state.page_popup = Some(popup);
@@ -114,6 +129,30 @@ pub fn draw_page_popup_if_any(
 }
 
 /// Global settings popup (default analog value, MIDI settings, skin).
+/// [230] Settings > Auto-assign outputs, ONE action on click: every active
+/// lane goes to the aux output of its own number (lane N -> Out N). Through
+/// `assign_slot_output`, so an assigned lane leaves the main mix exactly as a
+/// hand assignment does; the user puts it back by hand if wanted. Nothing is
+/// remembered: it is a shortcut for fourteen picks, not a mode.
+pub fn assign_outputs_in_order(params: &DrumFlashParams) {
+    let layout = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+    let mut next = layout.clone();
+    let mut changed = false;
+    for (i, slot) in layout.slots.iter().enumerate() {
+        if !slot.active {
+            continue;
+        }
+        let want = crate::track::TrackAudioOut::Out(i as u8 + 1);
+        if slot.routing.out_select != want {
+            next.assign_slot_output(i, want);
+            changed = true;
+        }
+    }
+    if changed {
+        PersistentField::<TrackLayoutState>::set(&params.track_layout, next);
+    }
+}
+
 pub fn draw_settings_popup_if_any(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
@@ -162,6 +201,32 @@ pub fn draw_settings_popup_if_any(
                     let checked = params.auto_edit.value();
                     if ui.add(crate::ui::widgets::ToggleSwitch::new(checked)).clicked() {
                         crate::ui::controls::set_bool_param_if_changed(setter, &params.auto_edit, !checked);
+                    }
+                });
+                ui.add_space(8.0);
+
+                // [230] Auto-assign outputs: one click, lane N -> Out N.
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Outputs")
+                            .font(f_sans_med(10.5))
+                            .color(INK3()),
+                    );
+                    ui.add_space((ui.available_width() - 96.0).max(0.0));
+                    if crate::ui::controls::keycap_button(
+                        ui,
+                        "Auto-assign",
+                        96.0,
+                        crate::ui::widgets::KeycapState::Rest,
+                        true,
+                        f_sans_med(9.5),
+                    )
+                    .on_hover_text(
+                        "Route every active lane to the aux output of its own number, now: lane 1 to Out 1, lane 2 to Out 2, and so on. Each assigned lane leaves the main mix, as with any aux assignment; switch its Main Mix back on by hand if you want both. A one-time action, not a mode.",
+                    )
+                    .clicked()
+                    {
+                        assign_outputs_in_order(params);
                     }
                 });
                 ui.add_space(14.0);

@@ -1,26 +1,32 @@
-# Guide : Ajouter un nouvel instrument dans Flash Drum
+# Guide : ajouter un nouvel instrument dans Flash Drum
 
-> Ce document décrit l'architecture **modulaire** actuelle du plugin et la
-> procédure exacte pour ajouter un instrument (kind). Référence vivante :
-> l'ajout du **BD606 multisample** (build 2026-08-02) a suivi exactement cette
-> checklist — sers-t'en comme exemple dans le code.
+> **Ce document décrit l'architecture.** La *procédure* pas à pas, avec les
+> questions à poser avant de coder et les vérifications à lancer après, vit dans
+> la skill **`/nouvel-instrument`** (`.claude/skills/nouvel-instrument/SKILL.md`).
+> Les deux sont tenus ensemble ; en cas de désaccord, **le code fait foi**.
+>
+> Références vivantes dans le code : **OH6smp** ([208], build 20260909-144136,
+> un sampler qui réutilise un moteur existant) et la famille **AC606** ([195],
+> six voix portées d'un moteur externe). Relisez leurs commits avant de commencer.
+>
+> Dernière mise à jour : **2026-09-13**.
 
 ---
 
 ## 1. Architecture en 30 secondes
 
-**Stack :** Rust + `nih-plug` (VST3) + `egui` (UI intégrée).
+**Stack :** Rust + `nih-plug` (VST3, vendoré et patché) + `egui` (UI intégrée).
 
-**Il n'y a plus de voix fixes.** Le plugin expose un pool de **14 slots**
-(`MAX_TRACKS`, `src/track.rs`). Chaque slot a un **kind** d'instrument
-choisi par l'utilisateur (`TrackInstrumentKind`), ses propres réglages, son
-routing, sa note MIDI et sa ligne de pattern.
+**Il n'y a pas de voix fixes.** Le plugin expose un pool de **14 slots**
+(`MAX_TRACKS`, `src/track.rs`). Chaque slot porte un **kind** d'instrument choisi
+par l'utilisateur (`TrackInstrumentKind`), avec ses propres réglages, son
+routing, sa note MIDI, son choke group et sa ligne de pattern.
 
 ```
-DAW appelle process()
-  → AtomicTrackLayout diff → reinitialize_slot() si kind changé (sans alloc)
+Le DAW appelle process()
+  → AtomicTrackLayout diff → reinitialize_slot() si le kind a changé (sans alloc)
   → Sequencer déclenche les steps (par slot)
-  → DrumSynthesizer : 1 voix pré-allouée par slot (DrumVoiceKind)
+  → DrumSynthesizer : une voix pré-allouée par slot (DrumVoiceKind)
   → mix + 14 sorties stéréo aux
 ```
 
@@ -29,18 +35,22 @@ DAW appelle process()
 
 ---
 
-## 2. Les TROIS enums à synchroniser
+## 2. Les trois espaces d'index
 
-Ajouter un instrument = toucher **trois espaces d'index** distincts :
+Ajouter un instrument, c'est toucher **trois numérotations distinctes**. Les
+confondre est l'erreur classique du projet.
 
-| Enum | Fichier | Rôle |
-|------|---------|------|
-| `TrackInstrumentKind` | `src/track.rs` | Kind exposé à l'UI/track. **Sérialisé dans `track-layout-v1`** → ajouter les nouvelles variantes **à la fin** (indices stables). |
-| `DrumVoiceKind` | `src/synthesis/mod.rs` | Wrapper concret des voix DSP (enum, pas de dyn). |
-| `DrumVoice` (legacy) | `src/synthesis/mod.rs` | Espace d'index du registry `INSTRUMENTS` (garde Tom1/2/3 séparés). |
+| Enum | Fichier | État au 2026-09-13 | Rôle |
+|------|---------|--------------------|------|
+| `TrackInstrumentKind` | `src/track.rs` | `COUNT = 23`, dernier `Oh6smp = 22` | Le kind exposé à l'UI et au track. **Sérialisé dans `track-layout-v1`** → nouvelles variantes **à la fin**. |
+| `DrumVoice` | `src/synthesis/mod.rs` | `COUNT = 25`, dernier `Oh606 = 24` | L'espace d'index du registre `INSTRUMENTS`. Garde `Tom1/2/3` séparés pour raisons historiques. |
+| `DrumVoiceKind` | `src/synthesis/mod.rs` | enum de wrappers | La voix DSP concrète, pré-allouée par slot (enum, pas de `dyn`). |
 
-Le pont entre eux : `TrackInstrumentKind::drum_voice_index()` → index
-`DrumVoice`/registry.
+Le pont entre les deux premiers : `TrackInstrumentKind::drum_voice_index()`.
+
+Les deux listes ne coïncident pas : un même moteur peut servir plusieurs kinds
+(`Ch6smp` et `Oh6smp` partagent `Ch606Voice`, chargé sur un banc différent), et
+le kind `Tom` couvre à lui seul les trois rôles `Tom1/2/3` du générateur.
 
 ---
 
@@ -48,174 +58,206 @@ Le pont entre eux : `TrackInstrumentKind::drum_voice_index()` → index
 
 | Fichier | Rôle |
 |---------|------|
-| `src/track.rs` | `TrackInstrumentKind`, `TrackSlot`, `TrackLayoutState`, `AtomicTrackLayout` (vue lock-free audio). |
-| `src/synthesis/mod.rs` | `DrumVoice`, `DrumVoiceKind`, trait `Voice`, `DrumSynthesizer`, `VoiceSettings`, `create_voice_for_kind()`. |
-| `src/synthesis/<voice>.rs` | Implémentation du trait `Voice` (ex: `bd606.rs`, `perc1.rs`). |
-| `src/synthesis/settings/<voice>.rs` | Typed settings struct + conversions `From/Into<VoiceSettings>`. |
-| `src/synthesis/dsp.rs` | Briques DSP : enveloppes, filtres, oscillateurs, smoothers, `AnalogDrift`, `DcBlocker`. |
-| `src/synthesis/sample_bank.rs` | Banque de samples embarqués (BD606) — pattern réutilisable pour d'autres multisamples. |
+| `src/track.rs` | `TrackInstrumentKind`, `InstrumentCategory`, `TrackSlot`, `TrackLayoutState`, `AtomicTrackLayout` (vue lock-free côté audio). |
+| `src/synthesis/mod.rs` | `DrumVoice`, `DrumVoiceKind`, trait `Voice`, `DrumSynthesizer`, `VoiceSettings`, `create_voice_for_kind()`, `reinitialize_slot()`. |
+| `src/synthesis/<voix>.rs` | Implémentation du trait `Voice` (ex. `bd606.rs`, `perc1.rs`, `ac_voice.rs`). |
+| `src/synthesis/settings/<voix>.rs` | Struct de réglages typée + conversions `From`/`Into<VoiceSettings>`. |
+| `src/synthesis/dsp.rs` | Briques DSP : enveloppes, filtres, oscillateurs, smoothers, `AnalogDrift`, `DcBlocker`, `RetrigDeclick`. |
+| `src/synthesis/sample_bank.rs` | Banque de samples embarqués — le patron pour tout multisample. |
+| `src/synthesis/ac606/` | Moteurs portés d'analogcode + `ac_voice.rs` (wrapper commun aux six voix AC). |
 | `src/synthesis/special_params.rs` | `algos_for` — définitions d'algorithmes par voix. |
-| `src/instrument_registry.rs` | **Source de vérité UI** : `INSTRUMENTS` (standard_params, special_params, defaults, `freq_display_ratio`). |
-| `src/sound_settings.rs` | `SoundSettingsState` — atomiques par slot (13 standards + `special[32]` + freq_mode), persistance `sound-settings-v2`. |
-| `src/lib.rs` | Plugin : `DrumFlashParams`, boucle `process()`, hot kind-change, seed migration. |
-| `src/ui/sound_editor.rs` | Onglet Track (dropdown **Type**) + Sound Panel (data-driven). |
-| `src/ui/popups.rs` | Popup "Add Module" (boucle sur `TrackInstrumentKind::COUNT` — automatique). |
-| `src/generator/mod.rs` | Remap des rôles du générateur vers les kinds de slots. |
+| `src/instrument_registry.rs` | **Source de vérité de l'UI** : `INSTRUMENTS`, `is_sampler()`, `param_default()`. |
+| `src/sound_settings.rs` | `SoundSettingsState` — atomiques par slot (13 standards + `special[32]` + `freq_mode`), persistance `sound-settings-v2`. |
+| `src/lib.rs` | Plugin : `DrumFlashParams`, boucle `process()`, changement de kind à chaud, `apply_choke_groups()`. |
+| `src/ui/menus.rs` | Sélecteurs d'instrument — **data-driven** (`InstrumentCategory::ALL` + `kinds_in`). |
+| `src/ui/sound_editor.rs` | Onglet Track + Sound Panel (data-driven, sauf deux listes, cf. §7). |
+| `src/generator/mod.rs` | `remap_roles_to_slots()` — mappe les kinds vers les rôles du générateur. |
 
 ---
 
-## 4. Checklist : ajouter un instrument (ex. « BD6smp », kind 11 / voice 13)
+## 4. Les invariants qui cassent des sessions
 
-### Étape 1 — Typed settings
+**Persistance.** Tous les formats sont **positionnels** et **la longueur du blob
+EST la version** : `pattern-v5`, `sound-settings-v2`, `plock-v1`,
+`track-layout-v1`. On ne réutilise jamais une longueur, on ne renumérote jamais
+un champ.
 
-Créer `src/synthesis/settings/bd606.rs` (modèle : `settings/perc1.rs`) :
+- `TrackInstrumentKind::index()` vaut `self as usize` et il est **écrit dans les
+  sessions et les presets**. Insérer une variante au milieu renumérote tout ce
+  qui suit et change silencieusement l'instrument de chaque lane sauvegardée.
+- **On ne supprime jamais une variante.** On la *retire* : `selectable()` la
+  cache des sélecteurs, `retired_replacement()` dit vers quel kind migrer, et
+  `migrate_retired_kinds()` — appelée depuis `PersistentField::set`, l'unique
+  entonnoir de toute écriture de layout — convertit les lanes sauvegardées. C'est
+  ce qui a été fait pour Snare606 ([203]) et OpenHiHat ([204]) : les variantes et
+  leurs voix DSP existent toujours.
+- `LEGACY_VOICE_COUNT = 13` dans `sound_settings.rs` est **gelé**. N'utilisez
+  jamais `DrumVoice::COUNT` pour de la persistance : il grandit à chaque ajout et
+  casserait la détection des anciens formats.
+- Tant que les paramètres tiennent dans `special[32]`, **aucun changement de
+  format n'est nécessaire**. S'il en faut un, c'est une décision à prendre avec
+  l'utilisateur, pas un détail d'implémentation.
 
-- Struct typé avec les 13 champs standard + les champs spéciaux nommés.
-- `From<VoiceSettings>` et `From<Bd606Settings> for VoiceSettings` : les
-  spéciaux vivent dans `special[0..N]` (32 slots disponibles).
-- Test : `crate::settings_roundtrip_test!(bd606_settings_roundtrip, bd606, Bd606Settings);`
-- Déclarer `pub mod bd606;` dans `settings/mod.rs`.
-
-> **Convention saturation pack** : 5 params mappés sur des `special[i]`
-> consécutifs (type = `sp_discrete`, amount, mix, output_gain, pre_filter =
-> `sp_discrete`). Voir BD606 : `special[4..8]`.
-
-### Étape 2 — Voix de synthèse
-
-Créer `src/synthesis/bd606.rs` implémentant le trait `Voice` (modèle :
-`perc1.rs`). Points critiques :
-
-- **`set_settings`** : JAMAIS recréer les enveloppes — utiliser les setters
-  (`.set_decay()`, `.set_curve()`, `.set_attack_ms()`, `.set_hold()`…).
-- **`trigger()`** : ne pas reset de phase osc/filtre/RNG (continuité
-  analogique anti-click). L'enveloppe d'amp gère la rampe anti-click.
-- **Saturation** : uniquement via `saturation.process_at(pre_stage, x)` —
-  appelée deux fois (pré/post filtre), le flag `pre_filter` route.
-- **Volume post-saturation** : `settings.volume` multiplie APRÈS
-  `process_at(false, …)`.
-
-### Étape 3 — `synthesis/mod.rs`
-
-1. `mod bd606;` + `pub use bd606::Bd606Voice;` + `pub use settings::bd606::Bd606Settings;`
-2. `DrumVoice::Bd606 = 13` + `COUNT` (13→14) + arm `from_index()`.
-3. `VoiceSettings::bd606()` — defaults identiques au `sound_settings_default`
-   du registry + defaults des spéciaux (ordre `special[i]`).
-4. `DrumVoiceKind::Bd606(Bd606Voice)` + l'arm dans les **9 matchs** du trait
-   (`trigger`, `trigger_hard`, `process_sample`, `process_sample_stereo`,
-   `is_active`, `reset`, `set_settings`, `set_algo`, `set_special_param`).
-5. Arm dans `create_voice_for_kind()`.
-6. **Si la voix utilise des données lourdes partagées** (samples) : pré-chauffer
-   dans `initialize_with_layout()` (voir `let _ = sample_bank::bank();`) car
-   `create_voice_for_kind()` peut être appelé depuis `process()` via
-   `reinitialize_slot()` — interdiction d'allouer à ce moment-là.
-
-### Étape 4 — `track.rs` (`TrackInstrumentKind`)
-
-Ajouter la variante **à la fin** de l'enum (indice sérialisé !) + mettre à
-jour : `COUNT`, `from_index`, `default_label` (2 chars), `default_name`,
-`default_midi_note` (GM, éviter les collisions), `drum_voice_index`,
-`from_drum_voice_index`.
-
-### Étape 5 — Registry (`instrument_registry.rs`)
-
-1. Table `BD606_STD` (ou réutiliser `FULL_STD`/`TOM_STD`/…) avec les
-   `StandardParamDef` voulus — le Sound Panel et le plock sont data-driven.
-2. Entrée `InstrumentDef` à l'index = `drum_voice_index()` : `name`, `label`,
-   `full_name`, `midi_note`, `algo_count`, `standard_params`,
-   `special_params` (`sp` = continu/morphable, `sp_discrete` = pas de morph),
-   `sound_settings_default` (**ordre strict** des 13 champs :
-   `[freq, decay, vol, filter_freq, attack, release, decay_curve,
-   release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]`),
-   `filter_type_label`, `freq_display_ratio`.
-3. Tests en bas du fichier : ajouter l'index à la liste mono OU stéréo.
-
-### Étape 6 — `sound_settings.rs` : ne rien casser
-
-La persistance `sound-settings-v2` est **versionnée par longueur de blob**.
-Les longueurs legacy sont gelées sur **13 voix** via `LEGACY_VOICE_COUNT`
-(ne JAMAIS utiliser `DrumVoice::COUNT` ici — il grandit avec les nouvelles
-voix et casserait la détection des anciens formats). Aucun changement de
-format nécessaire si les params tiennent dans `special[32]`.
-
-### Étape 7 — Listes hardcodées UI
-
-- `ui/sound_editor.rs` : tableau `kinds` du dropdown **Type** (~ligne 334).
-- `ui/sound_editor.rs` : listes « analog fixed » `2|3|7|8|10|12` (~lignes 691
-  et 809) — ajouter l'index si le drift analogique standard ne s'applique pas.
-- `ui/sound_editor.rs` : `is_bass_drum` (`voice_idx == 0 || 11`, ~ligne 940) —
-  ajouter si le mode Hz/Notes a du sens.
-- `ui/plock.rs` : `matches!(voice_idx, 0 | 11)` (~lignes 179 et 604) — idem.
-- Popups « Add Module », plock menu, morph : **data-driven**, rien à faire.
-
-### Étape 8 — Générateur (`generator/mod.rs`)
-
-`remap_roles_to_slots()` mappe les slots vers les 13 rôles legacy via
-`drum_voice_index()`. Un nouvel index sans rôle resterait **silencieux** sur
-GENERATE → mapper explicitement vers un rôle existant (BD606 emprunte le
-rôle Kick) ou ajouter un rôle dans `generator/styles.rs`.
-
-### Étape 9 — Algorithmes (`synthesis/special_params.rs`)
-
-Si `algo_count > 1` : ajouter la const `*_ALGOS` + l'arm dans `algos_for`
-(match exhaustif sur `DrumVoice`). Sinon une entrée « Standard ».
-
-### Étape 10 — Tests
-
-- Roundtrip settings (macro, étape 1).
-- Tests voix : son produit, sortie finie, silence après decay, comportement
-  des spéciaux (modèle : tests de `bd606.rs` / `perc1.rs`).
-- `cargo test` complet vert (les tests `sound_settings.rs` itèrent sur
-  `TrackInstrumentKind::COUNT` — un default de freq ≤ 0 fera échouer).
+**Thread audio.** `create_voice_for_kind()` est appelé **depuis `process()`** via
+`reinitialize_slot()` quand l'utilisateur change le kind d'une lane en pleine
+lecture. Toute donnée lourde (samples, tables) doit donc vivre derrière un
+`OnceLock` **préchauffé** dans `DrumSynthesizer::initialize_with_layout()` —
+voir `sample_bank::bank()` et `ac606::prewarm()`.
 
 ---
 
-## 5. Cas particulier : instrument à samples (pattern BD606)
+## 5. Les contrats de son
 
-- WAV embarqué via `include_bytes!` dans `src/synthesis/sample_bank.rs`,
-  décodé **une fois** dans un `OnceLock` global → `&'static SampleBank`.
-- Pré-chauffé dans `DrumSynthesizer::initialize_with_layout()` (non-RT) ;
-  sur le thread audio, `bank()` n'est qu'un load atomique.
-- **Pas de resampling au chargement** : la lecture à position fractionnaire
-  (interpolation linéaire) absorbe le ratio `source_rate / session_rate`.
-- Le fallback « fichier non parsable » produit des hits vides (voix inerte),
-  jamais de panic.
-- RNG de sélection (xorshift) seedé à la construction, **jamais reseedé au
-  trigger** (convention anti-click).
+- **Retrigger ([179]).** Chaque coup repart d'un **état neuf**, la discontinuité
+  étant absorbée par `dsp::RetrigDeclick` (3 ms). C'est le contrat actuel, et il
+  remplace volontairement l'ancien comportement « phase continue » : **ne le
+  réintroduisez pas**. Modèles : `kick.rs`, `kick_808.rs`, `ac_voice.rs`.
+- **Enveloppe d'ampli** = `DecayReleaseEnvelope`, modèle **A-H-D**
+  (Attack-Hold-Decay, **sans release**), avec courbes bipolaires indépendantes
+  sur l'attaque et le decay. Les noms sont conservés pour la persistance :
+  `decay_curve` = courbe de decay, `release_curve` = courbe d'**attaque**,
+  `set_release`/`release_time` = **no-op**.
+- **Jamais recréer une enveloppe dans `set_settings()`** : utilisez les setters
+  (`set_decay`, `set_attack_ms`, `set_hold`, `set_curve`…). Recréer remet l'état
+  interne à zéro et coupe le son à chaque mouvement de slider.
+- **Saturation** : uniquement via `SaturationConfig::process_at(pre_stage, x)`,
+  appelée deux fois (pré et post filtre), le drapeau `pre_filter` routant
+  laquelle agit. N'appelez jamais `process()` directement depuis une voix.
+- **`settings.volume` multiplie APRÈS la saturation** — la dérive de niveau
+  analogique reste pré-sat.
+- `DcBlocker` sur les voix à retrigger asymétrique (kick).
 
 ---
 
-## 6. Pièges courants
+## 6. Ce qu'il faut écrire
 
-| Piège | Explication |
+L'ordre compte : à partir du point 3, les matchs exhaustifs du compilateur
+deviennent le filet.
+
+1. **Réglages typés** — `src/synthesis/settings/<voix>.rs` (modèle :
+   `settings/perc1.rs`). Les 13 champs standard + les spéciaux **nommés**, les
+   conversions dans les deux sens, le test
+   `crate::settings_roundtrip_test!(…)`, et `pub mod <voix>;` dans
+   `settings/mod.rs`.
+2. **Voix DSP** — `src/synthesis/<voix>.rs`, trait `Voice`, §5 respecté à la
+   lettre.
+3. **`synthesis/mod.rs`** — `DrumVoice::X` (à la fin) + `COUNT` + `from_index` ;
+   `VoiceSettings::x()` ; `DrumVoiceKind::X(XVoice)` avec son arm dans les **neuf
+   méthodes** du trait (`trigger`, `trigger_hard`, `process_sample`,
+   `process_sample_stereo`, `is_active`, `reset`, `set_settings`, `set_algo`,
+   `set_special_param`) ; l'arm dans `create_voice_for_kind()` ; le préchauffage
+   si données lourdes.
+4. **`track.rs`** — variante **à la fin** de `TrackInstrumentKind`, puis `COUNT`,
+   `from_index`, **`category()`**, `default_label` (2 caractères ASCII),
+   `default_name`, `default_midi_note`, `drum_voice_index`,
+   `from_drum_voice_index`.
+5. **Registre** — `src/instrument_registry.rs` : la table de `StandardParamDef`
+   et l'entrée `InstrumentDef` **à l'index `drum_voice_index()`**. Les spéciaux
+   se déclarent avec `sp` (continu, morphable), `sp_unit` (avec unité
+   d'affichage), `sp_curved` (loi de réponse non linéaire) ou `sp_discrete`
+   (listes et types — **non morphable**). L'ordre de `sound_settings_default` est
+   **strict** :
+
+   ```
+   [freq, decay, vol, filter_freq, attack, release, decay_curve,
+    release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]
+   ```
+
+   Puis : l'index ajouté à la liste **mono** ou **stéréo** des tests en bas du
+   fichier, et à `is_sampler()` si c'en est un.
+6. **Algorithmes** — `special_params.rs` : si `algo_count > 1`, la const
+   `*_ALGOS` et l'arm dans `algos_for`. Sinon une entrée « Standard ».
+7. **Générateur** — `generator/mod.rs`, match `base_voice` de
+   `remap_roles_to_slots`. **Sans rôle, GENERATE n'écrit rien sur la lane** et
+   l'instrument passe pour cassé. Les voix 606 et AC606 empruntent toutes le rôle
+   de leur cousin acoustique.
+
+> **Convention « pack saturation »** : des paramètres sur des `special[i]`
+> consécutifs — type (`sp_discrete`), amount (`sp_curved` avec
+> `SAT_AMOUNT_CURVE`), mix, output_gain, et pre_filter (`sp_discrete`) quand la
+> voix route la saturation des deux côtés du filtre. Voir BD606
+> (`special[4..8]`) et les six voix AC606 (`special[10..13]`, sans pre_filter).
+
+---
+
+## 7. Côté UI : presque tout est automatique
+
+Les **sélecteurs d'instrument** (popup « Add Module », menu Instrument, dropdown
+Type) sont data-driven depuis [203]/[204] : ils bouclent sur
+`InstrumentCategory::ALL` puis `TrackInstrumentKind::kinds_in(cat)` dans
+`ui/menus.rs`. Renseigner `category()` suffit à faire apparaître l'instrument au
+bon endroit — **il n'y a plus de liste `kinds` à éditer**. Le Sound Panel, le
+menu de p-lock et le morphing sont eux aussi pilotés par le registre.
+
+Il reste **deux listes codées en dur**, toutes deux dans `ui/sound_editor.rs` :
+
+- `matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12) || is_sampler(voice_idx)` — les
+  voix **sans dérive analogique**, où le champ `analog` n'est qu'un remplissage
+  à 0,0.
+- `is_bass_drum` (`voice_idx == 0 || 11 || 18`) — l'affichage **Hz / Notes**.
+
+---
+
+## 8. Cas particulier : instrument multisample
+
+Patron complet : `sample_bank.rs` + `bd606.rs` ; variante « un moteur, deux
+bancs » : `ch606.rs` avec `Ch606Voice::with_bank` ([208]).
+
+- WAV embarqué par `include_bytes!`, décodé **une seule fois** dans un `OnceLock`
+  global → `&'static SampleBank`.
+- Préchauffé dans `initialize_with_layout()` (hors temps réel) ; sur le thread
+  audio, `bank()` n'est plus qu'une lecture atomique.
+- **Pas de rééchantillonnage au chargement** : la lecture à position
+  fractionnaire (interpolation linéaire) absorbe le rapport
+  `source_rate / session_rate`.
+- Fichier illisible → hits vides (voix inerte), **jamais de panic**.
+- RNG de sélection de layer (xorshift) seedé à la construction, **jamais reseedé
+  au trigger**.
+- L'index va dans `instrument_registry::is_sampler()`.
+
+---
+
+## 9. Pièges déjà rencontrés
+
+| Piège | Conséquence |
 |-------|-------------|
-| **Recréer les enveloppes dans `set_settings`** | Coupe le son à chaque mouvement de slider. Setters uniquement. |
-| **Variante `TrackInstrumentKind` insérée au milieu** | Les indices sont sérialisés dans `track-layout-v1` → toujours ajouter **à la fin**. |
-| **`DrumVoice::COUNT` utilisé pour la persistance** | Gelé à 13 via `LEGACY_VOICE_COUNT` dans `sound_settings.rs`. |
-| **Oublier un match `DrumVoiceKind`** | Le compilateur le rappelle (exhaustivité) — les 9 matchs + `create_voice_for_kind`. |
-| **Allocation dans `create_voice_for_kind`** | Appelé depuis `process()` via `reinitialize_slot` → données lourdes derrière un `OnceLock` pré-chauffé. |
-| **Nouvel instrument silencieux sur GENERATE** | Pas de rôle dans le générateur → mapper vers un rôle existant. |
-| **Listes UI hardcodées oubliées** | Dropdown Type, analog-fixed, is_bass_drum (Sound Panel + plock). |
-| **Mauvais ordre `sound_settings_default`** | Ordre strict des 13 champs (voir étape 5). |
-| **VST3 cache** | Fermer Studio One avant `build.ps1 -Install` (lock DLL). |
+| Variante insérée au milieu de l'enum | Toutes les lanes sauvegardées changent d'instrument. |
+| Variante supprimée au lieu d'être retirée | Idem — passer par `selectable()` + `retired_replacement()`. |
+| `DrumVoice::COUNT` utilisé pour la persistance | Les anciennes sessions ne sont plus relues (détection par longueur). |
+| Enveloppes recréées dans `set_settings` | Le son se coupe à chaque mouvement de slider. |
+| Phase conservée au retrigger | Contredit [179] : l'état repart neuf + `RetrigDeclick`. |
+| Allocation dans `create_voice_for_kind` | Craquement ou underrun : il tourne sur le thread audio. |
+| Rôle générateur oublié | Instrument muet sur GENERATE, ce qui passe pour un bug. |
+| Mauvais ordre de `sound_settings_default` | Paramètres mélangés, souvent silencieusement. |
+| `category()` oublié | Le compilateur le signale (match exhaustif) — ne pas le contourner par un `_ =>`. |
+| Studio One ouvert au build | `-Install` échoue en « accès refusé » (lock DLL). |
 
 ---
 
-## 7. Build & Test
+## 10. Build & test
 
 ```powershell
 cd drum-pattern-vst
-cargo test
+cargo test          # dont le roundtrip de settings et les tests du registre
+cargo check         # doit rester warning-clean
 # Fermer Studio One avant l'install (lock DLL)
 .\build.ps1 -Install
 ```
 
-Puis dans Studio One : insérer le plugin, vérifier que :
-1. Le nouveau kind apparaît dans le dropdown **Type** (onglet Track) et dans
-   le popup **Add Module** d'une lane vide,
-2. Le Sound Panel affiche les bons sliders groupés par famille,
-3. Le son ne coupe pas quand on bouge un slider,
-4. Le plock menu propose les standard + special params,
-5. Changement de kind à chaud pendant la lecture : pas de clic, pas de
-   silence bloqué,
-6. Sauvegarde/reload de la song : kind + réglages conservés,
-7. GENERATE écrit une ligne sur la lane du nouvel instrument.
+Les tests de `sound_settings.rs` itèrent sur `TrackInstrumentKind::COUNT` : un
+défaut de fréquence ≤ 0 les fait échouer.
+
+Puis, dans Studio One, vérifier que :
+
+1. le nouveau kind apparaît dans le popup **Add Module** d'une lane vide et dans
+   le sélecteur **Type**, **dans la bonne catégorie** ;
+2. le Sound Panel affiche les bons sliders, groupés par famille ;
+3. bouger un slider ne coupe pas le son ;
+4. le menu de p-lock propose les paramètres standard **et** spéciaux ;
+5. changer de kind **pendant la lecture** ne produit ni clic ni silence bloqué ;
+6. sauvegarde puis réouverture de la song : kind et réglages conservés ;
+7. GENERATE écrit bien une ligne sur la lane du nouvel instrument.
+
+Enfin : une entrée dans `CHANGELOG.md` avec le build ID, la tâche sortie vers
+`DONE.md`, et la liste numérotée « À tester dans Studio One » remise à
+l'utilisateur.

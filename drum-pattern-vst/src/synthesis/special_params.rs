@@ -69,6 +69,10 @@ pub const BD606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 pub const SD606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 pub const CH606_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
 
+// -- Rift [221] ---------------------------------------------------------------
+
+pub const RIFT_ALGOS: &[AlgoDef] = &[AlgoDef { name: "Standard" }];
+
 // ── Buzz (tonal perc + gate) ────────────────────────────────────────────────
 
 /// Gate retrigger mode: Smooth = ramp from current, Razor = snap from zero.
@@ -105,6 +109,7 @@ pub fn algos_for(voice: DrumVoice) -> &'static [AlgoDef] {
         DrumVoice::Ch606 => CH606_ALGOS,
         // [208] Same sampler engine as the closed hat, same single algo.
         DrumVoice::Oh606 => CH606_ALGOS,
+        DrumVoice::Rift => RIFT_ALGOS,
         DrumVoice::Buzz => BUZZ_ALGOS,
         DrumVoice::Sdrex => SDREX_ALGOS,
         DrumVoice::Bd6Ac
