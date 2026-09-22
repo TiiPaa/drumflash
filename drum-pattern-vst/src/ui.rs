@@ -35,6 +35,7 @@ mod pads;
 mod pattern_bank;
 pub mod param_source;
 mod plock;
+mod macros_panel;
 mod popups;
 mod preset_browser;
 mod skeuo;
@@ -387,6 +388,9 @@ pub fn create_editor(
                         &sound_settings_for_ui,
                         state,
                     );
+
+                    // [242] Macros assignment modal (CC -> lane sound param).
+                    macros_panel::draw_macros_modal_if_any(ui, setter, &params_for_ui, state);
 
                     // Auto-save pattern edits to the current bank slot when Song Mode is active.
                     // This prevents edits from being lost when the song advances to the next pattern.
