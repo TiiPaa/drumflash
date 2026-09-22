@@ -260,6 +260,9 @@ pub struct EditorUIState {
     /// True when the global settings popup is open.
     #[serde(skip)]
     pub settings_open: bool,
+    /// [242] True when the Macros assignment modal is open.
+    #[serde(skip)]
+    pub macros_open: bool,
     /// Preset browser modal (instruments / patterns / songs).
     #[serde(skip)]
     pub preset_browser: Option<PresetBrowserState>,

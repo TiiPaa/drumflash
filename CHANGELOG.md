@@ -1,5 +1,63 @@
 # Changelog
 
+## 2026-09-22 - [242] FIX knobs des macros : le pattern eprouve de header_param_slider (build 20260922-200611)
+
+**Branche:** `main` - **Build:** `20260922-200611`
+**Validation:** `cargo check` warning-clean, `cargo test` 456 + 1 + 287 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Retour utilisateur sur le build 181703 : « je ne peux plus changer le slider de la macro » (le remplissage bougeait d'un pixel et revenait a 0, drag jamais commite). Le commit-on-release + delta accumule en memoire temporaire etait une fausse bonne idee.
+
+**Le fix** : `macro_knob` reecrit en miniature STRICTE de `header_param_slider` (Master/Swing, le code qui marche dans S1 depuis toujours) : `ui.interact` avec id explicite, `begin_set_parameter` au drag-start, `set_parameter_normalized` **a chaque frame** avec la valeur = position du pointeur (pas de delta, pas de memoire, pas de commit au release), `end_set_parameter` au drag-stop, clic = begin/set/end one-shot. Le gel du build 165241 venait du `ParamSlider` nih-plug, pas de la frequence des gestures - l'en-tete les emet a la meme frequence sans probleme.
+
+## 2026-09-22 - [242] FIX gel de Studio One a l'edition des macros : knobs sans flux d'automation (build 20260922-181703)
+
+**Branche:** `main` - **Build:** `20260922-181703`
+**Validation:** `cargo check` warning-clean, `cargo test` 456 + 1 + 287 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+**Le bug (retour utilisateur)** : a l'ouverture/edition du modal Macros, S1 gela ~1 minute - fenetre du plugin editable mais hote inaccessible - puis revenait. Cause : le `ParamSlider` nih-plug envoie des gestures d'automation (begin/set/end-edit) **pendant toute la duree du drag**, et dans une Area popup baseview le mouse-release peut se perdre ; le drag ne se termine alors jamais et l'hote croule sous les notifications (la file se vide au bout d'une minute, d'ou le retour).
+
+**Le fix** : widget maison `macro_knob` - **une** gesture begin/set/end au clic/drag-start (le learn MIDI de S1 n'a besoin que de ca pour voir le knob) et **une** ecriture de la valeur au `drag_stopped` via `set_float_param_if_changed` (le pattern begin/set/end eprouve de `controls.rs`). Aucun flux continu possible. Slider plat 96x14 (WELL_FILL + remplissage BLUE + bordure), drag vertical, course complete sur 120 px.
+
+## 2026-09-22 - [242] Macros MIDI, build 3 : sliders learnables dans le modal (build 20260922-165241)
+
+**Branche:** `main` - **Build:** `20260922-165241`
+**Validation:** `cargo check` warning-clean, `cargo test` 456 + 1 + 287 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Retour utilisateur : « c'est pas bien, il faut des boutons pour les macros pour que je puisse les learn depuis S1 ». Le learn GUI de Studio One suit le parametre que le plugin signale en cours d'edition (gestures begin/end-edit) : sans widget cote plugin, il n'y avait rien a toucher.
+
+- **Un vrai `ParamSlider` par macro** dans chaque rangee du modal (Macro N + slider + lane + parametre + x) : le drag envoie les gestures a l'hote, donc **S1 peut learner le CC directement depuis le slider** (Control Link le selectionne, ou learn du header du plugin) ; et le slider reflete la valeur ecrite par le DAW (deux sens). Modal elargi a 560 px.
+
+## 2026-09-22 - [242] Macros MIDI, build 2 : modal d'assignation (build 20260922-155823)
+
+**Branche:** `main` - **Build:** `20260922-155823`
+**Validation:** `cargo check` warning-clean, `cargo test` 456 + 1 + 287 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+- **Modal Macros** (`src/ui/macros_panel.rs`), ouvert depuis Settings > MIDI > **Macros › Edit...** : seize rangees « Macro N » + selecteur de **lane** (« - » = non assigne, puis les lanes actives « 1 Kick », « 3 Snare »…) + selecteur de **parametre** (tous les standards declares du kind + tous ses speciaux, libelles du registre) + **x** pour effacer. Choisir une lane repart sur son premier standard ; le selecteur de parametre d'une macro non assignee est grise, pas cache.
+- Settings > MIDI gagne la rangee **Macros › Edit...** entre Lane 1 Root Note / Auto-assign et la section Others.
+
+## 2026-09-22 - [242] Macros MIDI, build 1 : moteur + persistance (16 knobs exposes, 32 en magasin) (build 20260922-155001)
+
+**Branche:** `main` - **Build:** `20260922-155001`
+**Validation:** `cargo check` warning-clean, `cargo test` 456 + 1 + 287 verts (7 nouveaux), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Option B choisie par l'utilisateur (16 macros + mapping interne, extensible a 32 plus tard) plutot que l'exposition des 644 parametres de son. Perimetre V1 : params de son (standards + speciaux) des lanes instanciees ; p-locks sequenceur, structurels et params nih-plug par lane (piege [227]) exclus.
+
+- **`src/macros.rs`** : `MacroMap` (32 emplacements `AtomicU32`, pack slot+kind+index valide au load), `scale_value` (lineaire/log comme le slider), `target_range` (min/max/log lus dans le registre), `apply_macros` (ecrit dans les memes atomiques par slot que l'UI + `bump_version` : les voix polent comme d'habitude, **les p-locks gardent la priorite par pas**), `prune_invalid_targets` (la lane change de kind ou disparait -> l'assignation vers un special/standard non declare saute, regle des textures [228]), `reorder` (les assignations suivent leur lane au deplacement), persistance **`macro-map-v1`** (32 x u32 LE, la longueur EST la version : passer a 32 knobs ne sera pas un v2).
+- **`lib.rs`** : 16 `FloatParam` visibles `macro_1..16` (« Macro N », 0..1), application une fois par buffer AVANT le poll des settings (un knob bouge est rejoue dans le buffer meme), `last_macro_values` (-1 force la premiere application, donc la valeur d'automation du DAW s'applique au chargement).
+- Hooks : `reconcile_lane_macros` une fois par frame (sound_editor) ; reorder dans `apply_lane_reorder_move`.
+- **Pas encore d'UI d'assignation** : c'est le build 2. Pour tester ce build : ecrire une assignation en dur n'est pas possible depuis l'UI ; le test visible est la presence des 16 params « Macro N » dans la liste d'automation du DAW.
+
+## 2026-09-22 - [240] Ordre canonique des enveloppes dans le panneau Sons, tous instruments (build 20260922-124548)
+
+**Branche:** `main` - **Build:** `20260922-124548`
+**Validation:** `cargo check` warning-clean, `cargo test` 449 + 1 + 287 verts (2 nouveaux), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Demande : « respecter une meme logique dans l'agencement des parametres des enveloppes entre tous les instruments ». Constat : les sections ont un ordre fixe mais les rangees a l'interieur suivaient l'ordre de declaration propre a chaque table du registre (15 tables, 26 voix) - Attack Curve en dernier ici, Hold avant apres la, etc.
+
+- **Section Amp** : tri au RENDU par `env_row_rank` (registre) - **Attack → Attack Curve → Hold → Decay → Decay Curve** (un temps, puis sa courbe), partout. Les 15 tables de standards ne bougent pas (le p-lock et la persistance indexent les CHAMPS, pas l'ordre des rangees : display-only), et tout futur instrument herite de l'ordre.
+- **Enveloppe de filtre** (Buzz, SDrex, Rift) : le hissage par suffixe s'etend aux courbes - **Filter Env → Filter Attack → Filter Atk Curve → Filter Hold → Filter Decay → Filter Dec Curve**. Le `_filter_curve` de Buzz EST sa courbe de decay (hissee sous Filter Decay).
+- Tests : `amp_section_sorts_to_the_canonical_order_on_every_voice` (26 voix), `filter_envelope_stages_are_hoistable_on_every_voice_that_has_one` (contrat de suffixes + ancres Filter Env/Decay sur Buzz/SDrex/Rift).
+
 ## 2026-09-22 - [239] Settings en sections Audio / MIDI / Others, auto-assign MIDI clarifie (build 20260922-120230)
 
 **Branche:** `main` - **Build:** `20260922-120230`

@@ -350,6 +350,29 @@ pub fn draw_settings_popup_if_any(
                     }
                 });
 
+                ui.add_space(10.0);
+
+                // [242] Macro assignments live in their own modal.
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Macros").font(f_sans_med(10.5)).color(INK3()));
+                    ui.add_space((ui.available_width() - 96.0).max(0.0));
+                    if crate::ui::controls::keycap_button(
+                        ui,
+                        "Edit...",
+                        96.0,
+                        crate::ui::widgets::KeycapState::Rest,
+                        true,
+                        f_sans_med(9.5),
+                    )
+                    .on_hover_text(
+                        "Assign each Macro knob (visible to your DAW as an automatable parameter) to one sound parameter of a lane.",
+                    )
+                    .clicked()
+                    {
+                        state.macros_open = true;
+                    }
+                });
+
                 ui.add_space(14.0);
 
                 // ---- Others ----

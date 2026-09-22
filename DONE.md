@@ -8,6 +8,9 @@
 
 ## Nouvelles tâches — session 2026-09-22
 
+### Batch 3 — cohérence
+- [x] [240] **Même agencement des paramètres d'enveloppe entre tous les instruments** — tri au rendu : Amp = Attack → Attack Curve → Hold → Decay → Decay Curve ; env. de filtre = Env → Attack → Atk Curve → Hold → Decay → Dec Curve (Buzz/SDrex/Rift) (build 20260922-124548, **validé dans S1 le 2026-09-22**).
+
 ### Batch 2 — MIDI rapide
 - [x] [238] **Flasher le nom de l'instrument au MIDI in** — la plaque entière flash **blanc** (texte sombre), LED orange supprimée (build 20260922-115426, **validé dans S1 le 2026-09-22**).
 - [x] [239] **Auto-assign des notes MIDI à partir d'une note de base** — Settings › section MIDI : « Lane 1 Root Note » + Auto-assign, lanes actives numérotées à la suite, action ponctuelle ; Settings réorganisé en sections Audio / MIDI / Others (builds 20260922-115426 → 120230, **validé dans S1 le 2026-09-22**).

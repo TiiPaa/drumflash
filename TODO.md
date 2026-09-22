@@ -5,12 +5,9 @@
 
 > Demandes utilisateur du 2026-09-22, analysées et batchées (plan validé). Note : l'auto-assign **audio** existait déjà ([230]).
 
-### Batch 3 — cohérence
-- [ ] [240] **Même agencement des paramètres d'enveloppe entre tous les instruments** — définir l'ordre canonique (Attack → Hold → Decay → Curve + rangées hissées) et l'appliquer partout ; arbitrage visuel utilisateur.
-
 ### Plus tard (gros chantiers, cadrage d'abord)
-- [ ] [241] **MIDI learn pour les notes de lane** — pose l'infra d'écoute MIDI-in nécessaire à [242].
-- [ ] [242] **Macros : assigner un paramètre d'un instrument instancié à un MIDI CC** — mapping CC→(slot, ParamId), écriture dans les atomiques, persistance, question des plocks. À cadrer avant de coder.
+- [ ] [241] **MIDI learn pour les notes de lane**.
+- [ ] [242] **Macros CC → paramètre** — builds 1 (moteur) et 2 (modal) livrés 2026-09-22, **à valider dans S1** ; ensuite : étendre à 32 knobs (le format `macro-map-v1` est déjà dimensionné).
 
 ## Nouvelles tâches — session 2026-08-26
 

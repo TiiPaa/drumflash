@@ -1422,6 +1422,10 @@ fn apply_lane_reorder_move(
     // old number, then dropped by the "no Texture menu here" rule).
     params.user_textures.reorder(&order);
 
+    // [242] Macro assignments point at lane NUMBERS packed inside each entry:
+    // they move with their lane like every other per-slot store.
+    params.macro_map_state.state.reorder(&order);
+
     let old_selection = state.selected_track_slot;
     let old_selected_instrument = state.selected_instrument;
     let old_fusion_selection = state.fusion_selection_start;

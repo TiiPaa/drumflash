@@ -15,6 +15,7 @@ mod factory_presets;
 mod generator;
 mod groove;
 mod instrument_registry;
+mod macros;
 mod midi_export;
 mod pattern_bank;
 mod param_id;
@@ -185,6 +186,9 @@ pub struct DrumFlashVst {
     external_midi_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
     sound_settings_state: Arc<SoundSettingsState>,
     last_sound_settings_version: u64,
+    /// [242] Last macro knob values applied to the lanes; a moved knob is
+    /// re-applied, a still one is skipped. -1 forces a first apply.
+    last_macro_values: [f32; macros::MACRO_COUNT],
     /// Last host beat position, used to detect seeks.
     last_host_pos: Option<f64>,
     /// Simple LCG RNG state for probability checks (audio-thread safe).
@@ -314,6 +318,45 @@ pub struct DrumFlashParams {
     /// paths, decoded on restore (main thread) into the pool the voices read.
     #[persist = "lane-textures-v1"]
     pub user_textures: user_textures::UserTextures,
+
+    /// [242] Macro assignments: host-driven "Macro N" knob -> (lane, sound
+    /// parameter). The blob holds 32 slots so extending past 16 knobs later
+    /// is not a format bump; 16 are exposed below.
+    #[persist = "macro-map-v1"]
+    pub macro_map_state: macros::PersistentMacroMap,
+
+    #[id = "macro_1"]
+    pub macro_1: FloatParam,
+    #[id = "macro_2"]
+    pub macro_2: FloatParam,
+    #[id = "macro_3"]
+    pub macro_3: FloatParam,
+    #[id = "macro_4"]
+    pub macro_4: FloatParam,
+    #[id = "macro_5"]
+    pub macro_5: FloatParam,
+    #[id = "macro_6"]
+    pub macro_6: FloatParam,
+    #[id = "macro_7"]
+    pub macro_7: FloatParam,
+    #[id = "macro_8"]
+    pub macro_8: FloatParam,
+    #[id = "macro_9"]
+    pub macro_9: FloatParam,
+    #[id = "macro_10"]
+    pub macro_10: FloatParam,
+    #[id = "macro_11"]
+    pub macro_11: FloatParam,
+    #[id = "macro_12"]
+    pub macro_12: FloatParam,
+    #[id = "macro_13"]
+    pub macro_13: FloatParam,
+    #[id = "macro_14"]
+    pub macro_14: FloatParam,
+    #[id = "macro_15"]
+    pub macro_15: FloatParam,
+    #[id = "macro_16"]
+    pub macro_16: FloatParam,
 
     #[id = "master_vol"]
     pub master_volume: FloatParam,
@@ -844,6 +887,25 @@ impl Default for DrumFlashParams {
             song_controller: atomic_song::SharedSongStateController::default(),
             lane_length_locks: LaneLengthLocks::new(),
             user_textures: user_textures::UserTextures::new(),
+
+            macro_map_state: macros::PersistentMacroMap::new(),
+
+            macro_1: FloatParam::new("Macro 1", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_2: FloatParam::new("Macro 2", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_3: FloatParam::new("Macro 3", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_4: FloatParam::new("Macro 4", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_5: FloatParam::new("Macro 5", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_6: FloatParam::new("Macro 6", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_7: FloatParam::new("Macro 7", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_8: FloatParam::new("Macro 8", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_9: FloatParam::new("Macro 9", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_10: FloatParam::new("Macro 10", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_11: FloatParam::new("Macro 11", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_12: FloatParam::new("Macro 12", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_13: FloatParam::new("Macro 13", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_14: FloatParam::new("Macro 14", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_15: FloatParam::new("Macro 15", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
+            macro_16: FloatParam::new("Macro 16", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 }),
 
             master_volume: FloatParam::new(
                 "Master Volume",
@@ -1823,6 +1885,27 @@ impl DrumFlashParams {
     }
 
     /// [227] Indexed access to the per-slot Advance mode bitfields.
+    pub fn macro_params(&self) -> [&FloatParam; macros::MACRO_COUNT] {
+        [
+            &self.macro_1,
+            &self.macro_2,
+            &self.macro_3,
+            &self.macro_4,
+            &self.macro_5,
+            &self.macro_6,
+            &self.macro_7,
+            &self.macro_8,
+            &self.macro_9,
+            &self.macro_10,
+            &self.macro_11,
+            &self.macro_12,
+            &self.macro_13,
+            &self.macro_14,
+            &self.macro_15,
+            &self.macro_16,
+        ]
+    }
+
     pub fn advance_modes(&self) -> [&IntParam; crate::track::MAX_TRACKS] {
         [
             &self.advance_mode_1,
@@ -2012,6 +2095,7 @@ impl Default for DrumFlashVst {
             external_midi_triggers: external_midi_triggers.clone(),
             sound_settings_state: sound_settings_state.clone(),
             last_sound_settings_version: 0,
+            last_macro_values: [-1.0; macros::MACRO_COUNT],
             last_host_pos: None,
             rng_state: AtomicU32::new(0xACE1_0000),
             pending_triggers: [(0, 0, 0.0, 0, false, synthesis::VoiceSettings::default()); 128],
@@ -2807,6 +2891,22 @@ impl Plugin for DrumFlashVst {
                 inst.set_freq_mode(in_notes);
             }
             self.sound_settings_state.bump_version();
+        }
+
+        // [242] Macro knobs (host-driven) -> lane sound atomics, BEFORE the
+        // settings poll so a macro move is heard in this very buffer. Only a
+        // moved knob re-applies; the writes bump the settings version, which
+        // the poll below turns into voice settings (p-locks still win per step).
+        let macro_values: [f32; macros::MACRO_COUNT] =
+            std::array::from_fn(|i| self.params.macro_params()[i].value());
+        if macro_values != self.last_macro_values {
+            self.last_macro_values = macro_values;
+            macros::apply_macros(
+                macro_values,
+                &self.params.macro_map_state.state,
+                &self.sound_settings_state,
+                &slot_voices,
+            );
         }
 
         // Update global sound settings once per buffer, BEFORE triggers.
