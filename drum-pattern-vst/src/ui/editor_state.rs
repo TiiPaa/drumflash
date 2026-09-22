@@ -288,6 +288,12 @@ pub struct PresetBrowserState {
     pub confirm_delete: Option<std::path::PathBuf>,
     /// Grid tab: the built-in "Clear All" layout waits for a second click.
     pub confirm_clear_all_grid: bool,
+    /// User preset being renamed inline ([237]) — the row shows a text field.
+    pub renaming: Option<std::path::PathBuf>,
+    /// New name being typed for `renaming`.
+    pub rename_input: String,
+    /// Focus the rename field on the frame it appears.
+    pub rename_focus_request: bool,
 }
 
 impl Default for PresetBrowserState {
@@ -298,6 +304,9 @@ impl Default for PresetBrowserState {
             load_with_kit: true,
             confirm_delete: None,
             confirm_clear_all_grid: false,
+            renaming: None,
+            rename_input: String::new(),
+            rename_focus_request: false,
         }
     }
 }

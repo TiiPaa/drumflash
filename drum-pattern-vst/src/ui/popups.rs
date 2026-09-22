@@ -153,6 +153,35 @@ pub fn assign_outputs_in_order(params: &DrumFlashParams) {
     }
 }
 
+/// [239] Settings > Auto-assign MIDI notes, ONE action on click: the active
+/// lanes, in slot order, take consecutive notes from `base` (first active lane
+/// -> base, second -> base+1, ...). A shortcut for fourteen DragValue picks,
+/// not a mode - and it clears note collisions between lanes by construction.
+/// Returns whether anything changed (pure, testable without the params).
+fn auto_assign_notes_in_order(layout: &mut TrackLayoutState, base: u8) -> bool {
+    let mut note = base;
+    let mut changed = false;
+    for slot in layout.slots.iter_mut() {
+        if !slot.active {
+            continue;
+        }
+        let want = note.min(127);
+        if slot.midi_note != want {
+            slot.midi_note = want;
+            changed = true;
+        }
+        note = note.saturating_add(1);
+    }
+    changed
+}
+
+pub fn assign_midi_notes_in_order(params: &DrumFlashParams, base: u8) {
+    let mut layout = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+    if auto_assign_notes_in_order(&mut layout, base) {
+        PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
+    }
+}
+
 pub fn draw_settings_popup_if_any(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
@@ -194,16 +223,9 @@ pub fn draw_settings_popup_if_any(
                 });
                 ui.add_space(12.0);
 
-                // Auto-Edit (moved here from the header).
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Auto-Edit").font(f_sans_med(10.5)).color(INK3()));
-                    ui.add_space((ui.available_width() - 34.0).max(0.0));
-                    let checked = params.auto_edit.value();
-                    if ui.add(crate::ui::widgets::ToggleSwitch::new(checked)).clicked() {
-                        crate::ui::controls::set_bool_param_if_changed(setter, &params.auto_edit, !checked);
-                    }
-                });
-                ui.add_space(8.0);
+                // ---- Audio ----
+                ui.label(RichText::new("Audio").font(f_sans_sb(11.0)).color(BLUE()));
+                ui.add_space(6.0);
 
                 // [230] Auto-assign outputs: one click, lane N -> Out N.
                 ui.horizontal(|ui| {
@@ -229,7 +251,7 @@ pub fn draw_settings_popup_if_any(
                         assign_outputs_in_order(params);
                     }
                 });
-                ui.add_space(14.0);
+                ui.add_space(10.0);
 
                 // Default Analog
                 ui.label(
@@ -246,31 +268,104 @@ pub fn draw_settings_popup_if_any(
                     let _ = state.global_config.save();
                 }
 
-                ui.add_space(12.0);
+                ui.add_space(14.0);
+
+                // ---- MIDI ----
+                ui.label(RichText::new("MIDI").font(f_sans_sb(11.0)).color(BLUE()));
+                ui.add_space(6.0);
 
                 // Global MIDI Channel
-                ui.label(
-                    RichText::new("Global MIDI Channel")
-                        .font(f_sans_med(10.5))
-                        .color(INK3()),
-                );
-                ui.add_space(4.0);
-                let mut channel = state.global_config.global_midi_channel as i32;
-                if ui
-                    .add(egui::DragValue::new(&mut channel).range(1..=16).speed(1.0))
-                    .changed()
-                {
-                    let channel = channel.clamp(1, 16) as u8;
-                    state.global_config.global_midi_channel = channel;
-                    let _ = state.global_config.save();
-                    // Also update the current track layout so the change is heard
-                    // immediately without reloading the project.
-                    let mut layout = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
-                    layout.global_midi_channel = channel;
-                    PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
-                }
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Global MIDI Channel")
+                            .font(f_sans_med(10.5))
+                            .color(INK3()),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let mut channel = state.global_config.global_midi_channel as i32;
+                        if ui
+                            .add(egui::DragValue::new(&mut channel).range(1..=16).speed(1.0))
+                            .changed()
+                        {
+                            let channel = channel.clamp(1, 16) as u8;
+                            state.global_config.global_midi_channel = channel;
+                            let _ = state.global_config.save();
+                            // Also update the current track layout so the change
+                            // is heard immediately without reloading the project.
+                            let mut layout = PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+                            layout.global_midi_channel = channel;
+                            PersistentField::<TrackLayoutState>::set(&params.track_layout, layout);
+                        }
+                    });
+                });
+                ui.add_space(8.0);
 
-                ui.add_space(12.0);
+                // [239] Auto-assign MIDI notes: the active lanes take
+                // consecutive notes starting from LANE 1's root note, ONE
+                // action on click (same philosophy as [230] above).
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Lane 1 Root Note")
+                            .font(f_sans_med(10.5))
+                            .color(INK3()),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let base_id = ui.id().with("midi_auto_assign_base");
+                        let mut base = ui
+                            .ctx()
+                            .memory_mut(|m| m.data.get_temp::<i32>(base_id))
+                            .unwrap_or(36);
+                        if ui
+                            .add(egui::DragValue::new(&mut base).range(0..=127).speed(1.0))
+                            .changed()
+                        {
+                            base = base.clamp(0, 127);
+                            ui.ctx().memory_mut(|m| m.data.insert_temp(base_id, base));
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.add_space((ui.available_width() - 96.0).max(0.0));
+                    if crate::ui::controls::keycap_button(
+                        ui,
+                        "Auto-assign",
+                        96.0,
+                        crate::ui::widgets::KeycapState::Rest,
+                        true,
+                        f_sans_med(9.5),
+                    )
+                    .on_hover_text(
+                        "Number every active lane's MIDI note from the Lane 1 Root Note, in lane order: lane 1 gets the root, lane 2 gets root+1, and so on. A one-time action, not a mode.",
+                    )
+                    .clicked()
+                    {
+                        let base = ui
+                            .ctx()
+                            .memory_mut(|m| {
+                                m.data.get_temp::<i32>(ui.id().with("midi_auto_assign_base"))
+                            })
+                            .unwrap_or(36);
+                        assign_midi_notes_in_order(params, base.clamp(0, 127) as u8);
+                    }
+                });
+
+                ui.add_space(14.0);
+
+                // ---- Others ----
+                ui.label(RichText::new("Others").font(f_sans_sb(11.0)).color(BLUE()));
+                ui.add_space(6.0);
+
+                // Auto-Edit (moved here from the header).
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Auto-Edit").font(f_sans_med(10.5)).color(INK3()));
+                    ui.add_space((ui.available_width() - 34.0).max(0.0));
+                    let checked = params.auto_edit.value();
+                    if ui.add(crate::ui::widgets::ToggleSwitch::new(checked)).clicked() {
+                        crate::ui::controls::set_bool_param_if_changed(setter, &params.auto_edit, !checked);
+                    }
+                });
+                ui.add_space(8.0);
 
                 // Skin selector
                 ui.label(
@@ -430,4 +525,38 @@ pub fn draw_pattern_load_warning_if_any(
             ui.painter()
                 .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_assign_notes_numbers_active_lanes_from_base() {
+        let mut layout = TrackLayoutState::modular_default_layout();
+        // Factory layout: 4 active lanes (slots 0..=3), the rest inactive.
+        assert!(auto_assign_notes_in_order(&mut layout, 36));
+        let notes: Vec<u8> = layout
+            .slots
+            .iter()
+            .filter(|s| s.active)
+            .map(|s| s.midi_note)
+            .collect();
+        assert_eq!(notes, [36, 37, 38, 39]);
+        // Inactive slots are untouched.
+        assert!(!layout.slots[4].active);
+
+        // No-op when already assigned: reports no change.
+        assert!(!auto_assign_notes_in_order(&mut layout, 36));
+
+        // Saturates at 127 near the top of the range.
+        assert!(auto_assign_notes_in_order(&mut layout, 126));
+        let notes: Vec<u8> = layout
+            .slots
+            .iter()
+            .filter(|s| s.active)
+            .map(|s| s.midi_note)
+            .collect();
+        assert_eq!(notes, [126, 127, 127, 127]);
+    }
 }

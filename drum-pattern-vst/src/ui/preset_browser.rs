@@ -51,6 +51,7 @@ pub fn draw_preset_browser_if_any(
     let mut load_user: Option<std::path::PathBuf> = None;
     let mut load_factory: Option<&'static str> = None;
     let mut delete_user: Option<std::path::PathBuf> = None;
+    let mut rename_requested: Option<(std::path::PathBuf, String)> = None;
     let mut apply_builtin_grid: Option<usize> = None; // 0=Clear All, 1=4, 2=12, 3=AC 4, 4=AC 12
 
     let response = egui::Area::new(area_id)
@@ -99,6 +100,7 @@ pub fn draw_preset_browser_if_any(
                         {
                             browser.kind = kind;
                             browser.confirm_delete = None;
+                            browser.renaming = None;
                         }
                     }
                 });
@@ -147,7 +149,18 @@ pub fn draw_preset_browser_if_any(
                 ui.separator();
                 ui.add_space(4.0);
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    // Always reserved: the bar never pops in and shifts the
+                    // rows, and the inner right margin keeps the Del buttons
+                    // off it ([235]).
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                    .show(ui, |ui| {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin {
+                                right: 8,
+                                ..Default::default()
+                            })
+                            .show(ui, |ui| {
                     // Grid tab: the built-in lane layouts (ex page-bar dropdown)
                     // live here as factory grid presets.
                     if browser.kind == PresetKind::Grid {
@@ -239,9 +252,46 @@ pub fn draw_preset_browser_if_any(
                     }
                     for info in files {
                         ui.horizontal(|ui| {
+                            let is_renaming =
+                                browser.renaming.as_ref() == Some(&info.path);
+                            if is_renaming {
+                                // [237] Inline rename: Enter commits, Esc cancels.
+                                let resp = ui.add(
+                                    egui::TextEdit::singleline(&mut browser.rename_input)
+                                        .desired_width(180.0)
+                                        .font(f_sans_med(11.0)),
+                                );
+                                if browser.rename_focus_request {
+                                    resp.request_focus();
+                                    browser.rename_focus_request = false;
+                                }
+                                let commit = resp.lost_focus()
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                let cancel =
+                                    ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                if commit {
+                                    let new_name = browser.rename_input.trim().to_string();
+                                    if !new_name.is_empty() {
+                                        rename_requested =
+                                            Some((info.path.clone(), new_name));
+                                    }
+                                    browser.renaming = None;
+                                } else if cancel {
+                                    browser.renaming = None;
+                                }
+                                return;
+                            }
                             ui.label(
                                 RichText::new(&info.name).font(f_sans_med(10.5)).color(INK()),
                             );
+                            // [236] Save date from the file mtime (format untouched).
+                            if let Some(m) = info.modified {
+                                ui.label(
+                                    RichText::new(presets::format_date(m))
+                                        .font(f_mono_med(9.0))
+                                        .color(FAINT()),
+                                );
+                            }
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let confirming =
                                     browser.confirm_delete.as_ref() == Some(&info.path);
@@ -274,6 +324,22 @@ pub fn draw_preset_browser_if_any(
                                 {
                                     load_user = Some(info.path.clone());
                                 }
+                                ui.add_space(4.0);
+                                if keycap_button(
+                                    ui,
+                                    "Ren",
+                                    44.0,
+                                    KeycapState::Rest,
+                                    true,
+                                    f_sans_med(9.5),
+                                )
+                                .clicked()
+                                {
+                                    browser.renaming = Some(info.path.clone());
+                                    browser.rename_input = info.name.clone();
+                                    browser.rename_focus_request = true;
+                                    browser.confirm_delete = None;
+                                }
                             });
                         });
                     }
@@ -298,6 +364,7 @@ pub fn draw_preset_browser_if_any(
                             export_requested = true;
                         }
                     }
+                            });
                 });
             });
         })
@@ -323,6 +390,13 @@ pub fn draw_preset_browser_if_any(
             let _ = presets::delete_file(&path);
             if let Some(b) = state.preset_browser.as_mut() {
                 b.confirm_delete = None;
+            }
+        }
+        if let Some((path, new_name)) = rename_requested {
+            let _ = presets::rename_preset(&path, &new_name);
+            // The Track-tab instrument loader caches its list by name.
+            if matches!(kind, PresetKind::Instrument) {
+                state.track_preset_cache_key = None;
             }
         }
         if let Some(path) = load_user {

@@ -16,6 +16,6 @@
 - **Adding a synthesis voice** → `ADDING_AN_INSTRUMENT.md`
 - **Active priorities / known issues** → `TODO.md`
 - **Build history (one entry per installed build)** → `CHANGELOG.md`
-- **UI redesign scope & pitfalls (read before touching `src/ui/`)** → `docs/design/UI-REDESIGN-HANDOFF.md`
-- **Handoff / current session state** → dernier fichier `handoff-*.md` dans `docs/notes/` (un fichier daté par session ; convention unique, ne pas créer de HANDOFF.md ailleurs)
+- **UI redesign doc** (historical, [100] closed 2026-09-22 — only its §2 egui pitfalls still apply) → `docs/design/UI-REDESIGN-HANDOFF.md`
+- **Handoff / current session state** → `docs/HANDOFF-2026-09-22.md` (handoff unique, daté ; les anciens `docs/notes/handoff-*.md` ont été supprimés — ne pas les recréer)
 - Older notes under `docs/historique/` are historical references, not the active source of truth.

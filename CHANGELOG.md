@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-09-22 - [239] Settings en sections Audio / MIDI / Others, auto-assign MIDI clarifie (build 20260922-120230)
+
+**Branche:** `main` - **Build:** `20260922-120230`
+**Validation:** `cargo check` warning-clean, `cargo test` 447 + 1 + 285 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Retour utilisateur sur le build 115426 : « l'auto assign midi n'est pas clair dans l'interface, il faut bien specifier la note root pour le lane 1 et le bouton auto assign, faire des sections audio, midi, others dans settings ».
+
+- **Sections dans Settings** : **Audio** (Outputs Auto-assign, Default Analog), **MIDI** (Global MIDI Channel, Lane 1 Root Note, Auto-assign), **Others** (Auto-Edit, Skin) ; About reste en bas. En-tetes au style About (sans_sb bleu).
+- **Auto-assign MIDI clarifie** : la note de base s'appelle desormais **« Lane 1 Root Note »** (DragValue a droite du libelle, comme Global MIDI Channel desormais sur une seule rangee), et le bouton **Auto-assign** a sa propre rangee en dessous - avant, le DragValue et le bouton partageaient une rangee sans libelle explicite.
+- Aucun changement fonctionnel : meme logique `assign_midi_notes_in_order`, meme persistance.
+
+## 2026-09-22 - [238] Flash MIDI sur la plaque de nom + [239] Auto-assign des notes MIDI (build 20260922-115426)
+
+**Branche:** `main` - **Build:** `20260922-115426`
+**Validation:** `cargo check` warning-clean, `cargo test` 447 + 1 + 285 verts (1 nouveau), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+- **[238] Le MIDI in flashe la plaque de nom, plus de LED orange.** `lane_activity_led` (skeuo.rs) supprimee ; `lane_name` prend un `flash` 0..1 : la plaque entiere vire au **blanc** et le texte bascule en sombre pour rester lisible (premier essai ambre, retour utilisateur : « la plaque entiere flash blanc »). Meme timer qu'avant (`slot_flash_until`, 120 ms au MIDI in, 500 ms aux Paste/Randomize), meme correctif de repaint [216] conserve. Intensite proportionnelle au temps restant (fondu sur les 120 dernieres ms).
+- **[239] Auto-assign des notes MIDI** (Settings > « Auto-assign MIDI Notes ») : une note de base (DragValue 0-127, defaut 36, etat transitoire en `egui` memory - rien a persister pour une action ponctuelle) et un bouton **Assign** : les lanes actives, dans l'ordre des slots, prennent des notes consecutives (base, base+1, ...), sature a 127. Action ponctuelle comme [230], pas un mode ; elimine les collisions de notes entre lanes par construction. Persiste via le track layout existant, aucune nouvelle cle. Logique pure `auto_assign_notes_in_order` testee (numerotation, no-op, saturation a 127).
+
+## 2026-09-22 - [234]-[237] Batch polish UI : nom de lane elargi, preset browser (scrollbar, date, rename) (build 20260922-105916)
+
+**Branche:** `main` - **Build:** `20260922-105916`
+**Validation:** `cargo check` warning-clean, `cargo test` 446 + 1 + 285 verts (2 nouveaux), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Quatre quick wins du batch 1 de la session 2026-09-22 (demandes utilisateur ticketisees [234]-[242]).
+
+- **[234] Box du nom de lane elargie** : le nom de lane passe de 6 a **8 caracteres** (`take(6)` -> `take(8)`) et la plaque de 46 a **62 px** (`name_w` partage par la grille, l'en-tete et les lanes vides, tout suit). La largeur fixe de la grille augmente de 16 px, les cellules gardent leur plancher de 18 px.
+- **[235] Scrollbar du preset browser decollee des boutons Del** : la barre est desormais **toujours reservee** (`ScrollBarVisibility::AlwaysVisible`, fini le decalage des rangees quand elle apparait) et le contenu a une marge droite de 8 px (Frame interne), donc Del ne la touche plus.
+- **[236] Date de sauvegarde des presets** : chaque preset utilisateur affiche son `mtime` en `YYYY-MM-DD` (gris clair, mono 9, apres le nom) via `PresetFileInfo.modified`. Aucun changement de format JSON - la date vient du fichier. `format_date` : civil-from-days, UTC, sans crate de dates.
+- **[237] Bouton Ren (rename)** sur chaque preset utilisateur : la rangee passe en champ texte inline (focus automatique), **Entree** valide, **Echap** annule. `presets::rename_preset` met a jour le champ `name` DANS le JSON **et** le nom de fichier (les deux restent en sync ; si le nom sanitise donne le meme fichier, reecriture en place). Le cache du loader d'instruments de l'onglet Track est invalide pour le kind Instrument.
+- Tests : `rename_preset_updates_json_name_and_filename`, `format_date_known_days`.
+
 ## 2026-09-21 - [233] Retour en arriere : seuls les sous-parametres de la saturation sont decales (build 20260921-201521)
 
 **Branche:** `main` - **Build:** `20260921-201521`

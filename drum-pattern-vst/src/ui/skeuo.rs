@@ -286,21 +286,10 @@ pub fn plock_pip(p: &egui::Painter, cell: egui::Rect, color: Color32) {
     p.circle_filled(c, 2.2, color);
 }
 
-/// MIDI-activity lamp, top-right of a lane's name plate ([216]).
-///
-/// Replaces the amber glow the removed "T" audition button used to carry: the
-/// indicator mattered, the button did not. Small and unobtrusive so a lane at
-/// rest reads as a name, not as a control.
-pub fn lane_activity_led(p: &egui::Painter, plate: egui::Rect) {
-    let c = egui::pos2(plate.right() - 5.0, plate.top() + 5.0);
-    p.circle_filled(c, 3.4, rgb(60, 34, 6));
-    radial_circle(p, c, 3.0, rgb(255, 226, 170), rgb(247, 178, 62), rgb(150, 96, 12));
-    p.circle_filled(
-        c - egui::vec2(0.9, 1.0),
-        1.0,
-        Color32::from_rgba_unmultiplied(255, 255, 255, 190),
-    );
-}
+/// MIDI-activity flash colours, shared by the lane-name plate flash ([238]):
+/// the whole plate goes WHITE, so the text flips dark to stay readable.
+const FLASH_FILL: Color32 = rgb(236, 240, 246);
+const FLASH_INK: Color32 = rgb(28, 28, 32);
 
 /// Opening bracket marking the FIRST cell of a fusion being created ([210]).
 ///
@@ -458,18 +447,22 @@ pub fn tag(ui: &egui::Ui, rect: egui::Rect, letter: &str, active: bool, accent: 
 // ============================================================
 // Lane name — the lane's title button. A keycap (grey at rest, pressed-blue when
 // the lane is selected) with a left-aligned label. Caller allocates + senses.
+// `flash` (0..=1) flashes the whole plate white on MIDI activity ([238] —
+// replaces the small LED of [216]).
 // ============================================================
-pub fn lane_name(ui: &egui::Ui, rect: egui::Rect, text: &str, selected: bool) {
+pub fn lane_name(ui: &egui::Ui, rect: egui::Rect, text: &str, selected: bool, flash: f32) {
     let p = ui.painter();
+    let f = flash.clamp(0.0, 1.0);
     // FLAT: no gradient/border at rest (a raised look reads as a permanent hover);
     // only the selected lane is filled blue with a thin outline.
     if selected {
-        p.rect_filled(rect, 5.0, rgb(42, 104, 156));
-        p.rect_stroke(rect, 5.0, egui::Stroke::new(1.0, rgb(60, 132, 186)), egui::StrokeKind::Inside);
+        p.rect_filled(rect, 5.0, lerp_c(rgb(42, 104, 156), FLASH_FILL, f));
+        p.rect_stroke(rect, 5.0, egui::Stroke::new(1.0, lerp_c(rgb(60, 132, 186), FLASH_FILL, f)), egui::StrokeKind::Inside);
     } else {
-        p.rect_filled(rect, 5.0, rgb(52, 53, 59));
+        p.rect_filled(rect, 5.0, lerp_c(rgb(52, 53, 59), FLASH_FILL, f));
     }
-    let tc = if selected { rgb(234, 246, 255) } else { rgb(201, 203, 211) };
+    let rest_ink = if selected { rgb(234, 246, 255) } else { rgb(201, 203, 211) };
+    let tc = lerp_c(rest_ink, FLASH_INK, f);
     // Tight left padding so the button doesn't leave much empty space L/R.
     p.text(egui::pos2(rect.left() + 5.0, rect.center().y), egui::Align2::LEFT_CENTER, text, f_mono_sb(11.0), tc);
 }
