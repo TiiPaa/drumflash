@@ -9,6 +9,7 @@
 ## Nouvelles tâches — session 2026-09-22
 
 ### Batch 3 — cohérence
+- [x] [242] **Macros MIDI CC → paramètre de son d'une lane (option B : 16 knobs host + mapping interne)** — `src/macros.rs` (MacroMap 32 emplacements, scale lin/log, prune au kind change, reorder, `macro-map-v1`), 16 `FloatParam` « Macro N » host-driven appliqués aux atomiques par buffer (p-locks prioritaires), modal d'assignation (lane + paramètre + ×, 16 rangées sans scroll, colonnes alignées), knobs learnables depuis S1 (pattern `header_param_slider` ; le `ParamSlider` nih-plug gelait S1 ~1 min — gestures en continu + release perdu en popup baseview) (builds 20260922-155001 → 231319, **validé dans S1 le 2026-09-22**). Extension à 32 knobs possible sans bump de format.
 - [x] [240] **Même agencement des paramètres d'enveloppe entre tous les instruments** — tri au rendu : Amp = Attack → Attack Curve → Hold → Decay → Decay Curve ; env. de filtre = Env → Attack → Atk Curve → Hold → Decay → Dec Curve (Buzz/SDrex/Rift) (build 20260922-124548, **validé dans S1 le 2026-09-22**).
 
 ### Batch 2 — MIDI rapide

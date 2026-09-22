@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-22 - [242] Modal Macros : colonnes alignees, 16 rangees sans scrollbar (build 20260922-230239)
+
+**Branche:** `main` - **Build:** `20260922-230239`
+**Validation:** `cargo check` warning-clean, `cargo test` 456 + 1 + 287 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Retour utilisateur (build 200611 valide, « ca fonctionne ») : « aligne mieux les colonnes et affiche toutes les macros sans scrollbar ».
+
+- Colonne « Macro N » a **largeur fixe** (52 px, `allocate_ui_with_layout` - le pitfall « add_sized centre le label ») : knobs, selecteurs lane/parametre et x alignes quelle que soit la longueur du libelle (« Macro 1 » vs « Macro 16 »).
+- Modal passe a **600 px de haut**, le `ScrollArea` est supprime : les **16 rangees tiennent d'un coup d'oeil**.
+- **Build 20260922-231319** : libelles « Macro N » **alignes a droite** (les unites s'alignent au contact du knob, fini le decalage visuel des dizaines) et modal resserre a **505x570** (plus de bandes vides a droite ni en bas).
+
 ## 2026-09-22 - [242] FIX knobs des macros : le pattern eprouve de header_param_slider (build 20260922-200611)
 
 **Branche:** `main` - **Build:** `20260922-200611`
