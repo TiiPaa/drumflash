@@ -1,16 +1,6 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
-## Nouvelles tâches — session 2026-09-21
-- [~] [231] **BUG : les p-locks séquenceur ignorés par X2 et par le copier-coller de page** - X2 doublait les cellules et les p-locks son mais pas les p-locks séquenceur (probabilité, stutter, condition, microtiming, solo) ; le presse-papier de page les laissait de côté (« for now, sound plocks only »). `SequencerPlockState::snapshot / restore / copy_step` (image brute de la cellule, la condition garde ses bits Not et And), `PageClipboard::seq_plocks`, X2 appelle `copy_step` par cellule. Test plock.rs. Retour utilisateur du 2026-09-21 (build 20260921-192420, à valider dans S1).
-- [~] [232] **Rift : le switch Pre-Filter déplace tout le bloc Distortion** - Decimate, Crush puis saturation forment une unité placée avant ou après le filtre selon le switch, qui passe en dernier de la section et s'intitule « Pre-Filter ». Crush et Decimate agissent désormais sur le signal enveloppé, comme la saturation (à deux bits une queue qui décroît tombe dans le pas zéro : c'est l'effet). `sync_saturation` appliqué aussi à la construction de la voix. Test rift.rs. Retour utilisateur du 2026-09-21 (build 20260921-192420, à valider dans S1).
-- [~] [233] **Panneau Sons : sous-paramètres de la saturation décalés** - Amount, Mix et Output Gain ont leur libellé décalé de 14 px sous Saturation Type et sont grisés quand le type est None (tous instruments). Un premier essai généralisait la règle à tout le panneau (Grain sous Loop, enveloppe de filtre sous Filter Env, courbes, LFO, barre verticale) : rejeté par l'utilisateur (« rien n'est cohérent »), retiré au build 201521 ; seuls les trois sous-paramètres de saturation restent, sans barre. Retour utilisateur du 2026-09-21 (build 20260921-201521, à valider dans S1).
-
-## Nouvelles tâches — session 2026-09-15
-- [~] [230] **Settings : bouton « Auto-assign » (Outputs)** - une action à la demande, pas un mode (retour utilisateur : « un switch ça n'a pas de sens ») : au clic, chaque lane active est routée sur la sortie aux de son numéro (lane 1 → Out 1 … lane 14 → Out 14) par `assign_slot_output`, donc sortie du main mix comme une assignation manuelle ; rien n'est mémorisé, le sélecteur Aux Out reste libre. `assign_outputs_in_order` dans popups.rs. Demande du 2026-09-15 (builds 101709 → 102650, à valider dans S1).
-
-## Nouvelles tâches — session 2026-09-13
-
 ## Nouvelles tâches — session 2026-08-26
 
 > Ticketisation des notes utilisateur (`docs/notes/notes.txt`). Priorité : quick wins d'abord, features moyennes ensuite, gros chantier en fin.
