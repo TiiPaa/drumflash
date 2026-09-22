@@ -1,7 +1,9 @@
 # Flash Drum — UI Redesign : passation & notes d'implémentation
 
-> À lire **avant toute modification de l'UI**. Synthèse des décisions, des pièges déjà rencontrés
-> (à ne pas reproduire) et de l'état d'avancement. Source de vérité visuelle : la maquette du designer.
+> **⚠️ HISTORIQUE — le chantier [100] a été fermé sans suite le 2026-09-22.** Le périmètre
+> (§0), la règle « maquette = vérité pixel » (§1), le reste à faire (§4) et les cotes (§5)
+> ne s'appliquent plus. Seule la **§2 (pièges egui déjà rencontrés)** reste d'actualité
+> pour qui touche `src/ui/`. Ne pas restaurer ce chantier sans décision explicite.
 
 ---
 

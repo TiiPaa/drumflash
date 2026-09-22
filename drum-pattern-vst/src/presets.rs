@@ -346,6 +346,8 @@ fn sanitize_name(name: &str) -> String {
 pub struct PresetFileInfo {
     pub name: String,
     pub path: PathBuf,
+    /// File mtime, display only — the JSON format is untouched ([236]).
+    pub modified: Option<std::time::SystemTime>,
 }
 
 fn save_json(dir: PathBuf, name: &str, kind: PresetKind, json: &str) -> Result<PathBuf, String> {
@@ -361,6 +363,44 @@ fn load_json(path: &Path) -> Result<String, String> {
 
 pub fn delete_file(path: &Path) -> Result<(), String> {
     std::fs::remove_file(path).map_err(|e| e.to_string())
+}
+
+/// Rename a user preset ([237]): the display name lives INSIDE the JSON and
+/// the file name derives from it, so both are updated together. Returns the
+/// new path (unchanged when the sanitized name already matches).
+pub fn rename_preset(path: &Path, new_name: &str) -> Result<PathBuf, String> {
+    let content = load_json(path)?;
+    let mut value: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    value["name"] = serde_json::Value::String(new_name.to_string());
+    let dir = path.parent().ok_or("preset has no parent dir")?.to_path_buf();
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
+    let new_path = dir.join(format!("{}.{}", sanitize_name(new_name), ext));
+    let json = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    std::fs::write(&new_path, json).map_err(|e| e.to_string())?;
+    if new_path != path {
+        std::fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    Ok(new_path)
+}
+
+/// `YYYY-MM-DD` (UTC) from a file mtime — no date crate, civil-from-days.
+pub fn format_date(t: std::time::SystemTime) -> String {
+    let secs = t
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{:04}-{:02}-{:02}", y, m, d)
 }
 
 // -- Typed save/load/list ----------------------------------------------------
@@ -441,7 +481,8 @@ fn list_dir(dir: &Path, kind: PresetKind) -> Vec<PresetFileInfo> {
                         })
                         .to_string()
                 });
-            infos.push(PresetFileInfo { name, path });
+            let modified = entry.metadata().ok().and_then(|m| m.modified().ok());
+            infos.push(PresetFileInfo { name, path, modified });
         }
     }
     infos.sort_by(|a, b| a.name.cmp(&b.name));
@@ -725,6 +766,39 @@ mod tests {
         assert_eq!(back.step_masks[0], 0b101);
         assert_eq!(back.kit, p.kit);
         assert_eq!(back.sounds, p.sounds);
+    }
+
+    #[test]
+    fn rename_preset_updates_json_name_and_filename() {
+        let dir = std::env::temp_dir().join(format!("fd_rename_test_{:?}", std::thread::current().id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("Old_Name.fdpat");
+        std::fs::write(&old, r#"{"version":1,"name":"Old Name"}"#).unwrap();
+
+        let new_path = rename_preset(&old, "New Name!").unwrap();
+        assert!(new_path.ends_with("New_Name.fdpat"));
+        assert!(!old.exists());
+        let content = std::fs::read_to_string(&new_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(value["name"], "New Name!");
+
+        // Renaming to a name that sanitizes to the SAME file stays in place.
+        let same = rename_preset(&new_path, "New_Name").unwrap();
+        assert_eq!(same, new_path);
+        assert!(same.exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn format_date_known_days() {
+        assert_eq!(
+            format_date(std::time::UNIX_EPOCH),
+            "1970-01-01"
+        );
+        // 2026-09-22 00:00 UTC = 20718 days after the epoch.
+        let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(20718 * 86_400);
+        assert_eq!(format_date(t), "2026-09-22");
     }
 
     #[test]

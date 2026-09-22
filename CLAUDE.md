@@ -23,7 +23,7 @@ The active product lives entirely in `drum-pattern-vst/`. The web files (`index.
 - **`ADDING_AN_INSTRUMENT.md`** — the exact step-by-step procedure for adding a synthesis voice. The instrument system is data-driven from `src/instrument_registry.rs`; follow this guide rather than improvising.
 - **`TODO.md`** — active priorities and known issues; it holds **only open tasks**. **`DONE.md`** — the archive of completed tasks, moved out of `TODO.md` with their headings. **`CHANGELOG.md`** — build history (one entry per installed build, newest first).
 - **`docs/HANDOFF-2026-09-22.md`** — state of the work at the last agent handoff: uncommitted scope, what is validated vs pending, open tickets, how NicoM works, recent pitfalls with code pointers. Read it once when taking over.
-- **`docs/design/UI-REDESIGN-HANDOFF.md`** — ⚠️ **read before touching `src/ui/`**: the UI redesign's scope, design-fidelity rules, and pitfalls already hit (egui has no blur → no glow halos; a flex slider eats the inline ADSR graph's space). The rendered mockup in `design-pack/Flash_Drum_design_11062026/` is the pixel source of truth.
+- **`docs/design/UI-REDESIGN-HANDOFF.md`** — **historical** ([100] closed 2026-09-22): scope and mockup-fidelity rules no longer apply. Only §2 is still live when working in `src/ui/`: egui has no blur → no glow halos; a flex slider eats an inline ADSR graph's space (constrain the params column); `add_sized` centers labels (use `editor_label`); hide empty param sections.
 - Treat other markdown (especially under `docs/historique/`) as potentially stale unless updated alongside code.
 
 ## Build / test / run

@@ -1,6 +1,17 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
+## Nouvelles tâches — session 2026-09-22
+
+> Demandes utilisateur du 2026-09-22, analysées et batchées (plan validé). Note : l'auto-assign **audio** existait déjà ([230]).
+
+### Batch 3 — cohérence
+- [ ] [240] **Même agencement des paramètres d'enveloppe entre tous les instruments** — définir l'ordre canonique (Attack → Hold → Decay → Curve + rangées hissées) et l'appliquer partout ; arbitrage visuel utilisateur.
+
+### Plus tard (gros chantiers, cadrage d'abord)
+- [ ] [241] **MIDI learn pour les notes de lane** — pose l'infra d'écoute MIDI-in nécessaire à [242].
+- [ ] [242] **Macros : assigner un paramètre d'un instrument instancié à un MIDI CC** — mapping CC→(slot, ParamId), écriture dans les atomiques, persistance, question des plocks. À cadrer avant de coder.
+
 ## Nouvelles tâches — session 2026-08-26
 
 > Ticketisation des notes utilisateur (`docs/notes/notes.txt`). Priorité : quick wins d'abord, features moyennes ensuite, gros chantier en fin.
@@ -22,21 +33,6 @@
 
 ### Features moyennes (P2)
 - [ ] [146] **Enveloppes exponentielles négatives** — pour des attaques plus claquantes (courbe d'attaque exp inversée, par voix ou global ?).
-
-### Grosses features (P2/P3)
-- [ ] [152] **Instrument Ambiant** — voix jouant des bouts de samples d'ambiances noisy avec offset aléatoire (dépend de l'infra sampler [83] ?).
-
----
-
-## [SKEUO] Refonte visuelle « hardware » (pack designer RustDesign_Flash Drum, 2026-07-23)
-
-> Pack de référence : `design-pack/RustDesign_Flash Drum/flash-drum-source/`.
-> Docs autoritaires : `HANDOFF.md` (index), `SPEC-COMPUTED.md` ⭐ (cotes mesurées), `RADIUS.md`, `SKEUO.md` (recettes), `rust/skeuo_theme.rs` + `rust/skeuo_widgets.rs` ⭐ (code egui clé en main), `png/` (textures + `reference-full-ui.png` = cible).
-> Stratégie : porter les 2 fichiers Rust du designer comme module `skeuo` (theme + widgets), garder notre layout, remplacer le *rendu* de chaque élément par ses fonctions (`pad`, `keycap`, `generate_button`, `hslider`, `led`, `lcd_frame`, `well`). Le module « ne fait que le look ».
-
-### Ordre proposé (1 build testable par étape)
-
-1. SK-1 (débloquer les pads) → 2. SK-2/SK-3 (palette + fonds) → 3. SK-4/SK-5 (keycaps) → 4. SK-6..SK-10 (contrôles) → 5. SK-11..SK-16 (comportement).
 
 ---
 
@@ -64,27 +60,6 @@
   - Créer les paramètres spécifiques et l'interface utilisateur
   - Intégrer dans le système de mixage et de sortie audio
 
-## [100] Redesign UI complet (design pack 2026-06-11) — EN COURS
-
-> **Livrable designer** : `design-pack/Flash_Drum_design_11062026/flash-drum-source/`
-> Fichiers clés : `DESIGN-SYSTEM.md` (tokens), `LAYOUT.md` (architecture), `assets/fd-data.js` (schémas moteurs)
-
-### Architecture (invariants du design)
-
-- **Système de lanes modulaires** : 4 lanes au départ (BD/SD/HH/TOM), ajoutables jusqu'à 14, réordonnables par drag
-- **Registre de moteurs** : Synth (kick/snare/tom/hat/cymbal/clap/perc), Sample, Sample FX, MIDI Out
-- **Éditeur dynamique** : contenu reconstruit selon le moteur assigné, aucun paramètre codé en dur
-- **Séparation données ↔ rendu** : ajouter instrument/paramètre = éditer une donnée
-
-### Notes
-
-- **Volume** : range -60 dB à +6 dB (actuellement 0..2 linéaire, à convertir)
-- **Norme de casse** : Title Case partout
-- **Pas de gradients** : aplats + ombres/glow subtils
-- **Contrainte egui** : tout en primitives (rect, cercle, texte), pas d'images
-
----
-
 ## Investigation & Features (A prioriser)
 - [ ] [94] **Ajouter un parametre pitch LFO sur les Toms** (P2, Synthese)
   - Intensite, Rate, Type de LFO (sine/triangle/square/saw), arrivee progressive
@@ -95,8 +70,3 @@
   - Pas de synthese interne, juste du routage MIDI
   - Permet de declencher des instruments externes depuis le sequencer
   - Complexite : Moyenne-Elevee, 1-2 semaines
-
-## Plan d'action — Audit code review 2026-07-18
-
-### [AUDIT-CR-4] P3 — Dette structurelle (à planifier)
-- [ ] **[BUG-LANE-DESYNC]** Décalage de tête de lecture entre lanes au changement Song/Pattern + changement de pattern — en attente de l'isolation du déclencheur par l'utilisateur.

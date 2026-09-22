@@ -6,6 +6,23 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
+## Nouvelles tâches — session 2026-09-22
+
+### Batch 2 — MIDI rapide
+- [x] [238] **Flasher le nom de l'instrument au MIDI in** — la plaque entière flash **blanc** (texte sombre), LED orange supprimée (build 20260922-115426, **validé dans S1 le 2026-09-22**).
+- [x] [239] **Auto-assign des notes MIDI à partir d'une note de base** — Settings › section MIDI : « Lane 1 Root Note » + Auto-assign, lanes actives numérotées à la suite, action ponctuelle ; Settings réorganisé en sections Audio / MIDI / Others (builds 20260922-115426 → 120230, **validé dans S1 le 2026-09-22**).
+
+### Batch 1 — polish UI (quick wins)
+- [x] [234] **Agrandir la box du nom de lane** — 6 → 8 caractères, plaque 46 → 62 px (build 20260922-105916, **validé dans S1 le 2026-09-22**).
+- [x] [235] **Scrollbar du preset browser qui touche les boutons Del** — barre toujours réservée + marge droite de 8 px (build 20260922-105916, **validé dans S1 le 2026-09-22**).
+- [x] [236] **Afficher la date de sauvegarde d'un preset** — `mtime` du fichier en `YYYY-MM-DD`, format JSON intact (build 20260922-105916, **validé dans S1 le 2026-09-22**).
+- [x] [237] **Bouton rename d'un preset** — Ren : champ inline, Entrée valide / Echap annule ; `rename_preset` met à jour le `name` du JSON et le nom de fichier (build 20260922-105916, **validé dans S1 le 2026-09-22**).
+
+## Fermés sans suite — 2026-09-22
+- [x] **[152] Instrument Ambiant** — fermé : couvert par Rift [221] + WAV custom par lane [228] (recommandation du handoff 2026-09-22, décision utilisateur).
+- [x] **[SKEUO] Refonte visuelle « hardware »** (pack RustDesign, 2026-07-23) — fermé par décision utilisateur, sans implémentation. Le pack `design-pack/RustDesign_Flash Drum/` reste sur disque.
+- [x] **[100] Redesign UI complet** (design pack 2026-06-11) — fermé par décision utilisateur. Le livrable `design-pack/Flash_Drum_design_11062026/` et `docs/design/UI-REDESIGN-HANDOFF.md` restent sur disque.
+
 ## Nouvelles tâches — session 2026-09-21
 - [x] [231] **BUG : les p-locks séquenceur ignorés par X2 et par le copier-coller de page** - X2 doublait les cellules et les p-locks son mais pas les p-locks séquenceur (probabilité, stutter, condition, microtiming, solo) ; le presse-papier de page les laissait de côté (« for now, sound plocks only »). `SequencerPlockState::snapshot / restore / copy_step` (image brute de la cellule, la condition garde ses bits Not et And), `PageClipboard::seq_plocks`, X2 appelle `copy_step` par cellule. Test plock.rs. Retour utilisateur du 2026-09-21 (build 20260921-192420, **validé dans S1 le 2026-09-22**).
 - [x] [232] **Rift : le switch Pre-Filter déplace tout le bloc Distortion** - Decimate, Crush puis saturation forment une unité placée avant ou après le filtre selon le switch, qui passe en dernier de la section et s'intitule « Pre-Filter ». Crush et Decimate agissent désormais sur le signal enveloppé, comme la saturation (à deux bits une queue qui décroît tombe dans le pas zéro : c'est l'effet). `sync_saturation` appliqué aussi à la construction de la voix. Test rift.rs. Retour utilisateur du 2026-09-21 (build 20260921-192420, **validé dans S1 le 2026-09-22**).
