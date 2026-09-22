@@ -635,6 +635,17 @@ fn reconcile_lane_textures(params: &DrumFlashParams) {
     }
 }
 
+/// [242] A macro assignment lives only while its lane offers the target:
+/// changing a lane's kind (or removing the lane) drops the assignment whose
+/// special index / standard field means something else on the new kind — the
+/// same rule as the lane textures above. Once per frame.
+fn reconcile_lane_macros(params: &DrumFlashParams) {
+    params
+        .macro_map_state
+        .state
+        .prune_invalid_targets(&params.track_layout.state);
+}
+
 /// [228] Collect the answer of a file dialog opened by `draw_user_texture_row`.
 /// Once per frame, before the rows: the dialog thread writes its result into
 /// the shared cell, the UI thread decodes the file here.
@@ -1358,6 +1369,7 @@ pub fn draw_sound_panel(
     state.selected_instrument = state.selected_instrument.min(crate::track::MAX_TRACKS - 1);
     state.selected_track_slot = state.selected_instrument;
     reconcile_lane_textures(params);
+    reconcile_lane_macros(params);
     poll_texture_pick(ui.ctx(), params, state, sound_settings);
     // Slot index drives per-slot state (sound_settings, algos, mutes, ...);
     // the voice index drives registry/schema lookups (INSTRUMENTS, special_param).
@@ -2293,10 +2305,18 @@ pub fn draw_sound_panel(
                     // specials loop skips them.
                     let mut hoisted: Vec<&'static str> = Vec::new();
                     ui.add_enabled_ui(!env_disabled, |ui| {
-                    for def in standard_defs.iter().filter(|d| {
+                    // [240] Canonical Amp row order at RENDER time: every
+                    // instrument reads its envelope the same way (a time, then
+                    // its curve), whatever order its registry table declares.
+                    // Stable sort: unranked fields keep their places.
+                    let mut fam_defs: Vec<_> = standard_defs.iter().filter(|d| {
                         d.family == family
                             && d.field != crate::instrument_registry::StandardField::Volume
-                    }) {
+                    }).collect();
+                    if family == crate::instrument_registry::ParamFamily::Env {
+                        fam_defs.sort_by_key(|d| crate::instrument_registry::env_row_rank(d.field));
+                    }
+                    for def in fam_defs {
                             // smp voices: Stereo renders under the Sample
                             // select (Osc family), not in Output ([168]).
                             // [228] Texture voices: under the File row.
@@ -2478,15 +2498,20 @@ pub fn draw_sound_panel(
                         }
                         // [227] Rows that belong right under a standard row,
                         // not at the tail of the section: Resonance under the
-                        // cutoff, the filter envelope's Attack and Hold under
-                        // Filter Env so its stages read A-H-D in order. By
-                        // name suffix and within the SAME family, so a voice
-                        // whose Resonance lives in its source section keeps it
-                        // there.
+                        // cutoff, the filter envelope's stages under their
+                        // amount/decay rows so it reads A-H-D in order, curves
+                        // included ([240]: Attack, Atk Curve, Hold under Filter
+                        // Env ; Dec Curve under Filter Decay - Buzz's
+                        // `_filter_curve` IS its decay curve). By name suffix
+                        // and within the SAME family, so a voice whose
+                        // Resonance lives in its source section keeps it there.
                         let hoist: &[&str] = match def.field {
                             crate::instrument_registry::StandardField::FilterFreq => &["_resonance"],
                             crate::instrument_registry::StandardField::FilterEnvAmount => {
-                                &["_filter_attack", "_filter_hold"]
+                                &["_filter_attack", "_filter_atk_curve", "_filter_hold"]
+                            }
+                            crate::instrument_registry::StandardField::FilterEnvDecay => {
+                                &["_filter_dec_curve", "_filter_curve"]
                             }
                             _ => &[],
                         };

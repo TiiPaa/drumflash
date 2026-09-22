@@ -51,6 +51,23 @@ impl ParamFamily {
     }
 }
 
+/// [240] Canonical row order of the Amp section, applied by the Sound Panel
+/// at RENDER time (the registry tables keep their own declaration order -
+/// plock layout and persistence index the FIELDS, not the row order, so this
+/// is display-only). Every instrument reads its amplitude envelope the same
+/// way: a time, then its curve. Attack, Attack Curve, Hold, Decay, Decay
+/// Curve. Unranked fields (none today) keep their declaration order, after.
+pub fn env_row_rank(field: StandardField) -> u8 {
+    match field {
+        StandardField::Attack => 0,
+        StandardField::ReleaseCurve => 1, // displayed as "Attack Curve"
+        StandardField::Hold => 2,
+        StandardField::Decay => 3,
+        StandardField::DecayCurve => 4,
+        _ => 5,
+    }
+}
+
 /// Standard sound-setting field index (matches the persistent f32 array order).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StandardField {
@@ -3969,5 +3986,80 @@ mod tests {
             .unwrap();
         assert_eq!(filter_hold.max, 1.0);
         assert_eq!(filter_hold.family, ParamFamily::Filter);
+    }
+
+    /// [240] The Sound Panel sorts the Amp rows by `env_row_rank` at render
+    /// time: every instrument must read its envelope in the canonical order
+    /// (a time, then its curve), whatever its table's declaration order.
+    #[test]
+    fn amp_section_sorts_to_the_canonical_order_on_every_voice() {
+        const CANONICAL: [StandardField; 5] = [
+            StandardField::Attack,
+            StandardField::ReleaseCurve, // "Attack Curve"
+            StandardField::Hold,
+            StandardField::Decay,
+            StandardField::DecayCurve,
+        ];
+        for inst in INSTRUMENTS.iter() {
+            let mut env: Vec<StandardField> = inst
+                .standard_params
+                .iter()
+                .filter(|d| d.family == ParamFamily::Env)
+                .map(|d| d.field)
+                .collect();
+            env.sort_by_key(|f| env_row_rank(*f)); // what the panel does
+            let ranked: Vec<StandardField> = env
+                .iter()
+                .copied()
+                .filter(|f| CANONICAL.contains(f))
+                .collect();
+            let expected: Vec<StandardField> = CANONICAL
+                .iter()
+                .copied()
+                .filter(|f| ranked.contains(f))
+                .collect();
+            assert_eq!(ranked, expected, "{}: Amp rows out of order", inst.label);
+        }
+    }
+
+    /// [240] The panel hoists the filter-envelope stages under Filter Env /
+    /// Filter Decay by NAME SUFFIX: every voice with a filter envelope must
+    /// declare them, in the Filter family, under the expected names.
+    #[test]
+    fn filter_envelope_stages_are_hoistable_on_every_voice_that_has_one() {
+        for (prefix, dec_curve) in [
+            ("buzz", "buzz_filter_curve"),
+            ("sdrex", "sdrex_filter_dec_curve"),
+            ("rift", "rift_filter_dec_curve"),
+        ] {
+            let inst = INSTRUMENTS
+                .iter()
+                .find(|i| i.special_params.iter().any(|d| d.name.starts_with(prefix)))
+                .unwrap_or_else(|| panic!("no {prefix} instrument"));
+            for name in [
+                format!("{prefix}_filter_attack"),
+                format!("{prefix}_filter_atk_curve"),
+                format!("{prefix}_filter_hold"),
+                dec_curve.to_string(),
+            ] {
+                let def = inst
+                    .special_params
+                    .iter()
+                    .find(|d| d.name == name)
+                    .unwrap_or_else(|| panic!("{} misses {name}", inst.label));
+                assert_eq!(def.family, ParamFamily::Filter, "{name}");
+            }
+            // The hoist anchors.
+            for field in [
+                StandardField::FilterEnvAmount,
+                StandardField::FilterEnvDecay,
+            ] {
+                assert!(
+                    inst.standard_params.iter().any(|d| d.field == field),
+                    "{} misses {field:?}",
+                    inst.label
+                );
+            }
+        }
     }
 }
