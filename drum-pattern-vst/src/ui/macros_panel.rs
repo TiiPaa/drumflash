@@ -114,7 +114,9 @@ pub fn draw_macros_modal_if_any(
     }
 
     let screen = ui.ctx().screen_rect();
-    let size = Vec2::new(560.0, 500.0);
+    // Sized on the content: 52+96+108+168+22 + spacing = 470 wide, sixteen
+    // rows tall - no empty band on the right or below (user feedback).
+    let size = Vec2::new(505.0, 570.0);
     let origin = egui::pos2(
         screen.center().x - size.x / 2.0,
         (screen.center().y - size.y / 2.0).max(screen.top() + 8.0),
@@ -165,32 +167,31 @@ pub fn draw_macros_modal_if_any(
                     .collect();
                 let map = &params.macro_map_state.state;
 
-                egui::ScrollArea::vertical()
-                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
-                    .show(ui, |ui| {
-                        egui::Frame::new()
-                            .inner_margin(egui::Margin {
-                                right: 8,
-                                ..Default::default()
-                            })
-                            .show(ui, |ui| {
-                                for macro_idx in 0..MACRO_COUNT {
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = 6.0;
-                                        ui.label(
-                                            RichText::new(format!("Macro {}", macro_idx + 1))
-                                                .font(f_mono_med(9.5))
-                                                .color(INK3()),
-                                        );
-                                        // See `macro_knob`: one gesture per
-                                        // click (S1 learn sees it), commit on
-                                        // release, no host flood.
-                                        let macro_param = params.macro_params()[macro_idx];
-                                        macro_knob(ui, setter, macro_param, macro_idx)
-                                            .on_hover_text(
-                                                "Drag to set (commits on release). Click touches the parameter so Studio One's MIDI learn sees it.",
-                                            );
-                                        let current = map.get(macro_idx);
+                for macro_idx in 0..MACRO_COUNT {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        // Fixed-width label column, RIGHT-aligned: the units
+                        // digits of "Macro 1".."Macro 16" line up against the
+                        // knob instead of ragged left-aligned tens.
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(52.0, 16.0),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.label(
+                                    RichText::new(format!("Macro {}", macro_idx + 1))
+                                        .font(f_mono_med(9.5))
+                                        .color(INK3()),
+                                );
+                            },
+                        );
+                        // See `macro_knob`: the header slider's interaction,
+                        // learnable from Studio One.
+                        let macro_param = params.macro_params()[macro_idx];
+                        macro_knob(ui, setter, macro_param, macro_idx)
+                            .on_hover_text(
+                                "Drag to set. Studio One's MIDI learn sees this knob.",
+                            );
+                        let current = map.get(macro_idx);
 
                                         // Lane select: "-" (unassigned) + the active lanes.
                                         let mut lane_labels: Vec<String> = vec!["-".to_string()];
@@ -302,8 +303,6 @@ pub fn draw_macros_modal_if_any(
                                         }
                                     });
                                 }
-                            });
-                    });
             });
         })
         .response;

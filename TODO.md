@@ -7,7 +7,6 @@
 
 ### Plus tard (gros chantiers, cadrage d'abord)
 - [ ] [241] **MIDI learn pour les notes de lane**.
-- [ ] [242] **Macros CC → paramètre** — builds 1 (moteur) et 2 (modal) livrés 2026-09-22, **à valider dans S1** ; ensuite : étendre à 32 knobs (le format `macro-map-v1` est déjà dimensionné).
 
 ## Nouvelles tâches — session 2026-08-26
 
