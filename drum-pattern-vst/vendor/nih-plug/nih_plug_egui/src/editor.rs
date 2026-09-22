@@ -65,8 +65,18 @@ pub mod win_keyboard {
     /// The `format!` at the call sites still runs in release — an ordinary
     /// UI-thread allocation on a focus change, which is not worth turning nine
     /// call sites into a macro for.
+    /// Diagnostic trace of the keyboard workaround.
+    ///
+    /// Always on in a debug build; in release it is opt-in through
+    /// `FLASH_DRUM_KBD_LOG=1`, because the interception this module fights is a
+    /// HOST behaviour and only reproduces inside a real DAW, where a debug
+    /// build is not what anyone is running.
     fn kbd_log(msg: &str) {
-        if !cfg!(debug_assertions) {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let enabled = *ENABLED.get_or_init(|| {
+            cfg!(debug_assertions) || std::env::var_os("FLASH_DRUM_KBD_LOG").is_some()
+        });
+        if !enabled {
             let _ = msg;
             return;
         }
@@ -157,9 +167,14 @@ pub mod win_keyboard {
         fn SetFocus(hwnd: *mut c_void) -> *mut c_void;
         fn GetFocus() -> *mut c_void;
         fn GetForegroundWindow() -> *mut c_void;
+        #[allow(dead_code)]
         fn GetCursorPos(point: *mut POINT) -> i32;
+        #[allow(dead_code)]
         fn WindowFromPoint(point: POINT) -> *mut c_void;
         fn GetWindowThreadProcessId(hwnd: *mut c_void, process_id: *mut u32) -> u32;
+        fn GetCurrentProcessId() -> u32;
+        fn GetAncestor(hwnd: *mut c_void, flags: u32) -> *mut c_void;
+        fn GetClassNameW(hwnd: *mut c_void, class_name: *mut u16, max_count: i32) -> i32;
         fn GetCurrentThreadId() -> u32;
         fn AttachThreadInput(id_attach: u32, id_attach_to: u32, f_attach: i32) -> i32;
     }
@@ -180,6 +195,10 @@ pub mod win_keyboard {
     const GWLP_WNDPROC: i32 = -4;
     const WM_GETDLGCODE: u32 = 0x0087;
     const DLGC_WANTARROWS: isize = 0x0001;
+    /// What a standard `Edit` control answers: hosts use it to recognise a
+    /// text field and route typing (the space bar included) to it instead of
+    /// running their own shortcuts.
+    const DLGC_HASSETSEL: isize = 0x0008;
     const DLGC_WANTTAB: isize = 0x0002;
     const DLGC_WANTALLKEYS: isize = 0x0004;
     const DLGC_WANTCHARS: isize = 0x0080;
@@ -312,6 +331,25 @@ pub mod win_keyboard {
                 "msg_wnd_proc: hwnd={:p} msg={:04x} wparam={} lparam={:016x}",
                 hwnd, msg, wparam, lparam
             ));
+        }
+        // Claim every key and character for THIS window too, not only for
+        // baseview's HWND (see `subclass_proc`).
+        //
+        // REAPER hosts the editor in a `#32770` dialog and runs `IsDialogMessage`
+        // on its message loop. That routine asks the FOCUSED window — which is
+        // this one while typing — whether it wants the characters; with no
+        // answer it treats WM_CHAR as dialog mnemonics and swallows them. The
+        // trace showed exactly that: the key-down peek saw a WM_CHAR queued,
+        // dropped the key-down so the char would carry the event, and the char
+        // never arrived. Two letters got through before the dialog started
+        // filtering, then nothing.
+        if msg == WM_GETDLGCODE {
+            // `DLGC_HASSETSEL` is what a real `Edit` control answers. A host
+            // that decides between "text field: deliver the key" and "run my
+            // shortcut" by asking the focused window this way then treats us
+            // as a text field — the space bar types a space instead of
+            // starting the transport.
+            return DLGC_WANTALLKEYS | DLGC_WANTCHARS | DLGC_WANTARROWS | DLGC_WANTTAB | DLGC_HASSETSEL;
         }
         // Drop the keydown if a matching char is queued: baseview's keyboard logic
         // merges them, but only if it can see the WM_CHAR via PeekMessageW. Since we
@@ -497,6 +535,7 @@ pub mod win_keyboard {
         }
     }
 
+    #[allow(dead_code)] // remplace par le test de fenetre active, garde comme trace
     unsafe fn is_window_or_descendant(root: *mut c_void, child: *mut c_void) -> bool {
         if root.is_null() || child.is_null() {
             return false;
@@ -512,6 +551,7 @@ pub mod win_keyboard {
         false
     }
 
+    #[allow(dead_code)] // remplace par le test de fenetre active, garde comme trace
     unsafe fn cursor_over_window_or_descendant(root: *mut c_void) -> bool {
         let mut point = POINT { x: 0, y: 0 };
         if GetCursorPos(&mut point) == 0 {
@@ -520,12 +560,97 @@ pub mod win_keyboard {
         is_window_or_descendant(root, WindowFromPoint(point))
     }
 
+    /// Window class name, for the diagnostic log only.
+    fn hwnd_class(hwnd: *mut c_void) -> String {
+        if hwnd.is_null() {
+            return String::from("null");
+        }
+        let mut buf = [0u16; 128];
+        let n = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+        if n <= 0 {
+            return String::from("?");
+        }
+        String::from_utf16_lossy(&buf[..n as usize])
+    }
+
+    /// A key the host offered through `IPlugView::onKeyDown/Up`, delivered to
+    /// baseview over the same `WM_APP` channel the message window uses, so it
+    /// goes through `subclass_proc` and reaches egui like any other key.
+    ///
+    /// A printable character becomes ONE `WM_CHAR` (no key-down alongside it:
+    /// baseview would otherwise emit the text twice, the peek-based merge only
+    /// sees real `WM_CHAR`s). A named key (backspace, arrows, enter, delete…)
+    /// becomes a `WM_KEYDOWN` / `WM_KEYUP` with the Windows virtual key that
+    /// matches the VST3 code. Returns whether anything was delivered — that is
+    /// what the view reports to the host as "handled".
+    pub fn host_key(key: u16, code: i16, _modifiers: i16, down: bool) -> bool {
+        let plugin = super::PLUGIN_HWND.load(Ordering::Acquire);
+        if plugin.is_null() {
+            return false;
+        }
+        // VST3 `VirtualKeyCodes` (keycodes.h) -> Windows virtual keys. Only the
+        // keys a text field needs; anything else falls back to the host.
+        let vk: Option<usize> = match code {
+            1 => Some(0x08),  // KEY_BACK      -> VK_BACK
+            2 => Some(0x09),  // KEY_TAB       -> VK_TAB
+            4 | 19 => Some(0x0D), // KEY_RETURN / KEY_ENTER -> VK_RETURN
+            6 => Some(0x1B),  // KEY_ESCAPE    -> VK_ESCAPE
+            7 => Some(0x20),  // KEY_SPACE     -> VK_SPACE
+            9 => Some(0x23),  // KEY_END       -> VK_END
+            10 => Some(0x24), // KEY_HOME      -> VK_HOME
+            11 => Some(0x25), // KEY_LEFT      -> VK_LEFT
+            12 => Some(0x26), // KEY_UP        -> VK_UP
+            13 => Some(0x27), // KEY_RIGHT     -> VK_RIGHT
+            14 => Some(0x28), // KEY_DOWN      -> VK_DOWN
+            15 => Some(0x21), // KEY_PAGEUP    -> VK_PRIOR
+            16 => Some(0x22), // KEY_PAGEDOWN  -> VK_NEXT
+            21 => Some(0x2D), // KEY_INSERT    -> VK_INSERT
+            22 => Some(0x2E), // KEY_DELETE    -> VK_DELETE
+            _ => None,
+        };
+        // Repeat count 1, scan code 0: baseview keys off the message id and
+        // the virtual key, not the scan code.
+        const LPARAM_KEY: isize = 1;
+        unsafe {
+            if down {
+                // The space bar comes with BOTH a code and a character; the
+                // character is what the field needs.
+                let printable = key >= 0x20 && key != 0x7F;
+                if printable {
+                    PostMessageW(plugin, WM_APP_CHAR, key as usize, LPARAM_KEY);
+                    kbd_log(&format!("host_key: char {key} -> WM_CHAR"));
+                    return true;
+                }
+                if let Some(vk) = vk {
+                    PostMessageW(plugin, WM_APP_KEY_DOWN, vk, LPARAM_KEY);
+                    kbd_log(&format!("host_key: code {code} -> WM_KEYDOWN vk={vk:#x}"));
+                    return true;
+                }
+                false
+            } else {
+                match vk {
+                    Some(vk) => {
+                        PostMessageW(plugin, WM_APP_KEY_UP, vk, LPARAM_KEY | (1 << 30) | (1 << 31));
+                        true
+                    }
+                    // A character's release has nothing to deliver; still
+                    // "handled", it belongs to a key we took.
+                    None => key >= 0x20,
+                }
+            }
+        }
+    }
+
     /// Move keyboard focus between the message window (when egui wants input) and the
     /// baseview window (when it doesn't). Never refocuses the plugin unless focus is
     /// already inside the editor, otherwise hosts like Studio One cannot open menus while
     /// the editor is visible. Uses `AttachThreadInput` so `SetFocus` works even when the
     /// calling thread doesn't own the host's input queue.
     pub fn set_keyboard_focus(focused: bool) {
+        // Published for the VST3 view: while true it answers the host's
+        // on_key_down with "handled", which is what stops REAPER from running
+        // its space-bar Play action over a character being typed.
+        nih_plug::editor::EDITOR_WANTS_KEYBOARD.store(focused, Ordering::Relaxed);
         let plugin = super::PLUGIN_HWND.load(Ordering::Acquire);
         let msg = MESSAGE_HWND.load(Ordering::Acquire);
         if plugin.is_null() {
@@ -542,41 +667,82 @@ pub mod win_keyboard {
                 return;
             }
 
-            if focused {
-                kbd_log(&format!(
-                    "set_keyboard_focus(true): plugin={:p} msg={:p} current_focus={:p} target={:p}",
-                    plugin, msg, current_focus, target
-                ));
-                if !is_window_or_descendant(plugin, current_focus)
-                    && !cursor_over_window_or_descendant(plugin)
-                {
-                    kbd_log("  abort: focus and cursor are outside plugin");
-                    return;
-                }
-            } else if !msg.is_null() {
-                if current_focus != msg || !cursor_over_window_or_descendant(plugin) {
-                    return;
-                }
-            }
-
             let fg = GetForegroundWindow();
             if fg.is_null() {
                 kbd_log("  abort: no foreground window");
                 return;
             }
-            // Only set focus if the plugin (or its parent DAW window) is the foreground
-            // window. If the user has switched to another application (browser, explorer,
-            // etc.), do NOT steal focus back.
-            let mut plugin_or_parent = plugin;
-            while !plugin_or_parent.is_null() {
-                if plugin_or_parent == fg {
-                    break;
+
+            if focused {
+                kbd_log(&format!(
+                    "set_keyboard_focus(true): plugin={:p} msg={:p} current_focus={:p} target={:p}",
+                    plugin, msg, current_focus, target
+                ));
+                // The editor may take the keyboard only while its OWN top-level
+                // window is the active one.
+                //
+                // This replaces a focus-or-cursor test that could not work here:
+                // `GetFocus()` reports the calling thread's queue and returns
+                // null from the audio-plugin thread, so the whole decision fell
+                // on "is the mouse over the plugin" — which fails the moment you
+                // type without hovering it. Measured in REAPER: **2091 aborts
+                // out of 2105 attempts**, all on that test.
+                //
+                // `GA_ROOT` is what makes it work in both layouts: the plugin's
+                // root is the host's main window when the editor is docked
+                // (Studio One) and the floating FX window when it is not
+                // (REAPER). Either way, the guard's intent holds — we never
+                // steal the keyboard from another window of the host, nor from
+                // another application.
+                const GA_ROOT: u32 = 2;
+                const GA_ROOTOWNER: u32 = 3;
+                let root = GetAncestor(plugin, GA_ROOT);
+                let root_owner = GetAncestor(plugin, GA_ROOTOWNER);
+                let fg_root_owner = GetAncestor(fg, GA_ROOTOWNER);
+                // A floating FX window may be OWNED by the host's main window
+                // rather than parented to it, and some hosts keep the main
+                // window as the foreground one while you type in the floating
+                // editor. Accept any of the ownership relations between the
+                // plugin's window and the active one; the process test above
+                // already rules out other applications.
+                let related = root == fg
+                    || root_owner == fg
+                    || (!fg_root_owner.is_null()
+                        && (fg_root_owner == root || fg_root_owner == root_owner));
+                kbd_log(&format!(
+                    "  windows: root={:p} [{}] root_owner={:p} fg={:p} [{}] fg_root_owner={:p} related={}",
+                    root,
+                    hwnd_class(root),
+                    root_owner,
+                    fg,
+                    hwnd_class(fg),
+                    fg_root_owner,
+                    related
+                ));
+                if !related {
+                    kbd_log("  abort: the plugin's window is unrelated to the active one");
+                    return;
                 }
-                plugin_or_parent = GetParent(plugin_or_parent);
+            } else if !msg.is_null() && current_focus != msg {
+                return;
             }
-            if plugin_or_parent.is_null() {
-                kbd_log("  abort: plugin not in foreground chain");
-                // Plugin is not in the foreground window chain; user switched away.
+            // Only set focus while the HOST is the foreground application. If
+            // the user has switched to another one (browser, explorer...), do
+            // NOT steal focus back.
+            //
+            // The test is on the owning PROCESS, not on the window chain. The
+            // chain walk this replaces climbed `GetParent` from the plugin
+            // looking for the foreground window, which holds in a docked editor
+            // but never in a FLOATING plugin window: REAPER's FX window is a
+            // top-level window of its own, outside the plugin's parent chain,
+            // so the walk ran to null and aborted on every single frame. The
+            // log showed exactly that — "plugin not in foreground chain",
+            // hundreds of times, with no focus ever set, which is why typing
+            // did nothing in REAPER.
+            let mut fg_pid: u32 = 0;
+            GetWindowThreadProcessId(fg, &mut fg_pid);
+            if fg_pid != 0 && fg_pid != GetCurrentProcessId() {
+                kbd_log("  abort: foreground window belongs to another process");
                 return;
             }
             let fg_thread = GetWindowThreadProcessId(fg, null_mut());
@@ -723,6 +889,8 @@ where
                 PLUGIN_HWND.store(handle.hwnd, AtomicOrdering::Release);
                 plugin_hwnd = handle.hwnd;
                 msg_hwnd = win_keyboard::install(handle.hwnd);
+                // Once per process: the VST3 view hands host-offered keys here.
+                let _ = nih_plug::editor::HOST_KEY_HANDLER.set(win_keyboard::host_key);
             }
         }
 

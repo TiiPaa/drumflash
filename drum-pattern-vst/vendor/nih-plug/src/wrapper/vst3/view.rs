@@ -18,6 +18,26 @@ use crate::prelude::{Editor, ParentWindowHandle};
 // Alias needed for the VST3 attribute macro
 use vst3_sys as vst3_com;
 
+/// Diagnostic trace of host key events, sharing the GUI crate's log file and
+/// its opt-in (`FLASH_DRUM_KBD_LOG=1`): whether a host routes keys through
+/// `IPlugView` at all is exactly the kind of fact only a real DAW can settle.
+fn key_trace(msg: &str) {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let enabled = *ENABLED.get_or_init(|| {
+        cfg!(debug_assertions) || std::env::var_os("FLASH_DRUM_KBD_LOG").is_some()
+    });
+    if !enabled {
+        return;
+    }
+    use std::io::Write;
+    let path = std::env::temp_dir().join("flash_drum_kbd.log");
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| writeln!(f, "vst3 {msg}"));
+}
+
 // Thanks for putting this behind a platform-specific ifdef...
 // NOTE: This should also be used on the BSDs, but vst3-sys exposes these interfaces only for Linux
 #[cfg(target_os = "linux")]
@@ -338,20 +358,46 @@ impl<P: Vst3Plugin> IPlugView for WrapperView<P> {
 
     unsafe fn on_key_down(
         &self,
-        _key: vst3_sys::base::char16,
-        _key_code: i16,
+        key: vst3_sys::base::char16,
+        key_code: i16,
         _modifiers: i16,
     ) -> tresult {
-        kNotImplemented
+        // While a text field is focused, claim the key so the host does not run
+        // the shortcut bound to it (REAPER: space = Play) on top of the
+        // character the field is receiving. The character itself still
+        // arrives through the OS message path the GUI crate sets up.
+        let wants = crate::editor::EDITOR_WANTS_KEYBOARD.load(Ordering::Relaxed);
+        let taken = wants
+            && crate::editor::HOST_KEY_HANDLER
+                .get()
+                .map(|deliver| deliver(key as u16, key_code, _modifiers, true))
+                .unwrap_or(false);
+        key_trace(&format!(
+            "on_key_down key={key} code={key_code} wants={wants} taken={taken}"
+        ));
+        if taken {
+            kResultOk
+        } else {
+            kNotImplemented
+        }
     }
 
     unsafe fn on_key_up(
         &self,
-        _key: vst3_sys::base::char16,
-        _key_code: i16,
-        _modifiers: i16,
+        key: vst3_sys::base::char16,
+        key_code: i16,
+        modifiers: i16,
     ) -> tresult {
-        kNotImplemented
+        let taken = crate::editor::EDITOR_WANTS_KEYBOARD.load(Ordering::Relaxed)
+            && crate::editor::HOST_KEY_HANDLER
+                .get()
+                .map(|deliver| deliver(key as u16, key_code, modifiers, false))
+                .unwrap_or(false);
+        if taken {
+            kResultOk
+        } else {
+            kNotImplemented
+        }
     }
 
     unsafe fn get_size(&self, size: *mut ViewRect) -> tresult {

@@ -37,6 +37,8 @@ pub enum TrackInstrumentKind {
     Tm6Ac = 21,
     /// [208] TR-606 open hi-hat sampler - the CH6smp engine on the open bank.
     Oh6smp = 22,
+    /// [221] Rift - a slice lifted out of a long embedded texture.
+    Rift = 23,
 }
 
 /// Instrument category used to group the kind pickers/menus
@@ -74,7 +76,7 @@ impl InstrumentCategory {
 }
 
 impl TrackInstrumentKind {
-    pub const COUNT: usize = 23;
+    pub const COUNT: usize = 24;
 
     /// Every kind, in stable declaration order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -101,6 +103,7 @@ impl TrackInstrumentKind {
         Self::Cl6Ac,
         Self::Tm6Ac,
         Self::Oh6smp,
+        Self::Rift,
     ];
 
     /// Musical family of this kind (grouping for pickers/menus).
@@ -116,7 +119,7 @@ impl TrackInstrumentKind {
                 InstrumentCategory::HiHat
             }
             Self::Tom | Self::Perc1 | Self::Tm6Ac => InstrumentCategory::Perc,
-            Self::Buzz => InstrumentCategory::Fx,
+            Self::Buzz | Self::Rift => InstrumentCategory::Fx,
             Self::Ride | Self::Cymbal => InstrumentCategory::Other,
         }
     }
@@ -178,6 +181,7 @@ impl TrackInstrumentKind {
             20 => Some(Self::Cl6Ac),
             21 => Some(Self::Tm6Ac),
             22 => Some(Self::Oh6smp),
+            23 => Some(Self::Rift),
             _ => None,
         }
     }
@@ -211,6 +215,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Cl6Ac => "CA",
             TrackInstrumentKind::Tm6Ac => "TA",
             TrackInstrumentKind::Oh6smp => "o6",
+            TrackInstrumentKind::Rift => "Rf",
         }
     }
 
@@ -239,6 +244,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Cl6Ac => "CL6(AC)",
             TrackInstrumentKind::Tm6Ac => "TM6(AC)",
             TrackInstrumentKind::Oh6smp => "OH6smp",
+            TrackInstrumentKind::Rift => "Rift",
         }
     }
 
@@ -269,6 +275,8 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Tm6Ac => 57,
             // GM open hi-hat, like Ch6smp reuses the closed hat's 42.
             TrackInstrumentKind::Oh6smp => 46,
+            // GM vibraslap - free, and an FX slot suits an FX voice.
+            TrackInstrumentKind::Rift => 58,
         }
     }
 
@@ -301,6 +309,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Cl6Ac => 22,
             TrackInstrumentKind::Tm6Ac => 23,
             TrackInstrumentKind::Oh6smp => 24,
+            TrackInstrumentKind::Rift => 25,
         }
     }
 
@@ -330,6 +339,7 @@ impl TrackInstrumentKind {
             22 => Some(Self::Cl6Ac),
             23 => Some(Self::Tm6Ac),
             24 => Some(Self::Oh6smp),
+            25 => Some(Self::Rift),
             _ => None,
         }
     }
@@ -941,6 +951,27 @@ impl AtomicTrackLayout {
         self.slot_midi_notes[slot].load(Ordering::Relaxed)
     }
 
+    /// Active slots listening on `note`, as a bitmask of slot indices ([221]).
+    ///
+    /// External MIDI must reach a lane by **its own** note — the same one the
+    /// plugin sends on (`midi_note_for_slot`). Matching the registry's factory
+    /// note instead meant a retuned lane never sounded, and that a shared
+    /// factory note resolved to the first voice declaring it, often a retired
+    /// one ([203] Snare606 on 40, [204] OpenHiHat on 46) that no lane can
+    /// carry — so nothing played at all.
+    ///
+    /// Several lanes may share a note on purpose; they all trigger.
+    /// Lock-free, audio-thread safe.
+    pub fn slots_listening_to(&self, note: u8) -> u16 {
+        let mut mask = 0u16;
+        for slot in 0..MAX_TRACKS {
+            if self.is_active(slot) && self.midi_note_for_slot(slot) == note {
+                mask |= 1 << slot;
+            }
+        }
+        mask
+    }
+
     /// Choke group of a slot (0 = none, 1..=4). Lock-free, audio-thread safe.
     pub fn choke_group_for_slot(&self, slot: usize) -> u8 {
         if slot >= MAX_TRACKS {
@@ -1075,6 +1106,40 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, TrackLayoutState>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// External MIDI must reach a lane by ITS OWN note ([221]).
+    ///
+    /// Regression: the audio thread used to resolve an incoming note through
+    /// the registry's factory notes. A retuned lane never sounded, and a note
+    /// shared by several kinds resolved to the first one declaring it — note 40
+    /// to Snare606 and note 46 to OpenHiHat, both retired, so on no lane at
+    /// all: nothing played.
+    #[test]
+    fn external_midi_matches_the_lane_note_not_the_factory_note() {
+        let mut layout = TrackLayoutState::default_layout();
+        layout.slots[0] = TrackSlot::active_with_kind(TrackInstrumentKind::Sd6smp);
+        layout.slots[0].midi_note = 61; // retuned by the user
+        layout.slots[1] = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+        layout.slots[1].midi_note = 36;
+        // Two lanes deliberately sharing one note: both must trigger.
+        layout.slots[2] = TrackSlot::active_with_kind(TrackInstrumentKind::HiHat);
+        layout.slots[2].midi_note = 36;
+        // Inactive lanes never listen.
+        layout.slots[3] = TrackSlot::active_with_kind(TrackInstrumentKind::Clap);
+        layout.slots[3].midi_note = 36;
+        layout.slots[3].active = false;
+
+        let atomic = AtomicTrackLayout::from_state(&layout);
+
+        assert_eq!(atomic.slots_listening_to(61), 1 << 0, "retuned lane missed");
+        assert_eq!(
+            atomic.slots_listening_to(36),
+            (1 << 1) | (1 << 2),
+            "shared note must trigger every lane carrying it, and no inactive one"
+        );
+        // SD6smp's factory note is 40; nothing listens there any more.
+        assert_eq!(atomic.slots_listening_to(40), 0, "factory note still answers");
+    }
     use nih_plug::params::persist::PersistentField;
 
     #[test]

@@ -271,6 +271,70 @@ fn fader_cap(p: &egui::Painter, cx: f32, cy: f32, h: f32) {
 // Wall shadows on top + left + right that fade inward and hug the rounded
 // corners; the floor (bottom) stays lit. Draw this AFTER the well's content.
 // ============================================================
+/// Pip, top-right of a step cell: this cell also carries the OTHER kind of
+/// p-lock ([219], generalised by [220]).
+///
+/// A cell is coloured by the p-lock of the mode currently displayed, so the
+/// other one is invisible - and since [213] either can be placed without ever
+/// leaving the mode one is in. The pip says "there is something else here", in
+/// the other kind's own colour: violet for a sequencer p-lock seen from Sound
+/// mode, light green for a sound p-lock seen from Sequencer mode. The black
+/// ring keeps it legible on a lit pad.
+pub fn plock_pip(p: &egui::Painter, cell: egui::Rect, color: Color32) {
+    let c = egui::pos2(cell.right() - 6.5, cell.top() + 6.0);
+    p.circle_filled(c, 2.8, Color32::from_black_alpha(150));
+    p.circle_filled(c, 2.2, color);
+}
+
+/// MIDI-activity lamp, top-right of a lane's name plate ([216]).
+///
+/// Replaces the amber glow the removed "T" audition button used to carry: the
+/// indicator mattered, the button did not. Small and unobtrusive so a lane at
+/// rest reads as a name, not as a control.
+pub fn lane_activity_led(p: &egui::Painter, plate: egui::Rect) {
+    let c = egui::pos2(plate.right() - 5.0, plate.top() + 5.0);
+    p.circle_filled(c, 3.4, rgb(60, 34, 6));
+    radial_circle(p, c, 3.0, rgb(255, 226, 170), rgb(247, 178, 62), rgb(150, 96, 12));
+    p.circle_filled(
+        c - egui::vec2(0.9, 1.0),
+        1.0,
+        Color32::from_rgba_unmultiplied(255, 255, 255, 190),
+    );
+}
+
+/// Opening bracket marking the FIRST cell of a fusion being created ([210]).
+///
+/// A fusion is a span, so its pending start is drawn as the `[` that opens one:
+/// the shape says "the span starts here, waiting for its end" instead of just
+/// tinting the cell. Static on purpose - the pulsing outline already means
+/// "this fusion is being edited", and two states must not share one signal.
+pub fn fusion_start_bracket(p: &egui::Painter, rect: egui::Rect, color: Color32) {
+    let w = 2.0;
+    let arm = (rect.width() * 0.28).clamp(4.0, 6.0);
+    // Clear of the cell's own 2 px outline, or the two shapes merge into a blob.
+    let inset = 4.0;
+    let left = rect.left() + inset;
+    let top = rect.top() + inset;
+    let bottom = rect.bottom() - inset;
+    // Spine.
+    p.rect_filled(
+        egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(left + w, bottom)),
+        w * 0.5,
+        color,
+    );
+    // Arms, top and bottom.
+    for y in [top, bottom - w] {
+        p.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(left, y),
+                egui::pos2(left + arm, y + w),
+            ),
+            w * 0.5,
+            color,
+        );
+    }
+}
+
 /// Grid-link marker for a lane that plays the lane above ([191]).
 ///
 /// A return arrow: it rises out of the row above, turns, and points into this

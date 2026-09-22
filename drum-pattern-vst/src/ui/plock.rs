@@ -4,8 +4,6 @@ use crate::plock::PlockState;
 use crate::sequencer::{
     FusedGroup, SharedPattern,
 };
-use crate::sound_settings::SoundSettingsState;
-use crate::synthesis::VoiceSettings;
 use crate::ui::editor_state::*;
 use crate::ui::grid::preserve_step_active_from_plock_popup;
 use crate::ui::local_param_slider::LocalParamSlider;
@@ -19,7 +17,6 @@ fn draw_plock_menu(
     ui: &mut egui::Ui,
     pattern: &SharedPattern,
     plock: &PlockState,
-    sound_settings: &SoundSettingsState,
     params: &DrumFlashParams,
     _setter: &ParamSetter,
     instrument: usize,
@@ -27,7 +24,6 @@ fn draw_plock_menu(
     step_was_active: bool,
     state: &mut EditorUIState,
 ) {
-    use crate::plock::FIELD_COUNT;
 
     #[allow(non_snake_case)] let ACCENT: Color32 = PL_LINK();
     // `instrument` is a SLOT index (plock storage is per slot); registry and
@@ -48,43 +44,29 @@ fn draw_plock_menu(
             state.plock_popup = None;
         }
 
-        let inst = &sound_settings.instruments[instrument];
-        let global = inst.load();
         let has_plock = plock.masks.is_active(instrument, step);
 
         // ------ Creation ------
         if !has_plock {
-            ui.label(
-                RichText::new("Create Plock")
-                    .font(f_sans_sb(10.0))
-                    .color(INK2()),
-            );
-            ui.add_space(6.0);
-            if plock_menu_action_row(ui, "Link to Global", ACCENT).clicked() {
+            // [211] One way to create a p-lock, so the choice is gone: a new
+            // p-lock always starts LINKED - only the fields actually touched
+            // override, the rest keep following the lane.
+            //
+            // "Snapshot Current Settings", which froze all 46 fields at once,
+            // is no longer offered. The FORMAT is untouched: a snapshot saved
+            // before this build still loads, still plays, and the Mode row
+            // below still names it "Full Snapshot".
+            if plock_menu_action_row(ui, "Create Plock", ACCENT).clicked() {
                 plock.masks.set_active(instrument, step, true);
-            }
-            if plock_menu_action_row(ui, "Snapshot Current Settings", ACCENT).clicked() {
-                // Specials are stored per slot alongside the standard settings.
-                let special = inst.load_specials();
-                let algo = params.algos()[instrument].value() as u8;
-                let settings = VoiceSettings {
-                    frequency: global.0,
-                    decay: global.1,
-                    volume: global.2,
-                    filter_freq: global.3,
-                    attack: global.4,
-                    release: global.5,
-                    decay_curve: global.6,
-                    release_curve: global.7,
-                    hold: global.8,
-                    filter_env_amount: global.9,
-                    filter_env_decay: global.10,
-                    analog: global.11,
-                    stereo: global.12,
-                    algo,
-                    special,
-                };
-                plock.set_settings(instrument, step, &settings);
+                // [215] Creating a p-lock IS the start of editing it, so the
+                // gesture goes straight to the Lane Editor instead of leaving a
+                // second menu open in front of the panel that does the work.
+                state.sound_edit_target = Some(crate::ui::editor_state::SelectedCell {
+                    slot: instrument,
+                    step,
+                });
+                state.sound_editor_tab = crate::ui::editor_state::SoundEditorTab::Sound;
+                close_after_action = true;
             }
             if let Some(ref entry) = state.plock_clipboard {
                 if entry.instrument == instrument {
@@ -105,49 +87,20 @@ fn draw_plock_menu(
             return;
         }
 
-        // ------ Mode indicator ------
-        let mask = plock.field_masks.get(instrument, step);
-        let all_bits = if FIELD_COUNT >= 64 {
-            0xFFFFFFFFFFFFFFFFu64
-        } else {
-            (1u64 << FIELD_COUNT) - 1
-        };
-        let mode_text = if mask == 0 {
-            "Linked to Global"
-        } else if mask == all_bits {
-            "Full Snapshot"
-        } else {
-            "Mixed"
-        };
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Mode").font(f_sans_med(10.0)).color(INK3()));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(
-                    RichText::new(mode_text)
-                        .font(f_mono_med(10.0))
-                        .color(ACCENT),
-                );
-            });
-        });
-        ui.add_space(8.0);
+        // [218] The "Mode" row is gone. Since [211] a p-lock is always created
+        // linked, so the row said "Linked to Global" until the first parameter
+        // was touched and "Mixed" ever after - never anything the user could
+        // act on. Only a snapshot inherited from an older session was worth
+        // naming, and those cannot be created any more.
 
-        // [184] ph. 4 — the per-parameter rows lived here AND in the Lane Editor,
-        // two implementations of the same thing over the same storage. They now
-        // live only in the panel, which has a scroll area, the envelope graphs,
-        // every one of the 32 specials, and the override markers. This menu keeps
-        // what it alone can do: create, copy, paste and clear the p-lock as a
-        // whole. Right-clicking a step already aims the panel at it.
-        if plock_menu_action_row(ui, "Edit In Panel", ACCENT).clicked() {
-            state.sound_edit_target = Some(crate::ui::editor_state::SelectedCell {
-                slot: instrument,
-                step,
-            });
-            state.sound_editor_tab = crate::ui::editor_state::SoundEditorTab::Sound;
-            state.plock_popup = None;
-        }
-
-        // ------ Actions ------
-        ui.add_space(8.0);
+        // [215] No "Edit In Panel" row: the right-click that opened this menu
+        // already aimed the Lane Editor at this cell, so the button asked the
+        // user to confirm something that had happened. The menu is down to the
+        // two things the panel cannot do to a p-lock as a whole.
+        //
+        // "Paste Plock" went with it, on the same instruction. Overwriting a
+        // p-locked cell from the clipboard now takes two steps: Clear, then
+        // paste on the emptied cell.
         if plock_menu_action_row(ui, "Copy Plock", ACCENT).clicked() {
             let field_mask = plock.field_masks.get_raw(instrument, step);
             let mut values = Vec::with_capacity(crate::plock::FIELD_COUNT);
@@ -161,22 +114,26 @@ fn draw_plock_menu(
             });
             close_after_action = true;
         }
-        if let Some(ref entry) = state.plock_clipboard {
-            if entry.instrument == instrument {
-                if plock_menu_action_row(ui, "Paste Plock", ACCENT).clicked() {
-                    plock.masks.set_active(instrument, step, true);
-                    plock
-                        .field_masks
-                        .set_raw(instrument, step, entry.field_mask);
-                    for (field, &value) in entry.values.iter().enumerate() {
-                        plock.values.set(instrument, step, field, value);
-                    }
-                    close_after_action = true;
-                }
-            }
-        }
         if plock_menu_action_row(ui, "Clear Plock", DANGER()).clicked() {
             plock.clear(instrument, step);
+            // [217] Let go of the cell in the Lane Editor as well.
+            //
+            // The right-click that opened this menu aimed the panel at this
+            // cell, in Step scope. Clearing left it aimed there with no p-lock
+            // to edit - and in Step scope, writing ANY row re-creates the
+            // p-lock (`PlockSource::set` raises the step's active bit, which is
+            // what makes a row able to create an override at all). So the next
+            // control touched brought the p-lock straight back, and the Clear
+            // looked like it had done nothing.
+            if state.sound_edit_target.map(|c| c.slot == instrument && c.step == step)
+                == Some(true)
+            {
+                state.sound_edit_target = None;
+            }
+            // [216] The gesture is finished and the cell has no p-lock left:
+            // keeping the menu open would show options about something that no
+            // longer exists.
+            close_after_action = true;
         }
     });
     if close_after_action {
@@ -258,7 +215,6 @@ pub fn draw_plock_popup(
     setter: &ParamSetter,
     params: &DrumFlashParams,
     pattern: &SharedPattern,
-    sound_settings: &SoundSettingsState,
     plock: &PlockState,
     state: &mut EditorUIState,
 ) {
@@ -290,7 +246,48 @@ pub fn draw_plock_popup(
                         (g.start_cell as usize) <= step && step <= (g.end_cell as usize)
                     });
 
-                    if state.sequencer_mode {
+                    // [213] Pick the p-lock type here, on the cell, instead of
+                    // flipping the grid-wide "P-Lock Mode" first. Same two
+                    // labels as that switch, so they read as the same choice;
+                    // this one is local to the popup and leaves the grid alone.
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        ui.label(
+                            RichText::new("P-Lock")
+                                .font(f_sans_med(10.0))
+                                .color(INK3()),
+                        );
+                        let selected = if popup.sequencer { 1 } else { 0 };
+                        let picked = crate::ui::skeuo::segmented(
+                            ui,
+                            ("plock_popup_type", inst, step),
+                            &["Sound", "Sequencer"],
+                            selected,
+                        );
+                        if picked != selected {
+                            let sequencer = picked == 1;
+                            state.plock_popup = Some(crate::ui::editor_state::PlockPopup {
+                                sequencer,
+                                ..popup
+                            });
+                            // The Lane Editor follows: it edits sound p-locks and
+                            // has nothing to say about a sequencer one.
+                            if sequencer {
+                                state.sound_edit_target = None;
+                            } else {
+                                state.sound_edit_target =
+                                    Some(crate::ui::editor_state::SelectedCell {
+                                        slot: inst,
+                                        step,
+                                    });
+                                state.sound_editor_tab =
+                                    crate::ui::editor_state::SoundEditorTab::Sound;
+                            }
+                        }
+                    });
+                    ui.add_space(8.0);
+
+                    if popup.sequencer {
                         if let Some((idx, group)) = fusion_info {
                             // Fused cell: fusion actions (morph/edit/delete)
                             // on top, the seq-plock menu below â€” same as
@@ -338,7 +335,6 @@ pub fn draw_plock_popup(
                                 ui,
                                 pattern,
                                 plock,
-                                sound_settings,
                                 params,
                                 setter,
                                 inst,
@@ -352,7 +348,6 @@ pub fn draw_plock_popup(
                                 ui,
                                 pattern,
                                 plock,
-                                sound_settings,
                                 params,
                                 setter,
                                 inst,
@@ -379,6 +374,28 @@ pub fn draw_plock_popup(
     // Close popup on click outside.
     if response.clicked_elsewhere() {
         state.plock_popup = None;
+    }
+
+    // [218] A right-click ON THE MENU closes it: the gesture that opens it is
+    // the one that dismisses it.
+    //
+    // Two guards, both needed. The click must land inside the menu, or a
+    // right-click on another cell would close this popup instead of moving it
+    // there. And it must not be the click that OPENED the menu: the popup is
+    // drawn at the pointer in the very same frame, so that first click is both
+    // "clicked" and inside the rect - the menu would vanish on sight.
+    if !popup.just_opened
+        && ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary))
+    {
+        let inside = ctx
+            .input(|i| i.pointer.interact_pos())
+            .is_some_and(|pos| response.rect.contains(pos));
+        if inside {
+            state.plock_popup = None;
+        }
+    }
+    if let Some(open) = state.plock_popup.as_mut() {
+        open.just_opened = false;
     }
 
     // Close popup on click in the popup border/padding (consume the click so it
@@ -559,7 +576,56 @@ fn draw_sequencer_plock_menu(
 
         // Condition
         ui.add_space(8.0);
-        ui.label(RichText::new("Condition").font(f_sans_sb(10.0)).color(INK2()));
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Condition").font(f_sans_sb(10.0)).color(INK2()));
+            // [218] "Not" inverts whichever condition is selected: "3/4"
+            // becomes "every loop except the 3rd of four". It replaces the old
+            // "Not 1st loop" entry, which was this modifier hard-wired onto one
+            // condition. Greyed on "Always", where inverting would mean "never".
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let inert = current.condition == StepCondition::Always;
+                let on = current.condition_negate && !inert;
+                let color = if on { ACCENT } else if inert { INK3() } else { INK2() };
+                let response = ui.add_enabled(
+                    !inert,
+                    egui::Button::new(RichText::new("Not").font(f_sans_med(9.5)).color(color))
+                        .fill(PANEL2())
+                        .stroke(egui::Stroke::new(1.0, if on { ACCENT } else { LINE2() }))
+                        .corner_radius(RADIUS_CTL)
+                        .min_size(Vec2::new(44.0, 22.0)),
+                );
+                if response.clicked() {
+                    seq_plock.set_condition_negate(instrument, step, !on);
+                    changed_this_frame = true;
+                }
+                response.on_hover_text(
+                    "Invert the whole condition: the step plays on every loop EXCEPT the ones it selects.",
+                );
+
+                // [219] A second condition, ANDed with the first. Off, the
+                // section is exactly as before; on, a second grid appears.
+                let and_on = current.condition_and.is_some();
+                let and_response = ui.add(
+                    egui::Button::new(
+                        RichText::new("And")
+                            .font(f_sans_med(9.5))
+                            .color(if and_on { ACCENT } else { INK2() }),
+                    )
+                    .fill(PANEL2())
+                    .stroke(egui::Stroke::new(1.0, if and_on { ACCENT } else { LINE2() }))
+                    .corner_radius(RADIUS_CTL)
+                    .min_size(Vec2::new(44.0, 22.0)),
+                );
+                if and_response.clicked() {
+                    let next = if and_on { None } else { Some(current.condition) };
+                    seq_plock.set_condition_and(instrument, step, next);
+                    changed_this_frame = true;
+                }
+                and_response.on_hover_text(
+                    "Add a second condition: the step plays only on the loops where BOTH hold.",
+                );
+            });
+        });
         ui.add_space(6.0);
 
         let all_conditions = StepCondition::all();
@@ -597,6 +663,43 @@ fn draw_sequencer_plock_menu(
                     }
                 }
             });
+
+        if let Some(second) = current.condition_and {
+            ui.add_space(8.0);
+            ui.label(RichText::new("And").font(f_sans_sb(10.0)).color(INK2()));
+            ui.add_space(6.0);
+            let grid_id = format!("condition_and_grid_{}_{}", instrument, step);
+            egui::Grid::new(grid_id)
+                .num_columns(3)
+                .spacing([8.0, 6.0])
+                .show(ui, |ui| {
+                    for (idx, cond) in all_conditions.iter().copied().enumerate() {
+                        let selected = second == cond;
+                        let text_color = if selected { ACCENT } else { INK2() };
+                        let stroke_color = if selected { ACCENT } else { LINE2() };
+                        if ui
+                            .add_sized(
+                                Vec2::new(button_w.max(1.0), 26.0),
+                                egui::Button::new(
+                                    RichText::new(cond.label())
+                                        .font(f_sans_med(9.5))
+                                        .color(text_color),
+                                )
+                                .fill(PANEL2())
+                                .stroke(egui::Stroke::new(1.0, stroke_color))
+                                .corner_radius(RADIUS_CTL),
+                            )
+                            .clicked()
+                        {
+                            seq_plock.set_condition_and(instrument, step, Some(cond));
+                            changed_this_frame = true;
+                        }
+                        if (idx + 1) % 3 == 0 {
+                            ui.end_row();
+                        }
+                    }
+                });
+        }
 
         // Actions
         ui.add_space(8.0);

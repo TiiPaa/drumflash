@@ -342,6 +342,17 @@ impl Biquad {
         self.y1 = 0.0;
         self.y2 = 0.0;
     }
+
+    /// Take `other`'s tuning and keep this filter's own delay state — how a
+    /// stereo pair shares ONE cutoff computation without sharing memory.
+    #[inline]
+    pub fn copy_coefficients_from(&mut self, other: &Biquad) {
+        self.b0 = other.b0;
+        self.b1 = other.b1;
+        self.b2 = other.b2;
+        self.a1 = other.a1;
+        self.a2 = other.a2;
+    }
 }
 
 // ── Exponential Decay Envelope ──────────────────────────────────────────────
@@ -873,6 +884,112 @@ impl ClickGenerator {
 
 /// Voice-steal declicker for voices that restart their whole state on every hit.
 ///
+/// Low-frequency oscillator ([221]).
+///
+/// The project had none: every voice needing a periodic modulation rebuilt a
+/// phase accumulator by hand (`sdrex.rs` still carries one for its flanger).
+/// This is that pattern, once, with the shapes named.
+///
+/// Output is **bipolar**, -1..1, so a caller scales it by its own depth. The
+/// phase can be reset at every hit (locked to the note) or left running
+/// (free), which is the difference between a modulation that sounds identical
+/// on every hit and one that drifts.
+#[derive(Clone, Copy, Debug)]
+pub struct Lfo {
+    phase: f32,
+    inc: f32,
+    sample_rate: f32,
+    /// xorshift32 for the sample-and-hold shape, seeded once and never reseeded
+    /// on trigger — same convention as the noise sources.
+    rng: u32,
+    /// Current sample-and-hold value, re-rolled once per cycle.
+    held: f32,
+}
+
+/// LFO shapes, in the order the UI lists them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LfoShape {
+    Sine,
+    Triangle,
+    Square,
+    Saw,
+    /// One random value per cycle, held until the next — steps rather than
+    /// glides, which is what makes a texture stutter instead of warble.
+    SampleHold,
+}
+
+impl LfoShape {
+    pub fn from_index(index: u8) -> Self {
+        match index {
+            1 => Self::Triangle,
+            2 => Self::Square,
+            3 => Self::Saw,
+            4 => Self::SampleHold,
+            _ => Self::Sine,
+        }
+    }
+}
+
+impl Lfo {
+    pub fn new(sample_rate: f32, seed: u32) -> Self {
+        Self {
+            phase: 0.0,
+            inc: 0.0,
+            sample_rate: sample_rate.max(1.0),
+            rng: seed.max(1),
+            held: 0.0,
+        }
+    }
+
+    pub fn set_rate(&mut self, hz: f32) {
+        self.inc = hz.clamp(0.0, 200.0) / self.sample_rate;
+    }
+
+    /// Restart the cycle — for the phase-locked mode, where every hit must hear
+    /// the same modulation.
+    pub fn retrigger(&mut self) {
+        self.phase = 0.0;
+        self.held = self.next_rand();
+    }
+
+    pub fn reset(&mut self) {
+        self.phase = 0.0;
+        self.held = 0.0;
+    }
+
+    fn next_rand(&mut self) -> f32 {
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 17;
+        self.rng ^= self.rng << 5;
+        (self.rng >> 8) as f32 / 8_388_608.0 - 1.0
+    }
+
+    /// Advance one sample and return the bipolar value.
+    pub fn next(&mut self, shape: LfoShape) -> f32 {
+        let value = match shape {
+            LfoShape::Sine => (self.phase * std::f32::consts::TAU).sin(),
+            LfoShape::Triangle => 4.0 * (self.phase - 0.5).abs() - 1.0,
+            LfoShape::Square => {
+                if self.phase < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+            LfoShape::Saw => 2.0 * self.phase - 1.0,
+            LfoShape::SampleHold => self.held,
+        };
+        self.phase += self.inc;
+        if self.phase >= 1.0 {
+            self.phase -= self.phase.floor();
+            if shape == LfoShape::SampleHold {
+                self.held = self.next_rand();
+            }
+        }
+        value
+    }
+}
+
 /// A voice that keeps its oscillator phase, filter and smoother state across a
 /// retrigger produces a DIFFERENT attack depending on the spacing between two
 /// steps (measured on the kick, digital mode, identical settings: 3.7 dB of peak
@@ -1252,9 +1369,190 @@ impl ToneDrift {
     }
 }
 
+// ── Lo-fi: bit crusher and sample-rate decimator ([221] Rift build 3) ──────
+
+/// Bit depth at Crush = 0 (transparent) and at Crush = 1.
+pub const CRUSH_MAX_BITS: f32 = 16.0;
+pub const CRUSH_MIN_BITS: f32 = 2.0;
+/// Hold factor at Decimate = 1: the effective sample rate divided by 64
+/// (689 Hz at 44.1 kHz). The mapping is exponential so the first half of the
+/// slider stays in the "lo-fi but pitched" zone.
+pub const DECIMATE_MAX_FACTOR: f32 = 64.0;
+
+/// Number of quantisation levels per unit for a Crush amount (0..1). Computed
+/// once per setting change, not per sample: it costs a `powf`. `0.0` means
+/// "off" so the per-sample path can skip the rounding entirely.
+pub fn crush_levels(amount: f32) -> f32 {
+    let amount = amount.clamp(0.0, 1.0);
+    if amount <= 0.0 {
+        return 0.0;
+    }
+    // Fractional depths are allowed: the slider moves smoothly instead of
+    // jumping at each integer bit.
+    let bits = CRUSH_MAX_BITS - amount * (CRUSH_MAX_BITS - CRUSH_MIN_BITS);
+    2f32.powf(bits - 1.0)
+}
+
+/// Quantise `x` onto `levels` steps per unit (see [`crush_levels`]).
+#[inline]
+pub fn crush_sample(x: f32, levels: f32) -> f32 {
+    if levels <= 0.0 {
+        return x;
+    }
+    (x * levels).round() / levels
+}
+
+/// Hold factor for a Decimate amount (0..1): 1 (off) up to
+/// [`DECIMATE_MAX_FACTOR`], exponentially.
+pub fn decimate_factor(amount: f32) -> f32 {
+    DECIMATE_MAX_FACTOR.powf(amount.clamp(0.0, 1.0))
+}
+
+/// Sample-and-hold decimator: re-samples its input every `factor` output
+/// samples (fractional factors allowed) and holds it in between, which divides
+/// the effective sample rate and folds the spectrum back — the classic
+/// lo-fi sampler grit. One per channel: the hold IS the state.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Decimator {
+    /// Output samples left before the next capture.
+    countdown: f32,
+    held: f32,
+}
+
+impl Decimator {
+    pub fn reset(&mut self) {
+        self.countdown = 0.0;
+        self.held = 0.0;
+    }
+
+    #[inline]
+    pub fn process(&mut self, x: f32, factor: f32) -> f32 {
+        if factor <= 1.0 {
+            self.countdown = 0.0;
+            self.held = x;
+            return x;
+        }
+        if self.countdown <= 0.0 {
+            self.held = x;
+            self.countdown += factor;
+        }
+        self.countdown -= 1.0;
+        self.held
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The LFO is the project's first shared one ([221]); these pin the
+    /// contract every caller relies on.
+    #[test]
+    fn lfo_stays_bipolar() {
+        for shape in [
+            LfoShape::Sine,
+            LfoShape::Triangle,
+            LfoShape::Square,
+            LfoShape::Saw,
+            LfoShape::SampleHold,
+        ] {
+            let mut lfo = Lfo::new(48000.0, 0x1234_5678);
+            lfo.set_rate(10.0);
+            let values: Vec<f32> = (0..48000).map(|_| lfo.next(shape)).collect();
+            assert!(
+                values.iter().all(|v| (-1.001..=1.001).contains(v)),
+                "{shape:?} left the -1..1 range"
+            );
+            // Only the deterministic shapes are guaranteed to touch their
+            // extremes: sample-and-hold draws ten values over this span and has
+            // no obligation to land near +/-1 in any of them.
+            if shape != LfoShape::SampleHold {
+                assert!(
+                    values.iter().any(|v| v.abs() > 0.9),
+                    "{shape:?} never reaches its extremes"
+                );
+            }
+        }
+    }
+
+    /// Period, checked on the CONTINUOUS shapes only: a period is not a whole
+    /// number of samples, so on a square or a saw the one-sample slack lands
+    /// exactly on the discontinuity and says nothing useful.
+    #[test]
+    fn continuous_lfo_shapes_keep_their_period() {
+        for shape in [LfoShape::Sine, LfoShape::Triangle] {
+            let mut lfo = Lfo::new(48000.0, 0x1234_5678);
+            lfo.set_rate(10.0); // 4800 samples per cycle
+            let values: Vec<f32> = (0..14400).map(|_| lfo.next(shape)).collect();
+            for i in 0..4800 {
+                assert!(
+                    (values[i] - values[i + 4800]).abs() < 2e-3,
+                    "{shape:?} drifted over a period at sample {i}"
+                );
+            }
+        }
+    }
+
+    /// A square spends half its cycle high and half low.
+    #[test]
+    fn square_lfo_has_an_even_duty_cycle() {
+        let mut lfo = Lfo::new(48000.0, 0x1111_2222);
+        lfo.set_rate(10.0);
+        let high = (0..48000)
+            .filter(|_| lfo.next(LfoShape::Square) > 0.0)
+            .count();
+        assert!(
+            (high as i32 - 24000).abs() < 50,
+            "duty cycle off: {high} samples high out of 48000"
+        );
+    }
+
+    /// A saw rises steadily across its cycle, then drops.
+    #[test]
+    fn saw_lfo_ramps_upward() {
+        let mut lfo = Lfo::new(48000.0, 0x3333_4444);
+        lfo.set_rate(10.0);
+        let values: Vec<f32> = (0..4800).map(|_| lfo.next(LfoShape::Saw)).collect();
+        assert!(values[0] < -0.99, "the saw does not start at the bottom");
+        assert!(values[4799] > 0.99, "the saw does not end at the top");
+        assert!(
+            values.windows(2).all(|w| w[1] >= w[0]),
+            "the saw is not monotonic inside its cycle"
+        );
+    }
+
+    #[test]
+    fn sample_hold_holds_between_cycles() {
+        let mut lfo = Lfo::new(48000.0, 0xABCD_0001);
+        lfo.set_rate(10.0);
+        lfo.retrigger();
+        let values: Vec<f32> = (0..9600).map(|_| lfo.next(LfoShape::SampleHold)).collect();
+        // Flat inside a cycle...
+        assert!(values[..4800].windows(2).all(|w| w[0] == w[1]), "S&H is not flat");
+        // ...and it moved at the boundary.
+        assert_ne!(values[0], values[5000], "S&H never re-rolled");
+
+        // Over many cycles it must actually spread across the range, otherwise
+        // it would be a constant with extra steps.
+        let mut lfo = Lfo::new(48000.0, 0xABCD_0002);
+        lfo.set_rate(50.0);
+        let drawn: Vec<f32> = (0..48000)
+            .map(|_| lfo.next(LfoShape::SampleHold))
+            .collect();
+        let lo = drawn.iter().cloned().fold(f32::MAX, f32::min);
+        let hi = drawn.iter().cloned().fold(f32::MIN, f32::max);
+        assert!(hi - lo > 1.2, "S&H only spans {lo}..{hi}");
+    }
+
+    #[test]
+    fn a_locked_lfo_restarts_identically() {
+        let mut lfo = Lfo::new(48000.0, 0x5EED_0001);
+        lfo.set_rate(7.0);
+        let first: Vec<f32> = (0..2000).map(|_| lfo.next(LfoShape::Sine)).collect();
+        lfo.retrigger();
+        let second: Vec<f32> = (0..2000).map(|_| lfo.next(LfoShape::Sine)).collect();
+        assert_eq!(first, second);
+    }
 
     #[test]
     fn tone_drift_is_deterministic_at_zero_and_varies_at_full() {
@@ -1361,5 +1659,58 @@ mod tests {
             last,
             after_attack
         );
+    }
+
+    // ── Lo-fi primitives ([221] build 3) ────────────────────────────────────
+
+    #[test]
+    fn crush_off_is_transparent_and_full_crush_leaves_a_handful_of_levels() {
+        assert_eq!(crush_levels(0.0), 0.0);
+        let x = 0.123_456_7;
+        assert_eq!(crush_sample(x, crush_levels(0.0)), x);
+
+        // A ramp through the whole range must collapse onto 2 bits: five
+        // distinct values (-1, -0.5, 0, 0.5, 1).
+        let levels = crush_levels(1.0);
+        let mut seen: Vec<i32> = (0..2001)
+            .map(|i| (crush_sample(-1.0 + i as f32 / 1000.0, levels) * 1000.0).round() as i32)
+            .collect();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen, vec![-1000, -500, 0, 500, 1000]);
+
+        // Halfway is still audibly quantised but far finer than 2 bits.
+        let mid = crush_levels(0.5);
+        assert!(mid > levels && mid < crush_levels(0.01), "mid levels {mid}");
+    }
+
+    #[test]
+    fn decimator_holds_each_capture_for_the_factor() {
+        let mut d = Decimator::default();
+        // Factor 1: pass-through, the hold never engages.
+        for i in 0..8 {
+            assert_eq!(d.process(i as f32, decimate_factor(0.0)), i as f32);
+        }
+        d.reset();
+        // Factor 4: the ramp comes out as stairs four samples wide.
+        let out: Vec<f32> = (0..12).map(|i| d.process(i as f32, 4.0)).collect();
+        assert_eq!(out, vec![0.0, 0.0, 0.0, 0.0, 4.0, 4.0, 4.0, 4.0, 8.0, 8.0, 8.0, 8.0]);
+        // The mapping spans 1 .. DECIMATE_MAX_FACTOR.
+        assert!((decimate_factor(0.0) - 1.0).abs() < 1e-6);
+        assert!((decimate_factor(1.0) - DECIMATE_MAX_FACTOR).abs() < 1e-3);
+    }
+
+    #[test]
+    fn biquad_coefficient_copy_keeps_the_receivers_state() {
+        let mut a = Biquad::new();
+        a.set_lowpass(1000.0, 0.9, 44100.0);
+        let mut b = Biquad::new();
+        // Give b some history, then adopt a's tuning.
+        b.process(1.0);
+        b.process(0.5);
+        let (x1, y1) = (b.x1, b.y1);
+        b.copy_coefficients_from(&a);
+        assert_eq!((b.b0, b.b1, b.b2, b.a1, b.a2), (a.b0, a.b1, a.b2, a.a1, a.a2));
+        assert_eq!((b.x1, b.y1), (x1, y1));
     }
 }

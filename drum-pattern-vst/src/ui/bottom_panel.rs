@@ -211,7 +211,7 @@ fn draw_preset_bar(
             }
         }
         ui.add_space(8.0);
-        if chip_button(ui, "⟳ Random", true, PL_LINK(), egui::Sense::click()).clicked() {
+        if chip_button(ui, "⟳ Random", true, AMBER(), egui::Sense::click()).clicked() {
             params.plock_state.state.clear_all();
             params.seq_plock_state.state.clear_all();
             crate::ui::grid::clear_all_fusions(pattern);
