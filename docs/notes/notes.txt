@@ -1,4 +1,12 @@
-- Les HHs sont généralement trop fort. Faire une analyse des presets par défaut et adapter un volume par défaut convenable pour tous les instruments.
-
+- midi learn pour les midi notes.
+- option midi auto à partir d'une note midi popur assigner tous les lanes à la suite (dans settings)
+- option assigne audio auto pour assigner tous les lantes à la suite (dans settings)
+- faire un flash sur le nom de l'instrument lors d'un midi in plutot que le led orange
+- agrandir la box avec le nom du lane (2 carac de plus possible ?)
+- système de macro pour assigner un paramètre d'un des instruments instanciés à un midi CC
+- afficher date de sauvegarde d'un presets
+- ajouter bouton rename d'un preset
+- Attention la scroll bar des presets touche les boutons Del, pas beau
+- respecter une même loqique dans l'agencement des paramètres des enveloppes entre tous les instruments
 
 

@@ -18,13 +18,19 @@ pub enum ParamFamily {
     Osc,
     /// Amplitude envelope parameters: attack, decay, release, curves, hold.
     Env,
+    /// Pitch: tuning, fine tuning, and the pitch envelope with its graph
+    /// ([227]). Synth voices keep their Frequency in `Osc`; the relative-pitch
+    /// voices (Rift) put everything pitch-related here.
+    Pitch,
     /// Analog / character parameters: the global analog/digital switch.
     Analog,
     /// Filter parameters: cutoff, filter envelope amount/decay.
     Filter,
     /// Modulation parameters: target, LFO, flanger and modulation depth/mix.
     Modulation,
-    /// Saturation / distortion parameters: type, amount, mix, output gain, pre/post filter.
+    /// Distortion: the saturation pack (type, amount, mix, output gain,
+    /// pre/post filter) and the lo-fi stages (Crush, Decimate). Shown as
+    /// "Distortion" - the name that covers all of them.
     Saturation,
     /// Output / routing parameters: volume, mix, stereo, analog drift.
     Output,
@@ -34,11 +40,12 @@ impl ParamFamily {
     pub fn label(&self) -> &'static str {
         match self {
             ParamFamily::Osc => "OSC",
-            ParamFamily::Env => "ENV",
+            ParamFamily::Env => "AMP",
+            ParamFamily::Pitch => "PITCH",
             ParamFamily::Analog => "ANALOG",
             ParamFamily::Filter => "FILTER",
             ParamFamily::Modulation => "MOD",
-            ParamFamily::Saturation => "SAT",
+            ParamFamily::Saturation => "DIST",
             ParamFamily::Output => "OUTPUT",
         }
     }
@@ -143,6 +150,12 @@ pub struct SpecialParamDef {
     /// of the range gets more of the travel. Purely ergonomic: it changes where
     /// a value sits on the track, never the value itself nor the sound.
     pub curve: f32,
+    /// Named choices for a discrete parameter, rendered as a dropdown ([221]).
+    /// The value IS the index into this list. `None` falls back to the older
+    /// per-label branches in the Sound Panel, which recognise a handful of
+    /// parameters by the wording of their label - declare the list here
+    /// instead, it works for any instrument without touching the UI.
+    pub options: Option<&'static [&'static str]>,
 }
 
 /// Helper for continuous special parameters (morphable).
@@ -167,6 +180,7 @@ const fn sp(
         continuous: true,
         unit: None,
         curve: 1.0,
+        options: None,
     }
 }
 
@@ -193,6 +207,7 @@ const fn sp_unit(
         continuous: true,
         unit: Some(unit),
         curve: 1.0,
+        options: None,
     }
 }
 
@@ -229,6 +244,33 @@ const fn sp_curved(
         continuous: true,
         unit: None,
         curve,
+        options: None,
+    }
+}
+
+/// Helper for a discrete special parameter with NAMED choices ([221]): the
+/// value is the index into `options`, and the Sound Panel renders a dropdown.
+#[allow(dead_code)]
+const fn sp_options(
+    name: &'static str,
+    label: &'static str,
+    default: f32,
+    special_index: usize,
+    family: ParamFamily,
+    options: &'static [&'static str],
+) -> SpecialParamDef {
+    SpecialParamDef {
+        name,
+        label,
+        default,
+        min: 0.0,
+        max: (options.len() - 1) as f32,
+        special_index,
+        family,
+        continuous: false,
+        unit: None,
+        curve: 1.0,
+        options: Some(options),
     }
 }
 
@@ -254,6 +296,25 @@ const fn sp_discrete(
         continuous: false,
         unit: None,
         curve: 1.0,
+        options: None,
+    }
+}
+
+/// Title of the source section (`ParamFamily::Osc`) for a voice: a sampler
+/// shows a **Sample**, Rift a **Texture**, everything else an **Oscillator**.
+/// Decided from the parameters the voice declares, not from its index.
+pub fn source_section_title(voice_idx: usize) -> &'static str {
+    if is_sampler(voice_idx) {
+        return "Sample";
+    }
+    let has_texture = INSTRUMENTS
+        .get(voice_idx)
+        .map(|def| def.special_params.iter().any(|d| d.name.ends_with("_texture")))
+        .unwrap_or(false);
+    if has_texture {
+        "Texture"
+    } else {
+        "Oscillator"
     }
 }
 
@@ -281,15 +342,20 @@ pub fn param_default(voice_idx: usize, id: crate::param_id::ParamId) -> f32 {
         return 0.0;
     };
     match id {
-        // Voices with their own default table (the samplers and SDrex) read it;
-        // the rest fall back to the shared `VoiceSettings` defaults.
-        ParamId::Std(field) => {
-            if is_sampler(voice_idx) || voice_idx == 17 {
-                instrument.sound_settings_default[field as usize]
-            } else {
-                crate::synthesis::VoiceSettings::default().get(id)
-            }
-        }
+        // EVERY voice reads its own default table.
+        //
+        // Until [224] only the samplers, SDrex and Rift did; the other twenty
+        // fell back to one `VoiceSettings::default()` shared by all, a legacy
+        // of the early voices. Measured before the change: **20 of the 26
+        // instruments** reset at least one slider to a value that was not
+        // theirs, and **17 sliders** landed outside their own range - the
+        // Hi-Hat's Tone reset to 60 Hz instead of 8000 (bottoming out its
+        // slider), Tom 1's Filter Env to 0 instead of 1 (losing the sweep that
+        // makes a tom), the Clap's Decay to 0.5 s instead of 0.03 s.
+        //
+        // This is the value behind "reset to factory": the double-click gesture
+        // and the Default button both come here.
+        ParamId::Std(field) => instrument.sound_settings_default[field as usize],
         ParamId::Special(index) => instrument
             .special_params
             .iter()
@@ -1190,6 +1256,26 @@ const SMP606_STD: &[StandardParamDef] = &[
         false,
         None,
     ),
+];
+
+/// Rift [221]: pitch relatif, enveloppe A-H-D complete, filtre multi-mode.
+/// Le filtre suit la convention du plugin (voir Buzz) : Filter Env va de 0 a 1
+/// et OUVRE la coupure vers 20 kHz, qui se referme ensuite dessus.
+const RIFT_STD: &[StandardParamDef] = &[
+    s(StandardField::Freq, "Pitch", ParamFamily::Pitch, -24.0, 24.0, false, None),
+    s(StandardField::Attack, "Attack", ParamFamily::Env, 0.0, 1.0, false, None),
+    s(StandardField::ReleaseCurve, "Attack Curve", ParamFamily::Env, -1.0, 1.0, false, None),
+    s(StandardField::Hold, "Hold", ParamFamily::Env, 0.0, 1.0, false, Some(" s")),
+    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.005, 1.5, false, Some(" s")),
+    s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, -1.0, 1.0, false, None),
+    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 2.0, false, None),
+    s(StandardField::FilterFreq, "Filter", ParamFamily::Filter, 20.0, 20000.0, true, Some(" Hz")),
+    s(StandardField::FilterEnvAmount, "Filter Env", ParamFamily::Filter, 0.0, 1.0, false, None),
+    s(StandardField::FilterEnvDecay, "Filter Decay", ParamFamily::Filter, 0.005, 1.5, false, Some(" s")),
+    // [228] Un fichier utilisateur stereo joue ses deux canaux tels quels
+    // quand ce switch est allume ; eteint, ils sont mixes en mono. Rendu sous
+    // la ligne File du menu Texture, pas dans la boucle des standards.
+    cb(StandardField::Stereo, "Stereo", ParamFamily::Osc),
 ];
 
 /// SDrex: body/noise/metal recipe + volume A-D and LP filter A-D envelopes.
@@ -3417,6 +3503,104 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
     },
+    // [221] Rift - a slice lifted out of a long texture. Offset is the whole
+    // point: declared `sp`, so it is p-lockable per step and morphable across
+    // a fusion without a line of code of ours.
+    InstrumentDef {
+        index: 25,
+        name: "Rift",
+        label: "Rf",
+        full_name: "Rift",
+        midi_note: 58,
+        algo_count: 1,
+        standard_params: RIFT_STD,
+        special_params: &[
+            // [228] Les quatre textures embarquees, puis le fichier de la
+            // LANE ("Custom", charge par la ligne File ; le panneau affiche
+            // le nom du fichier a la place).
+            sp_options(
+                "rift_texture",
+                "Texture",
+                0.0,
+                0,
+                ParamFamily::Osc,
+                &["Noise", "Metal", "Crackle", "Sweep", "Custom"],
+            ),
+            // 0,05 : mesure sur la texture Noise v2, la zone la plus stable
+            // (variation d'amplitude 5 % entre fenetres de 10 ms) et brillante ;
+            // 0,25 tombait dans une zone rugueuse (34 %) qui, sur un coup de
+            // 120 ms, s'entendait comme une enveloppe de pitch.
+            sp("rift_offset", "Offset", 0.05, 0.0, 1.0, 1, ParamFamily::Osc),
+            sp("rift_wander", "Wander", 0.0, 0.0, 1.0, 2, ParamFamily::Osc),
+            // Avance sequentielle : chaque declenchement decale l'offset d'un
+            // cran, ce qui fait progresser le son meme sur un pas repete.
+            // [227] Le bouton Advance et ses options sont des reglages de
+            // lane (`advance_mode`, lib.rs) ; ce slider est le pas.
+            sp("rift_advance", "Advance Step", 0.0, 0.0, 0.25, 20, ParamFamily::Osc),
+            sp_unit("rift_pitch_fine", "Pitch Fine", 0.0, -100.0, 100.0, 17, ParamFamily::Pitch, " ct"),
+            // [227] Section a part, avec son graphe.
+            sp("rift_pitch_env", "Pitch Env Depth", 0.0, -24.0, 24.0, 18, ParamFamily::Pitch),
+            sp_unit("rift_pitch_env_time", "Pitch Env Time", 0.08, 0.005, 1.5, 19, ParamFamily::Pitch, " s"),
+            sp_discrete("rift_reverse", "Reverse", 0.0, 0.0, 1.0, 27, ParamFamily::Osc),
+            sp_discrete("rift_loop", "Loop", 0.0, 0.0, 1.0, 12, ParamFamily::Osc),
+            sp("rift_grain", "Grain", 0.35, 0.0, 1.0, 3, ParamFamily::Osc),
+            sp("rift_grain_shape", "Grain Shape", 0.15, 0.0, 1.0, 4, ParamFamily::Osc),
+            // Build 3 : la voie droite lit la texture un peu PLUS LOIN que la
+            // gauche - meme enveloppe, matiere differente. 0 = mono.
+            sp("rift_stereo_spread", "Stereo Spread", 0.0, 0.0, 1.0, 30, ParamFamily::Osc),
+            sp_discrete("rift_filter_type", "Filter Type", 0.0, 0.0, 2.0, 5, ParamFamily::Filter),
+            // Enveloppe de filtre A-H-D complete, comme Buzz et SDrex : le
+            // decay seul ne donnait ni attaque ni courbe, et le graphe du
+            // panneau n'avait rien a montrer.
+            sp_unit("rift_filter_attack", "Filter Attack", 0.0, 0.0, 0.5, 13, ParamFamily::Filter, " s"),
+            sp_unit("rift_filter_hold", "Filter Hold", 0.0, 0.0, 0.5, 14, ParamFamily::Filter, " s"),
+            sp("rift_filter_atk_curve", "Filter Atk Curve", 0.0, -1.0, 1.0, 15, ParamFamily::Filter),
+            sp("rift_filter_dec_curve", "Filter Dec Curve", 0.6, -1.0, 1.0, 16, ParamFamily::Filter),
+            // Les deux LFO partagent forme et politique de phase : ce sont deux
+            // destinations d'une meme idee, pas deux modulations sans rapport.
+            sp_options(
+                "rift_lfo_shape",
+                "LFO Shape",
+                0.0,
+                21,
+                ParamFamily::Modulation,
+                &["Sine", "Triangle", "Square", "Saw", "S&H"],
+            ),
+            sp_discrete("rift_lfo_free_phase", "LFO Free Phase", 0.0, 0.0, 1.0, 22, ParamFamily::Modulation),
+            sp_unit("rift_pitch_lfo_rate", "Pitch LFO Rate", 5.0, 0.05, 40.0, 23, ParamFamily::Modulation, " Hz"),
+            sp("rift_pitch_lfo_depth", "Pitch LFO Depth", 0.0, 0.0, 12.0, 24, ParamFamily::Modulation),
+            sp_unit("rift_filter_lfo_rate", "Filter LFO Rate", 5.0, 0.05, 40.0, 25, ParamFamily::Modulation, " Hz"),
+            sp("rift_filter_lfo_depth", "Filter LFO Depth", 0.0, 0.0, 3.0, 26, ParamFamily::Modulation),
+            // Defaut 0,9 = le Q fixe de Buzz, donc un filtre qui se comporte
+            // exactement comme les autres tant qu'on n'y touche pas.
+            sp("rift_resonance", "Resonance", 0.9, 0.5, 20.0, 6, ParamFamily::Filter),
+            sp_discrete("rift_saturation_type", "Saturation Type", 0.0, 0.0, 5.0, 7, ParamFamily::Saturation),
+            sp_curved("rift_saturation_amount", "Saturation Amount", 0.0, 0.0, 1.0, 8, ParamFamily::Saturation, SAT_AMOUNT_CURVE),
+            sp("rift_saturation_mix", "Saturation Mix", 1.0, 0.0, 1.0, 9, ParamFamily::Saturation),
+            sp("rift_saturation_output_gain", "Saturation Output Gain", 1.0, 0.5, 2.0, 10, ParamFamily::Saturation),
+            // Build 3, la paire lo-fi : reduction de bits et division de la
+            // frequence d'echantillonnage.
+            sp("rift_crush", "Crush", 0.0, 0.0, 1.0, 28, ParamFamily::Saturation),
+            sp("rift_decimate", "Decimate", 0.0, 0.0, 1.0, 29, ParamFamily::Saturation),
+            // [232] En DERNIER : le switch place tout le bloc Distortion
+            // (Decimate, Crush, saturation) avant ou apres le filtre.
+            sp_discrete("rift_saturation_pre_filter", "Pre-Filter", 0.0, 0.0, 1.0, 11, ParamFamily::Saturation),
+        ],
+        // [freq, decay, vol, filter_freq, attack, release, decay_curve,
+        //  release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]
+        // Filtre d'usine NEUTRE : ouvert (20 kHz), enveloppe a 0. Le reglage
+        // repris de Buzz (1200 Hz + env 0,6) balayait la coupure de 6,5 kHz a
+        // 1,2 kHz en 120 ms sur chaque coup, ce que l'oreille lisait comme une
+        // enveloppe de pitch impossible a retirer par « Default ». Sur une
+        // texture, le defaut doit etre la tranche telle qu'elle est.
+        sound_settings_default: [
+            0.0, 0.12, 0.8, 20000.0, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.12, 0.0, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        // Vide, comme Buzz : le type est un menu, l'ecrire dans le libelle de
+        // la coupure donnerait "Filter (Multi)", qui ne veut rien dire.
+        filter_type_label: "",
+    },
 ];
 
 #[allow(dead_code)]
@@ -3537,10 +3721,6 @@ pub fn morphable_fields(voice_idx: usize) -> Vec<MorphableField> {
 /// Map an incoming MIDI note number to a voice index.
 /// Returns `Some(index)` if the note matches one of the instrument's default
 /// MIDI notes, `None` otherwise.
-pub fn voice_idx_from_midi_note(note: u8) -> Option<usize> {
-    INSTRUMENTS.iter().position(|inst| inst.midi_note == note)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3549,6 +3729,52 @@ mod tests {
         def.standard_params
             .iter()
             .any(|p| p.field == StandardField::Stereo)
+    }
+
+    /// "Reset to factory" must mean the INSTRUMENT's factory value, on every
+    /// voice ([224]).
+    ///
+    /// Regression: `param_default` read a voice's own table only for the
+    /// samplers, SDrex and Rift; the other twenty fell back to one shared
+    /// default. Measured then: 20 of the 26 instruments reset at least one
+    /// slider to a value that was not theirs, 17 of those outside the slider's
+    /// own range.
+    #[test]
+    fn every_voice_resets_to_its_own_factory_value() {
+        use crate::param_id::ParamId;
+        for idx in 0..crate::synthesis::DrumVoice::COUNT {
+            let inst = &INSTRUMENTS[idx];
+            for def in inst.standard_params {
+                let expected = inst.sound_settings_default[def.field as usize];
+                let got = param_default(idx, ParamId::Std(def.field));
+                assert!(
+                    (got - expected).abs() < 1e-6,
+                    "{} {:?} resets to {got}, expected its own {expected}",
+                    inst.full_name,
+                    def.field
+                );
+            }
+        }
+    }
+
+    /// Rift's Pitch is in semitones, so its factory value is 0 and it has to
+    /// land inside the slider that shows it — the case that surfaced [224].
+    #[test]
+    fn rift_factory_defaults_fit_their_sliders() {
+        use crate::param_id::ParamId;
+        let idx = crate::synthesis::DrumVoice::Rift as usize;
+        let rift = &INSTRUMENTS[idx];
+        for def in rift.standard_params {
+            let got = param_default(idx, ParamId::Std(def.field));
+            if let ParamWidget::Slider { min, max, .. } = def.widget {
+                assert!(
+                    got >= min && got <= max,
+                    "{:?} resets to {got}, outside its own {min}..{max} slider",
+                    def.field
+                );
+            }
+        }
+        assert_eq!(param_default(idx, ParamId::Std(StandardField::Freq)), 0.0);
     }
 
     #[test]
@@ -3566,7 +3792,8 @@ mod tests {
 
     #[test]
     fn mono_voices_do_not_expose_the_stereo_checkbox() {
-        // Kick, Tom1-3, B8, Sdrex stay mono.
+        // Kick, Tom1-3, B8, Sdrex stay mono. (Rift has the switch since
+        // [228]: a stereo user file plays its two channels.)
         for idx in [0usize, 4, 5, 6, 11, 17] {
             assert!(
                 !has_stereo(&INSTRUMENTS[idx]),
@@ -3652,6 +3879,12 @@ mod tests {
                 ("sdrex_filter_hold", " s"),
                 ("ac_bd_click_tone", " Hz"),
             ("oh606_fine_tune", " ct"),
+                ("rift_pitch_fine", " ct"),
+                ("rift_pitch_env_time", " s"),
+                ("rift_filter_attack", " s"),
+                ("rift_filter_hold", " s"),
+                ("rift_pitch_lfo_rate", " Hz"),
+                ("rift_filter_lfo_rate", " Hz"),
             ]
         );
 

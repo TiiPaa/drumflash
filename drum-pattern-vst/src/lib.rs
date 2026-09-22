@@ -26,6 +26,7 @@ mod sound_settings;
 mod synthesis;
 mod track;
 mod ui;
+mod user_textures;
 
 use generator::{GeneratorType, Style};
 use pattern_bank::SONG_BLOCKS;
@@ -176,6 +177,10 @@ pub struct DrumFlashVst {
     current_steps: Arc<[AtomicU32; crate::track::MAX_TRACKS]>,
     pattern: Arc<SharedPattern>,
     last_step_masks: [u16; STEP_COUNT],
+    /// [216] Audition hook, currently without a trigger: the lane row's "T"
+    /// button was its only entry point and has been removed. The audio side is
+    /// kept deliberately, so re-exposing auditioning elsewhere - the Sound
+    /// panel, a shortcut - is a UI change alone.
     voice_test_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
     external_midi_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
     sound_settings_state: Arc<SoundSettingsState>,
@@ -224,6 +229,12 @@ pub struct DrumFlashVst {
     /// algo was audible only at the very attack and the tail reverted to the
     /// lane's algo. `u8::MAX` forces a push.
     last_algos: [u8; crate::track::MAX_TRACKS],
+    /// [227] Advance bookkeeping per slot: hits since the last reset (the
+    /// per-hit count), plus the loop and page the previous sample was in, to
+    /// catch the wraps that reset it.
+    advance_hits: [u32; crate::track::MAX_TRACKS],
+    advance_last_loop: usize,
+    advance_last_page: usize,
     /// Pending pattern length update after a slot load (1-64, 0 = none).
     /// The UI thread applies this to the IntParam on the next frame.
     pending_pattern_length: Arc<AtomicI32>,
@@ -248,6 +259,24 @@ pub struct DrumFlashVst {
     /// Save/load requests retried when the pattern bank is temporarily locked by the UI.
     deferred_save_slot: Option<usize>,
     deferred_load_slot: Option<usize>,
+}
+
+/// [227] Bits of a slot's `advance_mode` parameter - how Rift's Advance
+/// counts. Lane settings (nih-plug params), not sound parameters: they say how
+/// the SEQUENCER counts hits, so they live beside the lane's algo, persisted by
+/// the host, and never in `special[]`.
+pub mod advance_mode {
+    /// The switch. Off, the offset never advances whatever `Advance Step` says.
+    pub const ON: i32 = 1;
+    /// Restart the count when the pattern wraps.
+    pub const RESET_PATTERN: i32 = 2;
+    /// Restart the count when the page loops: the playhead enters another
+    /// page of 16 steps, or the pattern wraps back to its first page. Mutually
+    /// exclusive with `RESET_PATTERN` in the UI.
+    pub const RESET_PAGE: i32 = 4;
+    /// Count every cell the playhead passes, active or not, instead of every
+    /// hit of the lane.
+    pub const EVERY_CELL: i32 = 8;
 }
 
 #[derive(Params)]
@@ -280,6 +309,11 @@ pub struct DrumFlashParams {
 
     #[persist = "lane-locks-v1"]
     pub lane_length_locks: LaneLengthLocks,
+
+    /// [228] One custom texture per lane for Rift: fourteen optional file
+    /// paths, decoded on restore (main thread) into the pool the voices read.
+    #[persist = "lane-textures-v1"]
+    pub user_textures: user_textures::UserTextures,
 
     #[id = "master_vol"]
     pub master_volume: FloatParam,
@@ -400,6 +434,12 @@ pub struct DrumFlashParams {
     // Global pattern length (master length)
     #[id = "pat_len"]
     pub pattern_length: IntParam,
+
+    /// [212] Page loop: 0 = off, 1-4 = loop that 16-step page alone. Ignored
+    /// while Song mode plays. Not hidden: a hidden parameter is read-only for
+    /// the host and could not be toggled from the editor while playing.
+    #[id = "page_loop"]
+    pub page_loop: IntParam,
 
     #[id = "kick_click"]
     pub kick_click: FloatParam,
@@ -603,6 +643,36 @@ pub struct DrumFlashParams {
     #[id = "algo_s13"]
     pub algo_s13: IntParam,
 
+    // [227] Advance mode per slot (bitfield, see `advance_mode`).
+    #[id = "advmode_1"]
+    pub advance_mode_1: IntParam,
+    #[id = "advmode_2"]
+    pub advance_mode_2: IntParam,
+    #[id = "advmode_3"]
+    pub advance_mode_3: IntParam,
+    #[id = "advmode_4"]
+    pub advance_mode_4: IntParam,
+    #[id = "advmode_5"]
+    pub advance_mode_5: IntParam,
+    #[id = "advmode_6"]
+    pub advance_mode_6: IntParam,
+    #[id = "advmode_7"]
+    pub advance_mode_7: IntParam,
+    #[id = "advmode_8"]
+    pub advance_mode_8: IntParam,
+    #[id = "advmode_9"]
+    pub advance_mode_9: IntParam,
+    #[id = "advmode_10"]
+    pub advance_mode_10: IntParam,
+    #[id = "advmode_11"]
+    pub advance_mode_11: IntParam,
+    #[id = "advmode_12"]
+    pub advance_mode_12: IntParam,
+    #[id = "advmode_13"]
+    pub advance_mode_13: IntParam,
+    #[id = "advmode_14"]
+    pub advance_mode_14: IntParam,
+
     // Frequency display mode per bass drum (false = Hz, true = Notes)
     #[id = "freq_mode_kick"]
     pub freq_mode_kick: BoolParam,
@@ -773,6 +843,7 @@ impl Default for DrumFlashParams {
             pattern_bank: pattern_bank::PersistentPatternBank::new(),
             song_controller: atomic_song::SharedSongStateController::default(),
             lane_length_locks: LaneLengthLocks::new(),
+            user_textures: user_textures::UserTextures::new(),
 
             master_volume: FloatParam::new(
                 "Master Volume",
@@ -1072,6 +1143,7 @@ impl Default for DrumFlashParams {
                 16,
                 IntRange::Linear { min: 1, max: 64 },
             ),
+            page_loop: IntParam::new("Page Loop", 0, IntRange::Linear { min: 0, max: 4 }),
 
             kick_click: FloatParam::new(
                 "Kick Click",
@@ -1294,6 +1366,24 @@ impl Default for DrumFlashParams {
             algo_bassdrum808: IntParam::new("Slot 12 Algo", 0, algo_range).hide(),
             algo_perc1: IntParam::new("Slot 13 Algo", 0, algo_range),
             algo_s13: IntParam::new("Slot 14 Algo", 0, algo_range).hide(),
+            // NOT hidden: nih-plug reports a hidden parameter to the host as
+            // read-only, and while the host is processing audio every change
+            // from the editor goes through the host, which then refuses it -
+            // the switch could not be toggled at all in Studio One.
+            advance_mode_1: IntParam::new("Slot 1 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_2: IntParam::new("Slot 2 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_3: IntParam::new("Slot 3 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_4: IntParam::new("Slot 4 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_5: IntParam::new("Slot 5 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_6: IntParam::new("Slot 6 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_7: IntParam::new("Slot 7 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_8: IntParam::new("Slot 8 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_9: IntParam::new("Slot 9 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_10: IntParam::new("Slot 10 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_11: IntParam::new("Slot 11 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_12: IntParam::new("Slot 12 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_13: IntParam::new("Slot 13 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_14: IntParam::new("Slot 14 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
 
             freq_mode_kick: BoolParam::new("Kick Freq in Notes", false),
             freq_mode_bassdrum808: BoolParam::new("808 Kick Freq in Notes", false),
@@ -1732,6 +1822,26 @@ impl DrumFlashParams {
         ]
     }
 
+    /// [227] Indexed access to the per-slot Advance mode bitfields.
+    pub fn advance_modes(&self) -> [&IntParam; crate::track::MAX_TRACKS] {
+        [
+            &self.advance_mode_1,
+            &self.advance_mode_2,
+            &self.advance_mode_3,
+            &self.advance_mode_4,
+            &self.advance_mode_5,
+            &self.advance_mode_6,
+            &self.advance_mode_7,
+            &self.advance_mode_8,
+            &self.advance_mode_9,
+            &self.advance_mode_10,
+            &self.advance_mode_11,
+            &self.advance_mode_12,
+            &self.advance_mode_13,
+            &self.advance_mode_14,
+        ]
+    }
+
     pub fn humanizes(&self) -> [&FloatParam; crate::track::MAX_TRACKS] {
         [
             &self.humanize_kick,
@@ -1886,11 +1996,14 @@ impl Default for DrumFlashVst {
                 pattern_bank::SongSequence::default()
             }
         };
+        // [228] The voices read the instance's user textures through the pool.
+        let mut synthesizer = DrumSynthesizer::new();
+        synthesizer.set_texture_pool(params.user_textures.pool.clone());
         let mut plugin = Self {
             params,
             pattern: pattern.clone(),
             sequencer: Sequencer::new(pattern.clone()),
-            synthesizer: DrumSynthesizer::new(),
+            synthesizer,
             sample_rate: 44100.0,
             current_step: Arc::new(AtomicU32::new(0)),
             current_steps: Arc::new(std::array::from_fn(|_| AtomicU32::new(0))),
@@ -1917,6 +2030,9 @@ impl Default for DrumFlashVst {
             last_master_length: 16,
             last_slot_kinds: [None; crate::track::MAX_TRACKS],
             last_algos: [u8::MAX; crate::track::MAX_TRACKS],
+            advance_hits: [0; crate::track::MAX_TRACKS],
+            advance_last_loop: 0,
+            advance_last_page: 0,
             pending_pattern_length: Arc::new(AtomicI32::new(0)),
             temp_plock_bytes: [0; pattern_bank::MAX_PLOCK_BYTES],
             temp_seq_plock_bytes: [0; pattern_bank::MAX_SEQ_PLOCK_BYTES],
@@ -2218,12 +2334,61 @@ impl DrumFlashVst {
     /// algorithm used for MIDI note / instrument metadata.
     /// `hard` uses `trigger_hard()` for machine-gun stutter repeats instead of
     /// the smooth anti-click `trigger()`.
+    /// [227] Which advance step a hit on `slot` gets. Switch off: none.
+    /// Counting every cell: derived from the cell's position, no state (the
+    /// cell within the page, within the pattern, or since the start). Counting
+    /// hits: the slot's counter, reset by `reset_advance_counts_on_wrap`.
+    fn advance_hit_index(&mut self, slot: usize, step: usize) -> u32 {
+        use advance_mode::*;
+        let mode = self.params.advance_modes()[slot].value();
+        if mode & ON == 0 {
+            return 0;
+        }
+        if mode & EVERY_CELL != 0 {
+            return if mode & RESET_PAGE != 0 {
+                (step % 16) as u32
+            } else if mode & RESET_PATTERN != 0 {
+                step as u32
+            } else {
+                (self.sequencer.loop_count() * (self.audio_master_length as usize).max(1) + step)
+                    as u32
+            };
+        }
+        let n = self.advance_hits[slot];
+        self.advance_hits[slot] = n.wrapping_add(1);
+        n
+    }
+
+    /// [227] Once per sample, after the sequencer moved: a pattern wrap or a
+    /// page change resets the hit count of every slot that asked for it, so
+    /// the first hit of the new pattern or page starts from the slider's offset.
+    fn reset_advance_counts_on_wrap(&mut self) {
+        use advance_mode::*;
+        let loop_now = self.sequencer.loop_count();
+        let page_now = self.sequencer.current_step() / 16;
+        let wrapped = loop_now != self.advance_last_loop;
+        // A pattern wrap IS a page loop too: on a 16-step pattern the page
+        // never changes, yet it does come round.
+        let paged = page_now != self.advance_last_page || wrapped;
+        if !wrapped && !paged {
+            return;
+        }
+        for slot in 0..crate::track::MAX_TRACKS {
+            let mode = self.params.advance_modes()[slot].value();
+            if (wrapped && mode & RESET_PATTERN != 0) || (paged && mode & RESET_PAGE != 0) {
+                self.advance_hits[slot] = 0;
+            }
+        }
+        self.advance_last_loop = loop_now;
+        self.advance_last_page = page_now;
+    }
+
     fn fire_voice_trigger(
         &mut self,
         slot_idx: usize,
         voice_idx: usize,
         velocity: f32,
-        _step: u32,
+        step: u32,
         sample_idx: usize,
         context: &mut impl ProcessContext<Self>,
         hard: bool,
@@ -2232,6 +2397,10 @@ impl DrumFlashVst {
         let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
             return;
         };
+        // [227] Every path that fires a voice (first hit, stutter, fusion
+        // pulse) comes through here, so the slot's Advance count has one home.
+        let hit = self.advance_hit_index(slot_idx, step as usize);
+        self.synthesizer.set_hit_index(slot_idx, hit);
         self.synthesizer.set_voice_settings(slot_idx, settings);
         if hard {
             self.synthesizer.trigger_hard(slot_idx, velocity);
@@ -2298,7 +2467,6 @@ impl Plugin for DrumFlashVst {
             self.current_step.clone(),
             self.current_steps.clone(),
             self.pattern.clone(),
-            self.voice_test_triggers.clone(),
             self.external_midi_triggers.clone(),
             self.sound_settings_state.clone(),
             self.params.plock_state.state.clone(),
@@ -2450,12 +2618,22 @@ impl Plugin for DrumFlashVst {
                 // the running mix. Studio One sends sample-accurate
                 // pos_beats so the bug never surfaced there.
                 if let Some(position_beats) = position_beats_opt {
-                    let host_pos_mod = position_beats.rem_euclid(4.0);
-                    let seq_pos_mod = self.sequencer.beat_position().rem_euclid(4.0);
+                    // [212] Compare on the loop's own circle, through the
+                    // sequencer's mapping: with a page loop the local position
+                    // is the host's folded into the page, and a page wrap must
+                    // not read as a seek (a partial last page has a span
+                    // shorter than a bar).
+                    let circle = if self.sequencer.page_loop().is_some() {
+                        self.sequencer.loop_span_beats()
+                    } else {
+                        4.0
+                    };
+                    let host_pos_mod = self.sequencer.host_to_local(position_beats).rem_euclid(circle);
+                    let seq_pos_mod = self.sequencer.beat_position().rem_euclid(circle);
                     let diff = (host_pos_mod - seq_pos_mod).abs();
-                    // Use shortest distance on the 4-beat circle
-                    let diff = diff.min(4.0 - diff);
-                    if diff > 1.0 {
+                    // Use shortest distance on the circle
+                    let diff = diff.min(circle - diff);
+                    if diff > (circle * 0.5).min(1.0) {
                         self.sequencer
                             .sync_to_host(position_beats, bpm, sample_rate);
                     }
@@ -2510,6 +2688,14 @@ impl Plugin for DrumFlashVst {
             std::array::from_fn(|i| self.params.humanizes()[i].value()),
             master_length,
         );
+        // [212] Page loop, after the master length so a page beyond the
+        // pattern reads as off. Ignored in Song mode: a chain of patterns and a
+        // page held in a loop contradict each other.
+        let page_loop = match self.params.page_loop.value() {
+            p if p >= 1 && !self.params.song_mode.value() => Some(p as usize - 1),
+            _ => None,
+        };
+        self.sequencer.set_page_loop(page_loop);
 
         if self.pending_song_pattern_restart {
             self.sequencer.restart_pattern_from_step0();
@@ -2761,6 +2947,7 @@ impl Plugin for DrumFlashVst {
                 let triggers = self
                     .sequencer
                     .process_sample(bpm, sample_rate, swing, groove_type);
+                self.reset_advance_counts_on_wrap();
 
                 for (slot_idx, trigger) in triggers.iter().enumerate() {
                     let Some(voice_idx) = slot_voices[slot_idx] else {
@@ -2793,7 +2980,12 @@ impl Plugin for DrumFlashVst {
                             + usize::from(trigger.early_next_loop);
                         let condition_passes = if let Some(sp) = seq_params {
                             use crate::plock::StepCondition::*;
-                            match sp.condition {
+                            // [218] "Not" inverts the condition. `Always` is
+                            // immune: inverted it would mean "never", which is
+                            // what turning the step off already does.
+                            // [219] Both terms must hold when a second one is
+                            // set: "1/2 and 1/3" fires every sixth loop.
+                            let evaluate = |cond: crate::plock::StepCondition| match cond {
                                 Always => true,
                                 First => loop_count == 0,
                                 NotFirst => loop_count > 0,
@@ -2806,6 +2998,18 @@ impl Plugin for DrumFlashVst {
                                 Fourth2 => loop_count % 4 == 1,
                                 Fourth3 => loop_count % 4 == 2,
                                 Fourth4 => loop_count % 4 == 3,
+                            };
+                            let passes = evaluate(sp.condition)
+                                && sp.condition_and.map(evaluate).unwrap_or(true);
+                            // `Not` inverts the whole expression, second term
+                            // included. Immune on a bare `Always`, where it
+                            // would mean "never".
+                            if sp.condition_negate
+                                && !(sp.condition == Always && sp.condition_and.is_none())
+                            {
+                                !passes
+                            } else {
+                                passes
                             }
                         } else {
                             true // No condition = always pass
@@ -2934,26 +3138,34 @@ impl Plugin for DrumFlashVst {
                         break;
                     }
                     if let NoteEvent::NoteOn { note, velocity, .. } = event {
-                        if let Some(voice_idx) =
-                            crate::instrument_registry::voice_idx_from_midi_note(note)
-                        {
-                            let Some(slot_idx) = (0..crate::track::MAX_TRACKS)
-                                .find(|&s| slot_voices[s] == Some(voice_idx))
-                            else {
-                                continue;
-                            };
-                            self.external_midi_triggers[slot_idx].store(true, Ordering::Release);
-                            let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
-                            let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
-                                continue;
-                            };
-                            self.synthesizer.set_voice_settings(slot_idx, settings);
-                            self.synthesizer.trigger(slot_idx, velocity);
-                            apply_choke_groups(
-                                &mut self.synthesizer,
-                                &self.params.track_layout.state,
-                                slot_idx,
-                            );
+                        // [221] Match the LANE's own MIDI note, the one the
+                        // plugin also sends on — not the registry's factory
+                        // note. Several lanes may share a note on purpose, and
+                        // they all trigger.
+                        let listening =
+                            self.params.track_layout.state.slots_listening_to(note);
+                        if listening != 0 {
+                            for slot_idx in 0..crate::track::MAX_TRACKS {
+                                if listening & (1 << slot_idx) == 0 {
+                                    continue;
+                                }
+                                let Some(voice_idx) = slot_voices[slot_idx] else {
+                                    continue;
+                                };
+                                self.external_midi_triggers[slot_idx]
+                                    .store(true, Ordering::Release);
+                                let settings =
+                                    self.voice_settings_at_step(slot_idx, voice_idx, 0);
+                                let hit = self.advance_hit_index(slot_idx, 0);
+                                self.synthesizer.set_hit_index(slot_idx, hit);
+                                self.synthesizer.set_voice_settings(slot_idx, settings);
+                                self.synthesizer.trigger(slot_idx, velocity);
+                                apply_choke_groups(
+                                    &mut self.synthesizer,
+                                    &self.params.track_layout.state,
+                                    slot_idx,
+                                );
+                            }
                             // Forward the MIDI event to the output on the global
                             // MIDI channel. The note itself is preserved from the
                             // incoming event.

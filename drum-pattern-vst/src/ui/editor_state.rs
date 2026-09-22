@@ -42,6 +42,10 @@ pub struct LaneClipboardData {
     pub length: i32,
     /// Whether the lane has an individual length lock.
     pub length_locked: bool,
+    /// [228] The lane's custom texture file, if any (Rift). Pasting loads it
+    /// on the target lane - shared with the source through the decode cache,
+    /// so it costs no second copy.
+    pub texture_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +87,17 @@ pub struct PageClipboard {
     pub plocks: Vec<PlockClipboardEntry>,
     #[serde(default)]
     pub fusions: Vec<FusionClipboardEntry>,
+    /// [231] Sequencer p-locks of the page (probability, stutter, condition,
+    /// microtiming, solo), step relative to the page.
+    #[serde(default)]
+    pub seq_plocks: Vec<SeqPlockClipboardEntry>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct SeqPlockClipboardEntry {
+    pub instrument: usize,
+    pub step: usize,
+    pub snapshot: crate::plock::SeqStepSnapshot,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -193,6 +208,12 @@ pub struct EditorUIState {
     pub suppress_step_cell_click: bool,
     // Right-click page popup state (Copy/Paste/Clear page).
     pub page_popup: Option<PagePopup>,
+    /// [228] A file dialog in flight for a user-texture slot. The dialog runs
+    /// on its own thread: run inside the egui frame it re-entered baseview's
+    /// message loop, egui panicked on the re-entry and, with `panic = abort`,
+    /// took Studio One down. Not persisted.
+    #[serde(skip)]
+    pub texture_pick: Option<TexturePick>,
     /// Pending pattern-bank slot load (click on P1-P16) while the current
     /// pattern has unsaved changes. Requires explicit confirmation.
     #[serde(skip)]
@@ -467,7 +488,25 @@ pub struct PlockPopup {
     pub step_was_active: bool,
     #[serde(with = "serde_pos2")]
     pub screen_pos: egui::Pos2,
+    /// [218] True on the frame the popup opened. The right-click that opens the
+    /// menu is still "clicked" when the menu draws in that same frame, so
+    /// without this the close-on-right-click swallowed its own opening gesture
+    /// and the menu never appeared.
+    #[serde(default)]
+    pub just_opened: bool,
+    /// [213] Which p-lock this popup is editing - `false` = Sound,
+    /// `true` = Sequencer. Seeded from the grid's P-Lock Mode when the popup
+    /// opens, then switchable inside the menu: choosing the type no longer
+    /// means flipping a grid-wide mode first.
+    #[serde(default)]
+    pub sequencer: bool,
+}
 
+/// [228] One native file dialog running on a helper thread, and where its
+/// answer lands. `None` inside = still open; `Some(None)` = cancelled.
+pub struct TexturePick {
+    pub slot: usize,
+    pub result: std::sync::Arc<std::sync::Mutex<Option<Option<std::path::PathBuf>>>>,
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -546,6 +585,7 @@ impl EditorUIState {
         let push_pull = params.pushes()[slot].value();
         let length = params.lengths()[slot].value();
         let length_locked = params.lane_length_locks.is_locked(slot);
+        let texture_path = params.user_textures.path(slot);
 
         self.lane_clipboard = Some(LaneClipboardData {
             kind,
@@ -559,6 +599,7 @@ impl EditorUIState {
             push_pull,
             length,
             length_locked,
+            texture_path,
         });
     }
 
@@ -607,6 +648,13 @@ impl EditorUIState {
 
         settings_state.set_settings_for_slot(target_slot, &clipboard.settings);
         set_int_param_if_changed(setter, params.algos()[target_slot], clipboard.algo);
+        // [228] The custom texture follows the lane (or its absence does).
+        match &clipboard.texture_path {
+            Some(path) => {
+                let _ = params.user_textures.load(target_slot, path);
+            }
+            None => params.user_textures.clear(target_slot),
+        }
 
         paste_lane_steps(pattern, target_slot, &clipboard.steps);
         pattern.store_fusions(target_slot, &clipboard.fusions);

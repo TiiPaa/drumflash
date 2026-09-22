@@ -188,6 +188,45 @@ pub fn draw_filter_envelope(
     response
 }
 
+// -- Pitch envelope ([227]) ---------------------------------------------------
+
+/// Pitch sweep readout: semitones over a FIXED 1 s window, zero line in the
+/// middle, the curve rising (positive depth) or falling (negative) then
+/// decaying back with the voice's own exponential law `exp(-curve*t/time)`.
+/// Depth 0 draws a flat line on the zero: the graph then says "no sweep".
+pub fn draw_pitch_envelope(
+    ui: &mut nih_plug_egui::egui::Ui,
+    depth_semitones: f32,
+    time_secs: f32,
+    curve: f32,
+) -> nih_plug_egui::egui::Response {
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
+    draw_grid_lines(&painter, &graph);
+
+    const SPAN_SECS: f32 = 1.0;
+    const RANGE_SEMITONES: f32 = 24.0;
+    let mid_y = graph.center().y;
+    let half_h = graph.height() * 0.5;
+    let depth = depth_semitones.clamp(-RANGE_SEMITONES, RANGE_SEMITONES) / RANGE_SEMITONES;
+    let time = time_secs.max(0.005);
+    let c = curve.max(0.1);
+
+    // Zero line: where the pitch rests.
+    draw_cutoff_line(&painter, &graph, mid_y);
+
+    const POINTS: usize = 200;
+    let mut points: Vec<Pos2> = Vec::with_capacity(POINTS + 1);
+    for i in 0..=POINTS {
+        let p = i as f32 / POINTS as f32;
+        let env = (-c * (p * SPAN_SECS) / time).exp();
+        let x = graph.min.x + graph.width() * p;
+        points.push(Pos2::new(x, mid_y - half_h * depth * env));
+    }
+    painter.add(Shape::line(points, Stroke::new(CURVE_W, stage_decay())));
+
+    response
+}
+
 // -- A-H-D filter envelope (Buzz / SDrex) -------------------------------------
 
 /// Bipolar curve shaping, mirroring `BuzzVoice::shape_curve` / `dsp::shape_curve`
@@ -224,8 +263,11 @@ pub fn draw_buzz_filter_envelope(
     let attack = attack.max(0.0005);
     let hold = hold.max(0.0);
     let decay = decay.max(0.01);
-    // Show the full A-H-D plus a short tail so the decay lands on the baseline.
-    let span = (attack + hold + decay) * 1.15;
+    // The three stages fill the whole width, exactly like the amp graph
+    // (`draw_amp_envelope` divides by `attack + hold + decay`). The 15 % tail
+    // this used to keep left the curve stopping short of the right edge, which
+    // read as a bug next to the amp graph sitting right above it.
+    let span = attack + hold + decay;
 
     let hz_to_y = |hz: f32| -> f32 {
         let norm = ((hz.max(20.0).min(20000.0)).ln() - 20f32.ln()) / (20000f32.ln() - 20f32.ln());
@@ -271,6 +313,141 @@ pub fn draw_buzz_filter_envelope(
     painter.add(Shape::line(dec_pts, Stroke::new(CURVE_W, stage_decay())));
 
     draw_cutoff_line(&painter, &graph, hz_to_y(base));
+
+    response
+}
+
+// -- Rift texture ([225]) -----------------------------------------------------
+
+/// The texture Rift reads, with the three things that decide WHERE it reads.
+///
+/// Rift's whole point is the offset, and until now nothing on screen said what
+/// the offset was pointing at: a slider from 0 to 1 over twelve seconds of
+/// material tells you nothing. This draws the waveform, the read position on
+/// it, the band Wander can throw it into, and where Advance will land on the
+/// next hits.
+///
+/// `offset`, `wander` and `advance` are the raw parameter values (0..1
+/// fractions of the texture), exactly as the voice reads them.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_texture_graph(
+    ui: &mut nih_plug_egui::egui::Ui,
+    peaks: &[(f32, f32)],
+    offset: f32,
+    wander: f32,
+    advance: f32,
+    grain_frac: f32,
+    loop_on: bool,
+    reverse: bool,
+) -> nih_plug_egui::egui::Response {
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
+    let mid = graph.center().y;
+    let half_h = graph.height() * 0.5;
+    let x_of = |p: f32| graph.min.x + graph.width() * p.clamp(0.0, 1.0);
+
+    // Wander band first, under the waveform: it is a region, not a reading.
+    let wander = wander.clamp(0.0, 1.0);
+    if wander > 0.0 {
+        let half = wander * 0.5;
+        // The band wraps around the ends of the texture, exactly as the voice
+        // does (`rem_euclid`), so it is drawn as up to two pieces.
+        let mut spans: Vec<(f32, f32)> = Vec::with_capacity(2);
+        let (from, to) = (offset - half, offset + half);
+        if from < 0.0 {
+            spans.push((0.0, to.clamp(0.0, 1.0)));
+            spans.push(((1.0 + from).clamp(0.0, 1.0), 1.0));
+        } else if to > 1.0 {
+            spans.push((from.clamp(0.0, 1.0), 1.0));
+            spans.push((0.0, (to - 1.0).clamp(0.0, 1.0)));
+        } else {
+            spans.push((from, to));
+        }
+        for (a, b) in spans {
+            painter.rect_filled(
+                Rect::from_min_max(
+                    Pos2::new(x_of(a), graph.min.y),
+                    Pos2::new(x_of(b), graph.max.y),
+                ),
+                2.0,
+                Color32::from_rgba_unmultiplied(74, 158, 255, 34),
+            );
+        }
+    }
+
+    draw_grid_lines(&painter, &graph);
+
+    // Waveform: one vertical bar per column, mirrored around the mid line.
+    if !peaks.is_empty() {
+        let step = graph.width() / peaks.len() as f32;
+        let wave = INK3().gamma_multiply(0.85);
+        for (i, (lo, hi)) in peaks.iter().enumerate() {
+            let x = graph.min.x + step * (i as f32 + 0.5);
+            let top = mid - half_h * hi.clamp(-1.0, 1.0);
+            let bottom = mid - half_h * lo.clamp(-1.0, 1.0);
+            painter.line_segment(
+                [Pos2::new(x, top), Pos2::new(x, bottom.max(top + 1.0))],
+                Stroke::new(step.max(1.0), wave),
+            );
+        }
+    }
+
+    // Where Advance will land on the next hits, fading with distance.
+    let advance = advance.clamp(0.0, 1.0);
+    if advance > 0.0 {
+        for k in 1..=8u32 {
+            let p = (offset + advance * k as f32).rem_euclid(1.0);
+            let alpha = (150 - (k as i32 - 1) * 16).max(30) as u8;
+            let x = x_of(p);
+            painter.line_segment(
+                [Pos2::new(x, graph.max.y), Pos2::new(x, graph.max.y - 9.0)],
+                Stroke::new(1.5, stage_hold().gamma_multiply(alpha as f32 / 255.0)),
+            );
+        }
+    }
+
+    // [226] The grain window, so Loop stops being an abstraction: the span
+    // actually read, which way it is read, and that it comes round again.
+    if loop_on {
+        let grain = grain_frac.clamp(0.0005, 1.0);
+        let (from, to) = (offset, (offset + grain).min(1.0));
+        let win = Rect::from_min_max(
+            Pos2::new(x_of(from), graph.min.y),
+            Pos2::new(x_of(to).max(x_of(from) + 2.0), graph.max.y),
+        );
+        painter.rect_filled(win, 2.0, Color32::from_rgba_unmultiplied(110, 200, 165, 40));
+        for x in [win.min.x, win.max.x] {
+            painter.line_segment(
+                [Pos2::new(x, graph.min.y), Pos2::new(x, graph.max.y)],
+                Stroke::new(1.0, stage_hold()),
+            );
+        }
+        // Direction of travel, repeated to say that it loops. Drawn only when
+        // the window is wide enough to read.
+        if win.width() > 26.0 {
+            let dir = if reverse { -1.0 } else { 1.0 };
+            let y = graph.min.y + 11.0;
+            for k in 0..3 {
+                let t = 0.5 + (k as f32 - 1.0) * 0.22;
+                let cx = win.min.x + win.width() * t;
+                let a = stage_hold().gamma_multiply(1.0 - k as f32 * 0.22);
+                painter.line_segment(
+                    [Pos2::new(cx - 3.0 * dir, y - 3.5), Pos2::new(cx + 3.0 * dir, y)],
+                    Stroke::new(1.4, a),
+                );
+                painter.line_segment(
+                    [Pos2::new(cx + 3.0 * dir, y), Pos2::new(cx - 3.0 * dir, y + 3.5)],
+                    Stroke::new(1.4, a),
+                );
+            }
+        }
+    }
+
+    // The read position itself, brightest and on top.
+    let x = x_of(offset);
+    painter.line_segment(
+        [Pos2::new(x, graph.min.y), Pos2::new(x, graph.max.y)],
+        Stroke::new(2.0, stage_attack()),
+    );
 
     response
 }

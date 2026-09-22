@@ -187,6 +187,13 @@ pub struct Sequencer {
     /// Per-cell microtiming (ms, -100..+100), indexed by (slot, source step) like
     /// the sequencer plocks. Copied from the atomics once per buffer.
     microtimings: [[f32; SEQ_STEP_COUNT]; MAX_TRACKS],
+    /// [212] Page loop: the master position stays inside this 16-step page
+    /// (index 0-3) instead of running the whole pattern. `None` = off. A page
+    /// beyond the pattern length counts as off.
+    page_loop: Option<usize>,
+    /// Tempo of the last processed sample, for the push/pull conversion when a
+    /// page loop engages between two samples.
+    bpm: f32,
 }
 
 /// Per-instrument trigger result.
@@ -247,7 +254,103 @@ impl Sequencer {
             fusions: [FusionTrack::default(); MAX_TRACKS],
             grid_slots: std::array::from_fn(|i| i),
             microtimings: [[0.0; SEQ_STEP_COUNT]; MAX_TRACKS],
+            page_loop: None,
+            bpm: 120.0,
         }
+    }
+
+    // ── [212] Page loop ─────────────────────────────────────────────────────
+
+    /// Loop one 16-step page instead of the whole pattern. `None` = off.
+    /// Engaging or releasing takes effect NOW, keeping the playhead's phase
+    /// within the page: page 4 at step 52 becomes page 2 at step 36 and the
+    /// groove never stumbles. Call once per buffer from the audio thread.
+    pub fn set_page_loop(&mut self, page: Option<usize>) {
+        let page = page.filter(|p| p * 16 < self.master_length);
+        if page != self.page_loop {
+            self.page_loop = page;
+            let before = self.beat_position;
+            self.beat_position = self.fold_into_loop(before);
+            if self.beat_position != before {
+                // A jump between two samples: the cell we land in already had
+                // its boundary, so no lane fires it again - the first cell
+                // played is the next one - and every counter follows the new
+                // position (measured: without this, engaging at 52.5 re-hit
+                // step 20 on landing).
+                self.realign_tracks_to_position();
+            }
+        }
+    }
+
+    /// Put every lane exactly where the master now is: boundary behind us,
+    /// counter derived from the position, microtiming state dropped.
+    fn realign_tracks_to_position(&mut self) {
+        let (swing, groove_type, bpm) = (self.swing, self.groove_type, self.bpm);
+        for i in 0..MAX_TRACKS {
+            let push_pull_beats =
+                self.tracks[i].push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
+            let shifted_beat = self.fold_shifted(self.beat_position - push_pull_beats);
+            let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
+            let track = &mut self.tracks[i];
+            track.previous_shifted_master = shifted_master;
+            track.step_counter = shifted_master;
+            track.previous_step = shifted_master % track.track_length.max(1);
+            track.clear_microtiming_state();
+        }
+    }
+
+    pub fn page_loop(&self) -> Option<usize> {
+        self.page_loop.filter(|p| p * 16 < self.master_length)
+    }
+
+    /// Bounds of what loops, in beats: the page, or the whole pattern. The
+    /// last page of a 40-step pattern is 8 steps long and loops on those.
+    fn loop_bounds(&self) -> (f64, f64) {
+        match self.page_loop() {
+            Some(p) => {
+                let start = p * 16;
+                let end = (start + 16).min(self.master_length);
+                (start as f64 * 0.25, end as f64 * 0.25)
+            }
+            None => (0.0, self.master_length as f64 * 0.25),
+        }
+    }
+
+    /// Length of the loop in beats (the pattern's when no page loops).
+    pub fn loop_span_beats(&self) -> f64 {
+        let (start, end) = self.loop_bounds();
+        (end - start).max(0.25)
+    }
+
+    /// Bring a master position inside the loop. Inside already: unchanged.
+    /// Outside: the phase within a 16-step page is kept (what the ear follows).
+    fn fold_into_loop(&self, beat: f64) -> f64 {
+        let (start, end) = self.loop_bounds();
+        let span = end - start;
+        if span <= 0.0 {
+            return start;
+        }
+        if beat >= start && beat < end {
+            return beat;
+        }
+        start + beat.rem_euclid(4.0).rem_euclid(span)
+    }
+
+    /// A track's shifted (push/pull) position, wrapped INSIDE the loop rather
+    /// than inside the pattern: a lane pulled late just after the page wrap is
+    /// still on the page's last step, not on a step of the previous page.
+    fn fold_shifted(&self, beat: f64) -> f64 {
+        let (start, end) = self.loop_bounds();
+        start + (beat - start).rem_euclid((end - start).max(1e-9))
+    }
+
+    /// Where the host's absolute position lands in the plugin's own timeline:
+    /// modulo the pattern, or - with a page loop - modulo the page, offset to
+    /// its start. Shared by `sync_to_host` and the seek detector, so a page
+    /// wrap never reads as a transport jump.
+    pub fn host_to_local(&self, position_beats: f64) -> f64 {
+        let (start, _) = self.loop_bounds();
+        start + position_beats.rem_euclid(self.loop_span_beats())
     }
 
     /// Set the per-slot grid source (for lane linking / layering). Call once per
@@ -295,31 +398,45 @@ impl Sequencer {
 
         self.swing = swing;
         self.groove_type = groove_type;
+        self.bpm = bpm;
 
-        // Advance master beat position uniformly. Wrap at master_length steps.
+        // Advance master beat position uniformly. Wrap at the loop's end: the
+        // pattern's, or the looped page's ([212]).
         let beat_increment = (bpm as f64 / 60.0) / sample_rate as f64;
-        let master_beat_length = self.master_length as f64 * 0.25;
+        let (loop_start, loop_end) = self.loop_bounds();
+        let loop_span = loop_end - loop_start;
+        // Outside the loop (page loop engaged, pattern shortened): fold first.
+        if self.beat_position < loop_start || self.beat_position >= loop_end {
+            self.beat_position = self.fold_into_loop(self.beat_position);
+        }
         let prev_beat = self.beat_position;
         self.beat_position += beat_increment;
-        if self.beat_position >= master_beat_length {
-            self.beat_position -= master_beat_length;
-            // Detect loop wrap (only when actually wrapping, not on seek)
-            if prev_beat + beat_increment >= master_beat_length {
+        if self.beat_position >= loop_end {
+            self.beat_position -= loop_span;
+            if self.beat_position < loop_start {
+                self.beat_position = loop_start;
+            }
+            // Detect loop wrap (only when actually wrapping, not on seek). A
+            // page loop counts a loop per page: step conditions follow it.
+            if prev_beat + beat_increment >= loop_end {
                 self.loop_count = self.loop_count.wrapping_add(1);
             }
         }
+        let page_loop_on = self.page_loop().is_some();
+        let loop_end_step = (loop_end / 0.25).round() as usize;
+        let loop_start_step = (loop_start / 0.25).round() as usize;
 
         // Master beat advances uniformly; each track derives its own step.
-
-        let master_beat_length = self.master_length as f64 * 0.25;
 
         for slot in 0..MAX_TRACKS {
             let track = &mut self.tracks[slot];
 
             // Push/pull: convert ms to beats and subtract so positive = late.
             let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
-            let shifted_beat =
-                (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
+            let shifted_beat = {
+                let raw = self.beat_position - push_pull_beats;
+                loop_start + (raw - loop_start).rem_euclid(loop_span.max(1e-9))
+            };
 
             // Re-compute master step for this track's shifted timeline.
             let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
@@ -341,8 +458,20 @@ impl Sequencer {
             // Using shifted_master (not current_step) fixes the track_length=1 bug
             // where current_step never changes (always 0).
             if shifted_master != track.previous_shifted_master {
-                // True polyrhythm: each track advances its own independent counter.
-                track.step_counter = track.step_counter.wrapping_add(1);
+                // True polyrhythm: each track advances its own independent
+                // counter. [212] Except when the master JUMPED (page-loop wrap
+                // or engage) rather than moved to the next step: the counter
+                // is then re-derived from the position, so every lane - a
+                // polymetric one included - plays what the grid shows at that
+                // step. The pattern's own wrap is not a jump: 63 -> 0 is the
+                // next step, and polymeter keeps drifting there as before.
+                let expected =
+                    (track.previous_shifted_master + 1) % self.master_length.max(1);
+                if page_loop_on && shifted_master != expected {
+                    track.step_counter = shifted_master;
+                } else {
+                    track.step_counter = track.step_counter.wrapping_add(1);
+                }
                 let current_step = track.step_counter % track.track_length.max(1);
                 track.previous_shifted_master = shifted_master;
                 track.previous_step = current_step;
@@ -395,21 +524,28 @@ impl Sequencer {
             // 3) Microtiming early-fire: the NEXT boundary's cell has a
             // negative nudge — fire it up to 100 ms before its step boundary.
             if !track.early_fired && !track.suppress_next {
-                let next_step = track.step_counter.wrapping_add(1) % track.track_length.max(1);
+                let next_master = shifted_master + 1;
+                let crosses_loop_end = next_master >= loop_end_step;
+                // [212] Across a page-loop wrap the next cell is the page's
+                // first step, not the counter's successor.
+                let next_step = if page_loop_on && crosses_loop_end {
+                    loop_start_step % track.track_length.max(1)
+                } else {
+                    track.step_counter.wrapping_add(1) % track.track_length.max(1)
+                };
                 if let CellFire::Fire { source_step, .. } =
                     classify_cell(&self.fusions[grid], next_step)
                 {
                     let micro = self.microtimings[slot][source_step].clamp(-100.0, 100.0);
                     if micro < 0.0 {
-                        let next_master = shifted_master + 1;
-                        let (delta_beats, crosses_wrap) = if next_master < self.master_length {
+                        let (delta_beats, crosses_wrap) = if !crosses_loop_end {
                             (
                                 groove::step_start_beat(next_master, swing, groove_type)
                                     - shifted_beat,
                                 false,
                             )
                         } else {
-                            (master_beat_length - shifted_beat, true)
+                            (loop_end - shifted_beat, true)
                         };
                         let delta_ms = delta_beats / bpm as f64 * 60000.0;
                         if delta_ms <= -(micro as f64) {
@@ -496,24 +632,37 @@ impl Sequencer {
         }
     }
 
-    pub fn sync_to_host(&mut self, position_beats: f64, bpm: f32, _sample_rate: f32) {        let master_beat_length = self.master_length as f64 * 0.25;
-        self.beat_position = position_beats.rem_euclid(master_beat_length);
+    pub fn sync_to_host(&mut self, position_beats: f64, bpm: f32, _sample_rate: f32) {
+        // [212] Modulo the pattern, or modulo the looped page offset to its
+        // start: `host_to_local` is the one mapping, shared with the seek
+        // detector in `lib.rs`.
+        self.beat_position = self.host_to_local(position_beats);
         // Keep loop_count in sync with the host's absolute timeline so
         // step conditions (1st loop, 2/2, etc.) work when driven by DAW transport.
-        self.loop_count = (position_beats / master_beat_length).floor() as usize;
-        for track in self.tracks.iter_mut() {
-            let push_pull_beats = track.push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
-            let shifted_beat =
-                (self.beat_position - push_pull_beats).rem_euclid(master_beat_length);
-            let shifted_master = groove::beat_to_step(shifted_beat, self.swing, self.groove_type);
+        self.loop_count = (position_beats / self.loop_span_beats()).floor() as usize;
+        let page_loop_on = self.page_loop().is_some();
+        let (swing, groove_type) = (self.swing, self.groove_type);
+        for i in 0..MAX_TRACKS {
+            let push_pull_beats =
+                self.tracks[i].push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
+            let shifted_beat = self.fold_shifted(self.beat_position - push_pull_beats);
+            let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
+            let track = &mut self.tracks[i];
             track.previous_shifted_master = shifted_master;
 
             // Reconstruct the number of shifted step boundaries crossed so far.
             // Using the shifted timeline (master position minus push/pull offset)
             // keeps each track's phase correct after a seek, instead of snapping
-            // every track to the master step count.
+            // every track to the master step count. With a page loop the
+            // counter follows the FOLDED position instead: the host's absolute
+            // step count would put a 64-step lane on another page than the one
+            // the master is looping.
             let shifted_steps = ((position_beats - push_pull_beats) / 0.25).floor() as i64;
-            track.step_counter = shifted_steps as usize;
+            track.step_counter = if page_loop_on {
+                shifted_master
+            } else {
+                shifted_steps as usize
+            };
             track.previous_step = track.step_counter % track.track_length.max(1);
             track.clear_microtiming_state();
         }
@@ -1236,6 +1385,147 @@ mod tests {
             early.1.early_next_loop,
             "early fire across the wrap must flag early_next_loop"
         );
+    }
+
+    // ── [212] Page loop ─────────────────────────────────────────────────────
+
+    /// Slot 0 on every step of a 64-step pattern, slot 1 (16-step lane) too.
+    fn full_pattern_64() -> Arc<SharedPattern> {
+        let shared = SharedPattern::new(&Pattern::empty());
+        for step in 0..64 {
+            shared.set_step_mask(step, 0b11);
+        }
+        shared
+    }
+
+    fn master_steps_at_hits(seq: &mut Sequencer, samples: usize) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        for _ in 0..samples {
+            let triggers = seq.process_sample(120.0, 44100.0, 0.0, GrooveType::Straight);
+            if triggers[0].should_trigger {
+                out.push((seq.tracks[0].previous_step, seq.tracks[1].previous_step));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn page_loop_keeps_the_playhead_in_the_page_and_realigns_shorter_lanes() {
+        let mut seq = Sequencer::new(full_pattern_64());
+        seq.set_track_params([64, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16], [0.0; 14], [0.0; 14], 64);
+        seq.set_page_loop(Some(2)); // steps 32..47
+        seq.play();
+        // Four bars = four page loops.
+        let hits = master_steps_at_hits(&mut seq, 88200 * 4);
+        assert!(hits.len() >= 60, "{} hits", hits.len());
+        assert!(
+            hits.iter().all(|(m, _)| (32..48).contains(m)),
+            "master step left the page: {:?}",
+            hits.iter().map(|h| h.0).collect::<Vec<_>>()
+        );
+        let masters: Vec<usize> = hits.iter().map(|h| h.0).collect();
+        assert!(
+            masters.windows(17).any(|w| w[..16] == (32..48).collect::<Vec<_>>()[..] && w[16] == 32),
+            "the page must come round: {masters:?}"
+        );
+        // The 16-step lane plays step k under master step 32 + k, every loop.
+        for (m, lane) in &hits {
+            assert_eq!(*lane, m - 32, "lane misaligned at master {m}");
+        }
+    }
+
+    #[test]
+    fn page_loop_engaged_mid_play_keeps_the_phase_within_the_page() {
+        let mut seq = Sequencer::new(full_pattern_64());
+        seq.set_track_params([64; 14], [0.0; 14], [0.0; 14], 64);
+        seq.play();
+        // Run to the middle of page 4 (step 52 = 13 beats).
+        let samples_per_step = 5512.5f64;
+        let n = (samples_per_step * 52.5) as usize;
+        for _ in 0..n {
+            seq.process_sample(120.0, 44100.0, 0.0, GrooveType::Straight);
+        }
+        assert_eq!(seq.current_step(), 52);
+        seq.set_page_loop(Some(1)); // page 2 = steps 16..31
+        // Step 52 is the fifth step of its page; so is 20.
+        assert_eq!(seq.current_step(), 20, "same phase within the page");
+        // The next hits follow the page, lane realigned to the master.
+        let hits = master_steps_at_hits(&mut seq, (samples_per_step * 3.0) as usize);
+        assert_eq!(
+            hits.iter().map(|h| h.0).collect::<Vec<_>>(),
+            vec![21, 22, 23],
+            "{hits:?}"
+        );
+        // Releasing the loop continues from where the playhead is: no jump.
+        seq.set_page_loop(None);
+        let step = seq.current_step();
+        assert!((20..24).contains(&step), "released at {step}");
+    }
+
+    #[test]
+    fn page_loop_uses_the_partial_last_page_and_ignores_pages_beyond_the_pattern() {
+        // 40 steps: page 3 is steps 32..39 and loops on those eight.
+        let mut seq = Sequencer::new(full_pattern_64());
+        seq.set_track_params([64; 14], [0.0; 14], [0.0; 14], 40);
+        seq.set_page_loop(Some(2));
+        seq.play();
+        let masters: Vec<usize> = master_steps_at_hits(&mut seq, 88200 * 2).iter().map(|h| h.0).collect();
+        assert!(masters.iter().all(|m| (32..40).contains(m)), "{masters:?}");
+        assert!(masters.windows(9).any(|w| w == [32, 33, 34, 35, 36, 37, 38, 39, 32]), "{masters:?}");
+
+        // 32 steps: page 3 does not exist, the loop is off. (Lane lengths
+        // follow the master here, as `resolve_track_length` does in the
+        // plugin; `previous_step` is the LANE's step.)
+        let mut seq = Sequencer::new(full_pattern_64());
+        seq.set_track_params([32; 14], [0.0; 14], [0.0; 14], 32);
+        seq.set_page_loop(Some(2));
+        assert_eq!(seq.page_loop(), None);
+        seq.play();
+        let masters: Vec<usize> = master_steps_at_hits(&mut seq, 88200 * 2).iter().map(|h| h.0).collect();
+        assert!(masters.windows(33).any(|w| w[0] == 0 && w[31] == 31 && w[32] == 0), "{masters:?}");
+    }
+
+    #[test]
+    fn page_loop_host_sync_folds_the_host_position_into_the_page() {
+        let mut seq = Sequencer::new(full_pattern_64());
+        seq.set_track_params([64, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16], [0.0; 14], [0.0; 14], 64);
+        seq.set_page_loop(Some(1)); // beats 4..8
+        seq.play();
+        // Host at beat 17 (= step 68 absolute): page phase 1 beat -> step 20.
+        seq.sync_to_host(17.0, 120.0, 44100.0);
+        assert_eq!(seq.current_step(), 20);
+        assert_eq!(seq.loop_count(), 4, "one loop per page round on the host timeline");
+        assert_eq!(seq.tracks[0].previous_step, 20);
+        assert_eq!(seq.tracks[1].previous_step, 4, "16-step lane aligned to the page");
+        // The mapping the seek detector uses agrees.
+        assert!((seq.host_to_local(17.0) - 5.0).abs() < 1e-9);
+        assert!((seq.loop_span_beats() - 4.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn page_loop_early_fire_crosses_the_page_wrap() {
+        let sample_rate = 44100.0;
+        let bpm = 120.0;
+        let samples_per_bar = (60.0 / bpm * 4.0 * sample_rate) as usize;
+        // Only step 16 (first of page 2) is active, nudged 25 ms early.
+        let shared = SharedPattern::new(&Pattern::empty());
+        shared.set_step_mask(16, 0b1);
+        let mut seq = Sequencer::new(shared);
+        seq.set_track_params([64; 14], [0.0; 14], [0.0; 14], 64);
+        seq.set_microtimings(microtiming_grid(16, -25.0));
+        seq.set_page_loop(Some(1));
+        seq.play();
+        let hits = collect_slot0_hits(&mut seq, bpm, sample_rate, samples_per_bar + 100);
+        assert_eq!(hits.len(), 2, "one hit per page loop (start + early wrap): {hits:?}");
+        let early = hits[1];
+        let expected = samples_per_bar as f64 - 0.025 * sample_rate as f64;
+        assert!(
+            (early.0 as f64 - expected).abs() <= 3.0,
+            "page 2's first step should fire ~25 ms before the page wrap (at {}, expected ~{expected})",
+            early.0
+        );
+        assert_eq!(early.1.step, 16);
+        assert!(early.1.early_next_loop);
     }
 
     #[test]

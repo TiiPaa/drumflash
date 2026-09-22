@@ -13,6 +13,7 @@ use crate::ui::editor_state::{
 };
 use crate::ui::envelope_viz::{
     draw_amp_envelope, draw_buzz_filter_envelope, draw_buzz_gate_graph, draw_filter_envelope,
+    draw_pitch_envelope, draw_texture_graph,
     draw_sample_amp_graph, draw_sample_filter_graph,
 };
 use crate::ui::fmt::{freq_to_note, note_name, note_to_freq};
@@ -48,13 +49,30 @@ pub fn format_editor_value(value: f32, suffix: Option<&str>) -> String {
 /// text (ragged left edges) — we allocate the exact box and paint the label.
 pub fn editor_label(ui: &mut egui::Ui, text: &str) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(EDITOR_LABEL_W, 22.0), egui::Sense::hover());
+    // [233] The saturation's sub-parameters step their label in; the sliders
+    // stay aligned.
     ui.painter().text(
-        egui::pos2(rect.left(), rect.center().y),
+        egui::pos2(rect.left() + sub_indent(), rect.center().y),
         egui::Align2::LEFT_CENTER,
         text,
         f_sans_med(11.5),
         INK2(),
     );
+}
+
+// [233] Indent applied to the next labels drawn: the saturation sub-rows set
+// it before drawing and clear it after. UI thread only.
+thread_local! {
+    static SUB_INDENT: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+const SUB_INDENT_PX: f32 = 14.0;
+
+fn set_sub_indent(px: f32) {
+    SUB_INDENT.with(|c| c.set(px));
+}
+
+fn sub_indent() -> f32 {
+    SUB_INDENT.with(|c| c.get())
 }
 
 /// Section header (separator + muted title) shared by the Sound and Track tabs.
@@ -454,6 +472,388 @@ fn row_gutter(ui: &mut egui::Ui, overridden: bool) -> bool {
     response
         .on_hover_text("Overrides the lane - click to follow the lane again")
         .clicked()
+}
+
+/// [221] Right-click on a slider row: write that parameter on all 16 cells of
+/// the page the grid is showing. **Spread** lays `min -> max` (or back) across
+/// the page, **Scatter** draws a random value per cell, **Clear** drops those
+/// locks. Any lockable continuous parameter of any instrument gets it: this is
+/// what "offset proportional to the step" became, and it is worth as much on a
+/// filter or a pitch as on Rift's Offset. Cells beyond the lane's length or
+/// inside a fused block take the value too; it simply waits there.
+#[allow(clippy::too_many_arguments)]
+fn page_lock_menu(
+    response: &egui::Response,
+    plock: &crate::plock::PlockState,
+    slot: usize,
+    page: usize,
+    id: ParamId,
+    min: f32,
+    max: f32,
+    logarithmic: bool,
+) {
+    let Some(field) = id.plock_field() else {
+        return;
+    };
+    response.context_menu(|ui| {
+        use crate::ui::menus::{context_menu_button, context_menu_separator};
+        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.set_min_width(176.0);
+        ui.set_max_width(176.0);
+        let page_no = page + 1;
+        let mut done = false;
+        if context_menu_button(ui, &format!("Spread up on page {page_no}"), INK(), true).clicked() {
+            plock.fill_page(
+                slot,
+                page,
+                field,
+                &crate::plock::spread_values(min, max, logarithmic, false),
+            );
+            done = true;
+        }
+        if context_menu_button(ui, &format!("Spread down on page {page_no}"), INK(), true).clicked() {
+            plock.fill_page(
+                slot,
+                page,
+                field,
+                &crate::plock::spread_values(min, max, logarithmic, true),
+            );
+            done = true;
+        }
+        if context_menu_button(ui, &format!("Scatter on page {page_no}"), INK(), true).clicked() {
+            // Seeded from the clock: every click is a new draw, and the
+            // values then live in the p-locks, frozen and editable.
+            let seed = (ui.input(|i| i.time) * 1_000_003.0) as u64 as u32 | 1;
+            plock.fill_page(
+                slot,
+                page,
+                field,
+                &crate::plock::scatter_values(min, max, logarithmic, seed),
+            );
+            done = true;
+        }
+        context_menu_separator(ui);
+        if context_menu_button(ui, &format!("Clear locks on page {page_no}"), INK(), true).clicked() {
+            plock.clear_field_on_page(slot, page, field);
+            done = true;
+        }
+        if done {
+            ui.close_menu();
+        }
+    });
+}
+
+/// [227] One continuous special parameter as a plain slider row - gutter,
+/// scope greying and the page menu included - for the rows the panel places
+/// under a standard row rather than in the specials loop.
+fn draw_plain_special_row(
+    ui: &mut egui::Ui,
+    src: &mut dyn ParamSource,
+    plock: &crate::plock::PlockState,
+    slot: usize,
+    page: usize,
+    def: &crate::instrument_registry::SpecialParamDef,
+) {
+    let id = ParamId::Special(def.special_index);
+    let mut value = src.get(id);
+    let inherited = src.inherited(id);
+    let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
+    let (reverted, edited) = row_scoped(
+        ui,
+        src.is_overridden(id),
+        src.supports(id).reason(),
+        |ui| {
+            let row = draw_editor_slider_row_curved(
+                ui,
+                def.label,
+                &mut value,
+                def.min,
+                def.max,
+                inherited,
+                logarithmic,
+                def.unit,
+                def.curve,
+            );
+            page_lock_menu(&row, plock, slot, page, id, def.min, def.max, logarithmic);
+            row.changed()
+        },
+    );
+    if reverted {
+        src.clear(id);
+    } else if edited {
+        src.set(id, value);
+    }
+}
+
+/// [228] Labels of Rift's Texture menu for one lane: the embedded textures
+/// by name, then the lane's own file - its name when loaded, "name (missing)"
+/// when the file is gone, "Custom (empty)" when the lane has none.
+fn texture_menu_labels(options: &[&str], params: &DrumFlashParams, lane: usize) -> Vec<String> {
+    use crate::synthesis::sample_bank::CUSTOM_TEXTURE_INDEX;
+    use crate::user_textures::SlotStatus;
+    options
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            if i != CUSTOM_TEXTURE_INDEX {
+                return name.to_string();
+            }
+            let textures = &params.user_textures;
+            match textures.status(lane) {
+                SlotStatus::Empty => format!("{name} (empty)"),
+                SlotStatus::Loaded => textures.file_name(lane).unwrap_or_default(),
+                SlotStatus::Missing => {
+                    format!("{} (missing)", textures.file_name(lane).unwrap_or_default())
+                }
+            }
+        })
+        .collect()
+}
+
+/// [228] The custom texture belongs to a lane only while that lane hosts an
+/// instrument with a Texture menu: changing the lane's kind, or removing the
+/// lane, drops the file (user decision, 2026-09-21). Once per frame.
+fn reconcile_lane_textures(params: &DrumFlashParams) {
+    for lane in 0..crate::track::MAX_TRACKS {
+        if params.user_textures.path(lane).is_none() {
+            continue;
+        }
+        let has_texture_menu = params
+            .track_layout
+            .state
+            .kind_for_slot(lane)
+            .map(|kind| {
+                kind.instrument_def()
+                    .special_params
+                    .iter()
+                    .any(|d| d.name.ends_with("_texture"))
+            })
+            .unwrap_or(false);
+        if !has_texture_menu {
+            params.user_textures.clear(lane);
+        }
+    }
+}
+
+/// [228] Collect the answer of a file dialog opened by `draw_user_texture_row`.
+/// Once per frame, before the rows: the dialog thread writes its result into
+/// the shared cell, the UI thread decodes the file here.
+fn poll_texture_pick(
+    ctx: &egui::Context,
+    params: &DrumFlashParams,
+    state: &mut EditorUIState,
+    sound_settings: &SoundSettingsState,
+) {
+    let Some(pick) = state.texture_pick.as_ref() else {
+        return;
+    };
+    let answer = pick.result.lock().ok().and_then(|r| r.clone());
+    match answer {
+        None => {
+            // Still open: keep the frames coming so the answer is seen.
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        Some(picked) => {
+            let lane = pick.slot;
+            state.texture_pick = None;
+            if let Some(path) = picked {
+                if params.user_textures.load(lane, &path).is_ok() {
+                    // The file was asked for: the Texture menu jumps to it.
+                    let texture_def = params
+                        .track_layout
+                        .state
+                        .kind_for_slot(lane)
+                        .and_then(|kind| {
+                            kind.instrument_def()
+                                .special_params
+                                .iter()
+                                .find(|d| d.name.ends_with("_texture"))
+                        });
+                    if let (Some(def), Some(inst)) = (texture_def, sound_settings.instruments.get(lane)) {
+                        inst.set_special(
+                            def.special_index,
+                            crate::synthesis::sample_bank::CUSTOM_TEXTURE_INDEX as f32,
+                        );
+                        // A stereo file comes up in stereo; the switch is
+                        // there to fold it to mono, not the other way round.
+                        if params.user_textures.is_stereo(lane) {
+                            store_field(inst, StandardField::Stereo, 1.0);
+                        }
+                        sound_settings.bump_version();
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// [228] The row under Rift's Texture menu: the lane's file (or why nothing
+/// plays from it) and the Load / Clear buttons. The native dialog runs on its
+/// own thread - blocking inside the egui frame re-entered baseview's message
+/// loop and crashed the host; here the frame returns at once and
+/// `poll_texture_pick` picks the answer up. (macOS would want the panel on the
+/// main thread - to revisit when packaging for it.)
+fn draw_user_texture_row(
+    ui: &mut egui::Ui,
+    params: &DrumFlashParams,
+    state: &mut EditorUIState,
+    slot: usize,
+) {
+    use crate::user_textures::SlotStatus;
+    let textures = &params.user_textures;
+    let status = textures.status(slot);
+    let picking = state.texture_pick.is_some();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        editor_label(ui, "File");
+        let (text, color) = match status {
+            SlotStatus::Empty => ("no file - Custom plays Noise".to_string(), INK3()),
+            SlotStatus::Loaded => (textures.file_name(slot).unwrap_or_default(), INK()),
+            SlotStatus::Missing => (
+                format!("missing: {}", textures.file_name(slot).unwrap_or_default()),
+                RED(),
+            ),
+        };
+        let avail = ui.available_width();
+        // Buttons on the right, the name takes what is left and is clipped.
+        const BUTTONS_W: f32 = 52.0 + 52.0 + 8.0;
+        let name_w = (avail - BUTTONS_W - 8.0).max(40.0);
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(name_w, 22.0), egui::Sense::hover());
+        ui.painter().with_clip_rect(rect).text(
+            egui::pos2(rect.left(), rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            &text,
+            f_sans_med(10.5),
+            color,
+        );
+        if let Some(path) = textures.path(slot) {
+            let mut hover = path.to_string_lossy().into_owned();
+            if let Some(err) = textures.error(slot) {
+                hover.push_str("\n");
+                hover.push_str(&err);
+            }
+            resp.on_hover_text(hover);
+        }
+        if crate::ui::controls::keycap_button(
+            ui,
+            if picking { "..." } else { "Load..." },
+            52.0,
+            crate::ui::widgets::KeycapState::Rest,
+            !picking,
+            f_sans_med(9.5),
+        )
+        .on_hover_text(
+            "Load a WAV file as this lane's custom texture (any bit depth, stereo kept, 60 s at most) and select it in the Texture menu. The path is saved with the session and follows the lane in presets and copies.",
+        )
+        .clicked()
+            && !picking
+        {
+            let result = std::sync::Arc::new(std::sync::Mutex::new(None));
+            let start_dir = textures
+                .path(slot)
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            let cell = result.clone();
+            std::thread::Builder::new()
+                .name("flash-drum-file-dialog".into())
+                .spawn(move || {
+                    let mut dialog = rfd::FileDialog::new()
+                        .set_title("Load a texture")
+                        .add_filter("WAV audio", &["wav", "WAV"]);
+                    if let Some(dir) = start_dir {
+                        dialog = dialog.set_directory(dir);
+                    }
+                    let picked = dialog.pick_file();
+                    if let Ok(mut r) = cell.lock() {
+                        *r = Some(picked);
+                    }
+                })
+                .ok();
+            state.texture_pick = Some(crate::ui::editor_state::TexturePick { slot, result });
+        }
+        if crate::ui::controls::keycap_button(
+            ui,
+            "Clear",
+            52.0,
+            crate::ui::widgets::KeycapState::Rest,
+            status != SlotStatus::Empty,
+            f_sans_med(9.5),
+        )
+        .on_hover_text("Forget this lane's file: Custom plays Noise again.")
+        .clicked()
+            && status != SlotStatus::Empty
+        {
+            textures.clear(slot);
+        }
+    });
+}
+
+/// [227] Hover text of the Advance switch.
+const ADVANCE_HELP: &str = "Advance: each hit of this lane (or each cell, see the options) moves the offset one step further into the texture. Off, the offset stays where the slider puts it.";
+
+/// [227] The folded options under the Advance switch: three lane-level
+/// switches stored as bits of the slot's `advance_mode` parameter.
+fn draw_advance_options(
+    ui: &mut egui::Ui,
+    setter: &ParamSetter,
+    param: &IntParam,
+    slot: usize,
+    advance_on: bool,
+) {
+    use crate::advance_mode::*;
+    let mode = param.value();
+    egui::CollapsingHeader::new(
+        RichText::new("Advance options").font(f_sans_med(11.5)).color(INK2()),
+    )
+    .id_salt(("advance_options", slot))
+    .default_open(false)
+    // Switch off = options shut; back on, the user opens them again.
+    .open(if advance_on { None } else { Some(false) })
+    .show(ui, |ui| {
+        let mut next = mode;
+        for (bit, label, help) in [
+            (
+                RESET_PATTERN,
+                "Reset on pattern loop",
+                "The count restarts each time the pattern wraps around. Excludes Reset on page loop.",
+            ),
+            (
+                RESET_PAGE,
+                "Reset on page loop",
+                "The count restarts each time a page comes round: the playhead enters another page of 16 steps, or the pattern wraps. Excludes Reset on pattern loop.",
+            ),
+            (
+                EVERY_CELL,
+                "Count every cell",
+                "Advance on every cell the playhead passes, active or not, instead of on every hit of this lane.",
+            ),
+        ] {
+            let mut value = if mode & bit != 0 { 1.0 } else { 0.0 };
+            if draw_editor_switch_row(ui, label, &mut value)
+                .on_hover_text(help)
+                .changed()
+            {
+                next ^= bit;
+                // The two resets exclude each other: turning one on turns
+                // the other off.
+                if next & bit != 0 {
+                    match bit {
+                        RESET_PATTERN => next &= !RESET_PAGE,
+                        RESET_PAGE => next &= !RESET_PATTERN,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        if next != mode {
+            set_int_param(setter, param, next);
+        }
+    });
+}
+
+fn set_int_param(setter: &ParamSetter, param: &IntParam, value: i32) {
+    setter.begin_set_parameter(param);
+    setter.set_parameter(param, value);
+    setter.end_set_parameter(param);
 }
 
 /// One row with BOTH its gutter and its greying.
@@ -921,6 +1321,31 @@ pub fn apply_lane_layout_preset(
 }
 
 // Sound Panel (always visible, tabbed by instrument)
+/// Special indices of an A-H-D filter envelope — attack, hold, attack curve,
+/// decay curve — for instruments that declare one ([221]).
+///
+/// Buzz, SDrex and Rift all carry the same envelope but numbered their
+/// parameters differently, and SDrex spells its decay curve
+/// `_filter_dec_curve` where Buzz says `_filter_curve`. Looking them up by name
+/// keeps the panel out of the business of remembering index tables.
+fn ahd_filter_env_params(
+    instrument: &crate::instrument_registry::InstrumentDef,
+) -> Option<(usize, usize, usize, usize)> {
+    let find = |suffix: &str| {
+        instrument
+            .special_params
+            .iter()
+            .find(|d| d.name.ends_with(suffix))
+            .map(|d| d.special_index)
+    };
+    Some((
+        find("_filter_attack")?,
+        find("_filter_hold")?,
+        find("_filter_atk_curve")?,
+        find("_filter_dec_curve").or_else(|| find("_filter_curve"))?,
+    ))
+}
+
 pub fn draw_sound_panel(
     ui: &mut egui::Ui,
     sound_settings: &SoundSettingsState,
@@ -932,6 +1357,8 @@ pub fn draw_sound_panel(
 ) {
     state.selected_instrument = state.selected_instrument.min(crate::track::MAX_TRACKS - 1);
     state.selected_track_slot = state.selected_instrument;
+    reconcile_lane_textures(params);
+    poll_texture_pick(ui.ctx(), params, state, sound_settings);
     // Slot index drives per-slot state (sound_settings, algos, mutes, ...);
     // the voice index drives registry/schema lookups (INSTRUMENTS, special_param).
     let voice_idx = schema_voice_idx(params, state.selected_instrument);
@@ -961,6 +1388,8 @@ pub fn draw_sound_panel(
     // so the rules (another lane, Song/Follow mode, dead lane, fused cell) live
     // in one place instead of being re-derived here.
     let slot = state.selected_instrument;
+    // [221] The page the grid is showing: what Spread / Scatter write onto.
+    let page = state.current_page.min(3);
     let lane_master_length = params.pattern_length.value().clamp(1, 64) as usize;
     let lane_length = crate::ui::editor_state::effective_lane_length_for_ui(
         params,
@@ -1747,6 +2176,7 @@ pub fn draw_sound_panel(
 
             for family in [
                 crate::instrument_registry::ParamFamily::Osc,
+                crate::instrument_registry::ParamFamily::Pitch,
                 crate::instrument_registry::ParamFamily::Env,
                 crate::instrument_registry::ParamFamily::Analog,
                 crate::instrument_registry::ParamFamily::Filter,
@@ -1768,12 +2198,15 @@ pub fn draw_sound_panel(
                 ui.separator();
                 ui.add_space(2.0);
                 let section_title = match family {
-                    crate::instrument_registry::ParamFamily::Osc => "Oscillator",
-                    crate::instrument_registry::ParamFamily::Env => "Envelope",
+                    crate::instrument_registry::ParamFamily::Osc => {
+                        crate::instrument_registry::source_section_title(voice_idx)
+                    }
+                    crate::instrument_registry::ParamFamily::Pitch => "Pitch",
+                    crate::instrument_registry::ParamFamily::Env => "Amp",
                     crate::instrument_registry::ParamFamily::Analog => "Analog",
                     crate::instrument_registry::ParamFamily::Filter => "Filter",
                     crate::instrument_registry::ParamFamily::Modulation => "Modulation",
-                    crate::instrument_registry::ParamFamily::Saturation => "Saturation",
+                    crate::instrument_registry::ParamFamily::Saturation => "Distortion",
                     crate::instrument_registry::ParamFamily::Output => "Output",
                 };
                 ui.label(RichText::new(section_title).font(f_sans_sb(10.5)).color(INK3()));
@@ -1782,22 +2215,72 @@ pub fn draw_sound_panel(
             let has_filter_env = standard_defs
                 .iter()
                 .any(|d| d.field == crate::instrument_registry::StandardField::FilterEnvAmount);
+            // [225] An instrument reading a long texture shows it in its
+            // Oscillator section: a 0..1 Offset slider over twelve seconds of
+            // material says nothing on its own.
+            let texture_param = instrument
+                .special_params
+                .iter()
+                .find(|d| d.name.ends_with("_texture"));
             let has_graph = family == crate::instrument_registry::ParamFamily::Env
-                || (family == crate::instrument_registry::ParamFamily::Filter && has_filter_env);
-            // Graph sections keep a fixed params column so the ADSR/filter graph
-            // keeps its space; graph-less sections fill the panel (wide sliders,
-            // values/dropdowns/toggles flush right — like the mockup).
-            let params_w = if has_graph {
-                EDITOR_PARAMS_W
-            } else {
-                ui.available_width()
-            };
-            ui.horizontal(|ui| {
+                || (family == crate::instrument_registry::ParamFamily::Pitch
+                    && special_defs.iter().any(|d| d.name.ends_with("_pitch_env")))
+                || (family == crate::instrument_registry::ParamFamily::Filter && has_filter_env)
+                || (family == crate::instrument_registry::ParamFamily::Osc
+                    && texture_param.is_some());
+            // [225] EVERY section keeps the same params column, graph or not.
+            // Graph-less sections used to spread their sliders across the whole
+            // panel, so the same instrument showed two slider lengths depending
+            // on the section — and two instruments showed different lengths for
+            // the same parameter. One width, everywhere.
+            let params_w = EDITOR_PARAMS_W;
+            // Top-aligned: a centred horizontal put the graph halfway down a
+            // tall section (the texture graph sat at the Advance rows instead
+            // of at Texture).
+            ui.horizontal_top(|ui| {
                 // Left column: params (width-constrained so the graph keeps its space)
                 ui.vertical(|ui| {
                     ui.set_max_width(params_w);
                     ui.set_width(params_w);
                     ui.spacing_mut().item_spacing.y = 9.0;
+                    // [223] The filter TYPE heads its section: it decides what
+                    // every row under it means. It is declared among the
+                    // specials, which render after the standard rows, so it
+                    // would otherwise land in the middle of them. Found by
+                    // name, so Buzz, SDrex and Rift are all ordered the same
+                    // way; the specials loop below skips it.
+                    if family == crate::instrument_registry::ParamFamily::Filter {
+                        if let Some(def) = special_defs
+                            .iter()
+                            .find(|d| d.name.ends_with("_filter_type"))
+                        {
+                            let id = ParamId::Special(def.special_index);
+                            let names: &[&str] = def.options.unwrap_or(&["LP", "HP", "BP"]);
+                            let current = (src.get(id).round().max(0.0) as usize)
+                                .min(names.len().saturating_sub(1));
+                            let (reverted, picked) = row_scoped(
+                                ui,
+                                src.is_overridden(id),
+                                src.supports(id).reason(),
+                                |ui| {
+                                    editor_label(ui, def.label);
+                                    right_aligned_select(
+                                        ui,
+                                        (def.name, row_salt),
+                                        current,
+                                        names,
+                                    )
+                                },
+                            );
+                            if reverted {
+                                src.clear(id);
+                                changed = true;
+                            } else if let Some(idx) = picked {
+                                src.set(id, idx as f32);
+                                changed = true;
+                            }
+                        }
+                    }
                     // Standard params for this family
                     // smp voices: One Shot bypasses the amp envelope — grey out
                     // the Env sliders (the One Shot switch is a special param,
@@ -1805,6 +2288,10 @@ pub fn draw_sound_panel(
                     let env_disabled = family == crate::instrument_registry::ParamFamily::Env
                         && crate::instrument_registry::is_sampler(voice_idx)
                         && src.get(ParamId::Special(2)) > 0.5;
+                    // [227] Specials drawn right under a standard row instead of
+                    // at the tail of the section (see the hoist below); the
+                    // specials loop skips them.
+                    let mut hoisted: Vec<&'static str> = Vec::new();
                     ui.add_enabled_ui(!env_disabled, |ui| {
                     for def in standard_defs.iter().filter(|d| {
                         d.family == family
@@ -1812,7 +2299,9 @@ pub fn draw_sound_panel(
                     }) {
                             // smp voices: Stereo renders under the Sample
                             // select (Osc family), not in Output ([168]).
-                            if crate::instrument_registry::is_sampler(voice_idx)
+                            // [228] Texture voices: under the File row.
+                            if (crate::instrument_registry::is_sampler(voice_idx)
+                                || texture_param.is_some())
                                 && def.field == crate::instrument_registry::StandardField::Stereo
                             {
                                 continue;
@@ -1908,7 +2397,7 @@ pub fn draw_sound_panel(
                                             src.is_overridden(id),
                                             src.supports(id).reason(),
                                             |ui| {
-                                                draw_editor_slider_row_full(
+                                                let row = draw_editor_slider_row_full(
                                                     ui,
                                                     &label_text,
                                                     value,
@@ -1918,8 +2407,11 @@ pub fn draw_sound_panel(
                                                     *logarithmic,
                                                     *suffix,
                                                     if smp_pitch { 1.0 } else { 0.0 },
-                                                )
-                                                .changed()
+                                                );
+                                                page_lock_menu(
+                                                    &row, plock, slot, page, id, *min, *max, *logarithmic,
+                                                );
+                                                row.changed()
                                             },
                                         );
                                         if reverted {
@@ -1984,6 +2476,29 @@ pub fn draw_sound_panel(
                                 src.set(fine_id, fine);
                             }
                         }
+                        // [227] Rows that belong right under a standard row,
+                        // not at the tail of the section: Resonance under the
+                        // cutoff, the filter envelope's Attack and Hold under
+                        // Filter Env so its stages read A-H-D in order. By
+                        // name suffix and within the SAME family, so a voice
+                        // whose Resonance lives in its source section keeps it
+                        // there.
+                        let hoist: &[&str] = match def.field {
+                            crate::instrument_registry::StandardField::FilterFreq => &["_resonance"],
+                            crate::instrument_registry::StandardField::FilterEnvAmount => {
+                                &["_filter_attack", "_filter_hold"]
+                            }
+                            _ => &[],
+                        };
+                        for suffix in hoist {
+                            if let Some(sdef) = special_defs
+                                .iter()
+                                .find(|d| d.family == family && d.name.ends_with(suffix))
+                            {
+                                draw_plain_special_row(ui, src.as_mut(), plock, slot, page, sdef);
+                                hoisted.push(sdef.name);
+                            }
+                        }
                     }
                     });
 
@@ -1992,6 +2507,15 @@ pub fn draw_sound_panel(
                     for def in special_defs.iter().filter(|d| d.family == family) {
                         // Pitch Fine is rendered directly under the Pitch slider.
                         if def.name.ends_with("_fine_tune") {
+                            continue;
+                        }
+                        // [227] Already drawn under its standard row.
+                        if hoisted.contains(&def.name) {
+                            continue;
+                        }
+                        // [223] The filter type heads the section, above the
+                        // standard rows.
+                        if def.name.ends_with("_filter_type") {
                             continue;
                         }
                         // Buzz gate controls render in their own sub-row, with
@@ -2010,13 +2534,67 @@ pub fn draw_sound_panel(
                         // Fade-in (index 1) applies to both modulation modes.
                         let modulation_disabled =
                             filter_mod_active && def.special_index == 3;
+                        // [221] Grain only bites while Loop is on: with Loop
+                        // off the slice is played once and its length is the
+                        // envelope's business. Greyed, not hidden. Keyed on the
+                        // names, so any instrument declaring a `*_loop` switch
+                        // beside `*_grain*` rows gets the same behaviour.
+                        let grain_disabled = def.name.contains("_grain")
+                            && instrument
+                                .special_params
+                                .iter()
+                                .find(|d| d.name.ends_with("_loop"))
+                                .map(|d| src.get(ParamId::Special(d.special_index)) < 0.5)
+                                .unwrap_or(false);
+                        // [233] The saturation's sub-parameters (Amount, Mix,
+                        // Output Gain) step in under Saturation Type and grey
+                        // out on None. Pre-Filter, Crush and Decimate are not
+                        // part of it. The only sub-parameter styling there is.
+                        let saturation_sub = def.name.ends_with("_saturation_amount")
+                            || def.name.ends_with("_saturation_mix")
+                            || def.name.ends_with("_saturation_output_gain");
+                        let saturation_off = saturation_sub
+                            && instrument
+                                .special_params
+                                .iter()
+                                .find(|d| d.name.ends_with("_saturation_type"))
+                                .map(|d| src.get(ParamId::Special(d.special_index)) < 0.5)
+                                .unwrap_or(false);
                         let special_id = ParamId::Special(def.special_index);
                         // [184] A parameter with no per-step slot of its own is
                         // greyed WITH its reason rather than hidden: the special
                         // whose field collides with Attack, for instance.
                         let unsupported = src.supports(special_id).reason();
+                        // [227] Advance: a switch above its step slider and the
+                        // options folded under it. Switch and options are LANE
+                        // settings (the slot's `advance_mode` param): they say
+                        // how the sequencer counts, not how the voice sounds.
+                        let advance_row = def.name.ends_with("_advance");
+                        let advance_param = params.advance_modes()[slot];
+                        let advance_mode = advance_param.value();
+                        let advance_on = advance_mode & crate::advance_mode::ON != 0;
+                        if advance_row {
+                            let mut on = if advance_on { 1.0 } else { 0.0 };
+                            let (_, toggled) = row_scoped(ui, false, None, |ui| {
+                                draw_editor_switch_row(ui, "Advance", &mut on)
+                                    .on_hover_text(ADVANCE_HELP)
+                                    .changed()
+                            });
+                            if toggled {
+                                set_int_param(setter, advance_param, advance_mode ^ crate::advance_mode::ON);
+                            }
+                        }
+                        let advance_disabled = advance_row && !advance_on;
+                        if saturation_sub {
+                            set_sub_indent(SUB_INDENT_PX);
+                        }
                         let row_area = ui.add_enabled_ui(
-                            !(sample_disabled || modulation_disabled || unsupported.is_some()),
+                            !(sample_disabled
+                                || modulation_disabled
+                                || grain_disabled
+                                || advance_disabled
+                                || saturation_off
+                                || unsupported.is_some()),
                             |ui| {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;
@@ -2024,9 +2602,37 @@ pub fn draw_sound_panel(
                             ui.spacing_mut().item_spacing.x = 8.0;
                             let current = src.get(special_id);
                             let mut new_value = None;
+                            // [221] Named choices declared in the registry:
+                            // one generic dropdown instead of a new per-label
+                            // branch for every instrument. Tested first so a
+                            // declared list always wins over the older
+                            // recognise-by-wording branches below.
+                            if let Some(options) = def.options {
+                                let current_idx =
+                                    (current.round().max(0.0) as usize).min(options.len() - 1);
+                                editor_label(ui, def.label);
+                                // [228] The Texture menu names the file each
+                                // user slot holds ("3: kick.wav"), "(missing)"
+                                // when it is gone, the plain slot when empty.
+                                let dynamic: Option<Vec<String>> = if def.name.ends_with("_texture") {
+                                    Some(texture_menu_labels(options, params, slot))
+                                } else {
+                                    None
+                                };
+                                let dynamic_refs: Option<Vec<&str>> =
+                                    dynamic.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
+                                let shown: &[&str] = dynamic_refs.as_deref().unwrap_or(options);
+                                if let Some(idx) = right_aligned_select(
+                                    ui,
+                                    (def.name, row_salt),
+                                    current_idx,
+                                    shown,
+                                ) {
+                                    new_value = Some(idx as f32);
+                                }
                             // Boolean mode switches, including SDrex's modulation
                             // target and free-running LFO phase.
-                            if def.name.ends_with("_filter_mod") {
+                            } else if def.name.ends_with("_filter_mod") {
                                 // [181] Two named destinations for the one LFO —
                                 // an on/off switch labelled "Filter Mod" did not
                                 // say what it was choosing between.
@@ -2043,6 +2649,13 @@ pub fn draw_sound_panel(
                             } else if def.name.ends_with("_analog_mode")
                                 || def.name.ends_with("_one_shot")
                                 || def.name.ends_with("_free_phase")
+                                // [227] Any 0/1 discrete parameter without a
+                                // named list IS a switch. Loop and Reverse
+                                // were sliders for want of being listed here.
+                                || (!def.continuous
+                                    && def.options.is_none()
+                                    && def.min == 0.0
+                                    && def.max == 1.0)
                             {
                                 let mut value = current;
                                 if draw_editor_switch_row(ui, def.label, &mut value).changed() {
@@ -2115,7 +2728,7 @@ pub fn draw_sound_panel(
                                 } else {
                                 let mut value = current;
                                 let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
-                                if draw_editor_slider_row_curved(
+                                let row = draw_editor_slider_row_curved(
                                     ui,
                                     def.label,
                                     &mut value,
@@ -2125,9 +2738,11 @@ pub fn draw_sound_panel(
                                     logarithmic,
                                     def.unit, // [182] specials carry a unit too
                                     def.curve, // [189] response curve from the registry
-                                )
-                                .changed()
-                                {
+                                );
+                                page_lock_menu(
+                                    &row, plock, slot, page, special_id, def.min, def.max, logarithmic,
+                                );
+                                if row.changed() {
                                     new_value = Some(value);
                                 }
                             }
@@ -2138,11 +2753,113 @@ pub fn draw_sound_panel(
                             }
                         });
                         });
+                        set_sub_indent(0.0);
                         if let Some(reason) = unsupported {
                             // The greyed row explains itself over its WHOLE area.
                             // (An `ui.label("")` allocates nothing, so the hover
                             // text it carried was unreachable.)
                             row_area.response.on_hover_text(reason);
+                        }
+                        // [228] Under the Texture menu, always: the lane's own
+                        // file and Load / Clear. Loading selects "Custom".
+                        if def.name.ends_with("_texture") {
+                            row_scoped(ui, false, None, |ui| {
+                                draw_user_texture_row(ui, params, state, slot);
+                            });
+                        }
+                        // [228] Stereo, a permanent row under Stereo Spread:
+                        // a stereo file plays its two channels as they are
+                        // when on, mixed to mono when off. Greyed - not hidden
+                        // - when the current texture has no right channel
+                        // (embedded textures, mono files, empty slots).
+                        if def.name.ends_with("_stereo_spread") {
+                            let texture_index = instrument
+                                .special_params
+                                .iter()
+                                .find(|d| d.name.ends_with("_texture"))
+                                .map(|d| src.get(ParamId::Special(d.special_index)).round().max(0.0) as usize)
+                                .unwrap_or(0);
+                            let is_stereo_file = crate::synthesis::sample_bank::resolve_texture(
+                                texture_index,
+                                Some((&params.user_textures.pool, slot)),
+                            )
+                            .bank()
+                            .right
+                            .is_some();
+                            let stereo_id = ParamId::Std(StandardField::Stereo);
+                            let (reverted, edited) = row_scoped(
+                                ui,
+                                src.is_overridden(stereo_id),
+                                src.supports(stereo_id).reason(),
+                                |ui| {
+                                    ui.add_enabled_ui(is_stereo_file, |ui| {
+                                        draw_editor_switch_row(ui, "Stereo", &mut stereo)
+                                            .on_hover_text(if is_stereo_file {
+                                                "Stereo: play the file's left and right channels as they are. Off, both are mixed to mono. Stereo Spread adds its offset on top."
+                                            } else {
+                                                "Only bites on a stereo user file: this texture has one channel. Use Stereo Spread for width."
+                                            })
+                                            .changed()
+                                    })
+                                    .inner
+                                },
+                            );
+                            if reverted {
+                                src.clear(stereo_id);
+                                changed = true;
+                            } else if edited {
+                                src.set(stereo_id, stereo);
+                                changed = true;
+                            }
+                        }
+                        // [227] One click: a p-lock with a random Offset on
+                        // every ACTIVE cell of the lane, all pages. Each click
+                        // is a new draw; the values then live in the cells,
+                        // visible in the grid and editable one by one.
+                        if def.name.ends_with("_offset") {
+                            let (_, clicked) = row_scoped(ui, false, None, |ui| {
+                                crate::ui::controls::keycap_button(
+                                    ui,
+                                    "Random Offset on active cells",
+                                    0.0,
+                                    crate::ui::widgets::KeycapState::Rest,
+                                    true,
+                                    f_sans_med(9.5),
+                                )
+                                .on_hover_text(
+                                    "Writes a p-lock with a random Offset on every active cell of this lane, on all pages. Each click is a new draw. Right-click the Offset slider for the page-wide Spread / Scatter / Clear actions.",
+                                )
+                                .clicked()
+                            });
+                            if clicked {
+                                if let Some(field) = special_id.plock_field() {
+                                    let seed =
+                                        (ui.input(|i| i.time) * 1_000_003.0) as u64 as u32 | 1;
+                                    let mut values = [0.0f32; crate::plock::STEP_COUNT];
+                                    crate::plock::random_values(
+                                        def.min, def.max, false, seed, &mut values,
+                                    );
+                                    let pairs: Vec<(usize, f32)> = (0..crate::plock::STEP_COUNT)
+                                        .filter(|&step| pattern.is_active(step, slot))
+                                        .map(|step| (step, values[step]))
+                                        .collect();
+                                    plock.fill_steps(slot, field, &pairs);
+                                }
+                            }
+                        }
+                        if advance_row {
+                            // Vertical inside the gutter row: a collapsing
+                            // header laid out horizontally would open its body
+                            // to the RIGHT of the header.
+                            row_scoped(ui, false, None, |ui| {
+                                ui.vertical(|ui| {
+                                    ui.add_enabled_ui(advance_on, |ui| {
+                                        draw_advance_options(
+                                            ui, setter, advance_param, slot, advance_on,
+                                        );
+                                    });
+                                });
+                            });
                         }
                         // smp voices: the Stereo switch lives directly under the
                         // Sample select ([168]) and works in BOTH modes — in
@@ -2218,6 +2935,74 @@ pub fn draw_sound_panel(
                 };
 
                 match family {
+                    crate::instrument_registry::ParamFamily::Osc => {
+                        // The texture, the read position, the band Wander can
+                        // throw it into, and where Advance lands next.
+                        if let Some(def) = texture_param {
+                            let pick = |suffix: &str| {
+                                instrument
+                                    .special_params
+                                    .iter()
+                                    .find(|d| d.name.ends_with(suffix))
+                                    .map(|d| src.get(ParamId::Special(d.special_index)))
+                                    .unwrap_or(0.0)
+                            };
+                            let index = src
+                                .get(ParamId::Special(def.special_index))
+                                .round()
+                                .max(0.0) as usize;
+                            // [228] Embedded or user texture, the same
+                            // resolution the voice applies (an empty user
+                            // slot shows the fallback it plays).
+                            let source = crate::synthesis::sample_bank::resolve_texture(
+                                index,
+                                Some((&params.user_textures.pool, slot)),
+                            );
+                            let bank = source.bank();
+                            // The grain window is drawn with the SAME mapping
+                            // the voice uses, or the picture would lie.
+                            let texture_secs =
+                                bank.data.len() as f32 / bank.source_rate.max(1.0);
+                            let grain_frac = if texture_secs > 0.0 {
+                                crate::synthesis::rift_grain_seconds(pick("_grain"))
+                                    / texture_secs
+                            } else {
+                                0.0
+                            };
+                            draw_texture_graph(
+                                ui,
+                                &bank.peaks,
+                                pick("_offset"),
+                                pick("_wander"),
+                                if params.advance_modes()[slot].value() & crate::advance_mode::ON != 0 {
+                                    pick("_advance")
+                                } else {
+                                    0.0
+                                },
+                                grain_frac,
+                                pick("_loop") > 0.5,
+                                pick("_reverse") > 0.5,
+                            );
+                        }
+                    }
+                    crate::instrument_registry::ParamFamily::Pitch => {
+                        // [227] Same law as the voice: depth in semitones,
+                        // exponential fall over the time slider.
+                        let pick = |suffix: &str| {
+                            instrument
+                                .special_params
+                                .iter()
+                                .find(|d| d.name.ends_with(suffix))
+                                .map(|d| src.get(ParamId::Special(d.special_index)))
+                                .unwrap_or(0.0)
+                        };
+                        draw_pitch_envelope(
+                            ui,
+                            pick("_pitch_env"),
+                            pick("_pitch_env_time"),
+                            crate::synthesis::RIFT_PITCH_ENV_CURVE,
+                        );
+                    }
                     crate::instrument_registry::ParamFamily::Env => {
                         if let Some((hit, start, end)) = sample_graph {
                             draw_sample_amp_graph(
@@ -2254,30 +3039,25 @@ pub fn draw_sound_panel(
                                     filter_env_decay,
                                     filter_curve,
                                 );
-                            } else if voice_idx == 16 {
-                                // Buzz: A-H-D filter envelope (attack/hold/decay
-                                // + bipolar curve) sweeping the cutoff.
+                            } else if let Some((atk, hold, atk_c, dec_c)) =
+                                ahd_filter_env_params(instrument)
+                            {
+                                // A-H-D filter envelope (attack/hold/decay, each
+                                // ramp with its own bipolar curve) sweeping the
+                                // cutoff: Buzz, SDrex and Rift. Found by
+                                // parameter NAME rather than by instrument
+                                // index, which used to mean one hand-written
+                                // branch — and one table of index literals — per
+                                // voice.
                                 draw_buzz_filter_envelope(
                                     ui,
                                     filt,
                                     filter_env_amount,
-                                    src.get(ParamId::Special(12)), // Filter Attack
-                                    src.get(ParamId::Special(13)), // Filter Hold
+                                    src.get(ParamId::Special(atk)),
+                                    src.get(ParamId::Special(hold)),
                                     filter_env_decay,
-                                    src.get(ParamId::Special(16)), // Filter Atk Curve
-                                    src.get(ParamId::Special(15)), // Filter Dec Curve
-                                );
-                            } else if voice_idx == 17 {
-                                // SDrex: A-H-D filter envelope.
-                                draw_buzz_filter_envelope(
-                                    ui,
-                                    filt,
-                                    filter_env_amount,
-                                    src.get(ParamId::Special(13)), // Filter Attack
-                                    src.get(ParamId::Special(16)), // Filter Hold
-                                    filter_env_decay,
-                                    src.get(ParamId::Special(14)), // Filter Atk Curve
-                                    src.get(ParamId::Special(15)), // Filter Dec Curve
+                                    src.get(ParamId::Special(atk_c)),
+                                    src.get(ParamId::Special(dec_c)),
                                 );
                             } else {
                                 draw_filter_envelope(

@@ -18,6 +18,8 @@ use crate::sequencer::pattern::INSTRUMENT_COUNT;
 use crate::synthesis::VoiceSettings;
 
 pub const STEP_COUNT: usize = 64;
+/// Steps per grid page - the unit Spread / Scatter work on ([221]).
+pub const PAGE_STEPS: usize = 16;
 // The field layout is defined by `param_id`, the module that owns the mapping
 // between a parameter and its slot ([184]); re-exported here so every existing
 // `crate::plock::FIELD_COUNT`-style path keeps working.
@@ -346,6 +348,50 @@ impl PlockState {
         self.field_masks.clear_all(instrument, step);
     }
 
+    /// [221] Spread / Scatter: write ONE field on every step of a 16-step
+    /// page - `values[i]` lands on step `page * PAGE_STEPS + i`. Each step
+    /// becomes (or stays) a Link-mode p-lock carrying that single override;
+    /// whatever else the step locks is left alone.
+    pub fn fill_page(
+        &self,
+        instrument: usize,
+        page: usize,
+        field: usize,
+        values: &[f32; PAGE_STEPS],
+    ) {
+        for (i, value) in values.iter().enumerate() {
+            self.set_field(instrument, page * PAGE_STEPS + i, field, *value);
+        }
+    }
+
+    /// [227] Write ONE field on the listed steps only - the "random Offset on
+    /// every active cell" button. Same Link-mode semantics as `fill_page`.
+    pub fn fill_steps(&self, instrument: usize, field: usize, pairs: &[(usize, f32)]) {
+        for (step, value) in pairs {
+            self.set_field(instrument, *step, field, *value);
+        }
+    }
+
+    /// The undo of [`PlockState::fill_page`]: drop that field's override on
+    /// every step of the page. A step left with no locked field at all stops
+    /// being a p-lock - sixteen empty locks would otherwise keep tinting the
+    /// grid.
+    pub fn clear_field_on_page(&self, instrument: usize, page: usize, field: usize) {
+        if instrument >= INSTRUMENT_COUNT || field >= FIELD_COUNT {
+            return;
+        }
+        for i in 0..PAGE_STEPS {
+            let step = page * PAGE_STEPS + i;
+            if step >= STEP_COUNT {
+                break;
+            }
+            self.field_masks.clear(instrument, step, field);
+            if self.field_masks.get_raw(instrument, step) == 0 {
+                self.masks.set_active(instrument, step, false);
+            }
+        }
+    }
+
     /// Clear every plock in the entire grid.
     /// Call before restore_from_buffers() so old plocks don't leak into the new pattern.
     pub fn clear_all(&self) {
@@ -544,6 +590,20 @@ impl Default for StepCondition {
     }
 }
 
+/// [218] Bit carrying "invert this condition", stored above the condition's own
+/// value in the same `u32`.
+///
+/// A high bit rather than new variants: the low values keep their meaning, so a
+/// session saved before this build decodes unchanged, and the pattern bank -
+/// which stores the raw word - carries the flag with no format change.
+pub const CONDITION_NEGATE_BIT: u32 = 0x100;
+
+/// [219] Second condition, ANDed with the first, stored as `value + 1` in bits
+/// 16-23 of the same word. Zero means "no second condition", which is why the
+/// value is offset by one - `Always` is a legitimate condition numbered 0.
+pub const CONDITION_AND_SHIFT: u32 = 16;
+pub const CONDITION_AND_MASK: u32 = 0x00FF_0000;
+
 impl StepCondition {
     pub fn label(&self) -> &'static str {
         match self {
@@ -562,11 +622,36 @@ impl StepCondition {
         }
     }
 
+    /// The conditions offered in the picker.
+    ///
+    /// [218] `NotFirst` is NOT among them: "Not" is now a modifier that inverts
+    /// any condition, and `First` inverted says exactly the same thing. The
+    /// variant stays for sessions that stored it - `get` reads it back as
+    /// `First` + negate, so it keeps playing identically.
+    /// Decode a stored condition value. Anything unknown reads as `Always`,
+    /// so a corrupt or future value never silences a step.
+    pub fn from_raw(raw: u32) -> StepCondition {
+        match raw {
+            1 => StepCondition::First,
+            // 2 was "Not 1st loop": First inverted says the same thing.
+            2 => StepCondition::First,
+            3 => StepCondition::Half1,
+            4 => StepCondition::Half2,
+            5 => StepCondition::Third1,
+            6 => StepCondition::Third2,
+            7 => StepCondition::Third3,
+            8 => StepCondition::Fourth1,
+            9 => StepCondition::Fourth2,
+            10 => StepCondition::Fourth3,
+            11 => StepCondition::Fourth4,
+            _ => StepCondition::Always,
+        }
+    }
+
     pub fn all() -> &'static [StepCondition] {
         &[
             StepCondition::Always,
             StepCondition::First,
-            StepCondition::NotFirst,
             StepCondition::Half1,
             StepCondition::Half2,
             StepCondition::Third1,
@@ -586,10 +671,29 @@ pub struct SequencerStepParams {
     pub probability: f32,  // 0.0 - 1.0, default 1.0 = always trigger
     pub stutter_count: u8, // 1-16, default 1 = no stutter
     pub condition: StepCondition,
+    /// [218] Invert the condition: "3/4" becomes "every loop except the 3rd of
+    /// four". Has no effect on `Always`, which would otherwise mean "never".
+    /// It inverts the WHOLE expression, second condition included.
+    pub condition_negate: bool,
+    /// [219] Optional second condition, ANDed with the first: "1/2" and "1/3"
+    /// together fire only on the loops where both hold - every sixth.
+    pub condition_and: Option<StepCondition>,
     pub microtiming_ms: f32, // -100.0 to +100.0, default 0.0
     /// Step-scoped solo: while this cell (or its fusion span) plays, every
     /// non-soloed lane is muted for those steps. Independent of the lane-level
     /// `S` tag. Default false.
+    pub solo: bool,
+}
+
+/// [231] Raw image of one cell's sequencer p-lock, for X2 and the page
+/// clipboard. Raw on purpose: the condition word carries its negate and AND
+/// bits, which `SequencerStepParams` + `set()` would lose on the way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SeqStepSnapshot {
+    pub probability_bits: u32,
+    pub stutter_bits: u32,
+    pub condition: u32,
+    pub microtiming_bits: u32,
     pub solo: bool,
 }
 
@@ -599,6 +703,8 @@ impl Default for SequencerStepParams {
             probability: 1.0,
             stutter_count: 1,
             condition: StepCondition::Always,
+            condition_negate: false,
+            condition_and: None,
             microtiming_ms: 0.0,
             solo: false,
         }
@@ -678,19 +784,25 @@ impl SequencerPlockState {
             ),
             stutter_count: f32::from_bits(self.stutters[instrument][step].load(Ordering::Acquire))
                 as u8,
-            condition: match self.conditions[instrument][step].load(Ordering::Acquire) {
-                1 => StepCondition::First,
-                2 => StepCondition::NotFirst,
-                3 => StepCondition::Half1,
-                4 => StepCondition::Half2,
-                5 => StepCondition::Third1,
-                6 => StepCondition::Third2,
-                7 => StepCondition::Third3,
-                8 => StepCondition::Fourth1,
-                9 => StepCondition::Fourth2,
-                10 => StepCondition::Fourth3,
-                11 => StepCondition::Fourth4,
-                _ => StepCondition::Always,
+            condition_negate: self.conditions[instrument][step].load(Ordering::Acquire)
+                & CONDITION_NEGATE_BIT
+                != 0
+                // Legacy "Not 1st loop" is First inverted.
+                || self.conditions[instrument][step].load(Ordering::Acquire)
+                    & !CONDITION_NEGATE_BIT
+                    == 2,
+            condition: StepCondition::from_raw(
+                self.conditions[instrument][step].load(Ordering::Acquire) & 0xFF,
+            ),
+            condition_and: {
+                let raw = (self.conditions[instrument][step].load(Ordering::Acquire)
+                    & CONDITION_AND_MASK)
+                    >> CONDITION_AND_SHIFT;
+                if raw == 0 {
+                    None
+                } else {
+                    Some(StepCondition::from_raw(raw - 1))
+                }
             },
             microtiming_ms: f32::from_bits(
                 self.microtimings[instrument][step].load(Ordering::Acquire),
@@ -711,6 +823,43 @@ impl SequencerPlockState {
             .store(params.microtiming_ms.to_bits(), Ordering::Release);
         self.set_solo(instrument, step, params.solo);
         self.set_active(instrument, step, true);
+    }
+
+    /// [231] Everything the cell's sequencer p-lock holds, raw. `None` when
+    /// the cell has none.
+    pub fn snapshot(&self, instrument: usize, step: usize) -> Option<SeqStepSnapshot> {
+        if !self.is_active(instrument, step) {
+            return None;
+        }
+        Some(SeqStepSnapshot {
+            probability_bits: self.probabilities[instrument][step].load(Ordering::Relaxed),
+            stutter_bits: self.stutters[instrument][step].load(Ordering::Relaxed),
+            condition: self.conditions[instrument][step].load(Ordering::Relaxed),
+            microtiming_bits: self.microtimings[instrument][step].load(Ordering::Relaxed),
+            solo: self.is_solo(instrument, step),
+        })
+    }
+
+    /// [231] Write a snapshot onto a cell, which becomes a sequencer p-lock.
+    pub fn restore(&self, instrument: usize, step: usize, snap: &SeqStepSnapshot) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        self.probabilities[instrument][step].store(snap.probability_bits, Ordering::Release);
+        self.stutters[instrument][step].store(snap.stutter_bits, Ordering::Release);
+        self.conditions[instrument][step].store(snap.condition, Ordering::Release);
+        self.microtimings[instrument][step].store(snap.microtiming_bits, Ordering::Release);
+        self.set_solo(instrument, step, snap.solo);
+        self.set_active(instrument, step, true);
+    }
+
+    /// [231] Duplicate one cell's sequencer p-lock onto another cell, or clear
+    /// the target when the source has none (X2 doubling).
+    pub fn copy_step(&self, instrument: usize, from: usize, to: usize) {
+        match self.snapshot(instrument, from) {
+            Some(snap) => self.restore(instrument, to, &snap),
+            None => self.clear(instrument, to),
+        }
     }
 
     /// Whether the cell at (instrument, step) has step-solo enabled.
@@ -759,7 +908,43 @@ impl SequencerPlockState {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
-        self.conditions[instrument][step].store(value as u32, Ordering::Release);
+        let keep = self.conditions[instrument][step].load(Ordering::Acquire)
+            & (CONDITION_NEGATE_BIT | CONDITION_AND_MASK);
+        self.conditions[instrument][step].store(value as u32 | keep, Ordering::Release);
+        self.set_active(instrument, step, true);
+    }
+
+    /// [219] Set or clear the second condition, ANDed with the first.
+    pub fn set_condition_and(
+        &self,
+        instrument: usize,
+        step: usize,
+        value: Option<StepCondition>,
+    ) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        let raw = self.conditions[instrument][step].load(Ordering::Acquire) & !CONDITION_AND_MASK;
+        let next = match value {
+            Some(cond) => raw | ((cond as u32 + 1) << CONDITION_AND_SHIFT),
+            None => raw,
+        };
+        self.conditions[instrument][step].store(next, Ordering::Release);
+        self.set_active(instrument, step, true);
+    }
+
+    /// [218] Turn the "Not" modifier on or off, keeping the condition itself.
+    pub fn set_condition_negate(&self, instrument: usize, step: usize, negate: bool) {
+        if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
+            return;
+        }
+        let raw = self.conditions[instrument][step].load(Ordering::Acquire);
+        let next = if negate {
+            raw | CONDITION_NEGATE_BIT
+        } else {
+            raw & !CONDITION_NEGATE_BIT
+        };
+        self.conditions[instrument][step].store(next, Ordering::Release);
         self.set_active(instrument, step, true);
     }
 
@@ -942,6 +1127,54 @@ impl<'a> PersistentField<'a, Vec<u8>> for PersistentSequencerPlockState {
         }
 
         f(&result)
+    }
+}
+
+// ── Spread / Scatter value generators ([221]) ───────────────────────────────
+
+/// Values for **Spread**: `min -> max` (or `max -> min` when `descending`) in
+/// sixteen equal steps. In log space for a logarithmic parameter, so a filter
+/// sweep climbs by equal octaves instead of piling up at the top.
+pub fn spread_values(min: f32, max: f32, logarithmic: bool, descending: bool) -> [f32; PAGE_STEPS] {
+    let mut out = [0.0f32; PAGE_STEPS];
+    for (i, v) in out.iter_mut().enumerate() {
+        let mut t = i as f32 / (PAGE_STEPS - 1) as f32;
+        if descending {
+            t = 1.0 - t;
+        }
+        *v = lerp_range(min, max, logarithmic, t);
+    }
+    out
+}
+
+/// Values for **Scatter**: sixteen independent draws over the range
+/// (log-uniform when logarithmic). xorshift32 from `seed`, so a test can pin
+/// the outcome; the UI seeds it from the clock.
+pub fn scatter_values(min: f32, max: f32, logarithmic: bool, seed: u32) -> [f32; PAGE_STEPS] {
+    let mut out = [0.0f32; PAGE_STEPS];
+    random_values(min, max, logarithmic, seed, &mut out);
+    out
+}
+
+/// Fill `out` with independent draws over the range (log-uniform when
+/// logarithmic), xorshift32 from `seed`.
+pub fn random_values(min: f32, max: f32, logarithmic: bool, seed: u32, out: &mut [f32]) {
+    let mut rng = if seed == 0 { 0x9E37_79B9 } else { seed };
+    for v in out.iter_mut() {
+        rng ^= rng << 13;
+        rng ^= rng >> 17;
+        rng ^= rng << 5;
+        let t = (rng >> 8) as f32 / 16_777_216.0;
+        *v = lerp_range(min, max, logarithmic, t);
+    }
+}
+
+fn lerp_range(min: f32, max: f32, logarithmic: bool, t: f32) -> f32 {
+    let (lo, hi) = (min.min(max), min.max(max));
+    if logarithmic && lo > 0.0 {
+        (min.ln() + (max.ln() - min.ln()) * t).exp().clamp(lo, hi)
+    } else {
+        (min + (max - min) * t).clamp(lo, hi)
     }
 }
 
@@ -1274,12 +1507,91 @@ mod tests {
     fn sequencer_condition_setter_roundtrips() {
         let state = SequencerPlockState::new();
 
-        state.set_condition(0, 7, StepCondition::NotFirst);
+        state.set_condition(0, 7, StepCondition::Third2);
 
         let params = state.get(0, 7).expect("sequencer plock should exist");
-        assert_eq!(params.condition, StepCondition::NotFirst);
+        assert_eq!(params.condition, StepCondition::Third2);
+        assert!(!params.condition_negate);
         assert_eq!(params.probability, 1.0);
         assert_eq!(params.stutter_count, 1);
+    }
+
+    /// [218] "Not" is a modifier on top of the condition, not a condition of its
+    /// own: it survives changing the condition, and clears on demand.
+    #[test]
+    fn condition_negate_is_independent_of_the_condition() {
+        let state = SequencerPlockState::new();
+
+        state.set_condition(1, 2, StepCondition::Fourth3);
+        state.set_condition_negate(1, 2, true);
+        let params = state.get(1, 2).unwrap();
+        assert_eq!(params.condition, StepCondition::Fourth3);
+        assert!(params.condition_negate);
+
+        // Changing the condition keeps the modifier.
+        state.set_condition(1, 2, StepCondition::Half1);
+        let params = state.get(1, 2).unwrap();
+        assert_eq!(params.condition, StepCondition::Half1);
+        assert!(params.condition_negate, "the modifier is not a condition");
+
+        state.set_condition_negate(1, 2, false);
+        assert!(!state.get(1, 2).unwrap().condition_negate);
+    }
+
+    /// [219] The second condition rides in the same word as the first, so the
+    /// three settings are independent and none of them disturbs the others.
+    #[test]
+    fn a_second_condition_rides_alongside_the_first() {
+        let state = SequencerPlockState::new();
+
+        state.set_condition(2, 4, StepCondition::Half1);
+        state.set_condition_and(2, 4, Some(StepCondition::Third1));
+        state.set_condition_negate(2, 4, true);
+
+        let params = state.get(2, 4).unwrap();
+        assert_eq!(params.condition, StepCondition::Half1);
+        assert_eq!(params.condition_and, Some(StepCondition::Third1));
+        assert!(params.condition_negate);
+
+        // Changing the first term leaves the second and the modifier alone.
+        state.set_condition(2, 4, StepCondition::Fourth2);
+        let params = state.get(2, 4).unwrap();
+        assert_eq!(params.condition, StepCondition::Fourth2);
+        assert_eq!(params.condition_and, Some(StepCondition::Third1));
+        assert!(params.condition_negate);
+
+        // `Always` as a second term is stored, not mistaken for "none" - which
+        // is why the value is offset by one.
+        state.set_condition_and(2, 4, Some(StepCondition::Always));
+        assert_eq!(
+            state.get(2, 4).unwrap().condition_and,
+            Some(StepCondition::Always)
+        );
+
+        state.set_condition_and(2, 4, None);
+        assert_eq!(state.get(2, 4).unwrap().condition_and, None);
+    }
+
+    /// A session saved with the old "Not 1st loop" keeps playing identically:
+    /// it reads back as `First` inverted, which is the same rule.
+    #[test]
+    fn the_legacy_not_first_loop_condition_reads_as_first_inverted() {
+        let state = SequencerPlockState::new();
+        // What an older build stored for "Not 1st loop".
+        state.set_active(3, 5, true);
+        state.conditions[3][5].store(2, Ordering::Release);
+
+        let params = state.get(3, 5).unwrap();
+        assert_eq!(params.condition, StepCondition::First);
+        assert!(
+            params.condition_negate,
+            "inverted First IS 'not the first loop'"
+        );
+        // And it is no longer offered as a choice of its own.
+        assert!(
+            !StepCondition::all().contains(&StepCondition::NotFirst),
+            "the picker offers the modifier instead"
+        );
     }
 
     #[test]
@@ -1323,6 +1635,44 @@ mod tests {
         assert_eq!(SequencerPlockState::new().solo_window(|_, _| 1), 0);
     }
 
+    /// [231] X2 and the page clipboard copy a cell's sequencer p-lock whole:
+    /// probability, stutter, condition WITH its negate and second term,
+    /// microtiming and solo.
+    #[test]
+    fn snapshot_restore_and_copy_step_carry_the_whole_sequencer_plock() {
+        let state = SequencerPlockState::new();
+        state.set(
+            1,
+            3,
+            &SequencerStepParams {
+                probability: 0.5,
+                stutter_count: 4,
+                condition: StepCondition::Half2,
+                condition_negate: false,
+                condition_and: None,
+                microtiming_ms: -30.0,
+                solo: true,
+            },
+        );
+        state.set_condition_negate(1, 3, true);
+        state.set_condition_and(1, 3, Some(StepCondition::Third1));
+
+        let snap = state.snapshot(1, 3).expect("cell 3 has a sequencer p-lock");
+        state.restore(1, 19, &snap);
+        let (a, b) = (state.get(1, 3).unwrap(), state.get(1, 19).unwrap());
+        assert_eq!(a, b, "the copy must equal the original in every field");
+        assert!(b.condition_negate && b.condition_and == Some(StepCondition::Third1));
+        assert_eq!(b.stutter_count, 4);
+        assert!((b.microtiming_ms + 30.0).abs() < 1e-6);
+        assert!(state.is_solo(1, 19));
+
+        // A source without a p-lock clears the target.
+        assert_eq!(state.snapshot(1, 5), None);
+        state.copy_step(1, 5, 19);
+        assert!(!state.is_active(1, 19));
+        assert!(!state.is_solo(1, 19));
+    }
+
     #[test]
     fn clear_resets_solo() {
         let state = SequencerPlockState::new();
@@ -1330,5 +1680,85 @@ mod tests {
         assert!(state.is_solo(2, 4));
         state.clear(2, 4);
         assert!(!state.is_solo(2, 4));
+    }
+
+    // ── Spread / Scatter ([221]) ────────────────────────────────────────────
+
+    #[test]
+    fn spread_runs_min_to_max_in_sixteen_steps_linear_or_log() {
+        let up = spread_values(0.0, 1.0, false, false);
+        assert_eq!(up[0], 0.0);
+        assert_eq!(up[15], 1.0);
+        assert!(up.windows(2).all(|w| w[1] > w[0]));
+        assert!((up[8] - 8.0 / 15.0).abs() < 1e-6);
+
+        let down = spread_values(0.0, 1.0, false, true);
+        assert_eq!(down[0], 1.0);
+        assert_eq!(down[15], 0.0);
+
+        // Log: equal RATIOS between neighbours (a filter sweep in octaves).
+        let log = spread_values(100.0, 12800.0, true, false);
+        assert!((log[0] - 100.0).abs() < 1e-3);
+        assert!((log[15] - 12800.0).abs() < 0.5);
+        let ratios: Vec<f32> = log.windows(2).map(|w| w[1] / w[0]).collect();
+        assert!(ratios.iter().all(|r| (r - ratios[0]).abs() < 1e-3), "{ratios:?}");
+    }
+
+    #[test]
+    fn scatter_stays_in_range_and_is_seeded() {
+        let a = scatter_values(0.2, 0.8, false, 42);
+        assert!(a.iter().all(|v| (0.2..=0.8).contains(v)), "{a:?}");
+        assert!(a.iter().any(|v| (v - a[0]).abs() > 1e-3), "all equal: {a:?}");
+        assert_eq!(a, scatter_values(0.2, 0.8, false, 42));
+        assert_ne!(a, scatter_values(0.2, 0.8, false, 43));
+        // A zero seed must not lock xorshift at zero.
+        let z = scatter_values(0.0, 1.0, false, 0);
+        assert!(z.iter().any(|v| *v > 0.0));
+    }
+
+    #[test]
+    fn fill_steps_touches_only_the_listed_steps() {
+        let state = PlockState::new();
+        let field = SPECIAL_FIELD_START + 1;
+        state.fill_steps(2, field, &[(3, 0.25), (17, 0.75), (60, 0.5)]);
+        for step in 0..STEP_COUNT {
+            let listed = matches!(step, 3 | 17 | 60);
+            assert_eq!(state.masks.is_active(2, step), listed, "step {step}");
+            assert_eq!(state.field_masks.is_set(2, step, field), listed, "step {step}");
+        }
+        assert_eq!(state.values.get(2, 17, field), 0.75);
+        let mut sixty_four = [0.0f32; STEP_COUNT];
+        random_values(0.0, 1.0, false, 7, &mut sixty_four);
+        assert!(sixty_four.iter().all(|v| (0.0..=1.0).contains(v)));
+        assert!(sixty_four.iter().any(|v| (v - sixty_four[0]).abs() > 1e-3));
+    }
+
+    #[test]
+    fn fill_page_locks_one_field_on_all_sixteen_steps_and_clear_undoes_it() {
+        let state = PlockState::new();
+        let field = SPECIAL_FIELD_START + 1; // Rift Offset
+        let values = spread_values(0.0, 1.0, false, false);
+        // Page 2 = steps 32..48. Step 40 already locks another field.
+        state.set_field(3, 40, SPECIAL_FIELD_START + 2, 0.5);
+        state.fill_page(3, 2, field, &values);
+        for i in 0..PAGE_STEPS {
+            let step = 32 + i;
+            assert!(state.masks.is_active(3, step));
+            assert!(state.field_masks.is_set(3, step, field));
+            assert_eq!(state.values.get(3, step, field), values[i]);
+        }
+        // Neighbouring pages untouched.
+        assert!(!state.masks.is_active(3, 31));
+        assert!(!state.masks.is_active(3, 48));
+
+        state.clear_field_on_page(3, 2, field);
+        for step in 32..48 {
+            assert!(!state.field_masks.is_set(3, step, field));
+        }
+        // Steps that locked nothing else are no longer p-locks; the one that
+        // did keeps its lock.
+        assert!(!state.masks.is_active(3, 33));
+        assert!(state.masks.is_active(3, 40));
+        assert!(state.field_masks.is_set(3, 40, SPECIAL_FIELD_START + 2));
     }
 }

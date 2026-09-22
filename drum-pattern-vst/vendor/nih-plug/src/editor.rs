@@ -7,6 +7,32 @@ use std::sync::Arc;
 
 use crate::prelude::GuiContext;
 
+/// True while the editor has a text field focused and wants the keyboard.
+///
+/// Set by the GUI crate (nih_plug_egui's `set_keyboard_focus`), read by the
+/// VST3 view's `on_key_down` / `on_key_up`: a host that offers keys through
+/// `IPlugView` before running its own shortcuts (REAPER does, with the space
+/// bar bound to Play) is told "handled" while typing, so the shortcut does not
+/// fire on top of the character.
+pub static EDITOR_WANTS_KEYBOARD: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Delivers a key the host offered through `IPlugView::onKeyDown/Up` to the
+/// editor, and says whether it took it.
+///
+/// Arguments: the UTF-16 character (0 if none), the VST3 virtual key code (0 if
+/// none), the modifier mask, and whether this is a press. The GUI crate
+/// registers it once; the VST3 view calls it.
+///
+/// Why it exists: REAPER offers every key through `onKeyDown` first and, when
+/// the plugin answers "handled", **never posts the corresponding Windows
+/// message** — measured: one letter reached the message window in a whole
+/// session once the view started claiming keys. Claiming a key (so the host's
+/// own shortcut, space = Play, does not fire) therefore means delivering it
+/// ourselves.
+pub type HostKeyHandler = fn(u16, i16, i16, bool) -> bool;
+pub static HOST_KEY_HANDLER: std::sync::OnceLock<HostKeyHandler> = std::sync::OnceLock::new();
+
 /// An editor for a [`Plugin`][crate::prelude::Plugin].
 pub trait Editor: Send {
     /// Create an instance of the plugin's editor and embed it in the parent window. As explained in

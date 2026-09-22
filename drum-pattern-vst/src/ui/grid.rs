@@ -25,7 +25,6 @@ pub fn draw_grid_v2(
     setter: &ParamSetter,
     params: &DrumFlashParams,
     pattern: &SharedPattern,
-    voice_test_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
     external_midi_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
     current_step: &AtomicU32,
     current_steps: &[AtomicU32; crate::track::MAX_TRACKS],
@@ -66,7 +65,12 @@ pub fn draw_grid_v2(
 
     let page_offset = state.current_page * 16;
     let fusion_mode_active = fusion_modifier_pressed(ui);
-    if !fusion_mode_active {
+    // [210] A pending fusion start SURVIVES releasing Shift. It used to be wiped
+    // the instant the modifier came up, so letting go for a fraction of a second
+    // between the two clicks silently threw the gesture away - which is most of
+    // why creating a fusion felt broken. Escape cancels it; so does a plain
+    // click on a cell of that lane, and the lane operations that already do.
+    if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
         for selection_start in state.fusion_selection_start.iter_mut() {
             *selection_start = None;
         }
@@ -87,7 +91,8 @@ pub fn draw_grid_v2(
             let grip_w = 14.0;
             let name_w = 46.0;
             let vol_w = 56.0;
-            let mst_w = STEP_H * 3.0 + GAP_TIGHT * 2.0;
+            // [216] Two tags now (M / S): the audition button is gone.
+            let mst_w = STEP_H * 2.0 + GAP_TIGHT;
             let extra_w = 44.0;
             let gap = 7.0;
             let fixed_w = grip_w + name_w + vol_w + mst_w + extra_w * 3.0 + gap * 7.0;
@@ -154,7 +159,6 @@ pub fn draw_grid_v2(
                     setter,
                     params,
                     pattern,
-                    voice_test_triggers,
                     external_midi_triggers,
                     sound_settings,
                     plock,
@@ -259,7 +263,6 @@ fn draw_legacy_slot_lane_v2(
     setter: &ParamSetter,
     params: &DrumFlashParams,
     pattern: &SharedPattern,
-    voice_test_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
     external_midi_triggers: &[AtomicBool; crate::track::MAX_TRACKS],
     sound_settings: &SoundSettingsState,
     plock: &PlockState,
@@ -363,6 +366,28 @@ fn draw_legacy_slot_lane_v2(
             name.chars().take(6).collect::<String>()
         };
         let name_response = draw_lane_name_v2(ui, name_w, selected, &slot_name);
+
+        // [216] MIDI-activity lamp, on the name plate now that the "T" button is
+        // gone. It also confirms Paste Lane, Paste Grid and Randomize Lane,
+        // which set the same timer.
+        //
+        // The lamp USED TO STAY LIT: the editor only repaints on events, so the
+        // frame that lit it was often the last one drawn and the pixels stayed
+        // on screen until something else forced a redraw. Nothing ever asked for
+        // the frame that would turn it off. Scheduling that repaint is the fix -
+        // the same trap already fixed for the fusion edit pulse.
+        let now = ui.ctx().input(|i| i.time);
+        if external_midi_triggers[slot_idx].swap(false, Ordering::Acquire) {
+            state.slot_flash_until[slot_idx] = now + 0.12;
+        }
+        let flash_until = state.slot_flash_until[slot_idx];
+        if now < flash_until {
+            crate::ui::skeuo::lane_activity_led(ui.painter(), name_response.rect);
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(
+                    (flash_until - now).min(0.12).max(0.01),
+                ));
+        }
         if name_response.clicked() {
             select_legacy_track(state, slot_idx);
             // [184] Clicking a lane's NAME means "show me this lane": it always
@@ -559,19 +584,8 @@ fn draw_legacy_slot_lane_v2(
             {
                 select_legacy_track(state, slot_idx);
             }
-            let now = ui.ctx().input(|i| i.time);
-            if external_midi_triggers[slot_idx].swap(false, Ordering::Acquire) {
-                state.slot_flash_until[slot_idx] = now + 0.10;
-            }
-            let is_flashing = now < state.slot_flash_until[slot_idx];
-            if draw_tag_button_v2(ui, "T", AMBER(), Color32::BLACK, is_flashing, "").clicked() {
-                voice_test_triggers[slot_idx].store(true, Ordering::Release);
-                // Flash amber on click too (not just on incoming external MIDI).
-                state.slot_flash_until[slot_idx] = now + 0.10;
-                if params.auto_edit.value() {
-                    select_legacy_track(state, slot_idx);
-                }
-            }
+            // [216] Two tags instead of three: the "T" audition button is gone.
+            // Its MIDI lamp moved to the name plate, above.
         });
 
         ui.horizontal(|ui| {
@@ -663,8 +677,10 @@ fn draw_legacy_slot_lane_v2(
                         .seq_plock_state
                         .state
                         .is_solo(slot_idx, source_step);
-                let selection_start = fusion_mode_active
-                    && state.fusion_selection_start[slot_idx] == Some(global_step);
+                // [210] Not gated on the modifier: the mark must stay visible
+                // while the user reaches for the second cell.
+                let selection_start =
+                    state.fusion_selection_start[slot_idx] == Some(global_step);
 
                 let is_editing = state
                     .fusion_editing
@@ -731,6 +747,46 @@ fn draw_legacy_slot_lane_v2(
                     active,
                     is_editing,
                 );
+
+                // [210] The `[` that opens the span, over the cell that is
+                // waiting for its end.
+                if selection_start {
+                    crate::ui::skeuo::fusion_start_bracket(
+                        ui.painter(),
+                        response.rect,
+                        BLUE(),
+                    );
+                }
+
+                // [220] The cell carries the OTHER kind of p-lock too: a pip
+                // in that kind's colour, whichever mode the grid is in. Sound
+                // p-locks are light green, sequencer p-locks violet, so the pip
+                // never repeats the fill it sits on.
+                //
+                // A fused block's cells all read the START cell's p-locks, so the
+                // pip landed on every one of them - five dots across one block.
+                // One block, one pip, on its LAST cell: the block's own top-right
+                // corner. A block running off the page keeps its pip on the last
+                // cell still visible.
+                let pip_cell = match fusion_group {
+                    Some(group) => {
+                        let last = group.start_cell as usize + group.cell_span() - 1;
+                        global_step == last.min(page_offset + 15)
+                    }
+                    None => true,
+                };
+                if !beyond_len && pip_cell {
+                    let other = if state.sequencer_mode {
+                        if has_sound_plock { Some(PL_LINK()) } else { None }
+                    } else if has_seq_plock {
+                        Some(SEQPL())
+                    } else {
+                        None
+                    };
+                    if let Some(color) = other {
+                        crate::ui::skeuo::plock_pip(ui.painter(), response.rect, color);
+                    }
+                }
 
                 // Step-solo marker: a small 'S' in the top-left corner of soloed
                 // seq-plock cells. Shown only in sequencer mode (matches when the
@@ -883,6 +939,10 @@ fn draw_legacy_slot_lane_v2(
                                 step: source_step,
                                 step_was_active: active,
                                 screen_pos: pos,
+                                just_opened: true,
+                                // [213] Seeded from the grid mode, then free to
+                                // change inside the menu.
+                                sequencer: state.sequencer_mode,
                             });
                         }
                     }
@@ -1357,6 +1417,10 @@ fn apply_lane_reorder_move(
         move_mask_bits(old_lock_mask, &order),
     );
 
+    // [228] The lane's custom texture moves with it (was left behind on the
+    // old number, then dropped by the "no Texture menu here" rule).
+    params.user_textures.reorder(&order);
+
     let old_selection = state.selected_track_slot;
     let old_selected_instrument = state.selected_instrument;
     let old_fusion_selection = state.fusion_selection_start;
@@ -1526,6 +1590,16 @@ fn deactivate_slot(
 
 /// Instrument picker popup for an empty lane (opened by the `+N` chip).
 
+/// [212] Write the page-loop parameter: `None` = off, `Some(page)` = loop it.
+pub fn set_page_loop_param(setter: &ParamSetter, params: &DrumFlashParams, page: Option<usize>) {
+    let value = page.map(|p| p as i32 + 1).unwrap_or(0);
+    if params.page_loop.value() != value {
+        setter.begin_set_parameter(&params.page_loop);
+        setter.set_parameter(&params.page_loop, value);
+        setter.end_set_parameter(&params.page_loop);
+    }
+}
+
 fn draw_page_bar_v2(
     ui: &mut egui::Ui,
     setter: &ParamSetter,
@@ -1538,6 +1612,18 @@ fn draw_page_bar_v2(
     master_length: usize,
 ) {
     let page_count = (master_length + 15) / 16;
+    // [212] Which page loops (param 0 = none, 1-4 = page). Beyond the pattern
+    // the loop is dead: the param is put back to 0 so the ring goes away too.
+    let song_mode = params.song_mode.value();
+    let looped_page = match params.page_loop.value() {
+        p if p >= 1 => Some(p as usize - 1),
+        _ => None,
+    };
+    if let Some(p) = looped_page {
+        if p >= page_count.max(1) {
+            set_page_loop_param(setter, params, None);
+        }
+    }
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         ui.allocate_ui_with_layout(
@@ -1566,6 +1652,30 @@ fn draw_page_bar_v2(
                 // Red play LED incrusted in the button's top-right corner.
                 let r = response.rect;
                 crate::ui::skeuo::play_led(ui.painter(), egui::pos2(r.right() - 7.0, r.top() + 7.0), 2.6);
+            }
+            // [212] Amber ring = this page loops. Greyed in Song mode, where
+            // the loop is ignored.
+            if looped_page == Some(page) && enabled {
+                let ring = if song_mode { INK3() } else { AMBER() };
+                ui.painter().rect_stroke(
+                    response.rect.expand(1.5),
+                    5.0,
+                    egui::Stroke::new(1.5, ring),
+                    egui::StrokeKind::Outside,
+                );
+            }
+            let response = response.on_hover_text(if looped_page == Some(page) {
+                if song_mode {
+                    "This page is set to loop, but Song mode plays the chain: the loop is ignored until Song is off. Double-click to release."
+                } else {
+                    "This page loops. Double-click to release it and play the whole pattern again."
+                }
+            } else {
+                "Click: show this page. Double-click: loop this page alone (the playhead stays in it, keeping its phase). Right-click: copy / paste / clear / loop."
+            });
+            if response.double_clicked() && enabled {
+                let next = if looped_page == Some(page) { None } else { Some(page) };
+                set_page_loop_param(setter, params, next);
             }
             if response.clicked() {
                 state.current_page = page;
@@ -1640,6 +1750,11 @@ fn draw_page_bar_v2(
                     for i in 0..master_length {
                         pattern.set_step_mask(master_length + i, pattern.load_step_mask(i));
                         for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
+                            // [231] The sequencer p-locks double with the cells.
+                            params
+                                .seq_plock_state
+                                .state
+                                .copy_step(inst, i, master_length + i);
                             if plock.masks.is_active(inst, i) {
                                 let field_mask = plock.field_masks.get_raw(inst, i);
                                 plock.masks.set_active(inst, master_length + i, true);
@@ -1706,7 +1821,7 @@ fn draw_seq_header_v2(
         ui.allocate_ui(Vec2::new(mst_w, 16.0), |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-                for t in ["M", "S", "T"] {
+                for t in ["M", "S"] {
                     ui.add_sized(
                         Vec2::new(STEP_H, 16.0),
                         egui::Label::new(RichText::new(t).font(f_mono(9.0)).color(INK3())),
@@ -1912,6 +2027,9 @@ fn draw_step_cell_v2(
         } else {
             rect
         };
+        // The ring stays WHITE on every pad, light green included: the playhead
+        // has to read as one continuous column, and a ring that changes colour
+        // cell by cell breaks that more than a low contrast ever did.
         ui.painter().rect_stroke(
             ring_rect.shrink(0.75),
             egui::epaint::CornerRadius::same(3),
@@ -1925,10 +2043,22 @@ fn draw_step_cell_v2(
             egui::Align2::CENTER_CENTER,
             text,
             f_mono_sb(10.0),
-            Color32::WHITE,
+            if is_light_pad(fill) {
+                Color32::from_rgb(12, 32, 26)
+            } else {
+                Color32::WHITE
+            },
         );
     }
     response
+}
+
+/// True for a pad bright enough that a white overlay would vanish on it - the
+/// light-green sound-p-lock fill. Only the fusion pulse count flips to
+/// near-black on those; the playhead ring stays white everywhere.
+fn is_light_pad(fill: Color32) -> bool {
+    let y = 0.2126 * fill.r() as f32 + 0.7152 * fill.g() as f32 + 0.0722 * fill.b() as f32;
+    y > 170.0
 }
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
@@ -1993,7 +2123,19 @@ fn step_colors_v2(
         );
     }
     if selection_start {
-        return (FUSION_FILL(), egui::Stroke::new(1.5, BLUE()));
+        // [210] The old pair was invisible: a fill of rgb(20,34,58) against an
+        // empty cell at rgb(27,27,34) - same brightness, barely bluer - behind
+        // a 1.5 px line. The fill is now lifted towards the accent and the
+        // outline is solid, and `fusion_start_bracket` draws the `[` on top.
+        let f = FUSION_FILL();
+        let b = BLUE();
+        let lift = |a: u8, t: u8| (a as f32 + (t as f32 - a as f32) * 0.30) as u8;
+        let fill = Color32::from_rgb(
+            lift(f.r(), b.r()),
+            lift(f.g(), b.g()),
+            lift(f.b(), b.b()),
+        );
+        return (fill, egui::Stroke::new(2.0, b));
     }
 
     let empty = if local_step % 4 == 0 {
@@ -2558,6 +2700,7 @@ pub fn copy_page_to_clipboard(
     }
 
     let mut plocks = Vec::new();
+    let mut seq_plocks = Vec::new();
     for inst in 0..crate::sequencer::pattern::INSTRUMENT_COUNT {
         for (i, step) in (page_start..page_end).enumerate() {
             if plock.masks.is_active(inst, step) {
@@ -2573,11 +2716,13 @@ pub fn copy_page_to_clipboard(
                     values,
                 });
             }
-            let seq_plock = &params.seq_plock_state.state;
-            if seq_plock.is_active(inst, step) {
-                // Seq plocks are stored per step in PageClipboard via an extension field.
-                // For now, sound plocks only. Seq plocks will be added if needed.
-                let _ = seq_plock;
+            // [231] Sequencer p-locks travel with the page too.
+            if let Some(snapshot) = params.seq_plock_state.state.snapshot(inst, step) {
+                seq_plocks.push(crate::ui::editor_state::SeqPlockClipboardEntry {
+                    instrument: inst,
+                    step: i,
+                    snapshot,
+                });
             }
         }
     }
@@ -2602,6 +2747,7 @@ pub fn copy_page_to_clipboard(
         triggers,
         plocks,
         fusions,
+        seq_plocks,
     }
 }
 
@@ -2641,6 +2787,18 @@ pub fn paste_page_from_clipboard(
         for (field, &value) in entry.values.iter().enumerate() {
             plock.values.set(entry.instrument, step, field, value);
         }
+    }
+
+    // [231] Sequencer p-locks (the page's were cleared above).
+    for entry in &clipboard.seq_plocks {
+        let step = page_start + entry.step;
+        if step >= page_end {
+            continue;
+        }
+        params
+            .seq_plock_state
+            .state
+            .restore(entry.instrument, step, &entry.snapshot);
     }
 
     // Fusions

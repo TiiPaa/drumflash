@@ -146,7 +146,6 @@ pub fn create_editor(
     current_step: Arc<AtomicU32>,
     current_steps: Arc<[AtomicU32; crate::track::MAX_TRACKS]>,
     pattern: Arc<SharedPattern>,
-    voice_test_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
     external_midi_triggers: Arc<[AtomicBool; crate::track::MAX_TRACKS]>,
     sound_settings_state: Arc<SoundSettingsState>,
     plock_state: Arc<PlockState>,
@@ -161,7 +160,6 @@ pub fn create_editor(
     let params_for_ui = params.clone();
     let editor_state = params.editor_state.clone();
     let pattern_for_ui = pattern.clone();
-    let voice_test_triggers_for_ui = voice_test_triggers.clone();
     let external_midi_triggers_for_ui = external_midi_triggers.clone();
     let sound_settings_for_ui = sound_settings_state.clone();
     let current_steps_for_ui = current_steps.clone();
@@ -302,7 +300,6 @@ pub fn create_editor(
                                 setter,
                                 &params_for_ui,
                                 &pattern_for_ui,
-                                &voice_test_triggers_for_ui,
                                 &external_midi_triggers_for_ui,
                                 &current_step,
                                 &current_steps_for_ui,
@@ -374,7 +371,6 @@ pub fn create_editor(
                         setter,
                         &params_for_ui,
                         &pattern_for_ui,
-                        &sound_settings_for_ui,
                         &plock_for_ui,
                         state,
                     );

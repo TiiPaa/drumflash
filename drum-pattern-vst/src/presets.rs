@@ -80,6 +80,11 @@ pub struct InstrumentPreset {
     pub algo: u8,
     /// Special values in the registry's `special_params` order for the kind.
     pub specials: Vec<f32>,
+    /// [228] Path of the user texture the lane's Texture menu points at, when
+    /// it points at a user slot: the preset brings its file along. Absent
+    /// from older presets (`default`), and for every other instrument.
+    #[serde(default)]
+    pub user_texture: Option<String>,
 }
 
 /// One active lane's sound (standards + specials + algo) captured with a
@@ -96,6 +101,9 @@ pub struct PatternSlotSound {
     pub algo: u8,
     /// Special values in the kind's `special_params` order.
     pub specials: Vec<f32>,
+    /// [228] See `InstrumentPreset::user_texture`.
+    #[serde(default)]
+    pub user_texture: Option<String>,
 }
 
 /// A full pattern: grid + fusions + sound plocks + seq plocks, plus the lane
@@ -145,12 +153,30 @@ pub struct GridPreset {
 // Capture helpers (live state -> preset)
 // ---------------------------------------------------------------------------
 
-/// Capture a slot's sound. `algo` is the slot's algorithm index.
+/// [228] The custom texture file of a lane, when its kind has a Texture menu
+/// (a `*_texture` special, Rift's) and a file is loaded on that lane.
+pub fn user_texture_path(
+    kind: TrackInstrumentKind,
+    lane: usize,
+    textures: &crate::user_textures::UserTextures,
+) -> Option<String> {
+    kind.instrument_def()
+        .special_params
+        .iter()
+        .any(|d| d.name.ends_with("_texture"))
+        .then(|| textures.path(lane))
+        .flatten()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Capture a slot's sound. `algo` is the slot's algorithm index;
+/// `user_texture` is what [`user_texture_path`] found for the lane.
 pub fn capture_instrument(
     name: String,
     kind: TrackInstrumentKind,
     inst: &InstrumentSettingsState,
     algo: i32,
+    user_texture: Option<String>,
 ) -> InstrumentPreset {
     use std::sync::atomic::Ordering;
     let g = |a: &std::sync::atomic::AtomicU32| f32::from_bits(a.load(Ordering::Relaxed));
@@ -182,6 +208,7 @@ pub fn capture_instrument(
         standards,
         algo: algo.clamp(0, 255) as u8,
         specials,
+        user_texture,
     }
 }
 
@@ -198,6 +225,7 @@ pub fn capture_pattern(
     pattern_length: u8,
     sound_settings: &SoundSettingsState,
     algos: &[i32],
+    textures: &crate::user_textures::UserTextures,
 ) -> PatternPreset {
     let mut slot = PatternSlot::default();
     slot.capture(pattern, plock_state, seq_plock_state, pattern_length);
@@ -208,13 +236,21 @@ pub fn capture_pattern(
             kit[i] = s.kind.index() as i8;
             // Reuse the instrument-sound extraction so the two paths stay in sync.
             let algo = algos.get(i).copied().unwrap_or(0);
-            let ip = capture_instrument(String::new(), s.kind, &sound_settings.instruments[i], algo);
+            let user_texture = user_texture_path(s.kind, i, textures);
+            let ip = capture_instrument(
+                String::new(),
+                s.kind,
+                &sound_settings.instruments[i],
+                algo,
+                user_texture,
+            );
             sounds.push(PatternSlotSound {
                 slot: i as u8,
                 kind: ip.kind,
                 standards: ip.standards,
                 algo: ip.algo,
                 specials: ip.specials,
+                user_texture: ip.user_texture,
             });
         }
     }
@@ -582,10 +618,16 @@ mod tests {
             standards: [1.0; 13],
             algo: 2,
             specials: vec![0.5, 1.0, 3.0],
+            user_texture: Some("C:/samples/tex.wav".to_string()),
         };
         let json = serde_json::to_string(&p).unwrap();
         let back: InstrumentPreset = serde_json::from_str(&json).unwrap();
         assert_eq!(back, p);
+        // [228] A preset written before user textures existed still loads.
+        let legacy = json.replace(",\"user_texture\":\"C:/samples/tex.wav\"", "");
+        assert!(!legacy.contains("user_texture"));
+        let back: InstrumentPreset = serde_json::from_str(&legacy).unwrap();
+        assert_eq!(back.user_texture, None);
     }
 
     #[test]
@@ -608,6 +650,7 @@ mod tests {
             16,
             &sound_settings,
             &[0i32; 14],
+            &crate::user_textures::UserTextures::new(),
         );
         // JSON round trip, like save/load through a file.
         let json = serde_json::to_string(&preset).unwrap();
@@ -661,6 +704,7 @@ mod tests {
             32,
             &sound,
             &algos,
+            &crate::user_textures::UserTextures::new(),
         );
         assert_eq!(p.step_masks[0], 0b101);
         assert!(hex_decode(&p.plock_hex).is_ok());

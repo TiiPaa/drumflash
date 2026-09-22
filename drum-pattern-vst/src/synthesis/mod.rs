@@ -16,6 +16,7 @@ mod retrig_tests;
 mod open_hihat;
 mod perc1;
 mod ride;
+mod rift;
 pub mod sample_bank;
 mod ch606;
 mod saturation;
@@ -44,6 +45,13 @@ pub use kick_808::Kick808Voice;
 pub use open_hihat::OpenHiHatVoice;
 pub use perc1::Perc1Voice;
 pub use ride::RideVoice;
+#[allow(unused_imports)] // le binaire de test headless n'a pas d'UI
+pub use rift::grain_seconds as rift_grain_seconds;
+// Read by the Sound Panel's pitch-envelope graph; the standalone harness
+// has no UI, hence the allow.
+#[allow(unused_imports)]
+pub use rift::PITCH_ENV_CURVE as RIFT_PITCH_ENV_CURVE;
+pub use rift::RiftVoice;
 pub use sd606::Sd606Voice;
 pub use settings::bd606::Bd606Settings;
 pub use settings::buzz::BuzzSettings;
@@ -57,6 +65,7 @@ pub use settings::kick_808::Kick808Settings;
 pub use settings::open_hihat::OpenHiHatSettings;
 pub use settings::perc1::Perc1Settings;
 pub use settings::ride::RideSettings;
+pub use settings::rift::RiftSettings;
 pub use settings::sd606::Sd606Settings;
 pub use settings::snare::SnareSettings;
 pub use settings::snare606::Snare606Settings;
@@ -96,11 +105,13 @@ pub enum DrumVoice {
     Cl6Ac = 22,
     Tm6Ac = 23,
     Oh606 = 24,
+    /// [221] Rift - a slice lifted out of a long texture.
+    Rift = 25,
 }
 
 #[allow(dead_code)]
 impl DrumVoice {
-    pub const COUNT: usize = 25;
+    pub const COUNT: usize = 26;
 
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
@@ -129,6 +140,7 @@ impl DrumVoice {
             22 => Some(Self::Cl6Ac),
             23 => Some(Self::Tm6Ac),
             24 => Some(Self::Oh606),
+            25 => Some(Self::Rift),
             _ => None,
         }
     }
@@ -657,6 +669,38 @@ impl VoiceSettings {
         }
     }
 
+    /// [221] Rift: a 40 ms slice of the noise-field texture, filter wide
+    /// open, no saturation - the neutral starting point from which the offset
+    /// does the work.
+    pub fn rift() -> Self {
+        Self {
+            frequency: 0.0,
+            decay: 0.12,
+            volume: 0.8,
+            // Repris de Buzz : filtre ferme au repos, ouvert par l'enveloppe.
+            filter_freq: 20000.0,
+            attack: 0.05,
+            release: 0.0,
+            decay_curve: 0.0,
+            release_curve: 0.0,
+            hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.12,
+            analog: 0.0,
+            stereo: 0.0,
+            algo: 0,
+            // texture, offset, wander, grain, grain shape, filter type,
+            // resonance, then the saturation pack (7..11), then Loop at 12.
+            special: [
+                0.0, 0.05, 0.0, 0.35, 0.15, 0.0, 0.9, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                // 16 dec curve, 17 pitch fine, 18 pitch env, 19 pitch env time,
+                // 20 advance, 21 lfo shape, 22 free phase, 23/24 pitch LFO,
+                // 25/26 filter LFO.
+                0.6, 0.0, 0.0, 0.08, 0.0, 0.0, 0.0, 5.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        }
+    }
+
     pub fn ch606() -> Self {
         // TR-606 closed hi-hat sampler: same sampler engine as sd606, tighter
         // amp decay + a touch lower level (hats sit under the kit).
@@ -877,6 +921,15 @@ pub trait Voice: Send + Sync {
     fn trigger_hard(&mut self) {
         self.trigger();
     }
+    /// [227] Which hit in a row this is, for voices that step something per
+    /// hit (Rift's Advance). The plugin sets it BEFORE `trigger()`; voices
+    /// that count nothing ignore it.
+    fn set_hit_index(&mut self, _index: u32) {}
+    /// [228] The instance's pool of lane textures and which lane this voice
+    /// sits on, for voices that read the file the user loaded on their lane
+    /// (Rift). Set once after creation; an `Arc` clone, so safe on the audio
+    /// thread. Voices without samples ignore it.
+    fn set_texture_pool(&mut self, _pool: std::sync::Arc<sample_bank::TexturePool>, _lane: usize) {}
     fn process_sample(&mut self) -> f32;
     /// Stereo version. Default returns duplicated mono.
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -915,6 +968,7 @@ pub enum DrumVoiceKind {
     Ch606(Ch606Voice),
     /// [208] OH6smp: the same hat engine as `Ch606`, on the open-hat bank.
     Oh606(Ch606Voice),
+    Rift(RiftVoice),
     Buzz(BuzzVoice),
     Sdrex(SdrexVoice),
     Bd6Ac(AcVoice),
@@ -943,6 +997,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.trigger(),
             DrumVoiceKind::Ch606(v) => v.trigger(),
             DrumVoiceKind::Oh606(v) => v.trigger(),
+            DrumVoiceKind::Rift(v) => v.trigger(),
             DrumVoiceKind::Buzz(v) => v.trigger(),
             DrumVoiceKind::Sdrex(v) => v.trigger(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.trigger(),
@@ -966,6 +1021,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.trigger_hard(),
             DrumVoiceKind::Ch606(v) => v.trigger_hard(),
             DrumVoiceKind::Oh606(v) => v.trigger_hard(),
+            DrumVoiceKind::Rift(v) => v.trigger_hard(),
             DrumVoiceKind::Buzz(v) => v.trigger_hard(),
             DrumVoiceKind::Sdrex(v) => v.trigger_hard(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.trigger_hard(),
@@ -989,6 +1045,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.process_sample(),
             DrumVoiceKind::Ch606(v) => v.process_sample(),
             DrumVoiceKind::Oh606(v) => v.process_sample(),
+            DrumVoiceKind::Rift(v) => v.process_sample(),
             DrumVoiceKind::Buzz(v) => v.process_sample(),
             DrumVoiceKind::Sdrex(v) => v.process_sample(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.process_sample(),
@@ -1012,6 +1069,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Ch606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Oh606(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Rift(v) => v.process_sample_stereo(),
             DrumVoiceKind::Buzz(v) => v.process_sample_stereo(),
             DrumVoiceKind::Sdrex(v) => v.process_sample_stereo(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.process_sample_stereo(),
@@ -1035,6 +1093,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.is_active(),
             DrumVoiceKind::Ch606(v) => v.is_active(),
             DrumVoiceKind::Oh606(v) => v.is_active(),
+            DrumVoiceKind::Rift(v) => v.is_active(),
             DrumVoiceKind::Buzz(v) => v.is_active(),
             DrumVoiceKind::Sdrex(v) => v.is_active(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.is_active(),
@@ -1058,6 +1117,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.reset(),
             DrumVoiceKind::Ch606(v) => v.reset(),
             DrumVoiceKind::Oh606(v) => v.reset(),
+            DrumVoiceKind::Rift(v) => v.reset(),
             DrumVoiceKind::Buzz(v) => v.reset(),
             DrumVoiceKind::Sdrex(v) => v.reset(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.reset(),
@@ -1081,9 +1141,22 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.set_settings(settings),
             DrumVoiceKind::Ch606(v) => v.set_settings(settings),
             DrumVoiceKind::Oh606(v) => v.set_settings(settings),
+            DrumVoiceKind::Rift(v) => v.set_settings(settings),
             DrumVoiceKind::Buzz(v) => v.set_settings(settings),
             DrumVoiceKind::Sdrex(v) => v.set_settings(settings),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_settings(settings),
+        }
+    }
+
+    fn set_hit_index(&mut self, index: u32) {
+        if let DrumVoiceKind::Rift(v) = self {
+            v.set_hit_index(index);
+        }
+    }
+
+    fn set_texture_pool(&mut self, pool: std::sync::Arc<sample_bank::TexturePool>, lane: usize) {
+        if let DrumVoiceKind::Rift(v) = self {
+            v.set_texture_pool(pool, lane);
         }
     }
 
@@ -1104,6 +1177,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.set_algo(algo),
             DrumVoiceKind::Ch606(v) => v.set_algo(algo),
             DrumVoiceKind::Oh606(v) => v.set_algo(algo),
+            DrumVoiceKind::Rift(v) => v.set_algo(algo),
             DrumVoiceKind::Buzz(v) => v.set_algo(algo),
             DrumVoiceKind::Sdrex(v) => v.set_algo(algo),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_algo(algo),
@@ -1127,6 +1201,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Sd606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Ch606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Oh606(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Rift(v) => v.set_special_param(index, value),
             DrumVoiceKind::Buzz(v) => v.set_special_param(index, value),
             DrumVoiceKind::Sdrex(v) => v.set_special_param(index, value),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_special_param(index, value),
@@ -1201,6 +1276,10 @@ fn create_voice_for_kind(
             Ch606Settings::from(VoiceSettings::oh606()),
             sample_bank::oh606(),
         )),
+        K::Rift => DrumVoiceKind::Rift(RiftVoice::new(
+            sample_rate,
+            RiftSettings::from(VoiceSettings::rift()),
+        )),
         K::Buzz => DrumVoiceKind::Buzz(BuzzVoice::new(
             sample_rate,
             BuzzSettings::from(VoiceSettings::buzz()),
@@ -1253,6 +1332,9 @@ pub struct DrumSynthesizer {
     /// so that the audio thread never allocates, but only active slots are
     /// triggered and processed.
     active: [bool; crate::track::MAX_TRACKS],
+    /// [228] The instance's user textures, handed to every voice that reads
+    /// samples. `None` in the test harness: embedded textures only.
+    texture_pool: Option<std::sync::Arc<sample_bank::TexturePool>>,
 }
 
 const VELOCITY_SMOOTH_MS: f32 = 1.5;
@@ -1260,6 +1342,7 @@ const VELOCITY_SMOOTH_MS: f32 = 1.5;
 impl DrumSynthesizer {
     pub fn new() -> Self {
         Self {
+            texture_pool: None,
             voices: Box::new(std::array::from_fn(|_| None)),
             sample_rate: 44100.0,
             velocities: [1.0; crate::track::MAX_TRACKS],
@@ -1293,6 +1376,7 @@ impl DrumSynthesizer {
         let _ = sample_bank::sd606();
         let _ = sample_bank::ch606();
         let _ = sample_bank::oh606();
+        sample_bank::prewarm_textures();
         // Pre-build the AC606 clap's reconstruction table (non-RT too).
         ac606::prewarm();
 
@@ -1307,9 +1391,19 @@ impl DrumSynthesizer {
             } else {
                 placeholder_kind
             };
-            self.voices[i] = Some(Box::new(create_voice_for_kind(kind, sample_rate)));
+            let mut voice = create_voice_for_kind(kind, sample_rate);
+            if let Some(pool) = &self.texture_pool {
+                voice.set_texture_pool(pool.clone(), i);
+            }
+            self.voices[i] = Some(Box::new(voice));
             self.active[i] = slot.active;
         }
+    }
+
+    /// [228] Give the voices access to the user textures. Call before
+    /// `initialize_with_layout`; later voice swaps inherit it.
+    pub fn set_texture_pool(&mut self, pool: std::sync::Arc<sample_bank::TexturePool>) {
+        self.texture_pool = Some(pool);
     }
     pub fn trigger(&mut self, slot_idx: usize, velocity: f32) {
         if !self.active.get(slot_idx).copied().unwrap_or(false) {
@@ -1328,6 +1422,13 @@ impl DrumSynthesizer {
         if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
             voice.trigger_hard();
             self.velocities[slot_idx] = velocity;
+        }
+    }
+
+    /// [227] Hand the voice its hit index, before the trigger that follows.
+    pub fn set_hit_index(&mut self, slot_idx: usize, index: u32) {
+        if let Some(Some(voice)) = self.voices.get_mut(slot_idx) {
+            voice.set_hit_index(index);
         }
     }
 
@@ -1426,7 +1527,11 @@ impl DrumSynthesizer {
         if slot_idx >= crate::track::MAX_TRACKS {
             return;
         }
-        let new_voice = create_voice_for_kind(kind, self.sample_rate);
+        let mut new_voice = create_voice_for_kind(kind, self.sample_rate);
+        if let Some(pool) = &self.texture_pool {
+            // An Arc clone: one atomic increment, fine on the audio thread.
+            new_voice.set_texture_pool(pool.clone(), slot_idx);
+        }
         if let Some(existing) = self.voices[slot_idx].as_mut() {
             **existing = new_voice;
             self.active[slot_idx] = true;

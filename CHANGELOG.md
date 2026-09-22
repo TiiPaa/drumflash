@@ -1,5 +1,442 @@
 # Changelog
 
+## 2026-09-21 - [233] Retour en arriere : seuls les sous-parametres de la saturation sont decales (build 20260921-201521)
+
+**Branche:** `main` - **Build:** `20260921-201521`
+**Validation:** `cargo check` warning-clean, `cargo test` 444 + 285 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Retour utilisateur sur le build 195925 : « c'est n'importe quoi, rien n'est coherent, reviens en arriere et mets juste les sous param de saturation en decale, sans mettre de | ».
+
+- **Retire** : la regle generique `parent_of` / `std_parent_of` / `ParentRef` et son test, le grisage et le decalage de Grain sous Loop, de l'enveloppe de filtre sous Filter Env, de Filter Decay, d'Attack Curve, des temps d'enveloppe et des rates de LFO, d'Advance Step, de Pitch Fine, et la barre verticale a gauche des libelles. Les cas Grain/Loop (grise quand Loop est eteint) et Advance Step (grise quand Advance est eteint) reviennent tels qu'ils etaient avant le build 195925.
+- **Garde** : Saturation Amount, Mix et Output Gain ont leur libelle decale de 14 px sous Saturation Type et sont grises quand le type est None (la demande d'origine), sur tous les instruments. Pre-Filter, Crush et Decimate ne sont pas concernes. Le decalage passe toujours par `SUB_INDENT` lu par `editor_label`, sans barre.
+- Lecon notee en memoire : une regle « generique » de lisibilite n'est pas une amelioration si l'utilisateur ne l'a pas demandee ; appliquer la demande au perimetre demande.
+
+## 2026-09-21 - [233] Panneau Sons : sous-parametres decales et grises quand leur parent est eteint (build 20260921-195925)
+
+**Branche:** `main` - **Build:** `20260921-195925`
+**Validation:** `cargo check` warning-clean, `cargo test` 445 + 286 verts (1 nouveau), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Demande utilisateur : « griser les sous-parametres de la saturation quand elle est a None et les decaler pour signifier que ce sont des sous-parametres ; faire ca pour tous les sous-parametres (loop / grain / grain shape...) ».
+
+- **Une regle, pas des cas** : `instrument_registry::parent_of(instrument, special)` decide par CONVENTION DE NOM qui hange de qui, donc chaque instrument qui partage un suffixe en profite sans toucher a son entree : `*_saturation_amount/_mix/_output_gain` sous `*_saturation_type` (None = eteint), `*_grain*` sous `*_loop`, `*_filter_attack/_hold/_atk_curve/_dec_curve/_filter_curve` sous Filter Env, `*_pitch_env_time` sous `*_pitch_env`, `*_pitch_lfo_rate` / `*_filter_lfo_rate` sous leur depth, `*_advance` sous l'interrupteur Advance de la lane. Cote standards, `std_parent_of` : Filter Decay sous Filter Env, Attack Curve sous Attack. Pre-Filter reste au premier niveau : il regle tout le bloc Distortion.
+- **Rendu** : le libelle d'un sous-parametre est decale de 14 px avec une barre fine a gauche ; le slider garde son alignement. La rangee est grisee - jamais cachee - tant que le parent est eteint ou a zero (`parent_enabled` : interrupteur a 1, profondeur non nulle, menu au-dela de sa premiere entree). Le decalage passe par un `thread_local` lu par `editor_label`, ce qui evite de changer la signature des dizaines de rangees. Les cas particuliers Grain/Loop et Advance Step, codes a la main avant, sont remplaces par la regle ; les rangees hissees (Filter Attack / Hold sous Filter Env) et Pitch Fine des echantillonneurs suivent aussi.
+- Test : les conventions lues sur Rift (`rift_sub_parameters_hang_from_the_expected_parents`).
+
+## 2026-09-21 - [231] P-locks sequenceur dans X2 et le copier-coller de page + [232] Rift : Pre-Filter deplace tout le bloc Distortion (build 20260921-192420)
+
+**Branche:** `main` - **Build:** `20260921-192420`
+**Validation:** `cargo check` warning-clean, `cargo test` 444 + 285 verts (2 nouveaux), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+- **[231]** (« les plock sequencer ne sont pas pris en compte dans le X2 et le copy/paste »). X2 doublait les cellules et les p-locks SON, pas les p-locks sequenceur ; le presse-papier de page les laissait de cote depuis toujours (« for now, sound plocks only »). `SequencerPlockState::snapshot / restore / copy_step` prennent l'image BRUTE d'une cellule - probabilite, stutter, condition avec ses bits Not et And (que `set(&SequencerStepParams)` perdrait), microtiming, solo - ; `PageClipboard::seq_plocks` (`serde(default)`, les anciens presse-papiers se relisent) ; X2 appelle `copy_step` pour chaque cellule doublee ; Paste restaure apres avoir vide la page. Le copier-coller de LANE les emportait deja.
+- **[232]** (« le switch pre-filter de la distortion doit prendre en compte le crush et le decimate »). Decimate, Crush puis saturation forment desormais un seul bloc, place avant ou apres le filtre par le switch **Pre-Filter**, qui passe en dernier de la section Distortion. Crush et Decimate agissent sur le signal enveloppe, comme la saturation l'a toujours fait (le placement avant l'enveloppe du build 102711, choisi contre le gating, est abandonne : a deux bits une queue qui decroit tombe dans le pas zero, c'est l'effet). Le pack saturation est aussi applique a la construction de la voix (`sync_saturation`) : le test l'a montre, une voix fraiche ignorait Pre-Filter jusqu'au premier `set_settings`.
+
+## 2026-09-21 - [228] Samples courts : Offset, Wander et Reverse mordent ; la texture suit la lane deplacee ; stereo par defaut (build 20260921-161353)
+
+**Branche:** `main` - **Build:** `20260921-161353`
+**Validation:** `cargo check` warning-clean, `cargo test` 442 + 284 verts (2 nouveaux), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Trois retours utilisateur sur le build 134421.
+
+- **« l'offset, le reverse et le wander ne fonctionnent pas sur les sons customs »**. Cause : Loop eteint, la fenetre de lecture reservait quatre decays de texture pour ne jamais tronquer la queue du son ; sur 12 s d'usine invisible, sur un sample reel plus court que cette reserve la « place » restante pour Offset, Wander et Advance etait nulle, et Reverse partait du silence de fin de fichier. Desormais Offset parcourt TOUT le fichier, la lecture avant va jusqu'au bout (coupure declickee), et Reverse lit a l'envers la duree exacte de l'enveloppe (`audible_secs` = attaque + hold + decay, l'enveloppe est temporelle) depuis le point d'offset : sur une texture longue l'offset choisit toujours la matiere, sur un sample court un decay au moins aussi long que le fichier le joue a l'envers depuis sa fin, comme un sampler. `TAIL_TIME_CONSTANTS` supprime. Test sur un one-shot de 0,5 s : offset 0 frappe le transitoire, offset 0,6 tombe dans le calme (< 25 %), Wander change le coup, Reverse monte vers le transitoire.
+- **« quand je deplace une lane l'instrument custom disparait »**. Le glisser-deposer permute chaque magasin par slot (pattern, sons, p-locks, seq-plocks, params, verrous de longueur) mais pas les textures, qui restaient sur l'ancien numero puis se faisaient effacer par `reconcile_lane_textures`. `UserTextures::reorder(&order)` republie les memes `Arc` sous leurs nouveaux numeros (rien n'est redecode) ; appele dans `apply_lane_reorder_move`. Le signalement « ca a encore saute » venait d'un build pas encore installe (Studio One ouvert).
+- **« quand on charge un son stereo il faut qu'il soit en stereo directement »** : au chargement d'un fichier stereo, le standard Stereo de la lane passe a 1 ; l'interrupteur sert a replier en mono.
+
+## 2026-09-21 - [228] Un WAV custom par lane, plus les textures d'usine (build 20260921-134421)
+
+**Branche:** `main` - **Build:** `20260921-134421`
+**Validation:** `cargo check` warning-clean, `cargo test` 440 + 283 verts (1 nouveau : partage du decodage), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Retour utilisateur : « non ca ne va pas la gestion des wav custom. Il faut juste pouvoir upload un wav par lane en plus des waves par defaut. » Les huit emplacements globaux, les entrees « User 1..8 » et les libelles « 3: kick.wav » disparaissent.
+
+- **Modele** : le pool a un emplacement par LANE (`LANE_TEXTURE_SLOTS = MAX_TRACKS`) ; le menu Texture d'une lane Rift a cinq entrees, les quatre textures d'usine puis **Custom** = le fichier de cette lane (`CUSTOM_TEXTURE_INDEX = 4`), affiche par son nom, « Custom (empty) » sans fichier, « nom (missing) » si le fichier a disparu. `resolve_texture(index, (pool, lane))` ; la voix recoit son numero de lane avec le pool (`Voice::set_texture_pool(pool, lane)`). Une lane sans fichier joue Noise sur Custom, jamais le silence.
+- **Panneau** : la ligne **File** (nom, Load..., Clear) est toujours visible sous le menu Texture ; **Load selectionne Custom** dans le menu de la lane. La ligne Stereo reste sous Stereo Spread, active quand le fichier de la lane est stereo et selectionne.
+- **Decision utilisateur** : changer le type d'instrument d'une lane (ou la retirer) **efface son fichier** ; `reconcile_lane_textures` le fait a chaque image, quel que soit le chemin par lequel le type a change (menu, preset, kit).
+- **Partage** : deux lanes qui chargent le meme fichier partagent une seule texture decodee - cache par chemin + date de modification + taille, references `Weak` (libere quand plus aucune lane ne l'utilise) ; un fichier reexporte sous le meme nom est redecode. Une trentaine de lignes, rien de change cote audio.
+- **Le fichier suit la lane** : copie/colle de lane (`LaneClipboardData::texture_path`), presets d'instrument et de pattern (`user_texture_path(kind, lane, ..)`) ; un preset sans fichier efface celui de la lane, pour que la lane sonne comme le preset.
+- Persistance : cle `lane-textures-v1` (14 chemins optionnels) ; l'ancienne `user-textures-v1` des builds 091757-102650, jamais validee, est ignoree au chargement.
+
+## 2026-09-15 - Auto-assign en bouton, Stereo en ligne permanente, noms de fichiers dans le menu Texture (build 20260915-102650)
+
+**Branche:** `main` - **Build:** `20260915-102650`
+**Validation:** `cargo check` warning-clean, `cargo test` 439 + 283 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Trois retours utilisateur sur le build 101709.
+
+- **[230] Auto-assign est un bouton**, pas un interrupteur (« ca n'a pas de sens ») : Settings > Outputs > **Auto-assign** route les lanes actives sur la sortie de leur numero une fois, au clic (`assign_outputs_in_order`). Le `BoolParam` `auto_out`, l'application a chaque image et le grisage du selecteur Aux Out sont retires ; une session sauvee avec ce param le voit ignore au chargement.
+- **[228] Stereo est une ligne permanente** de la section Texture, sous Stereo Spread, pas un appendice de la ligne File visible seulement sur un emplacement User (« ca doit etre un parametre utilisable a tout moment si le sample est stereo »). Grisee - jamais cachee - tant que la texture courante n'a pas de canal droit (embarquee, fichier mono, emplacement vide), avec l'explication au survol.
+- **[228] Le menu Texture nomme les fichiers** : un emplacement charge s'affiche « 3: kick.wav », un fichier disparu « 3: kick.wav (missing) », un emplacement vide reste « User 3 » (`texture_menu_labels`, libelles construits a chaque image a partir des `options` du registre).
+
+## 2026-09-15 - [228] Interrupteur Stereo pour les fichiers stereo + [230] Settings > Auto-assign outputs (build 20260915-101709)
+
+**Branche:** `main` - **Build:** `20260915-101709`
+**Validation:** `cargo check` warning-clean, `cargo test` 439 + 283 verts (1 nouveau), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+- **[228] Stereo** (demande : « lorsque le sample est stereo il faudrait un switch mono/stereo en plus du stereo spread »). Un fichier stereo garde desormais ses deux canaux au decodage (`TextureBank::right`, `data` = gauche ; plus de deux canaux restent moyennes en mono ; le graphe montre le mix). Rift recoit le standard `Stereo` (`cb(...)`, famille Osc), rendu sous la ligne **File** d'un emplacement User et non dans la boucle des standards (meme mecanique que le Stereo des echantillonneurs) ; grise quand le fichier est mono. Voix : `sample(bank, canal, pos)` lit gauche, droite, ou le mix des deux au moment de la lecture ; `process_sample_stereo` passe en deux canaux des que Stereo Spread OU le fichier stereo l'exige, et le Spread decale la tete droite par-dessus. Test : tonalite a gauche, silence a droite -> eteint, les deux sorties egales au demi-niveau ; allume, la tonalite a gauche et le silence a droite.
+- **[230] Auto-assign outputs** (demande : « option assigne audio auto pour assigner tous les lanes a la suite (dans settings) »). `BoolParam` par session `auto_assign_outputs`, interrupteur dans Settings sous Auto-Edit. `enforce_auto_outputs` tourne a chaque image : toute lane active dont la sortie n'est pas `Out N` (N = son numero) y est mise par `assign_slot_output` - donc elle quitte le main mix comme une assignation manuelle, et l'utilisateur peut le rallumer - ; le layout n'est ecrit que s'il y a une lane a deplacer. Les lanes ajoutees ensuite suivent. Le selecteur **Aux Out** de la lane est grise avec l'explication au survol tant que l'option est allumee.
+
+## 2026-09-15 - [228] Le bouton Load ne fait plus tomber Studio One (build 20260915-092641)
+
+**Branche:** `main` - **Build:** `20260915-092641`
+**Validation:** `cargo check` warning-clean, `cargo test` 438 + 282 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Retour utilisateur sur le build 091757 : « le bouton Load a fait crasher S1 ».
+
+- **Cause** : `rfd::FileDialog::pick_file()` etait appele DANS l'image egui. Un dialogue modal fait tourner sa propre boucle de messages ; celle-ci redistribue les messages de la fenetre du plugin, baseview rappelle egui alors qu'on est deja dans `ui()`, egui panique sur la re-entree, et le plugin est compile avec `panic = "abort"` : l'hote tombe avec lui.
+- **Correctif** : le dialogue tourne sur un thread dedie (`flash-drum-file-dialog`, COM initialise en STA par rfd sur ce thread, plus de conflit avec le mode COM de l'hote) et depose sa reponse dans une cellule partagee (`EditorUIState::texture_pick`, non persistee). `poll_texture_pick`, une fois par image avant les rangees, decode le fichier choisi sur le thread UI ; pendant l'attente le bouton affiche « ... » et l'interface demande une image toutes les 100 ms. Un seul dialogue a la fois.
+- Note portabilite : sous macOS `NSOpenPanel` veut le thread principal ; ca compile, a revoir au moment du packaging macOS (commentaire dans le code).
+
+## 2026-09-15 - [228] Rift : charger ses propres fichiers audio (build 20260915-091757)
+
+**Branche:** `main` - **Build:** `20260915-091757`
+**Validation:** `cargo check` warning-clean, `cargo test` 438 + 282 verts (6 nouveaux : pool et repli, decodage WAV, fichier disparu, restore, voix sur texture utilisateur, preset legacy), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+- **Menu Texture** : les quatre textures embarquees puis huit emplacements `User 1..8` (`sp_options`, `TEXTURE_OPTION_COUNT = 12`). Sur un emplacement User, une ligne **File** sous le menu : nom du fichier, ou « empty - plays Noise », ou « missing: nom » en rouge (chemin et erreur de decodage au survol), et deux boutons **Load...** / **Clear**. Load ouvre le dialogue natif (`rfd`, IFileDialog sous Windows, NSOpenPanel sous macOS, sans backend GTK), filtre WAV ; le decodage (`hound`, toute profondeur entiere ou flottant, canaux moyennes en mono, 60 s au plus) se fait sur le thread UI, jamais sur le thread audio.
+- **Pool par instance** (`sample_bank::TexturePool`, `arc_swap`) : le thread audio lit un emplacement par UN load atomique et un clone d'Arc ; la voix garde le `TextureSource` le temps du coup. Discipline memoire : la generation precedente d'un emplacement est parquee cote UI jusqu'au prochain publish dans ce meme emplacement, pour que la voix ne detienne jamais la derniere reference (liberer sur le thread audio, c'est ce que ca voudrait dire). Le pool arrive aux voix par `Voice::set_texture_pool` (defaut vide ; `DrumSynthesizer::set_texture_pool` avant `initialize_with_layout`, herite par `reinitialize_slot` - un clone d'Arc, sain en RT). Pas de pool global au processus : deux instances dans le meme hote auraient partage et ecrase leurs emplacements.
+- **Repli** (`resolve_texture`) : emplacement vide, fichier disparu ou illisible -> la premiere texture embarquee. Un coup ne se tait jamais faute de fichier ; le graphe de texture montre ce qui joue reellement.
+- **Persistance** : `user-textures-v1` (`UserTextures`, huit chemins optionnels) ; `PersistentField::set` s'execute sur le thread principal au restore et decode les fichiers la ; un fichier absent garde son chemin et passe « missing ». **Presets** : `InstrumentPreset` et `PatternSlotSound` gagnent `user_texture: Option<String>` (`serde(default)`, les presets anterieurs se lisent), rempli par `user_texture_path` quand la lane pointe un emplacement User ; a l'application, `write_slot_sound` recharge le fichier dans l'emplacement que le menu nomme.
+- Dependances : `hound` passe des dev-dependencies aux dependencies ; `arc-swap 1`, `rfd 0.15` (default-features = false) ajoutes.
+
+## 2026-09-14 - [221] Rift : son d'usine neutre - plus de « fausse enveloppe de pitch » apres Default (build 20260914-164149)
+
+**Branche:** `main` - **Build:** `20260914-164149`
+**Validation:** `cargo check` warning-clean, `cargo test` 433 + 279 verts, `build.ps1 -Install` OK. A valider dans Studio One.
+
+Retour utilisateur : « quand je fais un Default sur un son du Rift j'ai toujours l'impression qu'il y a une enveloppe de pitch ».
+
+- **Default remet bien tout**, Pitch Env Depth a 0 compris (`reset_slot_to_defaults` -> `reset_specials_for_voice`) : ce n'etait pas un oubli de reinitialisation.
+- **Deux causes mesurees dans le son d'usine lui-meme.** (1) Le filtre repris de Buzz - coupure 1200 Hz, Filter Env 0,6 - balayait la coupure de 6,5 kHz a 1,2 kHz en 120 ms sur chaque coup (proxy de hauteur par taux de passages a zero : 950 Hz dans les 30 premieres ms puis 150 Hz ; avec Filter Env a 0 : 200 Hz tout du long). Sur du bruit, ce « pew » descendant est lu comme une enveloppe de pitch. (2) L'offset d'usine 0,25 tombait dans une zone rugueuse de la texture Noise v2 : niveau RMS variant de 34 % d'une fenetre de 10 ms a l'autre (balayage complet de la texture : 5 % a 0,05, 34 % a 0,25, 52 % a 0,70), un tremolo que l'oreille prend aussi pour du mouvement de hauteur sur un coup court.
+- **Correctif** : son d'usine **neutre**, la tranche telle qu'elle est - Filter 20 kHz, Filter Env 0 (`sound_settings_default` et `VoiceSettings::rift()`), Offset 0,05 (zone la plus stable et la plus brillante du fichier). Le balayage de filtre reste a un slider de distance ; le graphe du filtre dit alors honnetement « l'enveloppe ne fait rien ».
+- Le test anti-clic de fin de coup mesure desormais la coupure **par rapport au signal qui precede** (l'ancien seuil fixe mesurait le bruit brillant de la nouvelle zone d'offset, pas la coupure).
+- **A l'oreille de l'utilisateur** : la texture Noise v2 a des zones rugueuses (modulation d'amplitude 18-90 Hz) sur une bonne moitie du fichier ; si elles derangent, la profondeur de cette modulation se regle dans `tools/gen_textures.py` (`0.85 * rough_zone`).
+
+## 2026-09-14 - [212] Boucle de page : une page de 16 pas tourne seule (build 20260914-162358)
+
+**Branche:** `main` - **Build:** `20260914-162358`
+**Validation:** `cargo check` warning-clean, `cargo test` 433 + 279 verts (5 nouveaux tests du sequenceur), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+- **Reglage** : `page_loop` (IntParam 0 = off, 1-4 = la page), sauvegarde et automatisable, pas cache (lecon du build 124217). Dans la barre Page : **double-clic** sur un bouton boucle cette page, double-clic a nouveau libere ; le **menu clic droit** de la page gagne « Loop this page » / « Stop page loop » ; un **anneau ambre** entoure la page bouclee (gris en mode Song, ou la boucle est ignoree). Une page au-dela du pattern (Len 32, page 3) remet le param a 0.
+- **Sequenceur** (`Sequencer::set_page_loop`, `loop_bounds`, `fold_into_loop`, `fold_shifted`, `host_to_local`, `realign_tracks_to_position`) : la position maitre est bornee par la page au lieu du pattern, une page partielle (Len 40, page 3 = pas 32 a 39) boucle sur ses huit pas. **Engagement immediat a phase conservee** : le pas 52 devient le pas 20 (meme position dans la page), et les lanes sont recalees au saut - mesure par le test, sans ce recalage la cellule d'arrivee etait rejouee. A chaque retour de page les compteurs de pas des lanes sont re-derives de la position (`shifted_master` different du pas attendu) : une lane de 16 joue k sous le pas 32+k a chaque tour, une lane polymetrique se recale aussi (la boucle rejoue ce que la grille montre). Le wrap du pattern reste un pas normal : la polymetrie y derive comme avant. Tir anticipe (microtiming negatif) : la borne est la fin de page et la cellule suivante le debut de page. `loop_count` avance a chaque tour de page (conditions 1/2, 1/3...).
+- **Synchro hote** : `sync_to_host` replie la position hote dans la page (`host_to_local`), les compteurs suivent la position repliee, et le detecteur de seek de `lib.rs` compare sur le cercle de la boucle a travers la meme fonction - sans quoi le retour d'une page partielle (moins d'une mesure) passait pour un saut de transport et resynchronisait a chaque tour.
+- **Mode Song** : `set_page_loop(None)` tant que Song joue - un enchainement de patterns et une page tenue en boucle se contredisent. Follow suit la page bouclee. Export MIDI inchange.
+
+## 2026-09-14 - [221] Rift : plus de clic a la fin d'un coup a enveloppe de filtre (build 20260914-160256)
+
+**Branche:** `main` - **Build:** `20260914-160256`
+**Validation:** `cargo check` warning-clean, `cargo test` 428 + 274 verts (1 nouveau test de non-regression), `build.ps1 -Install` OK. A valider dans Studio One.
+
+Retour utilisateur : « quand je mets un env de filter j'entends un petit click a la fin de l'env ».
+
+- **Mesure** (rendu de test, derniers echantillons avant le silence) : a la fin de l'enveloppe d'amplitude la sortie n'est pas a zero mais a un residu du filtre et du bloqueur de DC - **-0,00097 avec le filtre ouvert** par l'enveloppe (filter decay plus long que l'amp decay), -0,00008 filtre ferme - et la voix passait a 0 exact en UN echantillon : un pas de -60 dBFS, un tic. Le rapport de douze entre les deux cas explique que le clic n'apparaisse qu'avec l'enveloppe de filtre.
+- **Correctif** : `RiftVoice::cut()` - chaque point de coupure (enveloppe finie, tranche epuisee sans Loop, lecture hors texture) arme le `RetrigDeclick` depuis la derniere sortie, comme au declenchement ([179]), et le residu fond en 3 ms. Le declick devient **par canal** (`[RetrigDeclick; 2]`, `last_out: [f32; 2]`) : avec Stereo Spread les deux cotes finissent sur des residus differents, un fondu commun sur le mid aurait fait un pas sur chacun. Sans spread les deux canaux restent identiques octet pour octet (test conserve).
+- **Test** `no_click_when_the_amp_envelope_ends_under_an_open_filter` : plus grand saut echantillon a echantillon sur les 140 derniers echantillons audibles < 0,0002 (0,00097 avant). Un premier essai mesurait sur 13 ms et echouait sur le bruit legitime du filtre ouvert, pas sur la coupure - la fenetre ne couvre plus que la rampe et la coupure.
+
+## 2026-09-14 - [227] Reset on page loop, resets exclusifs, options refermees, graphes alignes, bouton Random Offset (build 20260914-154151)
+
+**Branche:** `main` - **Build:** `20260914-154151`
+**Validation:** `cargo check` warning-clean, `cargo test` 427 + 273 verts (1 nouveau), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Quatre retours utilisateur sur le build 144144.
+
+- **« Reset on page loop »**, plus « on page change » : le compteur repart quand une page REVIENT. `reset_advance_counts_on_wrap` compte desormais un wrap de pattern comme un retour de page - sur un pattern de 16 pas la page ne change jamais, elle revient pourtant a chaque tour, et l'option n'agissait pas. **Les deux resets s'excluent** : allumer l'un eteint l'autre (dans l'UI ; le moteur tolere les deux bits pour les sessions qui les auraient).
+- **Advance eteint referme le pli** Advance options (`CollapsingHeader::open(Some(false))` tant que l'interrupteur est off ; rallume, l'utilisateur rouvre).
+- **Graphes alignes sur la premiere ligne de leur section** : la ligne params + graphe etait un `horizontal` centre verticalement, donc dans une section haute (Texture) le graphe tombait a mi-hauteur, au niveau d'Advance. `horizontal_top`, pour toutes les sections.
+- **Bouton « Random Offset on active cells »** sous le slider Offset : un clic ecrit un p-lock Offset aleatoire sur chaque cellule ACTIVE de la lane, toutes pages, graine tiree de l'horloge a chaque clic (`PlockState::fill_steps`, `plock::random_values` factorise depuis `scatter_values`). Complement du menu clic droit (page entiere, actives ou non) : ici seules les cellules qui jouent sont touchees.
+
+## 2026-09-14 - [221] Texture Noise refaite : niveau constant, 16 s, plus de matiere (build 20260914-150022)
+
+**Branche:** `main` - **Build:** `20260914-150022`
+**Validation:** `build.ps1 -Install` OK ; `cargo test` relance apres coup (voir rapport). A ecouter dans Studio One.
+
+Demande utilisateur : « refais le wav Noise pour que son amplitude ne baisse pas, qu'il soit plus evolutif et un peu plus long ».
+
+- **Mesure avant** (RMS par seconde) : l'ancien `noise-field.wav` perdait **29 dB** entre la seconde 0 (-12,7 dB) et la seconde 8 (-41,9 dB) - la « densite » qui modulait le corps creusait des zones presque muettes, et un offset qui y tombait donnait un coup inaudible. **Apres** : 16 s, ecart max **0,5 dB** sur toute la duree.
+- **Comment** (`tools/gen_textures.py`, `noise_field` v2) : toutes les derives sont spectrales ou texturales, jamais de volume, et un niveleur RMS a fenetre de 120 ms (`level_flat`) tient le niveau ; le pic final donne la marge. Couleur par un passe-bas a **quatre poles** (deux SVF en cascade, sortie `lp` ajoutee a `svf_varying`) : un pole seul laisse le centroide d'un bruit a plusieurs kilohertz quelle que soit la coupure, donc jamais de zone sourde. Nouvelles couches par zones : un **comb a delai variable** (0,4 a 9 ms, reinjection jusqu'a 0,9) qui fait des zones de tuyau metallique, nourri avec la matiere coloree et non du blanc ; une **modulation d'amplitude** a 18-90 Hz qui donne des zones rugueuses. Le script accepte un filtre : `python tools/gen_textures.py noise` ne regenere que ce fichier.
+- **Reste a regler**, mesure : le centroide spectral voyage de 4,3 a 8,2 kHz seulement (x1,9), contre x2,9 avant - les couches aigues prennent le dessus dans les zones sourdes parce que le niveleur egalise la SOMME. La correction (niveler chaque couche avant le melange) etait prete quand l'utilisateur a demande a ecouter d'abord ; elle attend son avis.
+- DLL : +0,35 Mo (16 s au lieu de 12).
+
+## 2026-09-14 - [227] Le bouton Advance bascule, et les sections du panneau Sons : Texture / Pitch / Amp / Filter / Modulation / Distortion (build 20260914-144144)
+
+**Branche:** `main` - **Build:** `20260914-144144`
+**Validation:** `cargo check` warning-clean, `cargo test` 426 + 273 verts, `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+- **Bug : l'interrupteur Advance ne basculait pas** (build 124217). Les quatorze `IntParam` `advmode_N` etaient declares `.hide()`, et nih-plug presente un parametre cache a l'hote comme **lecture seule** (`kIsReadOnly | kIsHidden`). Or, tant que l'hote traite l'audio, `raw_set_parameter_normalized` ne pose pas la valeur lui-meme : il l'envoie a l'hote par `performEdit`, qui la renvoie dans le callback audio - et Studio One refuse d'ecrire un parametre en lecture seule. Le clic partait donc dans le vide. Les parametres sont desormais ordinaires, comme les algos de slot ; ils apparaissent dans la liste d'automation de S1, c'est le prix.
+- **Sections du panneau Sons**, demande utilisateur : « Pitch / Amp / Filter / un nom qui englobe saturation, crush, decimate ». `ParamFamily::PitchEnv` devient **`Pitch`** et recoit, pour Rift, le Pitch, Pitch Fine et l'enveloppe de pitch avec son graphe. Titres : la famille `Osc` s'intitule selon l'instrument (`source_section_title` : **Sample** pour un echantillonneur, **Texture** pour Rift, **Oscillator** sinon, decide par les parametres declares et non par l'index), `Env` -> **Amp**, `Saturation` -> **Distortion** (le terme qui couvre saturation, reduction de bits et decimation). Ordre du panneau : Texture, Pitch, Amp, Filter, Modulation, Distortion.
+- **Rangees hissees sous leur rangee standard** : dans la section Filter, `Resonance` vient juste sous la coupure, et `Filter Attack` / `Filter Hold` juste sous `Filter Env`, pour que l'enveloppe se lise A-H-D dans l'ordre. Mecanisme par suffixe de nom et dans la MEME famille (`hoisted`, `draw_plain_special_row`), sur le modele du Pitch Fine des echantillonneurs ; Buzz et SDrex en profitent, et la Resonance des charleys, declaree dans leur section source, ne bouge pas.
+
+## 2026-09-14 - [227] Advance : interrupteur + options, section Pitch Envelope, Reverse et Loop en interrupteurs (build 20260914-124217)
+
+**Branche:** `main` - **Build:** `20260914-124217`
+**Validation:** `cargo check` warning-clean, `cargo test` 426 + 273 verts (1 nouveau), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Trois demandes utilisateur du 13/09 que le build 3 de Rift avait laissees derriere lui.
+
+- **Advance ([227])**. Le compteur a quitte la voix, qui ne connait ni le pattern ni la page : `lib.rs` compte par slot (`advance_hits`) et decide de l'index de chaque coup dans `fire_voice_trigger`, le seul endroit par ou passent premier coup, stutter et impulsions de fusion ; la voix le recoit par `Voice::set_hit_index` avant `trigger()` (methode par defaut vide, seule Rift l'implemente). Options par lane dans un `IntParam` cache par slot (`advmode_N`, bitfield ON / RESET_PATTERN / RESET_PAGE / EVERY_CELL) : ce sont des reglages de sequenceur, pas de son, donc pas dans `special[]` (dont il ne reste d'ailleurs que l'index 31, inutilisable). Reset sur wrap de pattern ou changement de page detecte une fois par echantillon apres `Sequencer::process_sample`. Le mode « chaque cellule » n'a pas de compteur : l'index se deduit de la position (cellule dans la page, dans le pattern, ou depuis le depart). Panneau Sons : interrupteur `Advance`, slider `Advance Step` grise quand eteint, pli `Advance options` avec trois interrupteurs. Le graphe de texture n'affiche les crans d'Advance que si l'interrupteur est allume.
+- **Section Pitch Envelope** : nouvelle `ParamFamily::PitchEnv`, placee sous Oscillator, avec `Pitch Env Depth` (±24 demi-tons) et `Pitch Env Time`, et un graphe (`draw_pitch_envelope`) qui trace la MEME loi que la voix (`exp(-4 t / time)`, constante `PITCH_ENV_CURVE` rendue publique), ligne zero au milieu, fenetre fixe d'une seconde.
+- **Interrupteurs** : tout parametre special discret 0/1 sans liste nommee est rendu en interrupteur. Reverse et Loop etaient des sliders parce que la branche du panneau reconnaissait les booleens par une liste de suffixes de noms ; la regle est desormais structurelle.
+
+## 2026-09-14 - [221] Rift build 3 : Crush, Decimate, Stereo Spread et le menu Spread / Scatter (build 20260914-102711)
+
+**Branche:** `main` - **Build:** `20260914-102711`
+**Validation:** `cargo check` warning-clean, `cargo test` 425 + 272 verts (dont 6 nouveaux), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+- **Lo-fi (`dsp.rs`, partage)** : `crush_levels` / `crush_sample` (16 -> 2 bits, profondeur fractionnaire pour un slider continu) et `Decimator` (sample-and-hold a facteur fractionnaire, 1 -> 64, mapping exponentiel). Les constantes sont recalculees au changement de reglage, jamais par echantillon. `Biquad::copy_coefficients_from` pour qu'une paire stereo partage UN calcul de coupure sans partager sa memoire.
+- **Rift** : trois speciaux de plus (28 Crush, 29 Decimate, 30 Stereo Spread ; il reste l'index 31, inutilisable). La quantification est **relative au pic de la tranche** lue, mesure au declenchement sur le resume par colonnes de la texture : mesure avant ce choix, un Crush a fond coupait le son a 5033 echantillons au lieu de 8986 parce que la zone de texture passait sous le premier pas de quantification. Crush et Decimate viennent AVANT l'enveloppe d'amplitude, la queue ne se referme donc jamais en porte. `Stereo Spread` ajoute une seconde tete de lecture pour la voie droite, jusqu'a 0,5 s plus loin (mapping au carre), sous la meme enveloppe, les memes fondus et le meme accord de filtre ; a zero la voie droite EST la gauche, octet pour octet, et rien de l'etat droit n'est touche.
+- **Spread / Scatter (`plock.rs` + panneau Sons)** : `PlockState::fill_page` / `clear_field_on_page` et les generateurs purs `spread_values` (lineaire ou en log pour un parametre logarithmique : un balayage de filtre monte par octaves egales) et `scatter_values` (xorshift graine). Le **clic droit sur un slider** ouvre un menu : Spread up / Spread down / Scatter / Clear locks, sur la page que la grille affiche. Generique : standards et speciaux, tous instruments - c'est ce que « offset proportionnel au pas » est devenu, et ca vaut autant sur un filtre qu'un pitch. Effacer retire le verrou du champ et, si la cellule ne verrouille plus rien, ne la laisse pas en p-lock vide qui teinterait la grille.
+
+## 2026-09-14 - [229] fin : l'espace tape un espace dans REAPER (builds 20260914-094219 -> 094858)
+
+**Branche:** `main` - **Build:** `20260914-094858`
+**Validation:** `cargo check` warning-clean, `build.ps1 -Install` OK. **Valide par l'utilisateur dans REAPER ET Studio One le 2026-09-14** : saisie, espaces, retour arriere, fleches, Entree ; l'espace relance bien le transport hors saisie.
+
+Le `DLGC_HASSETSEL` du build 093406 n'a rien change : REAPER ne tranche pas « champ de texte ou raccourci » en interrogeant la fenetre focalisee. Deux paris perdus sur ce mecanisme, abandonne au profit d'une mesure.
+
+- **Ce que la trace a etabli, en deux builds.** Build 094219 : la vue VST3 repond « traitee » a `onKeyDown` quand un champ est actif. Journal : `vst3 on_key_down key=100/102/103 wants=true` a chaque lettre - **REAPER passe bien par `IPlugView::onKeyDown`, avant ses raccourcis**. Mais **une seule** lettre a atteint la fenetre de messages dans toute la session : quand le plugin reclame la touche, REAPER **ne poste plus le message Windows**. La saisie est morte parce qu'on prenait sans livrer.
+- **Les deux chemins sont donc exclusifs dans REAPER**, et la solution n'est pas d'en choisir un : `on_key_down` **prend la touche** (Play ne part pas) **et la livre lui-meme a egui** par le canal `WM_APP` deja en place, via un `HostKeyHandler` que `nih_plug_egui` enregistre dans `nih_plug::editor::HOST_KEY_HANDLER` au montage de la fenetre. Un caractere devient UN `WM_CHAR` (pas de key-down a cote, baseview emettrait le texte deux fois) ; un code VST3 nomme (retour arriere, fleches, Entree, Suppr, debut/fin, page) devient le `WM_KEYDOWN`/`WM_KEYUP` du VK Windows correspondant. Hors saisie la vue repond « non implementee » et REAPER garde tous ses raccourcis.
+- **Trois garde-fous du module clavier revus au passage**, chacun sur mesure : le test « le plugin est-il au premier plan » remontait la chaine des parents (jamais vrai dans une fenetre de FX flottante) et exigeait le survol de la souris (`GetFocus()` rend null depuis ce thread) ; il teste desormais le processus proprietaire puis la parente racine/proprietaire entre la fenetre du plugin et la fenetre active, dans les deux sens. Et la fenetre de messages repond `WM_GETDLGCODE`, sans quoi le dialogue `#32770` de REAPER avalait les `WM_CHAR` comme mnemoniques (deux lettres passaient, puis plus rien).
+- Journal de diagnostic (`FLASH_DRUM_KBD_LOG=1`, `%TEMP%lash_drum_kbd.log`) conserve : il trace les deux couches, GUI et VST3, et c'est lui qui a tranche a chaque etape.
+
+## 2026-09-14 - [229] suite : la fenetre de messages se declare champ de texte (build 20260914-093406)
+
+**Branche:** `main` - **Build:** `20260914-093406`
+**Validation:** `cargo check` warning-clean, `build.ps1 -Install` OK. **A valider dans REAPER puis Studio One.**
+
+Retour utilisateur apres le build 201813 : « ca marche mais l'espace demarre le morceau ».
+
+- REAPER lit chaque touche dans **sa** boucle de messages avant de la distribuer a la fenetre focalisee, et decide de lancer l'action associee sauf s'il reconnait cette fenetre comme un champ de texte. Rien de ce que fait notre fenetre APRES ne peut annuler ce qu'il a deja fait ; le seul levier est sa decision.
+- Un vrai controle `Edit` repond `DLGC_HASSETSEL` a `WM_GETDLGCODE`. La fenetre de messages l'ajoute a sa reponse (avec `WANTALLKEYS | WANTCHARS | WANTARROWS | WANTTAB` deja en place) : un hote qui tranche « champ de texte ou raccourci » en interrogeant la fenetre focalisee nous traite desormais comme un champ de texte.
+- **Sans garantie** : le critere exact de REAPER n'est pas lisible d'ici. Si l'espace continue de lancer le transport, la reponse canonique de REAPER existe et se memorise dans le projet : fenetre de FX, menu « + » ou clic droit sur le titre du plugin -> **« Send all keyboard input to plugin »**.
+
+## 2026-09-13 - [229] BUG REAPER : aucune saisie clavier possible (build 20260913-192149)
+
+**Branche:** `main` - **Build:** `20260913-192149`
+**Validation:** `cargo check` warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One ET dans REAPER.**
+
+Retour utilisateur : « dans reaper je ne peux pas faire de saisie clavier (pour nommer un preset par exemple) ».
+
+- **Trouve par la trace, pas par deduction.** Le module `win_keyboard` du `nih_plug_egui` vendore journalise chacune de ses etapes, mais seulement en build de debug - or l'interception qu'il combat est un comportement d'HOTE, qui ne se reproduit que dans un vrai DAW. Le journal est desormais **activable en release** par `FLASH_DRUM_KBD_LOG=1` (sortie : `%TEMP%lash_drum_kbd.log`).
+- **Ce qu'il disait** : `abort: plugin not in foreground chain`, des centaines de fois, avec `current_focus=0x0`. Le focus n'etait **jamais** pose, donc la saisie n'avait aucun chemin.
+- **La cause.** Le garde-fou legitime « ne pas voler le focus quand l'utilisateur passe a une autre application » le verifiait en **remontant la chaine des fenetres parentes** du plugin jusqu'a la fenetre de premier plan. Cela tient dans un editeur **ancre** (Studio One) ; cela ne tient **jamais** dans une fenetre de plugin **flottante** : la fenetre de FX de REAPER est une fenetre de premier niveau a part entiere, hors de la chaine des parents du plugin. La remontee arrivait donc a null et abandonnait a chaque image.
+- **Le correctif** teste le **processus proprietaire** de la fenetre de premier plan (`GetWindowThreadProcessId` vs `GetCurrentProcessId`) au lieu de la parente des fenetres. C'est la question que le garde-fou voulait poser depuis le debut, et elle ne depend ni de l'ancrage ni de la hierarchie des fenetres. Studio One reste couvert a l'identique.
+
+## 2026-09-13 - [226] Rift : lecture inversee et fenetre de grain visible (build 20260913-190518)
+
+**Branche:** `main` - **Build:** `20260913-190518`
+**Validation:** `cargo test` 416+1+266 OK (3 nouveaux tests), warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- **`Reverse`** : la tranche se lit a l'envers. Le pas de lecture devient negatif, et c'est desormais le **debut** de la tranche dont la lecture tombe - bornes, fin de voix et **rebouclage** ont ete repris dans les deux sens. Le fondu aux extremites etant deja symetrique, la couture reste propre a l'envers comme a l'endroit. Trois tests : le sens de lecture mesure sur la position, le rendu inverse qui sonne et differe, et la boucle inversee qui ne meurt pas.
+- **La fenetre de grain s'affiche** sur le graphe de la texture quand Loop est allume : la portee reellement lue, ses deux bords, et trois chevrons qui donnent le **sens de lecture** et disent qu'elle revient. Loop cesse d'etre une abstraction. La longueur dessinee passe par `rift_grain_seconds`, **la fonction meme qu'utilise la voix**, pour que le dessin ne puisse pas mentir.
+
+## 2026-09-13 - [225] La texture de Rift s'affiche, et tous les sliders ont la meme longueur (build 20260913-185053)
+
+**Branche:** `main` - **Build:** `20260913-185053`
+**Validation:** `cargo test` 413+1+263 OK (1 nouveau test), warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- **La section Oscillator de Rift montre enfin ce qu'elle regle.** Un curseur Offset de 0 a 1 sur douze secondes de matiere ne dit rien de ce qu'il pointe. Le graphe dessine la **forme d'onde de la texture**, la **position de lecture** (trait ambre), la **bande** dans laquelle Wander peut jeter cette position (voile bleu, qui **s'enroule** aux extremites comme le fait la voix), et les **huit prochaines positions** d'Advance (petits traits verts en bas, de plus en plus pales).
+- **Le resume de forme d'onde est calcule une fois**, au decodage : 512 colonnes de min/max par texture (`TEXTURE_PEAK_COLUMNS`). Parcourir un demi-million d'echantillons a chaque image d'interface couterait bien plus que l'image ne vaut.
+- Le graphe est trouve **par le nom des parametres** (`*_texture`, `*_offset`, `*_wander`, `*_advance`), donc il vaut pour tout instrument qui lirait une texture longue, pas pour un index de voix ecrit en dur.
+- **Toutes les sections du Sound Editor gardent desormais la meme largeur de sliders**, celle des sections a graphe. Les sections sans graphe etalaient leurs curseurs sur toute la largeur du panneau : le meme parametre n'avait donc pas la meme longueur d'une section a l'autre, ni d'un instrument a l'autre. **Cela concerne tous les instruments.**
+
+## 2026-09-13 - [224] Le double-clic ne remettait pas la valeur d'usine de l'instrument (build 20260913-162418)
+
+**Branche:** `main` - **Build:** `20260913-162418`
+**Validation:** `cargo test` 412+1+262 OK (2 nouveaux tests), warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+Parti d'un retour sur Rift - « le pitch normal doit etre a 0 et quand je fais un reset (double clic) il doit revenir a cette valeur » - le defaut s'est revele bien plus large.
+
+- **`param_default`, la valeur derriere « remets la valeur d'usine », ne lisait la table du registre que pour les samplers, SDrex et Rift.** Les vingt autres voix retombaient sur un `VoiceSettings::default()` **partage par tous**, herite des premieres voix du plugin.
+- **Mesure avant correction, sonde temporaire sur les 26 instruments : 20 etaient concernes, et 17 sliders etaient remis a une valeur situee hors de leur propre plage.** Trois exemples : le **Tone du Hi-Hat** revenait a 60 Hz au lieu de 8000 (curseur au minimum), le **Filter Env du Tom 1** a 0 au lieu de 1 (le balayage qui fait le tom disparaissait), le **Decay du Clap** a 0,5 s au lieu de 0,03 s.
+- Sur **Rift**, dont le Pitch est en demi-tons (-24..+24), la table partagee ecrivait **60** - ecrete a +24, deux octaves au-dessus. C'est le symptome qui a mis sur la piste.
+- **Chaque voix lit desormais sa propre table.** Le geste de double-clic **et** le bouton **Default** (portee Lane, Step et Morph) passent tous deux par la : les trois s'alignent d'un coup.
+- **Deux tests de garde** : le contrat sur les 26 voix (la valeur de reset EST celle de la table de l'instrument), et, sur Rift, que cette valeur tombe dans la plage du slider qui l'affiche - c'est ce second controle qui aurait attrape le bug tout seul.
+
+## 2026-09-13 - [221] Rift, build 2 : le mouvement (build 20260913-160405)
+
+**Branche:** `main` - **Build:** `20260913-160405`
+**Validation:** `cargo test` 410+1+260 OK (11 nouveaux tests), warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- **`dsp::Lfo`, la premiere brique LFO du projet.** Chaque voix qui avait besoin d'une modulation periodique se refabriquait un accumulateur de phase a la main (`sdrex.rs` en garde un pour son flanger). Cinq formes : sinus, triangle, carre, dent de scie, et un **sample-and-hold** qui saute au lieu de glisser - c'est lui qui fait begayer une texture. Sortie bipolaire, phase verrouillee au declenchement ou libre.
+- **Pitch** : `Pitch Fine` en cents, `Pitch Env` bipolaire (+/-24 demi-tons) sur `Pitch Env Time`, et un **LFO de pitch** (taux, profondeur en demi-tons). Le sweep repart d'un etat deterministe (`trigger_reset_to`) : une enveloppe de pitch qui reprendrait ou la precedente s'est arretee ne se repeterait pas d'un coup a l'autre.
+- **LFO de filtre** (taux, profondeur en **octaves**) : il chevauche la coupure deja balayee par l'enveloppe, donc sa profondeur veut dire la meme chose ou que celle-ci l'ait emmenee.
+- **Les deux LFO partagent forme et politique de phase** : ce sont deux destinations d'une meme idee, pas deux modulations sans rapport. Seuls taux et profondeur different.
+- **`Advance`** : l'offset avance d'un cran a chaque declenchement et boucle en fin de texture, donc un pas repete parcourt la matiere au lieu de rejouer la meme tranche. C'est le mode sequentiel du plan, obtenu sans que la voix ait besoin de connaitre son pas.
+- **Cout par echantillon tenu** : l'exponentielle du pitch n'est payee que si enveloppe ou LFO bougent reellement, et le LFO de filtre n'est consomme qu'au re-accordage du biquad (un echantillon sur huit).
+- **Deux erreurs de test corrigees en route** : j'avais exige qu'une periode se retrouve a l'identique un cycle plus tard - vrai pour un sinus, faux pour un carre ou une scie, dont la discontinuite tombe pile sur le decalage d'un echantillon qu'introduit le flottant ; et que le sample-and-hold touche ses extremes en dix tirages, ce qu'il n'a aucune obligation de faire. Chaque forme est desormais verifiee sur ce qui la caracterise : periode pour les continues, rapport cyclique pour le carre, rampe monotone pour la scie, dispersion pour le S&H.
+
+## 2026-09-13 - [223] Filter Type en tete de sa section (build 20260913-154758 + reordonnancement)
+
+Le type de filtre decide de ce que veulent dire toutes les rangees sous lui ; il etait declare parmi les parametres speciaux, qui se dessinent **apres** les rangees standard, donc il atterrissait au milieu. Il est desormais rendu en tete de section, et la boucle des speciaux le saute. Repere **par son nom** (`*_filter_type`), donc **Buzz et SDrex sont reordonnes de la meme facon** et le prochain instrument a filtre selectionnable le sera sans rien changer.
+
+## 2026-09-13 - [223] Le graphe d'enveloppe de filtre s'arretait avant le bord (build 20260913-154758)
+
+**Branche:** `main` - **Build:** `20260913-154758`
+**Validation:** `cargo test` 399+1+249 OK, warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+Retour utilisateur, capture a l'appui : « pourquoi le graphe ne va pas jusqu'au bout comme les autres graphs ? »
+
+- Le graphe A-H-D du filtre se reservait **15 % de marge** en bout (`span = (attack + hold + decay) * 1.15`) la ou le graphe d'ampli, juste au-dessus dans le meme panneau, divise par `attack + hold + decay` et finit exactement au bord droit. D'ou un plat a droite qui se lit comme un defaut quand les deux graphes se suivent.
+- L'intention d'origine etait que le decay « retombe visiblement sur la ligne de base » ; le graphe d'ampli y arrive sans marge. Marge supprimee : la rampe atteint `p = 1` pile au bord droit, donc la courbe atterrit sur la ligne de coupure au repos au bout du trace.
+- **Buzz et SDrex en profitent aussi** : ils partagent ce graphe et avaient le meme decalage.
+
+## 2026-09-13 - [222] BUG : en Ext MIDI, aucune lane ne repondait aux notes entrantes (build 20260913-153150)
+
+**Branche:** `main` - **Build:** `20260913-153150`
+**Validation:** `cargo test` 399+1+249 OK (1 nouveau test), warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+Retour utilisateur : « des que je passe en Ext Midi, tout est bloque, je peux bouger les sliders mais rien ne joue ».
+
+- **Le plugin emettait et ecoutait sur deux notes differentes.** La sortie utilise la note MIDI **de la lane** (`midi_note_for_slot`, `lib.rs:2209`), reglable par l'utilisateur dans l'onglet Track. L'entree, elle, passait par `voice_idx_from_midi_note`, qui cherchait la note **d'usine du registre**, puis prenait la premiere lane portant cette voix.
+- **Deux consequences.** Une lane reaccordee ne repondait jamais. Et comme plusieurs kinds partagent une note d'usine, `position()` renvoyait la premiere voix qui la declare : la note 40 resolvait vers **Snare606**, la 46 vers **OpenHiHat**, toutes deux **retirees des selecteurs depuis [203]/[204]** donc presentes sur aucune lane - la recherche de slot echouait et rien ne se declenchait.
+- **Correctif** : nouveau `AtomicTrackLayout::slots_listening_to(note)`, un masque des slots **actifs** dont la note est celle recue. Lock-free, sans allocation, utilisable depuis le thread audio. Entree et sortie parlent desormais de la meme note.
+- **Plusieurs lanes peuvent partager une note** volontairement : elles declenchent toutes, au lieu de la premiere seulement. L'echo MIDI sortant reste unique.
+- **`voice_idx_from_midi_note` est supprimee** : sans appelant, elle ne serait restee qu'un piege pour le prochain. Test de garde sur les trois cas - lane reaccordee, note partagee, lane inactive.
+
+## 2026-09-13 - [221] Rift, build 1 : le moteur de prelevement (builds 20260913-115048 -> 151632)
+
+**Branche:** `main` - **Build:** `20260913-151632`
+**Validation:** `cargo test` 396+1+246 OK (21 nouveaux tests), warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+Les 25 voix existantes fabriquent toutes un son **a partir de rien**. Rift est la premiere a en **prelever** un : il coupe une tranche dans une texture de plusieurs secondes et la sculpte en percussion ou en FX. La meme matiere donne un shaker, une cloche, un clic ou un riser selon l'endroit ou l'on tombe.
+
+- **Ce qui fait l'instrument est deja dans le moteur.** `Offset` est declare comme un parametre special **continu**, donc il est **p-lockable par cellule** et **morphable sur une fusion** sans une ligne de code de notre part : une page de seize pas devient seize prelevements differents dans la meme matiere. C'est la raison pour laquelle cet instrument etait bon marche a construire.
+- **Quatre textures embarquees de 6 s**, fabriquees par `tools/gen_textures.py` (graine fixe, donc relancer le script les reproduit a l'octet pres) : champs de bruit colore, resonances metalliques, crepitements, balayages modulaires. Mono PCM 16 bits - **moitie moins lourd** que le float32 des samples 606 a duree egale. **La DLL passe de 14,35 a 16,48 Mo, soit +2,03 Mo**, exactement le poids des fichiers.
+- **`TextureBank`** rejoint `SampleBank` dans `sample_bank.rs` : un buffer continu au lieu de huit tranches, mais **le meme parseur RIFF**, extrait en `decode_wav` et partage par les deux. Prechauffe dans `initialize_with_layout`, comme les bancs 606.
+- **Le filtre est multi-mode** (passe-bas / passe-haut / passe-bande avec resonance) : c'est le passe-bande resonant qui sculpte une percussion dans du bruit. Il reutilise le `Biquad` existant, **re-accorde un sample sur huit** - ses coefficients coutent deux transcendantes, l'enveloppe qui les pilote bouge lentement, et quatorze slots peuvent jouer en meme temps.
+- **Une fenetre a fondu** encadre la tranche : couper une texture en plein cycle est un clic, meme quand l'enveloppe d'ampli est encore ouverte. Le fondu ne descend jamais sous 1 ms.
+- **`Wander`** decide si l'aleatoire existe : a 0 la cellule retombe toujours au meme endroit et le pattern se rejoue **a l'identique** (test dedie) ; plus haut, l'offset est re-tire a chaque declenchement.
+- **Contrat de retrigger [179] respecte** : position de lecture, filtre et DC blocker repartent d'un etat neuf, `RetrigDeclick` absorbe la discontinuite.
+- **Aucun changement de format** : kind 23, voix 25, douze parametres speciaux sur les 32 disponibles. Les sessions existantes sont intactes.
+- **Retours du premier build, meme entree** (build 20260913-121200) :
+  - **Texture s'affiche en dropdown**, via un **nouveau champ `options` dans le registre** : n'importe quel parametre discret peut desormais declarer ses choix nommes et obtenir un menu, sans ajouter de branche dans le Sound Panel. Les anciennes branches qui reconnaissent un parametre **au libelle** (Saturation Type, Noise Type, Click Type...) restent en place mais ne sont plus le seul chemin. **La valeur devient l'index de la liste, donc 0..3 au lieu de 1..4** : une session enregistree avec le build 115048 relit sa Texture un cran plus bas.
+  - **Textures portees de 6 a 12 s et remuees davantage.** Mesure sur des tranches de 150 ms, ecart de centroide entre le 10e et le 90e centile : balayage **x15,7** (quatre ou cinq allers-retours dans le spectre au lieu d'une montee unique), metal **x2,8** (hauteur de base derivant d'une octave et demie, familles de partiels qui entrent et sortent), bruit **x2,7** (couches hautes rendues intermittentes, sinon elles aplatissaient le spectre partout), crepitement **x1,6** (grains rendus tonaux et suivant une zone de hauteur qui derive). Aucune tranche muette sauf 4,4 % sur le bruit, ou c'est la densite qui travaille. **La DLL passe de 13,69 a 17,74 Mo**, exactement le poids des quatre fichiers.
+  - **Decay ampli et Decay filtre deviennent des temps ABSOLUS**, 5 ms a **1,5 s**, affiches en secondes, au lieu d'une fraction de la tranche qui les plafonnait a la longueur de celle-ci. Le Hold suit (0 a 1 s). Consequence a connaitre : la **fenetre coupe la lecture**, donc une queue d'1,5 s demande une Window d'au moins autant - d'ou son plafond porte de 2 a **4 s**.
+
+- **Enveloppe de filtre refaite** (build 20260913-122208), retour utilisateur : « quand elle est a fond je n'entends pas le range complet ». **Mesure : il avait raison, et pire que ca.** L'enveloppe AJOUTAIT un nombre fixe de hertz a la coupure (9000 au maximum), ce qui donnait **0 octave de course au reglage d'usine** (filtre a 20 kHz, rien au-dessus), un montant negatif totalement inerte (2000 - 9000 se coince a 20 Hz des le premier echantillon) et 1,8 octave seulement depuis 500 Hz. Un decalage fixe en hertz vaut plusieurs octaves en bas du spectre et une fraction d'octave en haut.
+  - Desormais l'enveloppe **interpole en octaves entre la coupure et une extremite** : a +1 elle part du haut du spectre et **atterrit exactement sur le reglage Filter**, a -1 elle part du bas et y monte, les valeurs intermediaires couvrent cette distance au prorata. Course mesuree : 3,3 octaves vers le bas et 6,6 vers le haut depuis 2 kHz, 5,3 / 4,6 depuis 500 Hz.
+  - **Le filtre d'usine passe de 20 kHz a 6 kHz** : a 20 kHz la commande paraissait morte faute de place au-dessus. A 6 kHz il reste 1,7 octave vers le haut et 8,2 vers le bas, et les textures (centroide median 6,5 a 9,2 kHz) restent ouvertes. Deux tests de garde remplacent la sonde de mesure.
+- **Window devient Grain, plus un interrupteur Loop** (build 20260913-123836), sur une question de l'utilisateur : « pourquoi ne pas plutot gerer le Window avec un hold dans l'env ? ». **Il avait raison** : deux reglages se disputaient la meme grandeur, et le plus court gagnait en silence - un Decay d'1,5 s avec une fenetre de 40 ms donnait 40 ms de son, sans que rien ne le dise.
+  - **Loop eteint (defaut) : l'enveloppe decide de tout.** La lecture court jusqu'a son extinction, Grain ne tronque plus rien. Le conflit disparait.
+  - **Loop allume : le grain se repete sous l'enveloppe.** Grain cesse d'etre une duree pour devenir une taille de grain (5 ms a 4 s) : un grain de 15 ms tenu par une enveloppe d'une seconde donne des textures soutenues, des roulements et des begaiements - ce qu'aucune des 25 autres voix ne produit. C'est la seule raison qui justifiait de garder deux reglages.
+  - `Grain` et `Grain Shape` sont **grises** quand Loop est eteint, jamais caches. La regle est ecrite sur les NOMS des parametres, pas sur l'index de l'instrument : tout instrument declarant un interrupteur `*_loop` a cote de rangees `*_grain*` en heritera.
+  - **La couture du bouclage ne claque pas**, mesure a l'appui : le saut entre echantillons voisins AUX POINTS de rebouclage vaut 0,00035 contre 0,0087 d'ecart median ordinaire sur la meme matiere, vingt-cinq fois plus petit, parce que le fondu ramene le signal pres de zero. Le premier test ecrit comparait le plus grand saut du rendu a son niveau crete - sur du bruit, cela mesure le bruit et non un clic ; il declarait donc un defaut inexistant. Le test definitif mesure aux coutures, sur les quatre textures.
+  - Un test existant du registre a attrape une erreur de nommage au passage : tout parametre dont le nom contient `_fade` doit declarer son unite, or celui-ci est une proportion. Renomme `grain_shape` plutot que d'affaiblir la regle.
+
+- **Filtre remis sur la convention du plugin** (build 20260913-151632), retour utilisateur : « pourquoi tu fais toujours un filtre tout pourri avec un affichage merdique ? Reprends les systemes de filtre des autres instruments. » **Il avait raison, et la faute est entiere : `buzz.rs` a deja exactement ce filtre - multi-mode, selectionnable - et je ne l'avais pas regarde avant d'ecrire le mien.** Sa ligne est reprise telle quelle :
+  `let amt = (env * filter_env_amount).clamp(0.0, 1.0); let cutoff = base * (20000.0 / base).powf(amt);`
+  L'enveloppe **ouvre** la coupure vers 20 kHz et elle retombe exactement sur le reglage Filter. Mes deux versions precedentes faisaient autre chose : la premiere ajoutait un nombre fixe de hertz (0 octave de course au reglage d'usine, mesure), la seconde balayait du haut vers le bas avec un montant bipolaire qu'aucune autre voix n'a.
+  - **`Filter Env` passe de -1..+1 a 0..1**, comme partout ailleurs.
+  - **`filter_type_label` passe de "Multi" a vide**, comme Buzz : le libelle affichait « Filter (Multi) » alors que le type a son propre menu.
+  - **Coupure d'usine 1200 Hz et Filter Env 0,6**, les valeurs de Buzz : filtre ferme au repos, ouvert par l'enveloppe, donc le balayage s'entend des qu'on pose l'instrument. Les reglages 20 kHz puis 6 kHz essayes avant laissaient la commande sans effet audible.
+  - **Resonance est conservee** - Buzz a un Q fixe, mais sur du bruit c'est elle qui sculpte une percussion - avec pour defaut **0,9**, la valeur exacte de Buzz : tant qu'on n'y touche pas, le filtre se comporte comme les siens.
+  - Deux tests de garde verrouillent l'alignement : l'enveloppe doit atteindre 20 kHz a fond et retomber sur la coupure, et la moitie du montant doit couvrir la moitie de la distance **en octaves**.
+
+- **Inclut aussi l'anneau de tete de lecture** reste **blanc sur toutes les cellules**, y compris les vertes (build 20260913-110432, compile mais jamais installe faute de Studio One ferme). Seul le chiffre de pulsations d'une fusion passe en sombre sur fond clair.
+
+## 2026-09-13 - [220] Trois couleurs pour la grille : bleu, violet, vert clair (builds 20260913-093827 -> 20260913-105120)
+
+**Branche:** `main` - **Build:** `20260913-105120`
+**Validation:** `cargo check` warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+L'ambre quitte la grille. Elle ne parle plus qu'avec trois teintes : le **bleu** d'un pas actif, le **violet** d'un p-lock **sound**, le **vert clair** d'un p-lock **sequenceur**.
+
+- **Le p-lock sound passe de l'ambre `#ff8c00` au vert clair `#b5ffe1`**, le p-lock sequenceur garde le **violet `#a855f7`** (build 20260913-105120 ; les deux teintes etaient inversees dans les builds precedents). Motif : la pastille violette de [219] tombait sur des cellules ambre, ou elle ne se detachait pas. Aucune paire de teintes moyennes ne passait le seuil de contraste sur le bleu **et** sur l'ambre a la fois ; retirer l'ambre resout le probleme au lieu de le deplacer.
+- **La pastille marche desormais dans les deux sens** (`skeuo::plock_pip`, ex-`seq_plock_pip`) : en mode Sound une pastille **violette** signale un p-lock sequenceur, en mode Sequencer une pastille **vert clair** signale un p-lock sound. Avant, seul le premier sens etait marque.
+- **L'atlas des pads a ete re-teinte** (`assets/pads/atlas-pads.png`). Les cellules sont des **bitmaps bakes**, pas des rectangles peints : changer les jetons de `theme.rs` ne les atteint pas. Les trois variantes allumees etant le **meme rendu dans trois teintes**, l'echange est mecanique - les 17 emplacements `seq` (pad + 15 longueurs de fusion + variante eteinte) gardent **tels quels** leurs pixels violets, et les 17 emplacements `link` sont un remap **teinte/saturation/valeur** du violet vers le vert clair, calibre sur le mi-ton mesure du pad. Seuls les pixels qui **different** entre les deux bakes sont touches, donc le puits sombre autour de chaque pad reste bit-a-bit identique a celui de ses voisins : pas de couture entre cellules.
+- **Les incrustations blanches basculent en sombre sur un pad clair** (`is_light_pad`) : l'anneau de tete de lecture et le nombre de pulsations d'une fusion disparaissaient sur le vert clair.
+- **Les accents qui n'etaient pas des p-locks gardent leur teinte chaude** : la puce « Random » du bas d'ecran, « Paste » / « Yes, overwrite » du menu de page et l'export d'usine passent a `AMBER()` - ils empruntaient le jeton du p-lock sans en parler.
+- **Les trois skins suivent** (Dark, Midnight, Ember), chacun dans sa nuance. L'atlas, lui, est bake une seule fois : hors Dark, les pads gardent l'art du Dark, comme avant.
+- **La pastille est rentree dans le pad** (build 20260913-100237) : collee au coin, elle mordait le bord du sertissage.
+- **Une seule pastille par bloc fusionne** (build 20260913-103346) : les cellules d'une fusion lisent toutes les p-locks de la cellule de **depart**, donc la pastille se repetait sur chacune - cinq points en travers d'un bloc de cinq. Elle est desormais posee sur la **derniere** cellule du bloc, c'est-a-dire dans son propre coin haut-droit ; un bloc qui deborde de la page garde sa pastille sur la derniere cellule visible.
+- **Aucun changement de format** : ni persistance, ni semantique. Uniquement de la couleur.
+
+## 2026-09-12 - [219] Condition « And » et pastille violette sur les cellules (build 20260912-103510)
+
+**Branche:** `main` - **Build:** `20260912-103510`
+**Validation:** `cargo test` 380+1+230 OK (1 nouveau test), warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- **Bouton « And »**, a cote de « Not » : il ajoute une **seconde condition**, combinee a la premiere. Le pas ne joue que sur les boucles ou **les deux** sont vraies - `1/2` et `1/3` ensemble ne declenchent qu'une boucle sur six. A l'activation, le second terme demarre sur la valeur du premier, donc rien ne change tant qu'on n'en choisit pas un autre ; une seconde grille apparait sous la premiere et n'occupe de place que si elle sert.
+- **`Not` inverse l'ensemble**, second terme compris : c'est « pas (A et B) ». Toujours sans effet sur un `Always` seul.
+- **Pastille violette en haut a droite des cellules portant un p-lock sequenceur**, visible quand la grille affiche les p-locks **sound** (`skeuo::seq_plock_pip`). Une cellule est coloree par le p-lock du mode affiche, donc un p-lock sequenceur y etait invisible - et depuis [213] on peut en poser un sans jamais quitter le mode Sound. L'inverse ne demande pas de marqueur : en mode Sequencer la cellule est deja violette. **C'est la reponse a [214].**
+- **Aucun changement de format.** Le second terme occupe les bits 16-23 du `u32` deja stocke, range en `valeur + 1` pour que zero signifie « pas de second terme » - `Always` etant une condition legitime numerotee 0. Le decodage passe par un `StepCondition::from_raw` partage, et un `_ =>` ramene toute valeur inconnue a `Always` : une donnee corrompue ou future ne peut pas faire taire un pas.
+
+## 2026-09-12 - [218] Menu p-lock allege et "Not" sur les conditions (build 20260912-101156)
+
+**Branche:** `main` - **Build:** `20260912-101156`
+**Validation:** `cargo test` 379+1+230 OK (2 nouveaux tests, 1 reecrit), warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- **Un clic droit ferme le menu contextuel**, ou qu'il tombe, y compris sur le menu lui-meme : le geste qui l'ouvre est celui qui le referme, donc s'en debarrasser ne demande plus de viser le vide.
+- **La ligne « Mode » est retiree.** Depuis [211] un p-lock est toujours cree lie, donc elle affichait « Linked to Global » jusqu'au premier parametre touche puis « Mixed » indefiniment - jamais une information sur laquelle agir. Seul un snapshot herite d'une ancienne session meritait d'etre nomme, et ceux-la ne peuvent plus etre crees.
+- **Bouton « Not » sur les conditions du p-lock sequenceur.** Il inverse la condition choisie : `3/4` devient « toutes les boucles sauf la 3e sur quatre ». C'est un **modificateur** : il survit au changement de condition. Grise sur `Always`, ou l'inverser voudrait dire « jamais » - ce que desactiver le pas fait deja.
+- **« Not 1st loop » quitte la liste** : c'etait ce modificateur cable en dur sur une seule condition. `1st loop only` + `Not` dit exactement la meme chose.
+- **Aucun changement de format.** Le drapeau occupe un **bit haut du `u32` deja stocke** (`CONDITION_NEGATE_BIT = 0x100`) : les valeurs basses gardent leur sens, la Pattern Bank qui serialise le mot brut le transporte sans rien changer, et un pas regle sur l'ancien « Not 1st loop » **joue a l'identique** - il est relu comme `1st loop only` inverse, la meme regle ecrite autrement. Test dedie.
+
+## 2026-09-12 - [213] Choisir le type de p-lock dans le menu de la cellule (build 20260912-094023)
+
+**Branche:** `main` - **Build:** `20260912-094023`
+**Validation:** `cargo test` 377+1+230 OK, warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- Poser un p-lock sequenceur demandait de basculer d'abord le **P-Lock Mode** de toute la grille. Le choix se fait desormais **dans le menu de la cellule** : un segmente `Sound | Sequencer` en tete du popup, les memes deux libelles que l'interrupteur global pour que ce soit lu comme le meme choix.
+- Le choix est **local au popup** (nouveau champ `PlockPopup::sequencer`, initialise depuis le mode de la grille a l'ouverture) : basculer dans le menu ne change pas le mode de la grille, donc ni l'affichage des cellules ni le prochain clic droit.
+- **Le Lane Editor suit** : choisir `Sound` pointe le panneau sur la cellule et bascule sur l'onglet Sound, choisir `Sequencer` relache la selection - le panneau n'a rien a dire d'un p-lock sequenceur.
+- **Limite connue, c'est [214]** : la couleur d'une cellule suit toujours le **mode de la grille**. Un p-lock sequenceur pose depuis une grille en mode Sound existe et joue, mais la cellule ne le montre pas tant qu'on n'a pas bascule le mode global.
+
+## 2026-09-12 - [217] Clear Plock qui semblait ne rien faire (build 20260912-093224)
+
+**Branche:** `main` - **Build:** `20260912-093224`
+**Validation:** `cargo test` 377+1+230 OK, warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+Retour utilisateur : « un clear plock sur une cellule desactivee semble ne pas fonctionner ». Le `Clear` faisait pourtant bien son travail ; c'est ce qui se passait **juste apres** qui le defaisait.
+
+- **Le mecanisme.** Le clic droit qui ouvre le menu **pointe aussi le Lane Editor sur la cellule**, en portee Step. Apres le Clear, le panneau restait pointe la, sur une cellule sans p-lock - et en portee Step, ecrire n'importe quelle rangee **recree** le p-lock : `PlockSource::set` leve le bit d'activite du pas, ce qui est precisement ce qui permet a une rangee de creer un override. Le premier reglage touche ensuite ramenait donc le p-lock, et le Clear semblait n'avoir rien fait.
+- **Le correctif.** Effacer un p-lock **relache aussi la selection du panneau** quand elle designe cette cellule : le Lane Editor repasse sur le son global de la lane. Sans p-lock, il n'y a plus rien a editer en portee Step.
+- Non reproduit de mon cote : le mecanisme a ete trouve par lecture du chemin de creation. A confirmer par le test - voir la checklist du build.
+
+## 2026-09-11 - [216] Bouton T retire, lampe MIDI conservee et reparee (build 20260911-200326)
+
+**Branche:** `main` - **Build:** `20260911-200326`
+**Validation:** `cargo test` 377+1+230 OK, warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- **Le bouton « T » disparait des rangees de lane.** Il cumulait deux roles sans rapport : declencher l'audition de la voix au clic, et servir de **lampe temoin** de la lane. Les lanes n'ont plus que deux pastilles, M et S ; l'en-tete suit et la place liberee revient aux cellules.
+- **La lampe restait allumee - c'etait un bug, pas un choix.** L'editeur ne se redessine que sur evenement : la frame qui allumait la lampe etait souvent la derniere dessinee, donc les pixels restaient a l'ecran jusqu'a ce qu'autre chose force un rafraichissement. **Rien ne demandait jamais la frame qui l'aurait eteinte.** Le repaint d'extinction est desormais programme (`request_repaint_after`) - meme piege que la pulsation d'edition des fusions, corrigee en son temps pour la meme raison.
+- **L'indicateur MIDI est conserve**, retour utilisateur : « l'indicateur de midi in est tres important en fait ». C'est maintenant une petite LED ambre en haut a droite de la **plaque de nom** de la lane (`skeuo::lane_activity_led`), allumee 0,12 s. Elle couvre les memes evenements qu'avant : note MIDI entrante, et les confirmations de Paste Lane, Paste Grid et Randomize Lane.
+- **L'audition reste cablee cote audio sans declencheur.** `voice_test_triggers` et sa boucle dans `process()` sont conserves a dessein : la reexposer ailleurs - panneau Sound, raccourci - sera un changement d'interface seulement. Le parametre ne traverse plus la chaine UI (`create_editor`, `draw_grid_v2`, la rangee de lane).
+
+## 2026-09-11 - [216a] Clear Plock ferme le menu contextuel (build 20260911-200326)
+
+- Apres un **Clear Plock**, le menu se ferme : le p-lock n'existe plus, donc les options qui le concernent n'ont plus d'objet.
+
+## 2026-09-11 - [215] Le menu du p-lock se reduit a ce que le panneau ne fait pas (build 20260911-191858)
+
+**Branche:** `main` - **Build:** `20260911-191858`
+**Validation:** `cargo test` 377+1+230 OK, warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- **Creer un p-lock mene directement au panneau.** « Create Plock » pose le p-lock, pointe le Lane Editor sur la cellule, bascule sur l'onglet Sound et **ferme le menu**. Creer un p-lock *est* le debut de son edition : il n'y a plus de second ecran contextuel entre le geste et le panneau qui fait le travail.
+- **« Edit In Panel » retire.** Le clic droit qui ouvre ce menu pointait deja le panneau sur la cellule, donc le bouton demandait de confirmer quelque chose qui avait deja eu lieu.
+- **Le menu d'une cellule deja p-lockee n'a plus que Copy Plock et Clear Plock**, sous la ligne Mode. « Paste Plock » en est retire sur la meme instruction : ecraser un p-lock depuis le presse-papier demande desormais Clear puis coller. Le bouton Paste reste sur une cellule **vide**.
+- La ligne **Mode** (Linked to Global / Full Snapshot / Mixed) est conservee : ce n'est pas un bouton, et c'est le seul endroit qui identifie un p-lock snapshot herite, que [211] a rendu increable.
+
+## 2026-09-11 - [211] P-lock : l'option Snapshot disparait du menu (build 20260911-190921)
+
+**Branche:** `main` - **Build:** `20260911-190921`
+**Validation:** `cargo test` 377+1+230 OK, warning-clean, `build.ps1 -Install` OK. **A valider dans Studio One.**
+
+- Le menu de creation d'un p-lock sound proposait **deux modes** : « Link to Global » (seuls les champs touches surchargent) et « Snapshot Current Settings » (les 46 champs geles d'un coup). Le second est retire ; le bouton restant est renomme **« Create Plock »**, le nom « Link to Global » n'opposant plus rien une fois seul.
+- **Le format n'est pas touche.** Un p-lock snapshot enregistre avant ce build se charge, se joue et s'edite comme avant, et la ligne **Mode** du menu le nomme toujours « Full Snapshot ». C'est un mode de **creation** qui disparait, pas une capacite du stockage.
+- Nettoyage induit : la branche supprimee etait le seul endroit du menu qui lisait les reglages de son, donc `SoundSettingsState` sort de la signature de `draw_plock_menu` **et** de `draw_plock_popup`, avec son import. Un parametre de moins a transporter depuis `ui.rs`.
+
+## 2026-09-09 - [210] Le premier clic d'une fusion se voit enfin (build 20260909-164540)
+
+**Branche:** `main` - **Build:** `20260909-164540`
+**Validation:** `cargo test` 377+1+230 OK, warning-clean, `build.ps1 -Install` OK. **Validé dans Studio One (2026-09-09).**
+
+Retour utilisateur : « MAJ + clic sur la premiere cellule, rien n'apparait, on a l'impression que ca ne fonctionne pas. » Deux causes, dont une qui n'est pas graphique.
+
+- **L'etat s'evaporait.** `fusion_mode_active` vaut « MAJ est enfoncee **en ce moment** », et la grille remettait *tous* les debuts de fusion a `None` des que le modificateur remontait. Relacher MAJ une fraction de seconde entre les deux clics jetait donc le geste. Le debut de fusion **survit** maintenant au relachement ; **Echap** l'annule, comme le faisaient deja un clic normal sur une cellule de la lane et les operations de lane.
+- **Le marqueur etait invisible.** Remplissage `rgb(20, 34, 58)` contre une cellule vide a `rgb(27, 27, 34)` : meme luminosite, a peine plus bleu, derriere un liseré de 1,5 px. Le remplissage est desormais tire de 30 % vers l'accent (`rgb(36, 71, 117)`) et le liseré passe a 2 px pleins.
+- **Un crochet `[` est peint dans la cellule** (`skeuo::fusion_start_bracket`) : une fusion est une **etendue**, donc son debut se lit comme le crochet qui l'ouvre - « le span commence ici, j'attends sa fin » - au lieu d'une simple teinte. Statique a dessein : le lisere pulsant signifie deja « cette fusion est en cours d'edition », et deux etats ne doivent pas partager un signal.
+- Le marqueur n'est plus conditionne au modificateur : il reste affiche pendant que la main va vers la seconde cellule.
+
+Ecarte : reutiliser la pulsation existante (elle dit « en cours d'edition »). Propose et non retenu pour l'instant : l'**apercu du span au survol**, qui afficherait en fantome la zone entre le depart et la cellule survolee.
+
 ## 2026-09-09 - [193] [194] Routing des sorties : Main deconnecte, sortie partageable (build 20260909-162500)
 
 **Branche:** `main` - **Build:** `20260909-162500` (l'etiquette du selecteur corrigee apres retour utilisateur sur `20260909-161422`)

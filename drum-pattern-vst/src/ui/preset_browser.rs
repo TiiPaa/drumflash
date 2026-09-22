@@ -290,7 +290,7 @@ pub fn draw_preset_browser_if_any(
                         if plock_menu_action_row(
                             ui,
                             "Export factory (dev)",
-                            if can_export { PL_LINK() } else { INK3() },
+                            if can_export { AMBER() } else { INK3() },
                         )
                         .clicked()
                             && can_export
@@ -383,6 +383,7 @@ fn save_current(
                 slot_kind,
                 &sound_settings.instruments[slot],
                 algo,
+                presets::user_texture_path(slot_kind, slot, &params.user_textures),
             ))
         }
         PresetKind::Pattern => {
@@ -401,6 +402,7 @@ fn save_current(
                 params.pattern_length.value().clamp(1, 64) as u8,
                 sound_settings,
                 &algos,
+                &params.user_textures,
             ))
         }
         PresetKind::Song => {
@@ -534,6 +536,7 @@ pub fn apply_instrument_preset_to_slot(
             &preset.standards,
             preset.algo,
             &preset.specials,
+            preset.user_texture.as_deref(),
         );
     }
     sound_settings.bump_version();
@@ -551,6 +554,7 @@ fn write_slot_sound(
     standards: &[f32; 13],
     algo: u8,
     specials: &[f32],
+    user_texture: Option<&str>,
 ) {
     use crate::instrument_registry::StandardField as F;
     const ORDER: [F; 13] = [
@@ -573,6 +577,24 @@ fn write_slot_sound(
         store_field(inst, *field, *value);
     }
     setter.set_parameter(params.algos()[slot], algo as i32);
+    // [228] A preset captured with a custom texture brings its file along:
+    // the lane gets the file loaded (or shows "missing" when the file is
+    // gone - "Custom" then plays Noise, never silence). A preset without one
+    // clears the lane's file: the lane sounds like the preset, not like what
+    // it had before.
+    let has_texture_menu = kind
+        .instrument_def()
+        .special_params
+        .iter()
+        .any(|d| d.name.ends_with("_texture"));
+    if has_texture_menu {
+        match user_texture {
+            Some(path) => {
+                let _ = params.user_textures.load(slot, std::path::Path::new(path));
+            }
+            None => params.user_textures.clear(slot),
+        }
+    }
     for (i, def) in kind.instrument_def().special_params.iter().enumerate() {
         if let Some(value) = specials.get(i) {
             inst.set_special(def.special_index, *value);
@@ -653,6 +675,7 @@ fn apply_pattern(
             &snd.standards,
             snd.algo,
             &snd.specials,
+            snd.user_texture.as_deref(),
         );
     }
     if !preset.sounds.is_empty() {
@@ -686,6 +709,7 @@ fn export_factory(
                 slot_kind,
                 &sound_settings.instruments[slot],
                 algo,
+                presets::user_texture_path(slot_kind, slot, &params.user_textures),
             ))
         }
         PresetKind::Pattern => {
@@ -704,6 +728,7 @@ fn export_factory(
                 params.pattern_length.value().clamp(1, 64) as u8,
                 sound_settings,
                 &algos,
+                &params.user_textures,
             ))
         }
         PresetKind::Song => {
