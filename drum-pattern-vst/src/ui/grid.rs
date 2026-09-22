@@ -89,7 +89,7 @@ pub fn draw_grid_v2(
 
             let row_w = ui.available_width();
             let grip_w = 14.0;
-            let name_w = 46.0;
+            let name_w = 62.0;
             let vol_w = 56.0;
             // [216] Two tags now (M / S): the audition button is gone.
             let mst_w = STEP_H * 2.0 + GAP_TIGHT;
@@ -363,31 +363,32 @@ fn draw_legacy_slot_lane_v2(
             } else {
                 layout_state.slots[slot_idx].name.clone()
             };
-            name.chars().take(6).collect::<String>()
+            name.chars().take(8).collect::<String>()
         };
-        let name_response = draw_lane_name_v2(ui, name_w, selected, &slot_name);
-
-        // [216] MIDI-activity lamp, on the name plate now that the "T" button is
-        // gone. It also confirms Paste Lane, Paste Grid and Randomize Lane,
-        // which set the same timer.
+        // [238] MIDI activity flashes the NAME PLATE itself (the amber LED of
+        // [216] is gone). The same timer also confirms Paste Lane, Paste Grid
+        // and Randomize Lane, which set it for longer.
         //
-        // The lamp USED TO STAY LIT: the editor only repaints on events, so the
-        // frame that lit it was often the last one drawn and the pixels stayed
-        // on screen until something else forced a redraw. Nothing ever asked for
-        // the frame that would turn it off. Scheduling that repaint is the fix -
-        // the same trap already fixed for the fusion edit pulse.
+        // Repaint trap ([216]): the editor only repaints on events, so the
+        // frame that lit the flash was often the last one drawn and the lit
+        // pixels stayed on screen. Nothing ever asked for the frame that would
+        // turn it off - scheduling that repaint is the fix.
         let now = ui.ctx().input(|i| i.time);
         if external_midi_triggers[slot_idx].swap(false, Ordering::Acquire) {
             state.slot_flash_until[slot_idx] = now + 0.12;
         }
         let flash_until = state.slot_flash_until[slot_idx];
-        if now < flash_until {
-            crate::ui::skeuo::lane_activity_led(ui.painter(), name_response.rect);
+        let flash = if now < flash_until {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_secs_f64(
                     (flash_until - now).min(0.12).max(0.01),
                 ));
-        }
+            ((flash_until - now) / 0.12).min(1.0) as f32
+        } else {
+            0.0
+        };
+        let name_response = draw_lane_name_v2(ui, name_w, selected, &slot_name, flash);
+
         if name_response.clicked() {
             select_legacy_track(state, slot_idx);
             // [184] Clicking a lane's NAME means "show me this lane": it always
@@ -1880,9 +1881,9 @@ fn draw_seq_grip_v2(ui: &mut egui::Ui, width: f32, height: f32) -> egui::Respons
     response
 }
 
-fn draw_lane_name_v2(ui: &mut egui::Ui, width: f32, selected: bool, label: &str) -> egui::Response {
+fn draw_lane_name_v2(ui: &mut egui::Ui, width: f32, selected: bool, label: &str, flash: f32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
-    crate::ui::skeuo::lane_name(ui, rect, label, selected);
+    crate::ui::skeuo::lane_name(ui, rect, label, selected, flash);
     response
 }
 
