@@ -12,7 +12,8 @@ use crate::ui::editor_state::{
     schema_voice_idx, select_legacy_track, EditorUIState, SoundEditorTab,
 };
 use crate::ui::envelope_viz::{
-    draw_ahd_pitch_envelope, draw_amp_envelope, draw_buzz_filter_envelope, draw_buzz_gate_graph, draw_filter_envelope,
+    draw_amp_envelope, draw_buzz_filter_envelope, draw_buzz_gate_graph, draw_filter_envelope,
+    draw_oneshot_amp_graph, draw_oneshot_filter_graph, draw_oneshot_graph, draw_oneshot_pitch_graph,
     draw_pitch_envelope, draw_texture_graph,
     draw_sample_amp_graph, draw_sample_filter_graph,
 };
@@ -1350,8 +1351,10 @@ fn ahd_filter_env_params(
             .map(|d| d.special_index)
     };
     Some((
-        find("_filter_attack")?,
-        find("_filter_hold")?,
+        // [243] One-Shot spells its fraction-of-sample stages `_atk`/`_hld`
+        // (the `_attack`/`_hold` suffixes are reserved to physical times).
+        find("_filter_attack").or_else(|| find("_filter_atk"))?,
+        find("_filter_hold").or_else(|| find("_filter_hld"))?,
         find("_filter_atk_curve")?,
         find("_filter_dec_curve").or_else(|| find("_filter_curve"))?,
     ))
@@ -1371,12 +1374,22 @@ fn ahd_pitch_env_params(
             .map(|d| d.special_index)
     };
     Some((
-        find("_pitch_env_attack")?,
-        find("_pitch_env_hold")?,
+        find("_pitch_env_attack").or_else(|| find("_pitch_env_atk"))?,
+        find("_pitch_env_hold").or_else(|| find("_pitch_env_hld"))?,
         find("_pitch_env_decay")?,
         find("_pitch_env_atk_curve")?,
         find("_pitch_env_dec_curve")?,
     ))
+}
+
+/// [243] The One-Shot draws its envelopes OVER the lane file's waveform, on
+/// the played region's time axis — the discriminator is its `_offset`
+/// special without Rift's `_wander`.
+fn is_oneshot(instrument: &crate::instrument_registry::InstrumentDef) -> bool {
+    instrument
+        .special_params
+        .iter()
+        .any(|d| d.name == "oneshot_offset")
 }
 
 pub fn draw_sound_panel(
@@ -2260,9 +2273,8 @@ pub fn draw_sound_panel(
                 || (family == crate::instrument_registry::ParamFamily::Pitch
                     && special_defs.iter().any(|d| d.name.ends_with("_pitch_env")))
                 || (family == crate::instrument_registry::ParamFamily::Filter && has_filter_env)
-                // [243] The texture graph only makes sense with an Offset to
-                // point at (Rift) — One-Shot reads the whole file, so its Osc
-                // section keeps no graph.
+                // [243] The texture/file graph only makes sense with an Offset
+                // to point at (Rift's texture, One-Shot's lane file).
                 || (family == crate::instrument_registry::ParamFamily::Osc
                     && texture_param.is_some()
                     && special_defs.iter().any(|d| d.name.ends_with("_offset")));
@@ -2533,8 +2545,11 @@ pub fn draw_sound_panel(
                         // Resonance lives in its source section keeps it there.
                         let hoist: &[&str] = match def.field {
                             crate::instrument_registry::StandardField::FilterFreq => &["_resonance"],
+                            // Canonical stage order (a time, then its curve):
+                            // the `_atk`/`_hld` spellings cover One-Shot's
+                            // fraction-of-sample stages ([243]).
                             crate::instrument_registry::StandardField::FilterEnvAmount => {
-                                &["_filter_attack", "_filter_atk_curve", "_filter_hold"]
+                                &["_filter_attack", "_filter_atk", "_filter_atk_curve", "_filter_hold", "_filter_hld"]
                             }
                             crate::instrument_registry::StandardField::FilterEnvDecay => {
                                 &["_filter_dec_curve", "_filter_curve"]
@@ -2909,8 +2924,15 @@ pub fn draw_sound_panel(
                         // [227] One click: a p-lock with a random Offset on
                         // every ACTIVE cell of the lane, all pages. Each click
                         // is a new draw; the values then live in the cells,
-                        // visible in the grid and editable one by one.
-                        if def.name.ends_with("_offset") {
+                        // visible in the grid and editable one by one. Rift
+                        // only: on a One-Shot the file IS the sound, a random
+                        // start per cell makes no musical sense there.
+                        if def.name.ends_with("_offset")
+                            && instrument
+                                .special_params
+                                .iter()
+                                .any(|d| d.name.ends_with("_wander"))
+                        {
                             let (_, clicked) = row_scoped(ui, false, None, |ui| {
                                 crate::ui::controls::keycap_button(
                                     ui,
@@ -3028,6 +3050,32 @@ pub fn draw_sound_panel(
                     None
                 };
 
+                // [243] One-Shot: the lane file's peaks + the region markers,
+                // so the envelope graphs can draw OVER the waveform on the
+                // region's time axis. The Arc keeps the bank alive while the
+                // graphs borrow its peaks.
+                let oneshot_wave = if is_oneshot(instrument) {
+                    let pick = |suffix: &str| {
+                        instrument
+                            .special_params
+                            .iter()
+                            .find(|d| d.name.ends_with(suffix))
+                            .map(|d| src.get(ParamId::Special(d.special_index)))
+                            .unwrap_or(0.0)
+                    };
+                    Some((
+                        params.user_textures.pool.get(slot),
+                        pick("_offset"),
+                        pick("_reverse") > 0.5,
+                    ))
+                } else {
+                    None
+                };
+                let oneshot_peaks: &[(f32, f32)] = oneshot_wave
+                    .as_ref()
+                    .and_then(|(bank, _, _)| bank.as_ref().map(|b| &b.peaks[..]))
+                    .unwrap_or(&[]);
+
                 match family {
                     crate::instrument_registry::ParamFamily::Osc => {
                         // The texture, the read position, the band Wander can
@@ -3047,42 +3095,59 @@ pub fn draw_sound_panel(
                                     .map(|d| src.get(ParamId::Special(d.special_index)))
                                     .unwrap_or(0.0)
                             };
-                            let index = src
-                                .get(ParamId::Special(def.special_index))
-                                .round()
-                                .max(0.0) as usize;
-                            // [228] Embedded or user texture, the same
-                            // resolution the voice applies (an empty user
-                            // slot shows the fallback it plays).
-                            let source = crate::synthesis::sample_bank::resolve_texture(
-                                index,
-                                Some((&params.user_textures.pool, slot)),
-                            );
-                            let bank = source.bank();
-                            // The grain window is drawn with the SAME mapping
-                            // the voice uses, or the picture would lie.
-                            let texture_secs =
-                                bank.data.len() as f32 / bank.source_rate.max(1.0);
-                            let grain_frac = if texture_secs > 0.0 {
-                                crate::synthesis::rift_grain_seconds(pick("_grain"))
-                                    / texture_secs
-                            } else {
-                                0.0
-                            };
-                            draw_texture_graph(
-                                ui,
-                                &bank.peaks,
-                                pick("_offset"),
-                                pick("_wander"),
-                                if params.advance_modes()[slot].value() & crate::advance_mode::ON != 0 {
-                                    pick("_advance")
+                            if instrument
+                                .special_params
+                                .iter()
+                                .any(|d| d.name.ends_with("_wander"))
+                            {
+                                let index = src
+                                    .get(ParamId::Special(def.special_index))
+                                    .round()
+                                    .max(0.0) as usize;
+                                // [228] Embedded or user texture, the same
+                                // resolution the voice applies (an empty user
+                                // slot shows the fallback it plays).
+                                let source = crate::synthesis::sample_bank::resolve_texture(
+                                    index,
+                                    Some((&params.user_textures.pool, slot)),
+                                );
+                                let bank = source.bank();
+                                // The grain window is drawn with the SAME mapping
+                                // the voice uses, or the picture would lie.
+                                let texture_secs =
+                                    bank.data.len() as f32 / bank.source_rate.max(1.0);
+                                let grain_frac = if texture_secs > 0.0 {
+                                    crate::synthesis::rift_grain_seconds(pick("_grain"))
+                                        / texture_secs
                                 } else {
                                     0.0
-                                },
-                                grain_frac,
-                                pick("_loop") > 0.5,
-                                pick("_reverse") > 0.5,
-                            );
+                                };
+                                draw_texture_graph(
+                                    ui,
+                                    &bank.peaks,
+                                    pick("_offset"),
+                                    pick("_wander"),
+                                    if params.advance_modes()[slot].value() & crate::advance_mode::ON != 0 {
+                                        pick("_advance")
+                                    } else {
+                                        0.0
+                                    },
+                                    grain_frac,
+                                    pick("_loop") > 0.5,
+                                    pick("_reverse") > 0.5,
+                                );
+                            } else {
+                                // [243] One-Shot: the lane's own file, with the
+                                // Offset marker and the played region. No
+                                // embedded fallback — no file, no waveform.
+                                let bank = params.user_textures.pool.get(slot);
+                                draw_oneshot_graph(
+                                    ui,
+                                    bank.as_ref().map(|b| &b.peaks[..]).unwrap_or(&[]),
+                                    pick("_offset"),
+                                    pick("_reverse") > 0.5,
+                                );
+                            }
                         }
                     }
                     crate::instrument_registry::ParamFamily::Pitch => {
@@ -3097,11 +3162,18 @@ pub fn draw_sound_panel(
                         if let Some((atk, hold, dec, atk_c, dec_c)) =
                             ahd_pitch_env_params(instrument)
                         {
-                            // [243] A-H-D pitch envelope (One-Shot): same
-                            // law as the voice — depth in semitones, shaped
-                            // attack, hold, shaped decay.
-                            draw_ahd_pitch_envelope(
+                            // [243] A-H-D pitch envelope over the region's
+                            // waveform: depth in semitones, shaped ramps, on
+                            // the region's time axis.
+                            let (offset, reverse) = oneshot_wave
+                                .as_ref()
+                                .map(|(_, o, r)| (*o, *r))
+                                .unwrap_or((0.0, false));
+                            draw_oneshot_pitch_graph(
                                 ui,
+                                oneshot_peaks,
+                                offset,
+                                reverse,
                                 pick("_pitch_env"),
                                 src.get(ParamId::Special(atk)),
                                 src.get(ParamId::Special(hold)),
@@ -3121,7 +3193,22 @@ pub fn draw_sound_panel(
                         }
                     }
                     crate::instrument_registry::ParamFamily::Env => {
-                        if let Some((hit, start, end)) = sample_graph {
+                        if let Some((_, offset, reverse)) = &oneshot_wave {
+                            // [243] Amp A-H-D over the region's waveform, on
+                            // the region's time axis (`release_curve` is the
+                            // repurposed bipolar attack curve).
+                            draw_oneshot_amp_graph(
+                                ui,
+                                oneshot_peaks,
+                                *offset,
+                                *reverse,
+                                attack,
+                                release_curve,
+                                hold,
+                                decay,
+                                decay_curve,
+                            );
+                        } else if let Some((hit, start, end)) = sample_graph {
                             draw_sample_amp_graph(
                                 ui,
                                 hit,
@@ -3159,23 +3246,42 @@ pub fn draw_sound_panel(
                             } else if let Some((atk, hold, atk_c, dec_c)) =
                                 ahd_filter_env_params(instrument)
                             {
-                                // A-H-D filter envelope (attack/hold/decay, each
-                                // ramp with its own bipolar curve) sweeping the
-                                // cutoff: Buzz, SDrex and Rift. Found by
-                                // parameter NAME rather than by instrument
-                                // index, which used to mean one hand-written
-                                // branch — and one table of index literals — per
-                                // voice.
-                                draw_buzz_filter_envelope(
-                                    ui,
-                                    filt,
-                                    filter_env_amount,
-                                    src.get(ParamId::Special(atk)),
-                                    src.get(ParamId::Special(hold)),
-                                    filter_env_decay,
-                                    src.get(ParamId::Special(atk_c)),
-                                    src.get(ParamId::Special(dec_c)),
-                                );
+                                if let Some((_, offset, reverse)) = &oneshot_wave {
+                                    // [243] One-Shot: the A-H-D cutoff sweep
+                                    // over the region's waveform, on the
+                                    // region's time axis.
+                                    draw_oneshot_filter_graph(
+                                        ui,
+                                        oneshot_peaks,
+                                        *offset,
+                                        *reverse,
+                                        filt,
+                                        filter_env_amount,
+                                        src.get(ParamId::Special(atk)),
+                                        src.get(ParamId::Special(hold)),
+                                        filter_env_decay,
+                                        src.get(ParamId::Special(atk_c)),
+                                        src.get(ParamId::Special(dec_c)),
+                                    );
+                                } else {
+                                    // A-H-D filter envelope (attack/hold/decay, each
+                                    // ramp with its own bipolar curve) sweeping the
+                                    // cutoff: Buzz, SDrex and Rift. Found by
+                                    // parameter NAME rather than by instrument
+                                    // index, which used to mean one hand-written
+                                    // branch — and one table of index literals — per
+                                    // voice.
+                                    draw_buzz_filter_envelope(
+                                        ui,
+                                        filt,
+                                        filter_env_amount,
+                                        src.get(ParamId::Special(atk)),
+                                        src.get(ParamId::Special(hold)),
+                                        filter_env_decay,
+                                        src.get(ParamId::Special(atk_c)),
+                                        src.get(ParamId::Special(dec_c)),
+                                    );
+                                }
                             } else {
                                 draw_filter_envelope(
                                     ui,

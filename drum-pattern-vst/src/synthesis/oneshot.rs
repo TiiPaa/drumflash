@@ -1,37 +1,38 @@
 //! One-Shot ([243]) — the lane's own sample file, played start to finish.
 //!
 //! Rift lifts a slice out of a long texture; One-Shot is its simpler sibling:
-//! no embedded content, no offset — the whole user file ([228] lane textures,
-//! same pool, same lane rules) is the sound. It is shaped by a full A-H-D
-//! amplitude envelope, a full A-H-D pitch envelope (depth in semitones, each
-//! ramp with its own curve), a resonant LP/HP/BP filter with an A-H-D
-//! envelope, reverse playback, and the shared saturation chain.
+//! no embedded content — the user file ([228] lane textures, same pool, same
+//! lane rules) is the sound, played from the Offset marker to its end. It is
+//! shaped by a full A-H-D amplitude envelope, a full A-H-D pitch envelope
+//! (depth in semitones, each ramp with its own curve), a resonant LP/HP/BP
+//! filter with an A-H-D envelope, reverse playback, and the shared saturation
+//! chain.
+//!
+//! Every envelope TIME is a FRACTION of the played region's heard duration
+//! (region length × pitch ratio), like a sampler: 1.0 always means "the whole
+//! sample", so an attack at 0.5 swells over half the file whatever its length
+//! (absolute seconds were meaningless on short samples — user report
+//! 2026-09-23).
 //!
 //! A lane WITHOUT a file stays inert: there is no embedded fallback, the file
 //! IS the instrument.
 //!
-//! Retrigger follows the [179] contract: read position, filter and DC blocker
-//! restart from a clean state, `RetrigDeclick` (3 ms) absorbs the jump.
+//! Retrigger follows the [179] contract: read position, filter, DC blocker
+//! AND the amp envelope restart from a clean state (the attack always plays
+//! from zero, like a sampler), `RetrigDeclick` (3 ms) absorbs the jump.
 
 use super::{dsp, sample_bank, saturation, settings::oneshot::OneShotSettings, Voice, VoiceSettings};
 
 /// Anti-click floor for the amplitude attack (a true 0 ms attack is a step).
 const MIN_AMP_ATTACK_MS: f32 = 0.3;
-/// Full-scale amp attack as an ABSOLUTE fade-in time (same reasoning as Rift).
-const MAX_AMP_ATTACK_SECS: f32 = 0.08;
-/// Amp decay is an ABSOLUTE time, long enough at the top to let any sane
-/// one-shot ring to its own end (the registry slider spans 0.005 .. 10 s).
-const MAX_DECAY_SECS: f32 = 10.0;
+/// Floor for any envelope stage once scaled to the region (a 0 s stage is a
+/// step; the registry sliders span 0.005 .. 1.0 of the region).
 const MIN_DECAY_SECS: f32 = 0.005;
-/// Hold is an absolute time too, capped at one second.
-const MAX_HOLD_SECS: f32 = 1.0;
 /// Top of the filter sweep — the plugin's own convention (`buzz.rs`): the
 /// envelope opens the cutoff toward it and the cutoff falls back afterwards.
 const FILTER_OPEN_HZ: f32 = 20000.0;
 /// Anti-click floor for the filter- and pitch-envelope attacks.
 const MIN_ENV_ATTACK_S: f32 = 0.0005;
-/// Pitch envelope times: attack/hold caps from the registry, decay cap here.
-const MAX_PITCH_ENV_DECAY_S: f32 = 1.5;
 /// The biquad is re-tuned every N samples rather than every sample (rift.rs).
 const FILTER_UPDATE_SAMPLES: u32 = 8;
 
@@ -41,11 +42,22 @@ pub struct OneShotVoice {
 
     /// Read position in SOURCE samples (fractional).
     pos: f32,
-    /// End of the file in SOURCE samples (the whole file is the window).
+    /// Start of the played region in SOURCE samples (the Offset marker).
+    win_start: f32,
+    /// End of the file in SOURCE samples (the window runs to the file end).
     win_end: f32,
     /// Source-sample increment per output sample, pitch modulation EXCLUDED —
     /// the pitch envelope scales it per sample.
     base_step: f32,
+    /// Heard duration of the played region in OUTPUT seconds (region length ÷
+    /// pitch ratio): every envelope time is a fraction of this, like a
+    /// sampler. Computed at trigger, where the file and region are known, and
+    /// recomputed by `set_settings` so a LIVE pitch change (macro/automation)
+    /// retunes the playing voice instead of waiting for the next trigger.
+    region_secs: f32,
+    /// Sample rate of the loaded file, kept so `set_settings` can retune
+    /// `base_step`/`region_secs` without the bank in hand.
+    source_rate: f32,
     /// The lane's file, held alive by its `Arc` for the length of the hit.
     source: Option<std::sync::Arc<sample_bank::TextureBank>>,
     /// The instance's lane textures and this voice's lane; `None` = test
@@ -79,7 +91,9 @@ impl OneShotVoice {
         let mut amp_env = dsp::DecayReleaseEnvelope::new(
             sample_rate,
             settings.decay_curve,
-            settings.decay.clamp(MIN_DECAY_SECS, MAX_DECAY_SECS),
+            // Placeholder at the 1 s default region; trigger() and
+            // set_settings() re-apply the region-scaled times.
+            settings.decay.clamp(0.005, 1.0),
             settings.release_curve,
             settings.release.max(0.001),
         )
@@ -90,8 +104,11 @@ impl OneShotVoice {
             settings,
             sample_rate,
             pos: 0.0,
+            win_start: 0.0,
             win_end: 0.0,
             base_step: 1.0,
+            region_secs: 1.0,
+            source_rate: 0.0,
             source: None,
             pool: None,
             amp_env,
@@ -172,20 +189,23 @@ impl OneShotVoice {
         2f32.powf(semis / 12.0)
     }
 
+    /// Every envelope stage is a FRACTION of the played region's heard
+    /// duration: 1.0 = the whole sample, whatever its length or pitch.
     fn amp_attack_secs(&self) -> f32 {
-        self.settings.attack.clamp(0.0, 1.0) * MAX_AMP_ATTACK_SECS
+        self.settings.attack.clamp(0.0, 1.0) * self.region_secs
     }
 
     fn amp_decay_secs(&self) -> f32 {
-        self.settings.decay.clamp(MIN_DECAY_SECS, MAX_DECAY_SECS)
+        (self.settings.decay.clamp(0.005, 1.0) * self.region_secs).max(MIN_DECAY_SECS)
     }
 
     fn hold_secs(&self) -> f32 {
-        self.settings.hold.clamp(0.0, MAX_HOLD_SECS)
+        self.settings.hold.clamp(0.0, 1.0) * self.region_secs
     }
 
     fn filter_env_decay_secs(&self) -> f32 {
-        self.settings.filter_env_decay.clamp(MIN_DECAY_SECS, MAX_DECAY_SECS)
+        (self.settings.filter_env_decay.clamp(0.005, 1.0) * self.region_secs)
+            .max(MIN_DECAY_SECS)
     }
 
     /// Generic A-H-D ramp at time `t`, each stage shaped by its own bipolar
@@ -205,25 +225,25 @@ impl OneShotVoice {
     }
 
     /// A-H-D pitch envelope value (0..1); the caller scales it by the depth.
+    /// Stages are fractions of the region, like the amp envelope.
     fn pitch_env_value(&self) -> f32 {
         Self::ahd_value(
             self.pitch_env_time,
-            self.settings.pitch_env_attack,
-            self.settings.pitch_env_hold,
-            self.settings
-                .pitch_env_decay
-                .clamp(MIN_DECAY_SECS, MAX_PITCH_ENV_DECAY_S),
+            self.settings.pitch_env_attack.clamp(0.0, 1.0) * self.region_secs,
+            self.settings.pitch_env_hold.clamp(0.0, 1.0) * self.region_secs,
+            (self.settings.pitch_env_decay.clamp(0.005, 1.0) * self.region_secs)
+                .max(MIN_DECAY_SECS),
             self.settings.pitch_env_atk_curve,
             self.settings.pitch_env_dec_curve,
         )
     }
 
-    /// A-H-D filter envelope value (0..1), as in `rift.rs`.
+    /// A-H-D filter envelope value (0..1), stages as fractions of the region.
     fn filter_env_value(&self) -> f32 {
         Self::ahd_value(
             self.filter_env_time,
-            self.settings.filter_attack,
-            self.settings.filter_hold,
+            self.settings.filter_attack.clamp(0.0, 1.0) * self.region_secs,
+            self.settings.filter_hold.clamp(0.0, 1.0) * self.region_secs,
             self.filter_env_decay_secs(),
             self.settings.filter_atk_curve,
             self.settings.filter_dec_curve,
@@ -267,7 +287,7 @@ impl OneShotVoice {
         };
         let data_len = bank.data.len();
         let past_end = if self.reverse() {
-            self.pos - 1.0 <= 0.0
+            self.pos - 1.0 <= self.win_start
         } else {
             self.pos + 1.0 >= self.win_end
         };
@@ -391,15 +411,41 @@ impl Voice for OneShotVoice {
             return;
         }
         self.active = true;
-        self.win_end = (len - 2) as f32;
-        self.base_step = (bank.source_rate.max(1.0) / self.sample_rate) * self.pitch_ratio();
-        self.pos = if self.reverse() { self.win_end } else { 0.0 };
+        // Offset is WHERE PLAYBACK STARTS, in both directions: forward skips
+        // the first `offset` of the file and reads [offset, end]; reverse
+        // skips the first `offset` of what IT would hear, i.e. starts at
+        // (1 - offset) and reads down to the file start. The marker stays the
+        // start of the sound either way (user report 2026-09-23).
+        let last = (len - 2) as f32;
+        let offset = self.settings.offset.clamp(0.0, 1.0);
+        if self.reverse() {
+            self.win_start = 0.0;
+            self.win_end = ((1.0 - offset) * last).clamp(2.0, last);
+        } else {
+            self.win_start = (offset * last).clamp(0.0, (last - 2.0).max(0.0));
+            self.win_end = last;
+        }
+        self.source_rate = bank.source_rate.max(1.0);
+        self.base_step = (self.source_rate / self.sample_rate) * self.pitch_ratio();
+        self.pos = if self.reverse() { self.win_end } else { self.win_start };
+        // The envelopes scale to what is ACTUALLY heard: the region, at the
+        // current pitch ratio (region source-samples ÷ source rate ÷ ratio).
+        self.region_secs = ((self.win_end - self.win_start)
+            / self.source_rate
+            / self.pitch_ratio().max(1e-3))
+        .max(0.001);
 
         self.amp_env.set_decay(self.amp_decay_secs());
         self.amp_env
             .set_attack_ms((self.amp_attack_secs() * 1000.0).max(MIN_AMP_ATTACK_MS));
         self.amp_env.set_hold(self.hold_secs());
-        self.amp_env.trigger();
+        // A sampler attack restarts FROM ZERO on every hit. Capturing the
+        // ringing tail (DecayReleaseEnvelope::trigger) made the attack vanish
+        // on any retrigger that landed before the previous envelope had fully
+        // decayed — adjacent cells, or a long attack whose own tail was still
+        // up when the next hit came (user report 2026-09-23). The 3 ms
+        // RetrigDeclick absorbs the level jump; that is what it is for.
+        self.amp_env.trigger_hard();
         self.filter_env_time = 0.0;
         self.pitch_env_time = 0.0;
         self.filter_tick = 0;
@@ -434,6 +480,7 @@ impl Voice for OneShotVoice {
     fn reset(&mut self) {
         self.active = false;
         self.pos = 0.0;
+        self.win_start = 0.0;
         self.win_end = 0.0;
         self.last_out = [0.0; 2];
         self.pitch_env_time = 1.0e6;
@@ -450,6 +497,20 @@ impl Voice for OneShotVoice {
 
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = OneShotSettings::from(settings);
+
+        // Live retune (macro/automation driving Pitch, [242]): the pitch
+        // ratio feeds the read increment AND the region the envelopes scale
+        // to — recomputing only at trigger made the knob glide while the
+        // sound followed in steps (user report 2026-09-23). Changing the
+        // increment mid-play is phase-continuous: no click, no smoother
+        // needed.
+        if self.active && self.source_rate > 0.0 {
+            self.base_step = (self.source_rate / self.sample_rate) * self.pitch_ratio();
+            self.region_secs = ((self.win_end - self.win_start)
+                / self.source_rate
+                / self.pitch_ratio().max(1e-3))
+            .max(0.001);
+        }
 
         // Setters only — recreating an envelope resets its state and cuts the
         // sound mid-slider-drag.
@@ -473,6 +534,7 @@ impl Voice for OneShotVoice {
         match index {
             0 => self.settings.texture = value,
             1 => self.settings.reverse = value,
+            20 => self.settings.offset = value,
             2 => self.settings.pitch_fine = value,
             3 => self.settings.pitch_env = value,
             4 => self.settings.pitch_env_attack = value,
@@ -682,6 +744,143 @@ mod tests {
             "the plocked low-pass did not filter: dark peak {} vs open {}",
             peak(&dark_out),
             peak(&open_out)
+        );
+    }
+
+    /// Envelope times are fractions of the played region's heard duration:
+    /// attack 0.5 on the 0.25 s test file is a 125 ms fade-in, whatever the
+    /// file's absolute length (sampler semantics).
+    #[test]
+    fn envelope_times_are_fractions_of_the_played_region() {
+        let mut s = VoiceSettings::oneshot();
+        s.attack = 0.5;
+        let mut v = voice_with(s);
+        v.trigger();
+        assert!((v.region_secs - 0.25).abs() < 1e-3, "region {}", v.region_secs);
+        assert!((v.amp_attack_secs() - 0.125).abs() < 1e-3);
+        assert!((v.amp_decay_secs() - 0.25).abs() < 1e-3, "decay 1.0 = whole region");
+    }
+
+    /// Offset is a fraction of the file where playback starts; the head
+    /// before the marker is never heard.
+    #[test]
+    fn offset_starts_playback_at_the_marker() {
+        let mut s = VoiceSettings::oneshot();
+        s.special[20] = 0.5;
+        let mut v = voice_with(s);
+        v.trigger();
+        let last = v.win_end;
+        assert!((v.win_start - 0.5 * last).abs() < 2.0, "marker at {}", v.win_start);
+        assert_eq!(v.pos, v.win_start, "forward playback starts at the marker");
+        for _ in 0..4410 {
+            v.process_sample();
+        }
+        assert!(v.pos > v.win_start, "the read moved forward from the marker");
+    }
+
+    /// Two offsets must not render the same audio.
+    #[test]
+    fn offset_changes_what_is_played() {
+        let at_start = render(&mut voice_with(VoiceSettings::oneshot()), 8000);
+        let mut s = VoiceSettings::oneshot();
+        s.special[20] = 0.5;
+        let mid = render(&mut voice_with(s), 8000);
+        assert_ne!(at_start, mid, "Offset changed nothing");
+    }
+
+    /// Reverse counts the Offset from the END: playback starts at
+    /// (1 - offset) and reads down to the file start, so the marker is the
+    /// START of the sound in both directions.
+    #[test]
+    fn reverse_starts_at_one_minus_offset_and_reads_down_to_zero() {
+        let mut s = VoiceSettings::oneshot();
+        s.special[1] = 1.0; // Reverse
+        s.special[20] = 0.25;
+        let mut v = voice_with(s);
+        v.trigger();
+        let last = 11025.0 - 2.0;
+        assert!(
+            (v.pos - 0.75 * last).abs() < 2.0,
+            "reverse must start at (1 - offset) of the file: {}",
+            v.pos
+        );
+        for _ in 0..44100 {
+            v.process_sample();
+        }
+        assert!(v.pos > -2.0, "the read ran past the file start: {}", v.pos);
+        assert!(!v.active, "the region is over, the voice must have stopped");
+    }
+
+    /// The amp attack actually fades the sound in over its scaled time.
+    #[test]
+    fn amp_attack_fades_the_sound_in() {
+        let mut s = VoiceSettings::oneshot();
+        s.attack = 0.2; // 20 % of the 0.25 s file = 50 ms fade-in
+        let mut v = voice_with(s);
+        v.trigger();
+        let first: Vec<f32> = (0..441).map(|_| v.process_sample()).collect(); // 0..10 ms
+        // Skip to the end of the ramp (45..50 ms), where the envelope is ~1.
+        let full: Vec<f32> = (0..1764).map(|_| v.process_sample()).collect();
+        let last_window = &full[full.len() - 441..];
+        let p1 = peak(&first);
+        let p2 = peak(last_window);
+        assert!(p1 < p2 * 0.25, "no fade-in: first 10 ms peak {p1}, full-level peak {p2}");
+    }
+
+    /// Every retrigger restarts the amp attack from zero, even while the
+    /// previous hit is still ringing (sampler semantics): adjacent cells each
+    /// play their fade-in.
+    #[test]
+    fn attack_restarts_from_zero_on_every_retrigger() {
+        let mut s = VoiceSettings::oneshot();
+        s.attack = 0.4; // 40 % of the 0.25 s file = 100 ms ramp
+        s.decay = 1.0;
+        let mut v = voice_with(s);
+        v.trigger();
+        // Well into the hit: past the ramp, the envelope is loud.
+        for _ in 0..8000 {
+            v.process_sample();
+        }
+        let before: Vec<f32> = (0..441).map(|_| v.process_sample()).collect();
+        v.trigger();
+        // Let the 3 ms declick finish, then measure the fresh ramp.
+        for _ in 0..200 {
+            v.process_sample();
+        }
+        let after: Vec<f32> = (0..441).map(|_| v.process_sample()).collect();
+        assert!(
+            peak(&after) < peak(&before) * 0.5,
+            "retrigger kept the tail level: {} -> {}",
+            peak(&before),
+            peak(&after)
+        );
+    }
+
+    /// A Pitch change through `set_settings` (the macro/automation path)
+    /// retunes the PLAYING voice — no retrigger needed.
+    #[test]
+    fn pitch_changes_apply_live_without_a_retrigger() {
+        let mut v = voice_with(VoiceSettings::oneshot());
+        v.trigger();
+        for _ in 0..100 {
+            v.process_sample();
+        }
+        let pos_before = v.pos;
+        for _ in 0..100 {
+            v.process_sample();
+        }
+        let rate_before = v.pos - pos_before;
+        let mut s = VoiceSettings::oneshot();
+        s.frequency = 12.0; // one octave up
+        v.set_settings(s);
+        let pos_mid = v.pos;
+        for _ in 0..100 {
+            v.process_sample();
+        }
+        let rate_after = v.pos - pos_mid;
+        assert!(
+            rate_after > rate_before * 1.8,
+            "live pitch change did not retune: {rate_before} -> {rate_after}"
         );
     }
 

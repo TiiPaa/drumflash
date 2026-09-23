@@ -317,15 +317,144 @@ pub fn draw_buzz_filter_envelope(
     response
 }
 
-// -- A-H-D pitch envelope (One-Shot, [243]) -------------------------------------
+// -- One-Shot envelopes over the sample ([243]) --------------------------------
 
-/// Pitch sweep readout for the A-H-D pitch envelope: semitones (bipolar) over
-/// a window sized by attack + hold + decay (like the amp and filter A-H-D
-/// graphs), zero line in the middle, each ramp with its own bipolar curve.
-/// Depth 0 draws a flat line on the zero: the graph then says "no sweep".
+/// The One-Shot's envelope graphs share one idea: the graph width IS the
+/// played region (Offset → file end, at the current pitch), with the
+/// waveform as the background in heard order (mirrored in Reverse). An
+/// envelope time of 0.5 then lands exactly halfway through the waveform —
+/// the fraction-of-sample semantics become visible instead of abstract.
+
+/// Waveform of the played region as a graph background, heard order.
+fn region_wave_bg(
+    painter: &Painter,
+    graph: &Rect,
+    peaks: &[(f32, f32)],
+    offset: f32,
+    reverse: bool,
+) {
+    if peaks.is_empty() {
+        return;
+    }
+    let n = peaks.len();
+    let offset = offset.clamp(0.0, 1.0);
+    // The played region in SOURCE samples: forward reads [offset, end];
+    // reverse counts the Offset from the END, so it reads [0, 1 - offset]
+    // backwards. Drawn in HEARD order either way: left = first sample out.
+    let region = if reverse {
+        let last = ((1.0 - offset) * n as f32) as usize;
+        &peaks[..last.max(1).min(n)]
+    } else {
+        let first = (offset * n as f32) as usize;
+        &peaks[first.min(n.saturating_sub(1))..]
+    };
+    let m = region.len();
+    if m == 0 {
+        return;
+    }
+    let mid = graph.center().y;
+    let half_h = graph.height() * 0.5;
+    let step = graph.width() / m as f32;
+    let wave = INK3().gamma_multiply(0.30);
+    for col in 0..m {
+        let (lo, hi) = region[if reverse { m - 1 - col } else { col }];
+        let x = graph.min.x + step * (col as f32 + 0.5);
+        let top = mid - half_h * hi.clamp(-1.0, 1.0);
+        let bottom = mid - half_h * lo.clamp(-1.0, 1.0);
+        painter.line_segment(
+            [Pos2::new(x, top), Pos2::new(x, bottom.max(top + 1.0))],
+            Stroke::new(step.max(1.0), wave),
+        );
+    }
+}
+
+/// A-H-D envelope drawn ON the region axis: stages are fractions of the
+/// region (attack 0.5 = ramp over its first half), clipped where the sample
+/// ends. `y_of` maps an envelope value (0..1) to a screen Y. Stage colors
+/// are the shared ones ([178]).
 #[allow(clippy::too_many_arguments)]
-pub fn draw_ahd_pitch_envelope(
+fn draw_ahd_on_region(
+    painter: &Painter,
+    graph: &Rect,
+    attack: f32,
+    hold: f32,
+    decay: f32,
+    atk_curve: f32,
+    dec_curve: f32,
+    y_of: &dyn Fn(f32) -> f32,
+) {
+    let a = attack.clamp(0.0, 1.0);
+    let h = hold.clamp(0.0, 1.0);
+    let d = decay.clamp(0.0, 1.0);
+    let x_of = |t: f32| graph.min.x + graph.width() * t.clamp(0.0, 1.0);
+    const POINTS: usize = 64;
+
+    // Attack: shaped ramp 0 -> 1 over the first `a` of the region.
+    if a > 0.0001 {
+        let mut pts = Vec::with_capacity(POINTS + 1);
+        for i in 0..=POINTS {
+            let p = i as f32 / POINTS as f32;
+            pts.push(Pos2::new(x_of(a * p), y_of(bipolar_shape_curve(p, atk_curve))));
+        }
+        painter.add(Shape::line(pts, Stroke::new(CURVE_W, stage_attack())));
+    }
+
+    // Hold: pinned at 1 until the decay starts (or the sample ends).
+    let peak_from = if a > 0.0001 { a } else { 0.0 };
+    let dec_start = (a + h).min(1.0);
+    if dec_start > peak_from {
+        painter.line_segment(
+            [Pos2::new(x_of(peak_from), y_of(1.0)), Pos2::new(x_of(dec_start), y_of(1.0))],
+            Stroke::new(CURVE_W, stage_hold()),
+        );
+    }
+
+    // Decay: shaped ramp 1 -> 0 over the next `d` of the region, clipped.
+    if d > 0.0001 && dec_start < 1.0 {
+        let mut pts = Vec::with_capacity(POINTS + 1);
+        for i in 0..=POINTS {
+            let p = i as f32 / POINTS as f32;
+            let t = dec_start + d * p;
+            if t > 1.0 {
+                break;
+            }
+            pts.push(Pos2::new(x_of(t), y_of(bipolar_shape_curve(1.0 - p, dec_curve))));
+        }
+        painter.add(Shape::line(pts, Stroke::new(CURVE_W, stage_decay())));
+    }
+}
+
+/// Amp envelope over the region's waveform.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_oneshot_amp_graph(
     ui: &mut nih_plug_egui::egui::Ui,
+    peaks: &[(f32, f32)],
+    offset: f32,
+    reverse: bool,
+    attack: f32,
+    atk_curve: f32,
+    hold: f32,
+    decay: f32,
+    dec_curve: f32,
+) -> nih_plug_egui::egui::Response {
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
+    let base_y = graph.max.y;
+    let top_y = graph.min.y;
+    region_wave_bg(&painter, &graph, peaks, offset, reverse);
+    draw_grid_lines(&painter, &graph);
+    let y_of = |v: f32| base_y - (base_y - top_y) * v.clamp(0.0, 1.0);
+    draw_ahd_on_region(&painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of);
+    response
+}
+
+/// Pitch envelope (semitones, bipolar, zero line in the middle) over the
+/// region's waveform. Depth 0 draws a flat line on the zero: "no sweep".
+#[allow(clippy::too_many_arguments)]
+pub fn draw_oneshot_pitch_graph(
+    ui: &mut nih_plug_egui::egui::Ui,
+    peaks: &[(f32, f32)],
+    offset: f32,
+    reverse: bool,
     depth_semitones: f32,
     attack: f32,
     hold: f32,
@@ -334,48 +463,49 @@ pub fn draw_ahd_pitch_envelope(
     dec_curve: f32,
 ) -> nih_plug_egui::egui::Response {
     let (graph, painter, response) = prep_graph(ui, GRAPH_H);
-
     const RANGE_SEMITONES: f32 = 24.0;
     let depth = depth_semitones.clamp(-RANGE_SEMITONES, RANGE_SEMITONES) / RANGE_SEMITONES;
-    let attack = attack.max(0.0005);
-    let hold = hold.max(0.0);
-    let decay = decay.max(0.01);
-    let span = attack + hold + decay;
     let mid_y = graph.center().y;
     let half_h = graph.height() * 0.5;
-    let y_of = |env: f32| mid_y - half_h * depth * env;
-    let x_of_t = |t: f32| graph.min.x + graph.width() * (t / span).clamp(0.0, 1.0);
-
+    region_wave_bg(&painter, &graph, peaks, offset, reverse);
     draw_grid_lines(&painter, &graph);
     draw_cutoff_line(&painter, &graph, mid_y);
+    let y_of = |env: f32| mid_y - half_h * depth * env;
+    draw_ahd_on_region(&painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of);
+    response
+}
 
-    const POINTS: usize = 80;
-
-    // Attack: shaped ramp of the envelope 0 -> 1.
-    let mut atk_pts = Vec::with_capacity(POINTS + 1);
-    for i in 0..=POINTS {
-        let t = attack * (i as f32 / POINTS as f32);
-        atk_pts.push(Pos2::new(x_of_t(t), y_of(bipolar_shape_curve(t / attack, atk_curve))));
-    }
-    painter.add(Shape::line(atk_pts, Stroke::new(CURVE_W, stage_attack())));
-
-    // Hold: envelope pinned at 1.
-    if hold > 0.0 {
-        painter.line_segment(
-            [Pos2::new(x_of_t(attack), y_of(1.0)), Pos2::new(x_of_t(attack + hold), y_of(1.0))],
-            Stroke::new(CURVE_W, stage_hold()),
-        );
-    }
-
-    // Decay: shaped ramp 1 -> 0.
-    let mut dec_pts = Vec::with_capacity(POINTS + 1);
-    for i in 0..=POINTS {
-        let t = (attack + hold) + decay * (i as f32 / POINTS as f32);
-        let p = ((t - attack - hold) / decay).clamp(0.0, 1.0);
-        dec_pts.push(Pos2::new(x_of_t(t), y_of(bipolar_shape_curve(1.0 - p, dec_curve))));
-    }
-    painter.add(Shape::line(dec_pts, Stroke::new(CURVE_W, stage_decay())));
-
+/// Filter envelope (cutoff swept exponentially toward 20 kHz, log Hz axis,
+/// resting-cutoff line) over the region's waveform.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_oneshot_filter_graph(
+    ui: &mut nih_plug_egui::egui::Ui,
+    peaks: &[(f32, f32)],
+    offset: f32,
+    reverse: bool,
+    base_cutoff_hz: f32,
+    env_amount: f32,
+    attack: f32,
+    hold: f32,
+    decay: f32,
+    atk_curve: f32,
+    dec_curve: f32,
+) -> nih_plug_egui::egui::Response {
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
+    let base = base_cutoff_hz.clamp(20.0, 20000.0);
+    let amount = env_amount.clamp(0.0, 1.0);
+    let hz_to_y = |hz: f32| -> f32 {
+        let norm = ((hz.max(20.0).min(20000.0)).ln() - 20f32.ln()) / (20000f32.ln() - 20f32.ln());
+        graph.max.y - graph.height() * norm.clamp(0.0, 1.0)
+    };
+    region_wave_bg(&painter, &graph, peaks, offset, reverse);
+    draw_grid_lines(&painter, &graph);
+    let y_of = |env: f32| {
+        let amt = (env * amount).clamp(0.0, 1.0);
+        hz_to_y(base * (20000.0 / base).powf(amt))
+    };
+    draw_ahd_on_region(&painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of);
+    draw_cutoff_line(&painter, &graph, hz_to_y(base));
     response
 }
 
@@ -505,6 +635,74 @@ pub fn draw_texture_graph(
     }
 
     // The read position itself, brightest and on top.
+    let x = x_of(offset);
+    painter.line_segment(
+        [Pos2::new(x, graph.min.y), Pos2::new(x, graph.max.y)],
+        Stroke::new(2.0, stage_attack()),
+    );
+
+    response
+}
+
+// -- One-Shot lane file ([243]) ------------------------------------------------
+
+/// The One-Shot lane's own file, with the Offset marker that decides WHERE
+/// playback starts (and, in Reverse, where it ends). Simpler than Rift's
+/// texture graph: no Wander band, no Advance ticks, no grain window — the
+/// played region is always [offset, end].
+///
+/// The screen always shows WHAT IS HEARD, IN THE ORDER IT IS HEARD: left =
+/// first sample out. Forward draws the file as stored; Reverse draws it
+/// mirrored — and because the voice counts the Offset from the END in
+/// Reverse, the marker stays AT the knob's position in both modes, always
+/// where playback starts, always with the skipped part dimmed on its left.
+///
+/// `peaks` is empty when the lane has no file: the marker still draws (it is
+/// the parameter's own feedback), over an empty screen.
+pub fn draw_oneshot_graph(
+    ui: &mut nih_plug_egui::egui::Ui,
+    peaks: &[(f32, f32)],
+    offset: f32,
+    reverse: bool,
+) -> nih_plug_egui::egui::Response {
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
+    let mid = graph.center().y;
+    let half_h = graph.height() * 0.5;
+    let x_of = |p: f32| graph.min.x + graph.width() * p.clamp(0.0, 1.0);
+    let offset = offset.clamp(0.0, 1.0);
+
+    draw_grid_lines(&painter, &graph);
+
+    // Waveform: one vertical bar per column, mirrored around the mid line.
+    // The skipped part (before the marker, in heard order) is never heard:
+    // same bars, dimmed. In Reverse the file tail past (1 - offset) is
+    // skipped — mirrored, it lands on the LEFT of the marker.
+    if !peaks.is_empty() {
+        let n = peaks.len();
+        let step = graph.width() / n as f32;
+        let wave = INK3().gamma_multiply(0.85);
+        let skipped = INK3().gamma_multiply(0.30);
+        for col in 0..n {
+            let src = if reverse { n - 1 - col } else { col };
+            let (lo, hi) = peaks[src];
+            let source_frac = (src as f32 + 0.5) / n as f32;
+            let is_skipped = if reverse {
+                source_frac > 1.0 - offset
+            } else {
+                source_frac < offset
+            };
+            let x = graph.min.x + step * (col as f32 + 0.5);
+            let top = mid - half_h * hi.clamp(-1.0, 1.0);
+            let bottom = mid - half_h * lo.clamp(-1.0, 1.0);
+            painter.line_segment(
+                [Pos2::new(x, top), Pos2::new(x, bottom.max(top + 1.0))],
+                Stroke::new(step.max(1.0), if is_skipped { skipped } else { wave }),
+            );
+        }
+    }
+
+    // The marker itself, brightest and on top — at the knob's position in
+    // both modes: it is the start of the sound, forward and reversed.
     let x = x_of(offset);
     painter.line_segment(
         [Pos2::new(x, graph.min.y), Pos2::new(x, graph.max.y)],
