@@ -6,6 +6,9 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
+## Nouvelles tâches — session 2026-09-23
+- [x] [243] **Instrument One-Shot** — joue le fichier sample de la lane du début à la fin. **Build 1** : voix (kind 24 / voix 26, Perc, OS, note 59, rôle générateur Perc1) + fichier par lane via l'infra [228] (marqueur `oneshot_texture` à 1 option non rendue, ligne File + Stereo directes, titre de section « Sample »), enveloppes A-H-D à courbes amp/pitch/filtre (graphe AHD dédié `draw_ahd_pitch_envelope`), pitch ±24 st + fine, filtre LP/HP/BP, reverse, pack saturation, lane sans fichier = inerte, table `ONE_SHOT_STD` (Decay max 10 s) (build 20260923-131247). **Build 2 + correctif** : drag & drop d'un WAV sur la grille → lane One-Shot créée (lane vide sous la souris sinon premier slot libre, jamais de remplacement). Premier essai `native_drop.rs` (second `IDropTarget` COM) refusé par S1 : `DRAGDROP_E_ALREADYREGISTERED` — baseview enregistre déjà son propre gestionnaire natif et egui-baseview ignorait ses événements. Correction : egui-baseview **vendoré** (rev `ec70c3f`) + pont `file_drop` (zone publiée par la grille, `AcceptDrop(Copy)`, position écran → client `ScreenToClient` → échelle egui, état par éditeur), suppression de `native_drop.rs` et du re-export HWND, `nih_plug_egui` pointe sur la copie locale. Création via `activate_slot` (`change_slot_kind` ignore les slots inactifs) + chargement du fichier et détection stéréo (builds 20260923-165905 → 202713, **validé dans S1 le 2026-09-23**).
+
 ## Nouvelles tâches — session 2026-09-22
 
 ### Batch 3 — cohérence

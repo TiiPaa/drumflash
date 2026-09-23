@@ -14,6 +14,7 @@ mod kick_808;
 #[cfg(test)]
 mod retrig_tests;
 mod open_hihat;
+mod oneshot;
 mod perc1;
 mod ride;
 mod rift;
@@ -43,6 +44,7 @@ pub use hihat::HiHatVoice;
 pub use kick::KickVoice;
 pub use kick_808::Kick808Voice;
 pub use open_hihat::OpenHiHatVoice;
+pub use oneshot::OneShotVoice;
 pub use perc1::Perc1Voice;
 pub use ride::RideVoice;
 #[allow(unused_imports)] // le binaire de test headless n'a pas d'UI
@@ -63,6 +65,7 @@ pub use settings::hihat::HiHatSettings;
 pub use settings::kick::KickSettings;
 pub use settings::kick_808::Kick808Settings;
 pub use settings::open_hihat::OpenHiHatSettings;
+pub use settings::oneshot::OneShotSettings;
 pub use settings::perc1::Perc1Settings;
 pub use settings::ride::RideSettings;
 pub use settings::rift::RiftSettings;
@@ -107,11 +110,13 @@ pub enum DrumVoice {
     Oh606 = 24,
     /// [221] Rift - a slice lifted out of a long texture.
     Rift = 25,
+    /// [243] One-Shot - the lane's own sample file, played start to finish.
+    OneShot = 26,
 }
 
 #[allow(dead_code)]
 impl DrumVoice {
-    pub const COUNT: usize = 26;
+    pub const COUNT: usize = 27;
 
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
@@ -141,6 +146,7 @@ impl DrumVoice {
             23 => Some(Self::Tm6Ac),
             24 => Some(Self::Oh606),
             25 => Some(Self::Rift),
+            26 => Some(Self::OneShot),
             _ => None,
         }
     }
@@ -701,6 +707,33 @@ impl VoiceSettings {
         }
     }
 
+    /// [243] One-Shot: the lane's file, whole, with a long default decay so
+    /// anything sane rings to its own end; filter wide open, no saturation.
+    pub fn oneshot() -> Self {
+        Self {
+            frequency: 0.0,
+            decay: 10.0,
+            volume: 0.8,
+            filter_freq: 20000.0,
+            attack: 0.0,
+            release: 0.0,
+            decay_curve: 0.0,
+            release_curve: 0.0,
+            hold: 0.0,
+            filter_env_amount: 0.0,
+            filter_env_decay: 0.12,
+            analog: 0.0,
+            stereo: 0.0,
+            algo: 0,
+            // texture, reverse, pitch fine, pitch env, pitch env A/H/D/curves,
+            // filter type, resonance, filter A/H/curves, saturation pack 15..19.
+            special: [
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.6, 0.0, 0.9, 0.0, 0.0, 0.0, 0.6, 0.0,
+                0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        }
+    }
+
     pub fn ch606() -> Self {
         // TR-606 closed hi-hat sampler: same sampler engine as sd606, tighter
         // amp decay + a touch lower level (hats sit under the kit).
@@ -969,6 +1002,7 @@ pub enum DrumVoiceKind {
     /// [208] OH6smp: the same hat engine as `Ch606`, on the open-hat bank.
     Oh606(Ch606Voice),
     Rift(RiftVoice),
+    OneShot(OneShotVoice),
     Buzz(BuzzVoice),
     Sdrex(SdrexVoice),
     Bd6Ac(AcVoice),
@@ -998,6 +1032,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.trigger(),
             DrumVoiceKind::Oh606(v) => v.trigger(),
             DrumVoiceKind::Rift(v) => v.trigger(),
+            DrumVoiceKind::OneShot(v) => v.trigger(),
             DrumVoiceKind::Buzz(v) => v.trigger(),
             DrumVoiceKind::Sdrex(v) => v.trigger(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.trigger(),
@@ -1022,6 +1057,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.trigger_hard(),
             DrumVoiceKind::Oh606(v) => v.trigger_hard(),
             DrumVoiceKind::Rift(v) => v.trigger_hard(),
+            DrumVoiceKind::OneShot(v) => v.trigger_hard(),
             DrumVoiceKind::Buzz(v) => v.trigger_hard(),
             DrumVoiceKind::Sdrex(v) => v.trigger_hard(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.trigger_hard(),
@@ -1046,6 +1082,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.process_sample(),
             DrumVoiceKind::Oh606(v) => v.process_sample(),
             DrumVoiceKind::Rift(v) => v.process_sample(),
+            DrumVoiceKind::OneShot(v) => v.process_sample(),
             DrumVoiceKind::Buzz(v) => v.process_sample(),
             DrumVoiceKind::Sdrex(v) => v.process_sample(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.process_sample(),
@@ -1070,6 +1107,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Oh606(v) => v.process_sample_stereo(),
             DrumVoiceKind::Rift(v) => v.process_sample_stereo(),
+            DrumVoiceKind::OneShot(v) => v.process_sample_stereo(),
             DrumVoiceKind::Buzz(v) => v.process_sample_stereo(),
             DrumVoiceKind::Sdrex(v) => v.process_sample_stereo(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.process_sample_stereo(),
@@ -1094,6 +1132,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.is_active(),
             DrumVoiceKind::Oh606(v) => v.is_active(),
             DrumVoiceKind::Rift(v) => v.is_active(),
+            DrumVoiceKind::OneShot(v) => v.is_active(),
             DrumVoiceKind::Buzz(v) => v.is_active(),
             DrumVoiceKind::Sdrex(v) => v.is_active(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.is_active(),
@@ -1118,6 +1157,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.reset(),
             DrumVoiceKind::Oh606(v) => v.reset(),
             DrumVoiceKind::Rift(v) => v.reset(),
+            DrumVoiceKind::OneShot(v) => v.reset(),
             DrumVoiceKind::Buzz(v) => v.reset(),
             DrumVoiceKind::Sdrex(v) => v.reset(),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.reset(),
@@ -1142,6 +1182,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.set_settings(settings),
             DrumVoiceKind::Oh606(v) => v.set_settings(settings),
             DrumVoiceKind::Rift(v) => v.set_settings(settings),
+            DrumVoiceKind::OneShot(v) => v.set_settings(settings),
             DrumVoiceKind::Buzz(v) => v.set_settings(settings),
             DrumVoiceKind::Sdrex(v) => v.set_settings(settings),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_settings(settings),
@@ -1155,8 +1196,11 @@ impl Voice for DrumVoiceKind {
     }
 
     fn set_texture_pool(&mut self, pool: std::sync::Arc<sample_bank::TexturePool>, lane: usize) {
-        if let DrumVoiceKind::Rift(v) = self {
-            v.set_texture_pool(pool, lane);
+        match self {
+            // [228] [243] The voices that read the lane's own file.
+            DrumVoiceKind::Rift(v) => v.set_texture_pool(pool, lane),
+            DrumVoiceKind::OneShot(v) => v.set_texture_pool(pool, lane),
+            _ => {}
         }
     }
 
@@ -1178,6 +1222,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.set_algo(algo),
             DrumVoiceKind::Oh606(v) => v.set_algo(algo),
             DrumVoiceKind::Rift(v) => v.set_algo(algo),
+            DrumVoiceKind::OneShot(v) => v.set_algo(algo),
             DrumVoiceKind::Buzz(v) => v.set_algo(algo),
             DrumVoiceKind::Sdrex(v) => v.set_algo(algo),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_algo(algo),
@@ -1202,6 +1247,7 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::Ch606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Oh606(v) => v.set_special_param(index, value),
             DrumVoiceKind::Rift(v) => v.set_special_param(index, value),
+            DrumVoiceKind::OneShot(v) => v.set_special_param(index, value),
             DrumVoiceKind::Buzz(v) => v.set_special_param(index, value),
             DrumVoiceKind::Sdrex(v) => v.set_special_param(index, value),
             DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_special_param(index, value),
@@ -1279,6 +1325,10 @@ fn create_voice_for_kind(
         K::Rift => DrumVoiceKind::Rift(RiftVoice::new(
             sample_rate,
             RiftSettings::from(VoiceSettings::rift()),
+        )),
+        K::OneShot => DrumVoiceKind::OneShot(OneShotVoice::new(
+            sample_rate,
+            OneShotSettings::from(VoiceSettings::oneshot()),
         )),
         K::Buzz => DrumVoiceKind::Buzz(BuzzVoice::new(
             sample_rate,

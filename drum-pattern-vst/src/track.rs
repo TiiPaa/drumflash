@@ -39,6 +39,8 @@ pub enum TrackInstrumentKind {
     Oh6smp = 22,
     /// [221] Rift - a slice lifted out of a long embedded texture.
     Rift = 23,
+    /// [243] One-Shot - the lane's own sample file, played start to finish.
+    OneShot = 24,
 }
 
 /// Instrument category used to group the kind pickers/menus
@@ -76,7 +78,7 @@ impl InstrumentCategory {
 }
 
 impl TrackInstrumentKind {
-    pub const COUNT: usize = 24;
+    pub const COUNT: usize = 25;
 
     /// Every kind, in stable declaration order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -104,6 +106,7 @@ impl TrackInstrumentKind {
         Self::Tm6Ac,
         Self::Oh6smp,
         Self::Rift,
+        Self::OneShot,
     ];
 
     /// Musical family of this kind (grouping for pickers/menus).
@@ -118,7 +121,7 @@ impl TrackInstrumentKind {
             | Self::Oh6Ac => {
                 InstrumentCategory::HiHat
             }
-            Self::Tom | Self::Perc1 | Self::Tm6Ac => InstrumentCategory::Perc,
+            Self::Tom | Self::Perc1 | Self::Tm6Ac | Self::OneShot => InstrumentCategory::Perc,
             Self::Buzz | Self::Rift => InstrumentCategory::Fx,
             Self::Ride | Self::Cymbal => InstrumentCategory::Other,
         }
@@ -182,6 +185,7 @@ impl TrackInstrumentKind {
             21 => Some(Self::Tm6Ac),
             22 => Some(Self::Oh6smp),
             23 => Some(Self::Rift),
+            24 => Some(Self::OneShot),
             _ => None,
         }
     }
@@ -216,6 +220,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Tm6Ac => "TA",
             TrackInstrumentKind::Oh6smp => "o6",
             TrackInstrumentKind::Rift => "Rf",
+            TrackInstrumentKind::OneShot => "OS",
         }
     }
 
@@ -245,6 +250,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Tm6Ac => "TM6(AC)",
             TrackInstrumentKind::Oh6smp => "OH6smp",
             TrackInstrumentKind::Rift => "Rift",
+            TrackInstrumentKind::OneShot => "One-Shot",
         }
     }
 
@@ -277,6 +283,8 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Oh6smp => 46,
             // GM vibraslap - free, and an FX slot suits an FX voice.
             TrackInstrumentKind::Rift => 58,
+            // GM ride cymbal 2 - free.
+            TrackInstrumentKind::OneShot => 59,
         }
     }
 
@@ -310,6 +318,7 @@ impl TrackInstrumentKind {
             TrackInstrumentKind::Tm6Ac => 23,
             TrackInstrumentKind::Oh6smp => 24,
             TrackInstrumentKind::Rift => 25,
+            TrackInstrumentKind::OneShot => 26,
         }
     }
 
@@ -340,6 +349,7 @@ impl TrackInstrumentKind {
             23 => Some(Self::Tm6Ac),
             24 => Some(Self::Oh6smp),
             25 => Some(Self::Rift),
+            26 => Some(Self::OneShot),
             _ => None,
         }
     }

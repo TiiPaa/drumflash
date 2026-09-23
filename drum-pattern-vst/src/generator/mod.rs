@@ -148,6 +148,7 @@ fn remap_roles_to_slots(
             TrackInstrumentKind::Oh6smp => 3, // [208] borrow the OpenHiHat role
             TrackInstrumentKind::Buzz => 12, // borrow the Perc1 role
             TrackInstrumentKind::Rift => 12, // [221] borrow the Perc1 role too
+            TrackInstrumentKind::OneShot => 12, // [243] same: borrow the Perc1 role
             TrackInstrumentKind::Sdrex => 1, // borrow the Snare role
             TrackInstrumentKind::Bd6Ac => 0,
             TrackInstrumentKind::Sd6Ac => 1,
