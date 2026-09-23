@@ -1302,19 +1302,21 @@ const RIFT_STD: &[StandardParamDef] = &[
     cb(StandardField::Stereo, "Stereo", ParamFamily::Osc),
 ];
 
-/// One-Shot [243]: like RIFT_STD, but the amp decay spans up to 10 s so any
-/// sane one-shot rings to its own end (the envelope shortens it on purpose).
+/// One-Shot [243]: sampler semantics — every envelope TIME is a FRACTION of
+/// the played region's heard duration (1.0 = the whole sample), so the
+/// envelope always fits the file, short or long, pitched or not (user report
+/// 2026-09-23: absolute seconds were meaningless on short samples).
 const ONE_SHOT_STD: &[StandardParamDef] = &[
     s(StandardField::Freq, "Pitch", ParamFamily::Pitch, -24.0, 24.0, false, None),
     s(StandardField::Attack, "Attack", ParamFamily::Env, 0.0, 1.0, false, None),
     s(StandardField::ReleaseCurve, "Attack Curve", ParamFamily::Env, -1.0, 1.0, false, None),
-    s(StandardField::Hold, "Hold", ParamFamily::Env, 0.0, 1.0, false, Some(" s")),
-    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.005, 10.0, false, Some(" s")),
+    s(StandardField::Hold, "Hold", ParamFamily::Env, 0.0, 1.0, false, None),
+    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.005, 1.0, false, None),
     s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, -1.0, 1.0, false, None),
     s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 2.0, false, None),
     s(StandardField::FilterFreq, "Filter", ParamFamily::Filter, 20.0, 20000.0, true, Some(" Hz")),
     s(StandardField::FilterEnvAmount, "Filter Env", ParamFamily::Filter, 0.0, 1.0, false, None),
-    s(StandardField::FilterEnvDecay, "Filter Decay", ParamFamily::Filter, 0.005, 1.5, false, Some(" s")),
+    s(StandardField::FilterEnvDecay, "Filter Decay", ParamFamily::Filter, 0.005, 1.0, false, None),
     // [228] Meme regle que Rift : un fichier stereo joue ses deux canaux tels
     // quels quand le switch est allume ; rendu sous la ligne File.
     cb(StandardField::Stereo, "Stereo", ParamFamily::Osc),
@@ -3664,21 +3666,30 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
                 ParamFamily::Osc,
                 &["Custom"],
             ),
+            // Offset start : fraction du fichier ou la lecture COMMENCE, dans
+            // les deux sens (en Reverse elle compte depuis la fin). Index 20,
+            // ajoute apres coup - les indices existants ne bougent pas.
+            sp("oneshot_offset", "Offset", 0.0, 0.0, 1.0, 20, ParamFamily::Osc),
             sp_discrete("oneshot_reverse", "Reverse", 0.0, 0.0, 1.0, 1, ParamFamily::Osc),
             sp_unit("oneshot_pitch_fine", "Pitch Fine", 0.0, -100.0, 100.0, 2, ParamFamily::Pitch, " ct"),
             // Enveloppe de pitch A-H-D complete (pas le simple depth+time de
-            // Rift) : profondeur en demi-tons, attaque et hold en secondes,
-            // decay en secondes, chaque rampe avec sa courbe bipolaire.
+            // Rift) : profondeur en demi-tons, temps en FRACTION de la duree
+            // jouee du sample (1.0 = tout le sample), chaque rampe avec sa
+            // courbe bipolaire. Suffixes _atk/_hld : les suffixes _attack/
+            // _hold sont reserves aux quantites physiques AVEC unite.
+            // Ordre canonique [240] a l'affichage (un temps, puis sa courbe) :
+            // Depth, Attack, Atk Curve, Hold, Decay, Dec Curve. Les indices
+            // ne bougent pas — l'ordre de liste ne pilote que le rendu.
             sp("oneshot_pitch_env", "Pitch Env Depth", 0.0, -24.0, 24.0, 3, ParamFamily::Pitch),
-            sp_unit("oneshot_pitch_env_attack", "Pitch Env Attack", 0.0, 0.0, 0.5, 4, ParamFamily::Pitch, " s"),
-            sp_unit("oneshot_pitch_env_hold", "Pitch Env Hold", 0.0, 0.0, 0.5, 5, ParamFamily::Pitch, " s"),
-            sp_unit("oneshot_pitch_env_decay", "Pitch Env Decay", 0.1, 0.005, 1.5, 6, ParamFamily::Pitch, " s"),
+            sp("oneshot_pitch_env_atk", "Pitch Env Attack", 0.0, 0.0, 1.0, 4, ParamFamily::Pitch),
             sp("oneshot_pitch_env_atk_curve", "Pitch Env Atk Curve", 0.0, -1.0, 1.0, 7, ParamFamily::Pitch),
+            sp("oneshot_pitch_env_hld", "Pitch Env Hold", 0.0, 0.0, 1.0, 5, ParamFamily::Pitch),
+            sp("oneshot_pitch_env_decay", "Pitch Env Decay", 0.1, 0.005, 1.0, 6, ParamFamily::Pitch),
             sp("oneshot_pitch_env_dec_curve", "Pitch Env Dec Curve", 0.6, -1.0, 1.0, 8, ParamFamily::Pitch),
             sp_discrete("oneshot_filter_type", "Filter Type", 0.0, 0.0, 2.0, 9, ParamFamily::Filter),
             sp("oneshot_resonance", "Resonance", 0.9, 0.5, 20.0, 10, ParamFamily::Filter),
-            sp_unit("oneshot_filter_attack", "Filter Attack", 0.0, 0.0, 0.5, 11, ParamFamily::Filter, " s"),
-            sp_unit("oneshot_filter_hold", "Filter Hold", 0.0, 0.0, 0.5, 12, ParamFamily::Filter, " s"),
+            sp("oneshot_filter_atk", "Filter Attack", 0.0, 0.0, 1.0, 11, ParamFamily::Filter),
+            sp("oneshot_filter_hld", "Filter Hold", 0.0, 0.0, 1.0, 12, ParamFamily::Filter),
             sp("oneshot_filter_atk_curve", "Filter Atk Curve", 0.0, -1.0, 1.0, 13, ParamFamily::Filter),
             sp("oneshot_filter_dec_curve", "Filter Dec Curve", 0.6, -1.0, 1.0, 14, ParamFamily::Filter),
             sp_discrete("oneshot_saturation_type", "Saturation Type", 0.0, 0.0, 5.0, 15, ParamFamily::Saturation),
@@ -3691,10 +3702,11 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         // [freq, decay, vol, filter_freq, attack, release, decay_curve,
         //  release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]
-        // Usine neutre : filtre ouvert, enveloppes a 0, decay a fond pour que
-        // le fichier sonne entier ; le son vient du fichier, pas des reglages.
+        // Usine neutre : filtre ouvert, enveloppes a 0, decay a 1.0 = toute la
+        // duree jouee pour que le fichier sonne entier ; le son vient du
+        // fichier, pas des reglages.
         sound_settings_default: [
-            0.0, 10.0, 0.8, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.12, 0.0, 0.0,
+            0.0, 1.0, 0.8, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.12, 0.0, 0.0,
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
@@ -3985,11 +3997,6 @@ mod tests {
                 ("rift_pitch_lfo_rate", " Hz"),
                 ("rift_filter_lfo_rate", " Hz"),
                 ("oneshot_pitch_fine", " ct"),
-                ("oneshot_pitch_env_attack", " s"),
-                ("oneshot_pitch_env_hold", " s"),
-                ("oneshot_pitch_env_decay", " s"),
-                ("oneshot_filter_attack", " s"),
-                ("oneshot_filter_hold", " s"),
             ]
         );
 
@@ -4115,21 +4122,19 @@ mod tests {
     /// declare them, in the Filter family, under the expected names.
     #[test]
     fn filter_envelope_stages_are_hoistable_on_every_voice_that_has_one() {
-        for (prefix, dec_curve) in [
-            ("buzz", "buzz_filter_curve"),
-            ("sdrex", "sdrex_filter_dec_curve"),
-            ("rift", "rift_filter_dec_curve"),
+        // Each voice lists its stages in CANONICAL display order (a time,
+        // then its curve) — One-Shot spells them `_atk`/`_hld` ([243]).
+        for (prefix, stages) in [
+            ("buzz", ["buzz_filter_attack", "buzz_filter_atk_curve", "buzz_filter_hold", "buzz_filter_curve"]),
+            ("sdrex", ["sdrex_filter_attack", "sdrex_filter_atk_curve", "sdrex_filter_hold", "sdrex_filter_dec_curve"]),
+            ("rift", ["rift_filter_attack", "rift_filter_atk_curve", "rift_filter_hold", "rift_filter_dec_curve"]),
+            ("oneshot", ["oneshot_filter_atk", "oneshot_filter_atk_curve", "oneshot_filter_hld", "oneshot_filter_dec_curve"]),
         ] {
             let inst = INSTRUMENTS
                 .iter()
                 .find(|i| i.special_params.iter().any(|d| d.name.starts_with(prefix)))
                 .unwrap_or_else(|| panic!("no {prefix} instrument"));
-            for name in [
-                format!("{prefix}_filter_attack"),
-                format!("{prefix}_filter_atk_curve"),
-                format!("{prefix}_filter_hold"),
-                dec_curve.to_string(),
-            ] {
+            for name in stages {
                 let def = inst
                     .special_params
                     .iter()
@@ -4149,5 +4154,33 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// [240]/[243] The One-Shot's pitch envelope renders in declaration order
+    /// (it has no standard anchor rows to hoist under), so its table must
+    /// DECLARE the stages in the canonical order: a time, then its curve.
+    #[test]
+    fn oneshot_pitch_envelope_declares_its_stages_in_canonical_order() {
+        let inst = INSTRUMENTS
+            .iter()
+            .find(|i| i.name == "OneShot")
+            .expect("One-Shot is registered");
+        let pitch: Vec<&str> = inst
+            .special_params
+            .iter()
+            .filter(|d| d.family == ParamFamily::Pitch && d.name.contains("_pitch_env"))
+            .map(|d| d.name)
+            .collect();
+        assert_eq!(
+            pitch,
+            vec![
+                "oneshot_pitch_env",
+                "oneshot_pitch_env_atk",
+                "oneshot_pitch_env_atk_curve",
+                "oneshot_pitch_env_hld",
+                "oneshot_pitch_env_decay",
+                "oneshot_pitch_env_dec_curve",
+            ]
+        );
     }
 }

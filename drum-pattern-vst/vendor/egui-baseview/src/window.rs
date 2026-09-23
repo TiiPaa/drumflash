@@ -339,10 +339,11 @@ where
         }
 
         let now = Instant::now();
+        let requested_delay = viewport_output.repaint_delay;
         let do_repaint_now = if let Some(t) = self.repaint_after {
-            now >= t || viewport_output.repaint_delay.is_zero()
+            now >= t || requested_delay.is_zero()
         } else {
-            viewport_output.repaint_delay.is_zero()
+            requested_delay.is_zero()
         };
 
         if do_repaint_now {
@@ -356,8 +357,18 @@ where
                 &mut full_output,
             );
 
-            self.repaint_after = None;
-        } else if let Some(repaint_after) = now.checked_add(viewport_output.repaint_delay) {
+            // FLASH-DRUM PATCH: egui may have requested ANOTHER repaint during
+            // this very frame (Flash Drum's lane flash re-arms its countdown
+            // every frame until it expires). Clearing the schedule here
+            // discarded that request: when the last rendered frame still held
+            // a sliver of flash, the frame that turns it fully OFF was never
+            // scheduled and the lit pixels stayed on screen indefinitely.
+            self.repaint_after = if requested_delay.is_zero() {
+                None
+            } else {
+                now.checked_add(requested_delay)
+            };
+        } else if let Some(repaint_after) = now.checked_add(requested_delay) {
             // Schedule to repaint after the requested time has elapsed.
             self.repaint_after = Some(repaint_after);
         }

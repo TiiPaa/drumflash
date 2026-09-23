@@ -707,12 +707,13 @@ impl VoiceSettings {
         }
     }
 
-    /// [243] One-Shot: the lane's file, whole, with a long default decay so
-    /// anything sane rings to its own end; filter wide open, no saturation.
+    /// [243] One-Shot: the lane's file, whole; envelope times are fractions of
+    /// the played region (decay 1.0 = rings to its end); filter wide open, no
+    /// saturation.
     pub fn oneshot() -> Self {
         Self {
             frequency: 0.0,
-            decay: 10.0,
+            decay: 1.0,
             volume: 0.8,
             filter_freq: 20000.0,
             attack: 0.0,

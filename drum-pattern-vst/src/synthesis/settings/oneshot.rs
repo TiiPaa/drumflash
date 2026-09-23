@@ -25,10 +25,16 @@ pub struct OneShotSettings {
     pub texture: f32,
     /// 1.0 = the file is read backwards.
     pub reverse: f32,
+    /// Where playback starts, as a fraction of the file (0..1). Forward skips
+    /// the first `offset` of the file; Reverse counts it from the END (it
+    /// starts at `1 - offset` and reads down to the file start), so the
+    /// marker is the start of the sound in both directions.
+    pub offset: f32,
     /// Fine tuning in cents, added to the semitone Pitch.
     pub pitch_fine: f32,
-    /// A-H-D pitch envelope: depth in semitones (bipolar), attack and hold in
-    /// seconds, decay in seconds, each ramp shaped by its own bipolar curve.
+    /// A-H-D pitch envelope: depth in semitones (bipolar), times as FRACTIONS
+    /// of the played region's heard duration, each ramp shaped by its own
+    /// bipolar curve.
     pub pitch_env: f32,
     pub pitch_env_attack: f32,
     pub pitch_env_hold: f32,
@@ -39,8 +45,8 @@ pub struct OneShotSettings {
     pub filter_type: f32,
     /// Filter Q.
     pub resonance: f32,
-    /// A-H-D filter envelope, same shape as Rift: attack and hold in seconds,
-    /// decay from the standard `filter_env_decay`, bipolar curves.
+    /// A-H-D filter envelope, same shape as Rift but times as FRACTIONS of
+    /// the played region; decay from the standard `filter_env_decay`.
     pub filter_attack: f32,
     pub filter_hold: f32,
     pub filter_atk_curve: f32,
@@ -71,6 +77,7 @@ impl From<VoiceSettings> for OneShotSettings {
             stereo: v.stereo,
             texture: v.special[0],
             reverse: v.special[1],
+            offset: v.special[20],
             pitch_fine: v.special[2],
             pitch_env: v.special[3],
             pitch_env_attack: v.special[4],
@@ -117,6 +124,7 @@ impl From<OneShotSettings> for VoiceSettings {
         special[17] = s.saturation_mix;
         special[18] = s.saturation_output_gain;
         special[19] = s.saturation_pre_filter;
+        special[20] = s.offset;
         Self {
             frequency: s.frequency,
             attack: s.attack,

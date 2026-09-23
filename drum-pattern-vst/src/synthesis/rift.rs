@@ -743,6 +743,14 @@ impl Voice for RiftVoice {
     fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = RiftSettings::from(settings);
 
+        // Live retune (macro/automation driving Pitch, [242]): recomputing
+        // the read increment only at trigger made the knob glide while the
+        // sound followed in steps (same report as One-Shot, 2026-09-23).
+        // Changing the increment mid-play is phase-continuous.
+        if self.active && self.texture_rate > 0.0 {
+            self.base_step = (self.texture_rate / self.sample_rate) * self.pitch_ratio();
+        }
+
         // Setters only — recreating an envelope resets its state and cuts the
         // sound mid-slider-drag.
         self.amp_env.set_decay(self.amp_decay_secs());

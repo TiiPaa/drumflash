@@ -95,6 +95,14 @@ craquer le thread audio. Aucun n'est negociable sans decision explicite.
 - Enveloppe d'ampli = `DecayReleaseEnvelope`, modele **A-H-D** (Attack-Hold-Decay,
   **pas de release**). Les noms `release_curve` (= courbe d'**attaque**) et
   `set_release` (= no-op) sont conserves pour la persistance.
+- **Live vs trigger-latch ([243])** : les parametres **continus** (pitch,
+  filtre, enveloppes, saturation, niveau) doivent s'appliquer au fil du jeu via
+  `set_settings()` — les macros [242]/l'automation poussent une valeur a chaque
+  sous-bloc ; un pitch relu seulement dans `trigger()` decale le son par
+  a-coups. Recalcule dans `set_settings()` l'etat derive (increments de
+  lecture, taux — continu en phase, sans clic ; jamais une position). Modeles :
+  `oneshot.rs`, `rift.rs`. Les parametres de **structure du coup** (sample,
+  offset, reverse, loop, grain) restent verrouilles au trigger par design.
 
 ---
 
