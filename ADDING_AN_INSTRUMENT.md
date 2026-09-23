@@ -120,6 +120,22 @@ voir `sample_bank::bank()` et `ac606::prewarm()`.
 - **Jamais recréer une enveloppe dans `set_settings()`** : utilisez les setters
   (`set_decay`, `set_attack_ms`, `set_hold`, `set_curve`…). Recréer remet l'état
   interne à zéro et coupe le son à chaque mouvement de slider.
+- **Live vs trigger-latch ([243], retour utilisateur 2026-09-23).** Deux
+  catégories de paramètres, à trancher explicitement pour chaque voix :
+  - **Paramètres continus** — pitch, filtre, enveloppes, saturation, niveau :
+    ils doivent s'appliquer **au fil du jeu**, car les macros [242] et
+    l'automation DAW poussent de nouvelles valeurs à chaque sous-bloc via
+    `set_settings()` (nih-plug découpe le buffer aux points d'automation).
+    Un pitch relu seulement dans `trigger()` produit un « décalage » : le
+    knob glisse, le son suit par à-coups au coup suivant. Recalculez dans
+    `set_settings()` tout état dérivé (pas de lecture, taux, fenêtre de
+    temps…) — changer un **incrément** de lecture est continu en phase, sans
+    clic ; changer une **position** ne l'est pas. Modèles :
+    `oneshot.rs` / `rift.rs` (`base_step` recalculé si la voix est active).
+  - **Paramètres de structure du coup** — choix du sample, offset de départ,
+    reverse, loop, fenêtre de grain : verrouillés au **trigger** par design
+    (comportement sampler standard ; les déplacer en plein jeu déchirerait
+    la lecture). Les documenter comme tels dans la voix.
 - **Saturation** : uniquement via `SaturationConfig::process_at(pre_stage, x)`,
   appelée deux fois (pré et post filtre), le drapeau `pre_filter` routant
   laquelle agit. N'appelez jamais `process()` directement depuis une voix.

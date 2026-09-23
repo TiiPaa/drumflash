@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-23 (soir) - [243] One-Shot : Offset, enveloppes sampler, waveforms ; fix flash lane ; pitch live One-Shot + Rift (builds 205745 -> 235211)
+
+**Branche:** `main` - **Builds:** `20260923-205745` -> `20260923-235211`
+**Validation:** `cargo check` sans avertissement ; `cargo test` 477 + 1 + 306 verts ; tout est valide dans S1 SAUF le build 235211 (Rift pitch live : compile, install refusee car S1 ouvert) et le fix du flash lane (233248, a valider).
+
+- **Offset** (special 20, p-lockable) : fraction du fichier ou la lecture COMMENCE, dans les deux sens ; en Reverse elle compte depuis la fin (le marqueur reste a la position du knob — premiere version miroir rejetee par l'utilisateur).
+- **Enveloppes en fractions de la region jouee** (x pitch), semantique sampler : amp A-H-D, pitch A-H-D, filtre A-H-D tous en 0..1 (1.0 = tout le sample). L'attack en secondes absolues etait inaudible sur sample court — retour utilisateur. Speciaux renommes `_atk`/`_hld` (le garde-fou [182] exige une unite sur `_attack`/`_hold`) ; finders du panneau et test de snapshot d'unites mis a jour.
+- **Attack amp reparee en deux temps** : cap 80 ms des voix drum supprime (inaudible sur decay long), puis restart-from-zero a chaque retrigger (`trigger_hard`) — la capture du niveau courant (anti-clic drum) tuait la rampe sur cellules adjacentes et sur les longues attacks. Le declick 3 ms couvre le saut.
+- **Waveform en fond** des graphes Amp/Pitch/Filter : la region jouee, inversee en Reverse, avec l'enveloppe sur le meme axe temps (la largeur = la region entiere, clippee a la fin du sample). Graphe Offset section Sample : fichier entier, tête sautee grisee, marqueur.
+- **Ordre canonique [240] restaure** : le hoist par suffixe ignorait `_atk`/`_hld` (courbes remontees sous Filter Env, Attack/Hold exiles en queue) ; pitch env declare dans l'ordre canonique ; test de hoist etendu a One-Shot + nouveau test d'ordre du pitch env.
+- **« Random Offset on active cells » reserve a Rift** (gate `_wander`).
+- **Flash de nom de lane bloque** : egui-baseview jetait le `repaint_delay` demande pendant une frame deja rendue ; la frame d'extinction n'etait jamais schedulee. Deuxieme patch vendor (`FLASH-DRUM-PATCHES.md`).
+- **Pitch live (macro/automation [242])** : `base_step` + `region_secs` recalcules dans `set_settings` du One-Shot (valide) et de Rift (build 235211, a installer/valider). nih-plug decoupe le buffer aux points d'automation ; la voix se re-accorde en continu, sans clic (increment = continu en phase). Regle « live vs trigger-latch » ecrite dans `ADDING_AN_INSTRUMENT.md` §5 et la skill nouvel-instrument.
+
 ## 2026-09-23 - [243] Depot WAV : raccordement au gestionnaire baseview existant (build 20260923-202713)
 
 **Branche:** `main` - **Build:** `20260923-202713`

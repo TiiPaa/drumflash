@@ -1,6 +1,10 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
+## Nouvelles tâches — session 2026-09-23
+
+- [~] [243] **REPRENDRE ICI — Validations S1 en attente** : ① installer le build **20260923-235211** (compilé, install refusée car S1 ouvert) : pitch Rift live via macro/automation à valider comme le One-Shot ; ② valider le fix du flash de nom de lane bloqué (build 20260923-233248 : Paste Lane / Randomize / drop WAV doivent s'éteindre seuls, transport arrêté).
+
 ## Nouvelles tâches — session 2026-09-22
 
 > Demandes utilisateur du 2026-09-22, analysées et batchées (plan validé). Note : l'auto-assign **audio** existait déjà ([230]).
