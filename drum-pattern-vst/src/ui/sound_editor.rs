@@ -12,7 +12,7 @@ use crate::ui::editor_state::{
     schema_voice_idx, select_legacy_track, EditorUIState, SoundEditorTab,
 };
 use crate::ui::envelope_viz::{
-    draw_amp_envelope, draw_buzz_filter_envelope, draw_buzz_gate_graph, draw_filter_envelope,
+    draw_ahd_pitch_envelope, draw_amp_envelope, draw_buzz_filter_envelope, draw_buzz_gate_graph, draw_filter_envelope,
     draw_pitch_envelope, draw_texture_graph,
     draw_sample_amp_graph, draw_sample_filter_graph,
 };
@@ -1357,6 +1357,28 @@ fn ahd_filter_env_params(
     ))
 }
 
+/// [243] Special indices of an A-H-D PITCH envelope — attack, hold, decay,
+/// attack curve, decay curve. One-Shot has one; Rift's decay-only envelope
+/// (`_pitch_env_time`) keeps the legacy graph.
+fn ahd_pitch_env_params(
+    instrument: &crate::instrument_registry::InstrumentDef,
+) -> Option<(usize, usize, usize, usize, usize)> {
+    let find = |suffix: &str| {
+        instrument
+            .special_params
+            .iter()
+            .find(|d| d.name.ends_with(suffix))
+            .map(|d| d.special_index)
+    };
+    Some((
+        find("_pitch_env_attack")?,
+        find("_pitch_env_hold")?,
+        find("_pitch_env_decay")?,
+        find("_pitch_env_atk_curve")?,
+        find("_pitch_env_dec_curve")?,
+    ))
+}
+
 pub fn draw_sound_panel(
     ui: &mut egui::Ui,
     sound_settings: &SoundSettingsState,
@@ -2238,8 +2260,12 @@ pub fn draw_sound_panel(
                 || (family == crate::instrument_registry::ParamFamily::Pitch
                     && special_defs.iter().any(|d| d.name.ends_with("_pitch_env")))
                 || (family == crate::instrument_registry::ParamFamily::Filter && has_filter_env)
+                // [243] The texture graph only makes sense with an Offset to
+                // point at (Rift) — One-Shot reads the whole file, so its Osc
+                // section keeps no graph.
                 || (family == crate::instrument_registry::ParamFamily::Osc
-                    && texture_param.is_some());
+                    && texture_param.is_some()
+                    && special_defs.iter().any(|d| d.name.ends_with("_offset")));
             // [225] EVERY section keeps the same params column, graph or not.
             // Graph-less sections used to spread their sliders across the whole
             // panel, so the same instrument showed two slider lengths depending
@@ -2541,6 +2567,49 @@ pub fn draw_sound_panel(
                         // [223] The filter type heads the section, above the
                         // standard rows.
                         if def.name.ends_with("_filter_type") {
+                            continue;
+                        }
+                        // [243] A one-entry Texture "menu" (One-Shot: the
+                        // lane's file only) is no choice at all — the File
+                        // row IS its UI, and the Stereo switch follows it
+                        // (greyed while the file has no right channel).
+                        if def.name.ends_with("_texture")
+                            && def.options.map_or(false, |o| o.len() <= 1)
+                        {
+                            row_scoped(ui, false, None, |ui| {
+                                draw_user_texture_row(ui, params, state, slot);
+                            });
+                            let is_stereo_file = params
+                                .user_textures
+                                .pool
+                                .get(slot)
+                                .map(|b| b.right.is_some())
+                                .unwrap_or(false);
+                            let stereo_id = ParamId::Std(StandardField::Stereo);
+                            let (reverted, edited) = row_scoped(
+                                ui,
+                                src.is_overridden(stereo_id),
+                                src.supports(stereo_id).reason(),
+                                |ui| {
+                                    ui.add_enabled_ui(is_stereo_file, |ui| {
+                                        draw_editor_switch_row(ui, "Stereo", &mut stereo)
+                                            .on_hover_text(if is_stereo_file {
+                                                "Stereo: play the file's left and right channels as they are. Off, both are mixed to mono."
+                                            } else {
+                                                "Only bites on a stereo user file: this file has one channel."
+                                            })
+                                            .changed()
+                                    })
+                                    .inner
+                                },
+                            );
+                            if reverted {
+                                src.clear(stereo_id);
+                                changed = true;
+                            } else if edited {
+                                src.set(stereo_id, stereo);
+                                changed = true;
+                            }
                             continue;
                         }
                         // Buzz gate controls render in their own sub-row, with
@@ -2962,8 +3031,14 @@ pub fn draw_sound_panel(
                 match family {
                     crate::instrument_registry::ParamFamily::Osc => {
                         // The texture, the read position, the band Wander can
-                        // throw it into, and where Advance lands next.
-                        if let Some(def) = texture_param {
+                        // throw it into, and where Advance lands next. Rift
+                        // only ([243]: the gate is the `_offset` special).
+                        if let Some(def) = texture_param.filter(|_| {
+                            instrument
+                                .special_params
+                                .iter()
+                                .any(|d| d.name.ends_with("_offset"))
+                        }) {
                             let pick = |suffix: &str| {
                                 instrument
                                     .special_params
@@ -3011,8 +3086,6 @@ pub fn draw_sound_panel(
                         }
                     }
                     crate::instrument_registry::ParamFamily::Pitch => {
-                        // [227] Same law as the voice: depth in semitones,
-                        // exponential fall over the time slider.
                         let pick = |suffix: &str| {
                             instrument
                                 .special_params
@@ -3021,12 +3094,31 @@ pub fn draw_sound_panel(
                                 .map(|d| src.get(ParamId::Special(d.special_index)))
                                 .unwrap_or(0.0)
                         };
-                        draw_pitch_envelope(
-                            ui,
-                            pick("_pitch_env"),
-                            pick("_pitch_env_time"),
-                            crate::synthesis::RIFT_PITCH_ENV_CURVE,
-                        );
+                        if let Some((atk, hold, dec, atk_c, dec_c)) =
+                            ahd_pitch_env_params(instrument)
+                        {
+                            // [243] A-H-D pitch envelope (One-Shot): same
+                            // law as the voice — depth in semitones, shaped
+                            // attack, hold, shaped decay.
+                            draw_ahd_pitch_envelope(
+                                ui,
+                                pick("_pitch_env"),
+                                src.get(ParamId::Special(atk)),
+                                src.get(ParamId::Special(hold)),
+                                src.get(ParamId::Special(dec)),
+                                src.get(ParamId::Special(atk_c)),
+                                src.get(ParamId::Special(dec_c)),
+                            );
+                        } else {
+                            // [227] Same law as the voice: depth in semitones,
+                            // exponential fall over the time slider.
+                            draw_pitch_envelope(
+                                ui,
+                                pick("_pitch_env"),
+                                pick("_pitch_env_time"),
+                                crate::synthesis::RIFT_PITCH_ENV_CURVE,
+                            );
+                        }
                     }
                     crate::instrument_registry::ParamFamily::Env => {
                         if let Some((hit, start, end)) = sample_graph {

@@ -324,12 +324,19 @@ pub fn source_section_title(voice_idx: usize) -> &'static str {
     if is_sampler(voice_idx) {
         return "Sample";
     }
-    let has_texture = INSTRUMENTS
-        .get(voice_idx)
-        .map(|def| def.special_params.iter().any(|d| d.name.ends_with("_texture")))
-        .unwrap_or(false);
-    if has_texture {
-        "Texture"
+    let def = INSTRUMENTS.get(voice_idx);
+    let has = |suffix: &str| {
+        def.map(|d| d.special_params.iter().any(|p| p.name.ends_with(suffix)))
+            .unwrap_or(false)
+    };
+    if has("_texture") {
+        // Rift slices a long texture ("Texture"); One-Shot plays one file,
+        // start to finish — that is a Sample ([243]).
+        if has("_offset") {
+            "Texture"
+        } else {
+            "Sample"
+        }
     } else {
         "Oscillator"
     }
@@ -1292,6 +1299,24 @@ const RIFT_STD: &[StandardParamDef] = &[
     // [228] Un fichier utilisateur stereo joue ses deux canaux tels quels
     // quand ce switch est allume ; eteint, ils sont mixes en mono. Rendu sous
     // la ligne File du menu Texture, pas dans la boucle des standards.
+    cb(StandardField::Stereo, "Stereo", ParamFamily::Osc),
+];
+
+/// One-Shot [243]: like RIFT_STD, but the amp decay spans up to 10 s so any
+/// sane one-shot rings to its own end (the envelope shortens it on purpose).
+const ONE_SHOT_STD: &[StandardParamDef] = &[
+    s(StandardField::Freq, "Pitch", ParamFamily::Pitch, -24.0, 24.0, false, None),
+    s(StandardField::Attack, "Attack", ParamFamily::Env, 0.0, 1.0, false, None),
+    s(StandardField::ReleaseCurve, "Attack Curve", ParamFamily::Env, -1.0, 1.0, false, None),
+    s(StandardField::Hold, "Hold", ParamFamily::Env, 0.0, 1.0, false, Some(" s")),
+    s(StandardField::Decay, "Decay", ParamFamily::Env, 0.005, 10.0, false, Some(" s")),
+    s(StandardField::DecayCurve, "Decay Curve", ParamFamily::Env, -1.0, 1.0, false, None),
+    s(StandardField::Volume, "Volume", ParamFamily::Output, 0.0, 2.0, false, None),
+    s(StandardField::FilterFreq, "Filter", ParamFamily::Filter, 20.0, 20000.0, true, Some(" Hz")),
+    s(StandardField::FilterEnvAmount, "Filter Env", ParamFamily::Filter, 0.0, 1.0, false, None),
+    s(StandardField::FilterEnvDecay, "Filter Decay", ParamFamily::Filter, 0.005, 1.5, false, Some(" s")),
+    // [228] Meme regle que Rift : un fichier stereo joue ses deux canaux tels
+    // quels quand le switch est allume ; rendu sous la ligne File.
     cb(StandardField::Stereo, "Stereo", ParamFamily::Osc),
 ];
 
@@ -3618,6 +3643,62 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         // la coupure donnerait "Filter (Multi)", qui ne veut rien dire.
         filter_type_label: "",
     },
+    // [243] One-Shot - the lane's own sample file, played start to finish. No
+    // embedded content: the `_texture` special is an infra marker that keeps
+    // the [228] lane-file rules alive (File row, presets, reconcile); its
+    // one-entry "menu" is not rendered (sound_editor skips options.len() <= 1).
+    InstrumentDef {
+        index: 26,
+        name: "OneShot",
+        label: "OS",
+        full_name: "One-Shot",
+        midi_note: 59,
+        algo_count: 1,
+        standard_params: ONE_SHOT_STD,
+        special_params: &[
+            sp_options(
+                "oneshot_texture",
+                "Texture",
+                0.0,
+                0,
+                ParamFamily::Osc,
+                &["Custom"],
+            ),
+            sp_discrete("oneshot_reverse", "Reverse", 0.0, 0.0, 1.0, 1, ParamFamily::Osc),
+            sp_unit("oneshot_pitch_fine", "Pitch Fine", 0.0, -100.0, 100.0, 2, ParamFamily::Pitch, " ct"),
+            // Enveloppe de pitch A-H-D complete (pas le simple depth+time de
+            // Rift) : profondeur en demi-tons, attaque et hold en secondes,
+            // decay en secondes, chaque rampe avec sa courbe bipolaire.
+            sp("oneshot_pitch_env", "Pitch Env Depth", 0.0, -24.0, 24.0, 3, ParamFamily::Pitch),
+            sp_unit("oneshot_pitch_env_attack", "Pitch Env Attack", 0.0, 0.0, 0.5, 4, ParamFamily::Pitch, " s"),
+            sp_unit("oneshot_pitch_env_hold", "Pitch Env Hold", 0.0, 0.0, 0.5, 5, ParamFamily::Pitch, " s"),
+            sp_unit("oneshot_pitch_env_decay", "Pitch Env Decay", 0.1, 0.005, 1.5, 6, ParamFamily::Pitch, " s"),
+            sp("oneshot_pitch_env_atk_curve", "Pitch Env Atk Curve", 0.0, -1.0, 1.0, 7, ParamFamily::Pitch),
+            sp("oneshot_pitch_env_dec_curve", "Pitch Env Dec Curve", 0.6, -1.0, 1.0, 8, ParamFamily::Pitch),
+            sp_discrete("oneshot_filter_type", "Filter Type", 0.0, 0.0, 2.0, 9, ParamFamily::Filter),
+            sp("oneshot_resonance", "Resonance", 0.9, 0.5, 20.0, 10, ParamFamily::Filter),
+            sp_unit("oneshot_filter_attack", "Filter Attack", 0.0, 0.0, 0.5, 11, ParamFamily::Filter, " s"),
+            sp_unit("oneshot_filter_hold", "Filter Hold", 0.0, 0.0, 0.5, 12, ParamFamily::Filter, " s"),
+            sp("oneshot_filter_atk_curve", "Filter Atk Curve", 0.0, -1.0, 1.0, 13, ParamFamily::Filter),
+            sp("oneshot_filter_dec_curve", "Filter Dec Curve", 0.6, -1.0, 1.0, 14, ParamFamily::Filter),
+            sp_discrete("oneshot_saturation_type", "Saturation Type", 0.0, 0.0, 5.0, 15, ParamFamily::Saturation),
+            sp_curved("oneshot_saturation_amount", "Saturation Amount", 0.0, 0.0, 1.0, 16, ParamFamily::Saturation, SAT_AMOUNT_CURVE),
+            sp("oneshot_saturation_mix", "Saturation Mix", 1.0, 0.0, 1.0, 17, ParamFamily::Saturation),
+            sp("oneshot_saturation_output_gain", "Saturation Output Gain", 1.0, 0.5, 2.0, 18, ParamFamily::Saturation),
+            // [232] En DERNIER : le switch place tout le bloc Distortion
+            // avant ou apres le filtre.
+            sp_discrete("oneshot_saturation_pre_filter", "Pre-Filter", 0.0, 0.0, 1.0, 19, ParamFamily::Saturation),
+        ],
+        // [freq, decay, vol, filter_freq, attack, release, decay_curve,
+        //  release_curve, hold, filter_env_amount, filter_env_decay, analog, stereo]
+        // Usine neutre : filtre ouvert, enveloppes a 0, decay a fond pour que
+        // le fichier sonne entier ; le son vient du fichier, pas des reglages.
+        sound_settings_default: [
+            0.0, 10.0, 0.8, 20000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.12, 0.0, 0.0,
+        ],
+        freq_display_ratio: 1.0,
+        filter_type_label: "",
+    },
 ];
 
 #[allow(dead_code)]
@@ -3797,8 +3878,9 @@ mod tests {
     #[test]
     fn stereo_capable_voices_expose_the_stereo_checkbox() {
         // Snare, HiHat, OpenHiHat, Clap, Ride, Cymbal, Snare606, Perc1,
-        // BD606, SD606, CH606 ([168]: two-sample L&R stereo), Buzz.
-        for idx in [1usize, 2, 3, 7, 8, 9, 10, 12, 13, 14, 15, 16] {
+        // BD606, SD606, CH606 ([168]: two-sample L&R stereo), Buzz,
+        // One-Shot ([243]: a stereo user file plays its two channels).
+        for idx in [1usize, 2, 3, 7, 8, 9, 10, 12, 13, 14, 15, 16, 26] {
             assert!(
                 has_stereo(&INSTRUMENTS[idx]),
                 "{} (idx {idx}) lost its Stereo standard param",
@@ -3902,6 +3984,12 @@ mod tests {
                 ("rift_filter_hold", " s"),
                 ("rift_pitch_lfo_rate", " Hz"),
                 ("rift_filter_lfo_rate", " Hz"),
+                ("oneshot_pitch_fine", " ct"),
+                ("oneshot_pitch_env_attack", " s"),
+                ("oneshot_pitch_env_hold", " s"),
+                ("oneshot_pitch_env_decay", " s"),
+                ("oneshot_filter_attack", " s"),
+                ("oneshot_filter_hold", " s"),
             ]
         );
 

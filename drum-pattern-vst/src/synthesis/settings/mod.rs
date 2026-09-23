@@ -17,6 +17,7 @@ pub mod open_hihat;
 pub mod perc1;
 pub mod ride;
 pub mod sd606;
+pub mod oneshot;
 pub mod rift;
 pub mod sdrex;
 pub mod ac_voice;
