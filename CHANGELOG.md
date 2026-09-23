@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-09-23 - [243] Depot WAV : raccordement au gestionnaire baseview existant (build 20260923-202713)
+
+**Branche:** `main` - **Build:** `20260923-202713`
+**Validation:** `cargo check` sans avertissement ; `cargo test` 469 + 1 + 298 verts ; 3 tests du pont `egui-baseview::file_drop` verts ; `build.ps1 -Install` OK ; **validé dans Studio One le 2026-09-23** (déposer un WAV crée bien la lane One-Shot).
+
+- **Cause confirmee** : le journal du build 200131 renvoie `0x80040101 / DRAGDROP_E_ALREADYREGISTERED` a chaque image. Dans la revision utilisee (`baseview 9a0b42c`), `win/window.rs` enregistre deja son `IDropTarget` et le revoque a la fermeture. Ses evenements `DragEntered / DragMoved / DragDropped` etaient ignores par egui-baseview. L'ajout de `native_drop.rs` etait donc au mauvais niveau.
+- **Correction** : copie vendoree d'egui-baseview a la meme revision `ec70c3f`, licence incluse, avec un pont `file_drop`. La grille publie sa zone et l'extension WAV ; l'adaptateur renvoie `AcceptDrop(Copy)` et transmet le fichier a l'image suivante. Suppression du gestionnaire COM redondant, du re-export HWND et de la boucle d'installation/journalisation. Aucun nouvel enregistrement OLE ; etat propre a chaque editeur, recree a chaque ouverture.
+- **Position fiable** : utilisation du point de depot fourni par l'OS. Conversion ecran -> client sous Windows puis mise a l'echelle egui (le pointeur egui peut etre perime pendant un drag OS). Les drops hors grille, sans slot libre ou d'un autre format sont refuses.
+- **Deuxieme blocage corrige** : `change_slot_kind` ignore les slots inactifs. Le drop appelle maintenant `activate_slot`, comme le bouton Add Module : creation effective, reglages One-Shot et effacement des anciennes donnees musicales du slot. Le WAV est charge ensuite, en stereo si le fichier l'est.
+- **Tests** : acceptation WAV / refus autres formats et hors zone, une seule livraison avec sa position, annulation du survol, isolation entre editeurs ; creation reelle d'une lane vide, chargement du fichier, nettoyage des anciennes notes/p-locks et conservation des lanes occupees.
+- [243] validé dans S1 et archivé dans DONE.md.
+
+## 2026-09-23 - [243] Diagnostic du depot refuse (build 20260923-200131)
+
+**Build:** `20260923-200131` installe. `cargo check` sans avertissement.
+
+Journal ajoute autour de `OleInitialize` / `RegisterDragDrop` et `DragEnter`. Retour utilisateur : repetition de `DRAGDROP_E_ALREADYREGISTERED`. Contrairement a l'annonce initiale, le journal n'etait pas borne : l'echec relancait l'installation a chaque image et allouait un objet COM sans le liberer. Cette voie est supprimee dans le build 202713 ci-dessus.
+
+## 2026-09-23 - [243] One-Shot, build 2 : drag & drop d'un WAV sur la grille -> lane creee (build 20260923-165905)
+
+**Branche:** `main` - **Build:** `20260923-165905`
+**Validation:** `cargo check` warning-clean, `cargo test` 468 + 1 + 298 verts (2 nouveaux), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+Le chemin « facile » n'existait pas : **egui-baseview ne transmet pas les drops de fichiers de l'OS a egui** (`raw.dropped_files` toujours vide dans le plugin). Il a donc fallu un `IDropTarget` Win32.
+
+- **`src/native_drop.rs`** : COM `IDropTarget` en FFI manuel (miroir entrant de `native_drag.rs`, aucune crate de plus), enregistre sur le HWND du plugin (`PLUGIN_HWND`, re-exporte du vendeur pour l'occasion) au premier frame, une fois. `Drop` lit le `CF_HDROP` (`DragQueryFileW`) et empile les chemins ; la grille les depile au frame suivant. Objet COM leake volontairement : l'enregistrement meurt avec la fenetre, que l'hote detruit toujours avant de decharger la DLL (lecon [186] verifiee). Stubs vides sur macOS (compile des deux cotes).
+- **Geste** : un `.wav` lache n'importe ou sur la grille -> la **lane vide sous la souris** (sinon le **premier slot libre**) devient une lane **One-Shot** avec le fichier charge (meme chemin que File > Load... : persistant, suit la lane, saute au kind change). Une lane occupee n'est **jamais remplacee** ; grille pleine = drop ignore ; la plaque de la lane flash pour confirmer.
+- Test : `pick_drop_lane` (row vide sous le pointeur > premier slot libre > jamais de remplacement > grille pleine = rien).
+
+## 2026-09-23 - [243] Nouvel instrument One-Shot, build 1 : la voix + fichier par lane (build 20260923-131247)
+
+**Branche:** `main` - **Build:** `20260923-131247`
+**Validation:** `cargo check` warning-clean, `cargo test` 466 + 1 + 297 verts (20 nouveaux), `build.ps1 -Install` OK. A valider dans Studio One (liste dans le rapport).
+
+One-Shot joue le **fichier sample de la lane**, du debut a la fin - le frere simple de Rift, sans contenu embarque ni offset. Kind **24** / voix **26**, categorie **Perc**, label **OS**, note MIDI **59** (libre), 1 algo, choke 0, role generateur emprunte a Perc1.
+
+- **Fichier par lane via toute l'infra [228]** : meme pool `UserTextures` que Rift (persistant, suit la lane au deplacement/copie/presets, saute si la lane change de kind, decode hors thread audio). Le special `oneshot_texture` est un **marqueur d'infra** qui garde ces regles vivantes ; son « menu » a une entree n'est pas rendu (regle generique : `options.len() <= 1`). Section Osc = **Sample** : ligne **File** + Load.../Clear + switch **Stereo** (grise tant que le fichier n'a pas de canal droit).
+- **Enveloppes A-H-D completes avec courbes bipolaires** : amp (standards, decay jusqu'a **10 s** pour que le fichier sonne entier), **pitch** (depth ±24 st + attack/hold/decay + atk/dec curves - nouveau graphe A-H-D dans la section Pitch ; Rift garde sa loi decay-only), **filtre** (meme gabarit que Rift : attack/hold/curves hisses sous Filter Env [240], Filter Decay en standard).
+- **Pitch** ±24 st + Pitch Fine ±100 ct (taux de lecture), **filtre LP/HP/BP** + Resonance (meme convention que le plugin : l'enveloppe ouvre la coupure vers 20 kHz), **Reverse** (lecture a l'envers), pack saturation [232], retrigger [179] (etat neuf + declick par canal).
+- Lane **sans fichier = voix inerte** (pas de repli embarque : le fichier EST l'instrument).
+- Tests : roundtrip settings, 8 tests de voix (finitude, inertie sans fichier, pitch, A-H-D pitch env, reverse, convention filtre, types de filtre, declick au retrigger), snapshot d'unites, case stereo du registre.
+
+Reste le build 2 : **drag & drop d'un WAV sur la grille -> creation de la lane**.
+
 ## 2026-09-22 - [242] Modal Macros : colonnes alignees, 16 rangees sans scrollbar (build 20260922-230239)
 
 **Branche:** `main` - **Build:** `20260922-230239`

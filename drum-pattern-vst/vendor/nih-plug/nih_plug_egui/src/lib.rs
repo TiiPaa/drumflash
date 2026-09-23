@@ -24,6 +24,9 @@ mod editor;
 pub mod resizable_window;
 pub mod widgets;
 
+/// File drops delivered by baseview's existing native target, per editor.
+pub use egui_baseview::file_drop;
+
 /// Create an [`Editor`] instance using an [`egui`][::egui] GUI. Using the user state parameter is
 /// optional, but it can be useful for keeping track of some temporary GUI-only settings. See the
 /// `gui_gain` example for more information on how to use this. The [`EguiState`] passed to this

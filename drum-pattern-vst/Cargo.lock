@@ -563,7 +563,6 @@ dependencies = [
 [[package]]
 name = "egui-baseview"
 version = "0.5.0"
-source = "git+https://github.com/BillyDM/egui-baseview.git?rev=ec70c3fe6b2f070dcacbc22924431edbe24bd1c0#ec70c3fe6b2f070dcacbc22924431edbe24bd1c0"
 dependencies = [
  "baseview",
  "copypasta",
@@ -574,6 +573,7 @@ dependencies = [
  "open",
  "raw-window-handle 0.5.2",
  "thiserror 2.0.18",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

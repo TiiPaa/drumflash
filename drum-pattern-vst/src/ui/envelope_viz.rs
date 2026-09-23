@@ -317,6 +317,68 @@ pub fn draw_buzz_filter_envelope(
     response
 }
 
+// -- A-H-D pitch envelope (One-Shot, [243]) -------------------------------------
+
+/// Pitch sweep readout for the A-H-D pitch envelope: semitones (bipolar) over
+/// a window sized by attack + hold + decay (like the amp and filter A-H-D
+/// graphs), zero line in the middle, each ramp with its own bipolar curve.
+/// Depth 0 draws a flat line on the zero: the graph then says "no sweep".
+#[allow(clippy::too_many_arguments)]
+pub fn draw_ahd_pitch_envelope(
+    ui: &mut nih_plug_egui::egui::Ui,
+    depth_semitones: f32,
+    attack: f32,
+    hold: f32,
+    decay: f32,
+    atk_curve: f32,
+    dec_curve: f32,
+) -> nih_plug_egui::egui::Response {
+    let (graph, painter, response) = prep_graph(ui, GRAPH_H);
+
+    const RANGE_SEMITONES: f32 = 24.0;
+    let depth = depth_semitones.clamp(-RANGE_SEMITONES, RANGE_SEMITONES) / RANGE_SEMITONES;
+    let attack = attack.max(0.0005);
+    let hold = hold.max(0.0);
+    let decay = decay.max(0.01);
+    let span = attack + hold + decay;
+    let mid_y = graph.center().y;
+    let half_h = graph.height() * 0.5;
+    let y_of = |env: f32| mid_y - half_h * depth * env;
+    let x_of_t = |t: f32| graph.min.x + graph.width() * (t / span).clamp(0.0, 1.0);
+
+    draw_grid_lines(&painter, &graph);
+    draw_cutoff_line(&painter, &graph, mid_y);
+
+    const POINTS: usize = 80;
+
+    // Attack: shaped ramp of the envelope 0 -> 1.
+    let mut atk_pts = Vec::with_capacity(POINTS + 1);
+    for i in 0..=POINTS {
+        let t = attack * (i as f32 / POINTS as f32);
+        atk_pts.push(Pos2::new(x_of_t(t), y_of(bipolar_shape_curve(t / attack, atk_curve))));
+    }
+    painter.add(Shape::line(atk_pts, Stroke::new(CURVE_W, stage_attack())));
+
+    // Hold: envelope pinned at 1.
+    if hold > 0.0 {
+        painter.line_segment(
+            [Pos2::new(x_of_t(attack), y_of(1.0)), Pos2::new(x_of_t(attack + hold), y_of(1.0))],
+            Stroke::new(CURVE_W, stage_hold()),
+        );
+    }
+
+    // Decay: shaped ramp 1 -> 0.
+    let mut dec_pts = Vec::with_capacity(POINTS + 1);
+    for i in 0..=POINTS {
+        let t = (attack + hold) + decay * (i as f32 / POINTS as f32);
+        let p = ((t - attack - hold) / decay).clamp(0.0, 1.0);
+        dec_pts.push(Pos2::new(x_of_t(t), y_of(bipolar_shape_curve(1.0 - p, dec_curve))));
+    }
+    painter.add(Shape::line(dec_pts, Stroke::new(CURVE_W, stage_decay())));
+
+    response
+}
+
 // -- Rift texture ([225]) -----------------------------------------------------
 
 /// The texture Rift reads, with the three things that decide WHERE it reads.
