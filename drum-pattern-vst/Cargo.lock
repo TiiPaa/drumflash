@@ -98,6 +98,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "175571dd1d178ced59193a6fc02dde1b972eb0bc56c892cde9beeceac5bf0f6b"
 
 [[package]]
+name = "assert_no_alloc"
+version = "1.1.2"
+source = "git+https://github.com/robbert-vdh/rust-assert-no-alloc.git?rev=a6fb4f62b9624715291e320ea5f0f70e73b035cf#a6fb4f62b9624715291e320ea5f0f70e73b035cf"
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -523,6 +528,7 @@ name = "drum-pattern-vst"
 version = "0.2.0"
 dependencies = [
  "arc-swap",
+ "assert_no_alloc",
  "crossbeam",
  "egui_extras",
  "hound",

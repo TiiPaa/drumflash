@@ -393,7 +393,7 @@ pub fn draw_preset_browser_if_any(
             }
         }
         if let Some((path, new_name)) = rename_requested {
-            let _ = presets::rename_preset(&path, &new_name);
+            let _ = presets::rename_preset(&path, &new_name, kind);
             // The Track-tab instrument loader caches its list by name.
             if matches!(kind, PresetKind::Instrument) {
                 state.track_preset_cache_key = None;

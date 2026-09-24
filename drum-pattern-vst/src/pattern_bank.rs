@@ -1058,6 +1058,18 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, Vec<u8>> for PersistentP
         if let Ok(bank) = serde_json::from_slice::<PatternBank>(&new_value) {
             if let Ok(mut guard) = self.bank.lock() {
                 *guard = bank;
+                // [245] Deserialized Vecs lost the capacity preallocated by
+                // PatternSlot::default() — restore it here (main thread) so
+                // capture() never reallocates in the audio callback.
+                for slot in guard.slots.iter_mut() {
+                    slot.plock_bytes
+                        .reserve(MAX_PLOCK_BYTES.saturating_sub(slot.plock_bytes.len()));
+                    slot.seq_plock_bytes.reserve(
+                        MAX_SEQ_PLOCK_BYTES.saturating_sub(slot.seq_plock_bytes.len()),
+                    );
+                    slot.fusion_bytes
+                        .reserve(MAX_FUSION_BYTES.saturating_sub(slot.fusion_bytes.len()));
+                }
             }
             self.refresh_snapshot();
         }
@@ -1322,6 +1334,41 @@ mod tests {
         assert!(!guard.slots[7].occupied); // P8 preserved (empty)
         assert!(!guard.slots[8].occupied); // P9 padded empty
         assert!(!guard.slots[15].occupied); // P16 padded empty
+    }
+
+    /// [244][245] The audio-thread save path (`try_lock` + `capture` +
+    /// `mark_snapshot_dirty`) must not allocate — including right after a
+    /// restore, when the deserialized slots would otherwise have lost their
+    /// preallocated buffers. Fails before the [244]/[245] fixes.
+    #[test]
+    fn save_pattern_to_slot_is_realtime_safe() {
+        let pattern = SharedPattern::new(&Pattern::rock_pattern());
+        let plock = PlockState::new();
+        let seq_plock = SequencerPlockState::new();
+        plock.set_field(0, 5, 2, 0.75);
+        seq_plock.set_probability(1, 10, 0.5);
+
+        // Round-trip through a serialized blob, as a DAW project reopen does:
+        // deserialized slots had zero-capacity Vecs before [245].
+        let source_bank = PersistentPatternBank::new();
+        source_bank.refresh_snapshot();
+        let bytes = source_bank.map(|b| b.clone());
+        let restored = PersistentPatternBank::new();
+        restored.set(bytes);
+
+        assert_no_alloc::assert_no_alloc(|| {
+            {
+                let mut guard = restored.bank.lock().unwrap();
+                guard.slots[3].capture(&pattern, &plock, &seq_plock, 16);
+            }
+            // [244] The audio thread marks dirty; it does NOT serialize.
+            restored.mark_snapshot_dirty();
+        });
+
+        // The snapshot is rebuilt lazily on the host's state request.
+        let snapshot = restored.map(|b| b.clone());
+        let back: PatternBank = serde_json::from_slice(&snapshot).unwrap();
+        assert!(back.slots[3].occupied, "P4 should hold the saved pattern");
     }
 
     #[test]

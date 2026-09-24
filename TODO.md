@@ -1,9 +1,35 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
-## Nouvelles tâches — session 2026-09-23
+## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
 
-- [~] [243] **REPRENDRE ICI — Validations S1 en attente** : ① installer le build **20260923-235211** (compilé, install refusée car S1 ouvert) : pitch Rift live via macro/automation à valider comme le One-Shot ; ② valider le fix du flash de nom de lane bloqué (build 20260923-233248 : Paste Lane / Randomize / drop WAV doivent s'éteindre seuls, transport arrêté).
+> Source : `audit_cr/claude-code.json` (audit complet, constats vérifiés dans le code le 2026-09-24). Chaque finding de l'audit est couvert par un ticket ci-dessous. Règle : chaque phase se termine par build + install + CHANGELOG + checklist « À tester dans Studio One ».
+> **Prérequis avant tout** : le bundle installé est actuellement amputé du helper MIDI (install refusée 2026-09-23, S1 ouvert) — la phase 0 se termine par une réinstallation propre, ce qui règle aussi la validation [243] en attente.
+
+### Phase 2 — Fiabilité de la livraison
+- [ ] [255] **Install atomique** : `build.ps1` — staging `$destPath.new` + rename (jamais de suppression avant copie réussie) ; comparer les hash DLL+helper après install (échec bloquant) ; `test-verification.ps1` doit échouer si le helper manque ou si le hash diffère ; archiver les PDB seulement après install réussie. Paramètre `-InstallRoot` + test CI (DLL ouvert en exclusif → code non nul, fichiers intacts).
+- [ ] [256] **Chemin de secours du helper MIDI** : `ui/midi.rs:67` — restreindre le fallback `env!("CARGO_MANIFEST_DIR")\build\…` à `#[cfg(debug_assertions)]` (masque aujourd'hui le helper manquant du bundle installé).
+- [ ] [257] **Journal de crash** : hook de panique chaîné écrivant `BUILD_ID | thread | message | location` dans `%LOCALAPPDATA%\Flash Drum\crash.log` (taille bornée) — avec `panic = "abort"`, aucun crash n'est aujourd'hui exploitable.
+- [ ] [258] **Archivage des symboles** : `build.ps1:90` — `$profileDir` debug/release correct, conservation 30 jours (au lieu de 10 PDB), `debug = "line-tables-only"` dans `[profile.release]`, `--remap-path-prefix` (les chemins `E:\Dev\…` et `C:\Users\baboost\…` ne doivent pas figurer dans le binaire distribué), `cargo test` avant `-Install` (option `-SkipTests`).
+
+### Phase 3 — Robustesse des données utilisateur
+- [ ] [259] **Chemins de textures réseau (UNC)** : `user_textures.rs:44` — garde-fou `is_local_path()` (Disk/VerbatimDisk uniquement) en tête de `reload_all()` et `write_slot_sound` ; un chemin réseau restauré (état VST3 ou preset reçu) passe la lane en « missing » sans résolution synchrone (fuite NTLMv2 + gel SMB ~20 s/lane à l'ouverture). Résolution réseau uniquement via sélecteur/drag explicite, hors thread principal.
+- [ ] [260] **Dossier utilisateur unifié** : nouveau `src/paths.rs` avec `dirs::document_dir()` (dépendance `dirs = "6"`) remplaçant les 4 copies `USERPROFILE` (config.rs:62, presets.rs:311, preset_dumps.rs:24, ui/midi.rs:20) ; migration au 1er lancement si l'ancien dossier existe (OneDrive Known Folder Move, macOS). Règle de portabilité CLAUDE.md enfin appliquée.
+- [ ] [261] **Erreurs de presets/config avalées** : `preset_browser.rs` — afficher `last_error` dans le modal, ne vider le champ nom qu'en cas de succès (lignes 381-396, 494) ; `sanitize_name` doit écarter CON/PRN/AUX/NUL/COM1-9/LPT1-9 ; écritures atomiques (temp + rename) ; config.json illisible renommé en `.bad` au lieu d'être écrasé (config.rs:43-45).
+- [ ] [262] **Travail recalculé à chaque image UI** : cache de `list_presets` dans `PresetBrowserState` (invalider à l'ouverture/changement d'onglet/save/rename/delete — preset_browser.rs:245) ; `grid.rs:309-310` remplacer le clone de `TrackLayoutState` par `grid_slot()` sans verrou (test d'équivalence `is_grid_follower`/`grid_slot`).
+
+### Phase 4 — Filets de sécurité (tests & CI)
+- [ ] [263] **Tests de persistance réels** : fixture `tests/fixtures/` (JSON d'un get_state réel, jamais supprimée, une par changement de format) restaurée via `filter_state` + `deserialize_fields` avec snapshot figé ; test roundtrip dans l'ordre alphabétique puis inverse ; tests hermétiques (injecter le dossier de config, `FLASH_DRUM_CONFIG_DIR`) ; ne plus compter les tests `test_standalone` dans les bilans.
+- [ ] [264] **CI durcie** (`.github/workflows/ci.yml`) : job macOS (`cargo check`), `RUSTFLAGS=-D warnings`, `cargo clippy --all-targets --locked`, `--locked` partout, toolchain 1.94.0 (= binaire livré), tests des patchs vendorés (egui-baseview `file_drop`, remap multi-out), actions épinglées par SHA, `permissions: contents: read`, dependabot + `cargo deny check advisories`, protection de `main`.
+
+### Phase 5 — Légal & dépôt public (à faire sans travail en cours, force-push)
+- [ ] [265] **PDF protégé dans le dépôt public** : retirer `resources/Drum.Machine.-.260.Patterns.pdf` et purger l'historique (`git filter-repo`, sauvegarde préalable, force-push assumé) ; garder une référence bibliographique simple.
+- [ ] [266] **Licence** : `LICENSE` (GPL-3.0) à la racine + dans le bundle, `license = "GPL-3.0-only"` dans Cargo.toml, `THIRD-PARTY.md` (nih-plug, egui-baseview, ac606 MIT, IBM Plex OFL, provenance des WAV embarqués).
+
+### Phase 6 — Traçabilité & dette (plus tard)
+- [ ] [267] **Fork nih-plug traçable** : `vendor/nih-plug/FLASH-DRUM-PATCHES.md` sur le modèle egui-baseview (SHA amont, liste exhaustive des ~9 patchs, `.patch` issu de `git diff`) ; compléter `STUDIO_ONE_MULTI_OUT.md` (remap aux clairsemés, IEditController, fenêtre clavier, journal d'état) ; vendorer les 3 deps git (vst3-sys par branche !, baseview, clap-sys) ou les épingler par rev sur un fork contrôlé ; `windows-sys` sous `[target.'cfg(windows)'.dependencies]`.
+- [ ] [268] **Hygiène dépôt** : `#![allow(clippy::excessive_precision)]` sur la table sinc ac606 puis traiter les lints par lot ; `cargo fmt` en commit dédié ; archiver le CHANGELOG par trimestre ; sortir les gros PNG de design du dépôt ; resserrer `.gitignore` (`*backup*`, `*fixed*`, `temp_*`) ; supprimer `bundle.toml` (inutilisé et faux) ; `git gc`.
+- [ ] [269] **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
 
 ## Nouvelles tâches — session 2026-09-22
 

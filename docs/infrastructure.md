@@ -30,7 +30,7 @@ Flash Drum est un **plugin VST3** écrit en Rust avec le framework [`nih-plug`](
 - **UI Thread** (`src/ui.rs`) — Interface graphique avec `egui`
 - **Audio Thread** (`src/lib.rs`) — Callback temps réel `process()`
 - **Sequencer** (`src/sequencer/`) — Moteur de séquence 64 pas
-- **Synthesis** (`src/synthesis/`) — 13 voix de synthèse réparties sur 14 slots modulaires
+- **Synthesis** (`src/synthesis/`) — 27 voix DSP (25 kinds d'instruments) réparties sur 14 slots modulaires
 - **Plock System** (`src/plock.rs`) — Parameter locks par step
 
 ---
@@ -39,7 +39,7 @@ Flash Drum est un **plugin VST3** écrit en Rust avec le framework [`nih-plug`](
 
 ### Prérequis
 
-- **Rust** (dernière stable) — `cargo`, `rustc`
+- **Rust 1.94.0** — toolchain épinglée par `drum-pattern-vst/rust-toolchain.toml` (le binaire livré et la CI doivent utiliser le même compilateur)
 - **Windows** (développement principal)
 - **Studio One** (DAW de référence pour les tests)
 
@@ -69,8 +69,12 @@ cargo run --bin test_standalone
 Le script `build.ps1` :
 1. Compile la DLL en mode `release`
 2. Génère un bundle VST3 structuré (`.vst3/Contents/x86_64-win/`)
-3. Copie le bundle dans le dossier système VST3 (avec `-Install`)
+3. Copie le bundle dans le dossier système VST3 (avec `-Install`, après un test de verrou du DLL installé [250])
 4. Injecte un `DRUM_PATTERN_BUILD_ID` (timestamp) affiché dans l'UI
+
+### CI
+
+Une CI GitHub Actions (`.github/workflows/ci.yml`, runner `windows-latest`, push/PR sur `main`) exécute `cargo check`, `cargo test` et `build.ps1`, puis publie le bundle VST3 en artefact (90 jours). Elle ne couvre pas encore macOS, clippy ni fmt — voir [264] dans `TODO.md`.
 
 ---
 
@@ -92,23 +96,17 @@ Le callback `process()` est appelé par le DAW à chaque bloc d'échantillons. C
 - **Plocks** : 46 champs plockables (14 standard + 32 special)
 - **Groove** : Swing, shuffle, MPC (appliqué sur la grille maître)
 
-### Voix de synthèse (13 dans 14 slots)
+### Voix de synthèse (27 voix / 25 kinds dans 14 slots)
 
-| # | Instrument | Type | Analog |
-|---|-----------|------|--------|
-| 0 | Kick | Osc + Click | Drift opérationnel |
-| 1 | Snare | Noise + Tone | Drift opérationnel |
-| 2 | HiHat | FM Noise | Fixé (1.0) |
-| 3 | OpenHiHat | FM Noise | Fixé (1.0) |
-| 4 | Tom1 | Osc | Drift opérationnel |
-| 5 | Tom2 | Osc | Drift opérationnel |
-| 6 | Tom3 | Osc | Drift opérationnel |
-| 7 | Clap | Burst + Noise | Fixé (1.0) |
-| 8 | Ride | FM Noise | Fixé (1.0) |
-| 9 | Cymbal | FM Noise + Shimmer | Drift opérationnel |
-| 10 | Snare606 | Resonator + Noise | Fixé (1.0) |
-| 11 | BassDrum808 | FM + Click | Drift opérationnel |
-| 12 | Perc1 | FM + Decay | Fixé (1.0) |
+- **13 voix d'origine** : Kick, Snare, HiHat, OpenHiHat, Tom1, Tom2, Tom3, Clap, Ride, Cymbal, Snare606, BassDrum808, Perc1 (les trois Tomn n'existent que comme rôles du registre — le track n'a qu'un seul kind `Tom`)
+- **4 samplers TR-606** : BD6smp, SD6smp, CH6smp, OH6smp (multisample 8 layers)
+- **Buzz** — percussion tonale + gate rapide
+- **Sdrex** — snare à excitation
+- **6 voix AC606 modélisées** : Bd6Ac, Sd6Ac, Hh6Ac, Oh6Ac, Cl6Ac, Tm6Ac (portées du moteur analogcode)
+- **Rift** — lecture de tranche dans une texture longue (WAV utilisateur possible)
+- **One-Shot** — lecture du WAV de la lane, du début à la fin
+
+Le détail par voix (paramètres, défauts) vit dans la source de vérité : `src/instrument_registry.rs`.
 
 ### Sorties audio
 
@@ -145,7 +143,7 @@ Migration legacy : les anciens champs `pattern-v1`..`pattern-v4` et paramètres 
 - **nih_plug_egui** — Intégration UI egui
 - **egui** — UI immediate mode
 - **serde** — Sérialisation état
-- **hound** — Export WAV (tests)
+- **hound** — Décodage WAV en production (banques 606 embarquées et textures/WAV utilisateur pour Rift et One-Shot, `src/synthesis/sample_bank.rs`)
 
 ⚠️ **Ne pas remplacer le nih-plug vendored par la version crates.io** — des patches locaux sont nécessaires pour :
 - Multi-out dans Studio One
@@ -156,7 +154,7 @@ Migration legacy : les anciens champs `pattern-v1`..`pattern-v4` et paramètres 
 
 ## Tests
 
-### Tests unitaires (175)
+### Tests unitaires (477 tests lib)
 
 ```bash
 cargo test --lib

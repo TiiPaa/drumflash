@@ -1,0 +1,4 @@
+# [251] Pin the toolchain that produces the shipped binary (CI must test with
+# the same compiler, not a floating `stable`).
+[toolchain]
+channel = "1.94.0"

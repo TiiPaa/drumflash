@@ -1,9 +1,34 @@
 # Changelog
 
+## 2026-09-24 (soir) - [253][254] Remédiation audit, phase 1 : plus aucune libération de WAV sur le thread audio + filet assert_no_alloc (build 20260924-185138)
+
+**Branche:** `main` - **Build:** `20260924-185138`
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 483 + 1 + 309 verts (3 nouveaux tests RT) ; `build.ps1 -Install` OK ; **validé dans S1 le 2026-09-24**.
+
+- **[253] File de retraite des textures** : une voix One-Shot/Rift garde son propre `Arc<TextureBank>` d'un coup à l'autre ; après DEUX remplacements du fichier d'une lane sans coup entre-temps, la voix détenait la dernière référence du premier fichier et le libérait dans `trigger()` — jusqu'à ~23 Mo libérés dans le callback (craquement possible, garantie CLAUDE.md non tenue). Idem au changement de kind en lecture (`reinitialize_slot` écrasait la voix et lâchait son `source`). Désormais : `TexturePool::retire()` pousse l'ancien `Arc` dans une `ArrayQueue` préallouée (64 entrées, push lock-free sans allocation), vidée par le thread UI à chaque frame de l'éditeur et à chaque `publish` (`drain_retired`). Trois sites couverts dans One-Shot (remplacement + deux sorties sans fichier), un dans Rift, plus `release_held_texture()` avant le swap de voix dans `reinitialize_slot`.
+- **[254] Filet `assert_no_alloc`** : la règle « zéro allocation/libération sur le thread audio » était appliquée à la relecture, sans outillage — d'où les deux défauts ci-dessus passés inaperçus. Ajout de la dev-dependency `assert_no_alloc` (même fork/révision épinglée que nih-plug), watchdog enregistré dans les builds de test de la lib ET de `test_standalone`, et trois tests qui échouent avant les fixes [244]/[245]/[253] : `save_pattern_to_slot_is_realtime_safe` (capture banque après restore), `trigger_never_frees_a_texture_on_the_audio_thread` (A→B→C puis trigger : la texture est retirée, pas libérée), `every_kind_plays_without_allocations` (les 25 kinds : trigger, 4800 échantillons, retrigger à queue vivante, `set_settings` en cours de lecture, 4800 échantillons — zéro allocation).
+
+## 2026-09-24 - [244]-[252] Remédiation audit, phase 0 (quick wins) : critique temps réel + bugs données + docs (build 20260924-124332)
+
+**Branche:** `main` - **Build:** `20260924-124332`
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 480 + 1 + 307 verts (3 nouveaux) ; 67 tests nih-plug verts ; `build.ps1 -Install` OK (répare au passage le bundle installé amputé du helper MIDI depuis le 2026-09-23) ; **validé dans S1 le 2026-09-24**.
+
+Source : `audit_cr/claude-code.json`, phase 0 du plan dans `TODO.md`.
+
+- **[244] CRITIQUE — sauvegarde de pattern enfin temps réel** : « Save » sur un slot de la banque (P1…P16) exécutait `refresh_snapshot()` dans `process()` — verrou bloquant + clone des 16 slots + sérialisation JSON (état jusqu'à 9,7 Mo) dans le callback, alors que la variante RT-safe existait. Remplacé par `mark_snapshot_dirty()` (`lib.rs`) : le snapshot persisté est reconstruit paresseusement quand l'hôte demande l'état, hors callback.
+- **[245] Préallocation de la banque après restauration** : les `Vec<u8>` désérialisés perdaient la capacité de `PatternSlot::default()` → `capture()` réallouait ~165 Ko de p-locks dans le callback à la première sauvegarde après réouverture d'un projet. `reserve()` rétabli dans `PersistentField::set` (thread principal).
+- **[246] Renommage de preset = preset invisible** : `rename_preset` reconstruisait le nom avec `path.extension()` (qui ne rend que `json`) → `Nom.fdpat.json` devenait `Nom.json`, absent de tous les onglets du navigateur. Le `PresetKind` est maintenant passé par l'appelant ; test corrigé (il partait d'une extension simple que `save_json` ne produit jamais) + nouveau test « reste listé ».
+- **[247] Graphe Oh6smp : mauvaise banque affichée** : la cascade du Sound Editor donnait `ch606()` (slices 0,5 s) à Oh6smp alors que le DSP joue `oh606()` (1 s) — Start/End réglés sur une forme d'onde deux fois trop courte. Nouvelle fonction partagée `sampler_bank(voice_idx)` (`sample_bank.rs`) + test d'équivalence UI/DSP pour les 4 voix sampler.
+- **[248] Repli générateur → panique latente** : `_ => kind.drum_voice_index()` indexait une table de 14 cases hors bornes pour tout futur kind oublié (`panic = "abort"` ferme l'hôte). Match rendu **exhaustif** (erreur de compilation sur un kind manquant, philosophie `DrumVoiceKind`) + test `every_kind_survives_generate` (25 kinds × 4 générateurs).
+- **[249] Journal d'état `E:\tmp` en release** : le fork nih-plug écrivait un diagnostic à chaque get/set_state vers un chemin de dev codé en dur, et re-sérialisait l'état complet deux fois par sauvegarde. Désormais **opt-in** (`FLASH_DRUM_STATE_LOG`) et écrit dans le dossier temporaire ; inactif = aucun fichier, aucune sérialisation en plus.
+- **[250] Install : test de verrou avant suppression** : `build.ps1` ouvre le DLL installé en exclusif AVANT `Remove-Item` — si Studio One le tient, sortie code 2 sans rien toucher (fini le bundle à moitié détruit du 2026-09-23).
+- **[251] Clippy + toolchain** : les 2 constantes refusées par `approx_constant` remplacées (`std::f32::consts::TAU`, `std::f64::consts::FRAC_1_SQRT_2`) ; `rust-toolchain.toml` épingle **1.94.0** (CI = binaire livré).
+- **[252] Docs resynchronisées** : 27 voix / 25 kinds dans CLAUDE.md, ADDING_AN_INSTRUMENT.md §2 (+ §9 : le rôle générateur oublié est une erreur de compilation, pas un instrument muet), les deux README, user-guide (Auto-Edit déplacé), infrastructure.md (voix, hound en production, 477 tests, toolchain, CI). Garantie « lane textures » de CLAUDE.md corrigée : la lacune One-Shot/Rift est documentée en attendant [253].
+
 ## 2026-09-23 (soir) - [243] One-Shot : Offset, enveloppes sampler, waveforms ; fix flash lane ; pitch live One-Shot + Rift (builds 205745 -> 235211)
 
 **Branche:** `main` - **Builds:** `20260923-205745` -> `20260923-235211`
-**Validation:** `cargo check` sans avertissement ; `cargo test` 477 + 1 + 306 verts ; tout est valide dans S1 SAUF le build 235211 (Rift pitch live : compile, install refusee car S1 ouvert) et le fix du flash lane (233248, a valider).
+**Validation:** `cargo check` sans avertissement ; `cargo test` 477 + 1 + 306 verts ; tout est validé dans S1 (235211 et 233248 validés le 2026-09-24 avec le build 20260924-124332).
 
 - **Offset** (special 20, p-lockable) : fraction du fichier ou la lecture COMMENCE, dans les deux sens ; en Reverse elle compte depuis la fin (le marqueur reste a la position du knob — premiere version miroir rejetee par l'utilisateur).
 - **Enveloppes en fractions de la region jouee** (x pitch), semantique sampler : amp A-H-D, pitch A-H-D, filtre A-H-D tous en 0..1 (1.0 = tout le sample). L'attack en secondes absolues etait inaudible sur sample court — retour utilisateur. Speciaux renommes `_atk`/`_hld` (le garde-fou [182] exige une unite sur `_attack`/`_hold`) ; finders du panneau et test de snapshot d'unites mis a jour.

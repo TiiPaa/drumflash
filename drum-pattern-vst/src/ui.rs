@@ -231,6 +231,11 @@ pub fn create_editor(
             #[cfg(target_os = "windows")]
             nih_plug_egui::set_keyboard_focus(egui_ctx.wants_keyboard_input());
 
+            // [253] Free the textures the audio thread retired since the last
+            // frame (the queue push is RT-safe, the drop is not). Cheap when
+            // empty: one atomic load.
+            params_for_ui.user_textures.pool.drain_retired();
+
             // Apply any pending pattern length update from a slot load.
             let pending_len = pending_pattern_length_for_ui.swap(0, Ordering::Relaxed);
             if pending_len >= 1 && pending_len <= 64 {

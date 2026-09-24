@@ -964,6 +964,11 @@ pub trait Voice: Send + Sync {
     /// (Rift). Set once after creation; an `Arc` clone, so safe on the audio
     /// thread. Voices without samples ignore it.
     fn set_texture_pool(&mut self, _pool: std::sync::Arc<sample_bank::TexturePool>, _lane: usize) {}
+    /// [253] Hand the texture the voice holds across hits (Rift/One-Shot) to
+    /// the pool's retirement queue. Called on the audio thread before the
+    /// voice is swapped out in `reinitialize_slot`, so the freed `Arc` never
+    /// runs its deallocation here. Voices without samples keep the default.
+    fn release_held_texture(&mut self) {}
     fn process_sample(&mut self) -> f32;
     /// Stereo version. Default returns duplicated mono.
     fn process_sample_stereo(&mut self) -> (f32, f32) {
@@ -1201,6 +1206,14 @@ impl Voice for DrumVoiceKind {
             // [228] [243] The voices that read the lane's own file.
             DrumVoiceKind::Rift(v) => v.set_texture_pool(pool, lane),
             DrumVoiceKind::OneShot(v) => v.set_texture_pool(pool, lane),
+            _ => {}
+        }
+    }
+
+    fn release_held_texture(&mut self) {
+        match self {
+            DrumVoiceKind::Rift(v) => v.release_held_texture(),
+            DrumVoiceKind::OneShot(v) => v.release_held_texture(),
             _ => {}
         }
     }
@@ -1584,6 +1597,10 @@ impl DrumSynthesizer {
             new_voice.set_texture_pool(pool.clone(), slot_idx);
         }
         if let Some(existing) = self.voices[slot_idx].as_mut() {
+            // [253] The old voice may hold the last `Arc` of a user texture
+            // (Rift/One-Shot): retire it to the UI-drained queue instead of
+            // freeing it here when `**existing` is overwritten.
+            existing.release_held_texture();
             **existing = new_voice;
             self.active[slot_idx] = true;
         } else {
@@ -2056,6 +2073,67 @@ mod tests {
             "Click detected: large sample delta at settings change. max_delta={}",
             max_delta
         );
+    }
+
+    /// [254] Real-time safety net: playing any kind — trigger, retrigger on a
+    /// ringing tail, settings pushed mid-play — must not allocate. Voices are
+    /// preallocated at initialize; an allocation here is a dropout in the DAW.
+    /// This is the test that would have caught the two RT defects of the
+    /// 2026-09-24 audit ([244] pattern-bank save, [253] texture drop).
+    #[test]
+    fn every_kind_plays_without_allocations() {
+        fn default_settings_for(kind: crate::track::TrackInstrumentKind) -> VoiceSettings {
+            use crate::track::TrackInstrumentKind as K;
+            match kind {
+                K::Kick => VoiceSettings::kick(),
+                K::Snare => VoiceSettings::snare(),
+                K::HiHat => VoiceSettings::hihat(),
+                K::OpenHiHat => VoiceSettings::open_hihat(),
+                K::Tom => VoiceSettings::tom1(),
+                K::Clap => VoiceSettings::clap(),
+                K::Ride => VoiceSettings::ride(),
+                K::Cymbal => VoiceSettings::cymbal(),
+                K::Snare606 => VoiceSettings::snare606(),
+                K::BassDrum808 => VoiceSettings::kick808(),
+                K::Perc1 => VoiceSettings::perc1(),
+                K::Bd6smp => VoiceSettings::bd606(),
+                K::Sd6smp => VoiceSettings::sd606(),
+                K::Ch6smp => VoiceSettings::ch606(),
+                K::Buzz => VoiceSettings::buzz(),
+                K::Sdrex => VoiceSettings::sdrex(),
+                K::Bd6Ac => VoiceSettings::bd6ac(),
+                K::Sd6Ac => VoiceSettings::sd6ac(),
+                K::Hh6Ac => VoiceSettings::hh6ac(),
+                K::Oh6Ac => VoiceSettings::oh6ac(),
+                K::Cl6Ac => VoiceSettings::cl6ac(),
+                K::Tm6Ac => VoiceSettings::tm6ac(),
+                K::Oh6smp => VoiceSettings::oh606(),
+                K::Rift => VoiceSettings::rift(),
+                K::OneShot => VoiceSettings::oneshot(),
+            }
+        }
+
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
+        for kind in crate::track::TrackInstrumentKind::ALL {
+            let mut layout = crate::track::TrackLayoutState::empty_layout();
+            layout.slots[0] = crate::track::TrackSlot::active_with_kind(kind);
+            let mut synth = DrumSynthesizer::new();
+            // Non-RT: preallocates voices and prewarms the embedded banks.
+            synth.initialize_with_layout(48000.0, &layout);
+
+            assert_no_alloc::assert_no_alloc(|| {
+                synth.trigger(0, 1.0);
+                for _ in 0..4800 {
+                    synth.process_voice_samples_stereo(&mut outputs);
+                }
+                // Retrigger on a ringing tail, then push settings mid-play.
+                synth.trigger(0, 0.8);
+                synth.set_voice_settings(0, default_settings_for(kind));
+                for _ in 0..4800 {
+                    synth.process_voice_samples_stereo(&mut outputs);
+                }
+            });
+        }
     }
 
     /// Lightweight sanity check: every engine voice renders finite, non-silent audio

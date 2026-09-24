@@ -2,763 +2,713 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Audit Flash Drum — Synthèse</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Audit Flash Drum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
 <style>
-  :root {
-    --bg: #f5f7f9;
-    --surface: #ffffff;
-    --surface-2: #eef1f5;
-    --border: #dde2e9;
-    --ink: #141a20;
-    --ink-2: #4a545f;
-    --ink-3: #6f7a86;
-    --accent: #0d7c85;
-    --accent-ink: #0d7c85;
-    --accent-soft: #d6ebed;
-    --good: #1f8a5b;
-    --good-soft: #d7ede1;
-    --crit: #c0272d;
-    --crit-soft: #f6dcdd;
-    --imp: #a86913;
-    --imp-soft: #f4e6c8;
-    --sug: #2166d6;
-    --sug-soft: #dbe6fa;
-    --neutral: #59636f;
-    --neutral-soft: #e5e9ee;
-    --shadow: 0 1px 2px rgba(20,26,32,.06), 0 6px 20px rgba(20,26,32,.05);
-    --radius: 14px;
-    --radius-sm: 9px;
-    --maxw: 1080px;
-    --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "Courier New", monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+:root {
+  --bg: #f2f3f7; --panel: #ffffff; --panel2: #e8eaf1; --line: #d5d8e2; --line2: #bcc1cf;
+  --ink: #15161d; --ink2: #464c5b; --ink3: #666c7d;
+  --accent: #1c66d6; --accent-soft: #dde8fb;
+  --crit: #bf2a32; --crit-soft: #f8e0e1; --on-crit: #ffffff;
+  --imp: #935600; --imp-soft: #f6e9cf;
+  --sug: #6a3dcb; --sug-soft: #ece4fb;
+  --hs: #5a6173; --hs-soft: #e5e7ee;
+  --good: #17784a; --good-soft: #d9efe2;
+  --code-bg: #eceef4;
+  --shadow: 0 1px 2px rgba(21, 22, 29, .05), 0 4px 14px rgba(21, 22, 29, .05);
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --cond: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, "Cascadia Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0a0a0f; --panel: #141419; --panel2: #1c1c24; --line: #2a2a35; --line2: #3a3a48;
+    --ink: #e8e8f0; --ink2: #a3a9b6; --ink3: #7a8190;
+    --accent: #4a9eff; --accent-soft: #14233a;
+    --crit: #f87171; --crit-soft: #3a1618; --on-crit: #0a0a0f;
+    --imp: #fbbf24; --imp-soft: #33280c;
+    --sug: #b98cf9; --sug-soft: #261a3d;
+    --hs: #a3a9b6; --hs-soft: #22222b;
+    --good: #4ade80; --good-soft: #10281a;
+    --code-bg: #0f0f15;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 20px rgba(0, 0, 0, .3);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0d1014;
-      --surface: #161b21;
-      --surface-2: #1d242c;
-      --border: #29313b;
-      --ink: #e7ebf1;
-      --ink-2: #a7b2c0;
-      --ink-3: #71808f;
-      --accent: #2dd4bf;
-      --accent-ink: #4fe0cd;
-      --accent-soft: #123433;
-      --good: #4cc98a;
-      --good-soft: #16301f;
-      --crit: #ff6b6b;
-      --crit-soft: #3a1c1e;
-      --imp: #e0a441;
-      --imp-soft: #3a2e15;
-      --sug: #74a9f7;
-      --sug-soft: #16273f;
-      --neutral: #96a2b1;
-      --neutral-soft: #232b34;
-      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
-    }
-  }
-  :root[data-theme="light"] {
-    --bg: #f5f7f9; --surface: #ffffff; --surface-2: #eef1f5; --border: #dde2e9;
-    --ink: #141a20; --ink-2: #4a545f; --ink-3: #6f7a86;
-    --accent: #0d7c85; --accent-ink: #0d7c85; --accent-soft: #d6ebed;
-    --good: #1f8a5b; --good-soft: #d7ede1; --crit: #c0272d; --crit-soft: #f6dcdd;
-    --imp: #a86913; --imp-soft: #f4e6c8; --sug: #2166d6; --sug-soft: #dbe6fa;
-    --neutral: #59636f; --neutral-soft: #e5e9ee;
-    --shadow: 0 1px 2px rgba(20,26,32,.06), 0 6px 20px rgba(20,26,32,.05);
-  }
-  :root[data-theme="dark"] {
-    --bg: #0d1014; --surface: #161b21; --surface-2: #1d242c; --border: #29313b;
-    --ink: #e7ebf1; --ink-2: #a7b2c0; --ink-3: #71808f;
-    --accent: #2dd4bf; --accent-ink: #4fe0cd; --accent-soft: #123433;
-    --good: #4cc98a; --good-soft: #16301f; --crit: #ff6b6b; --crit-soft: #3a1c1e;
-    --imp: #e0a441; --imp-soft: #3a2e15; --sug: #74a9f7; --sug-soft: #16273f;
-    --neutral: #96a2b1; --neutral-soft: #232b34;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 26px rgba(0,0,0,.35);
-  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0a0f; --panel: #141419; --panel2: #1c1c24; --line: #2a2a35; --line2: #3a3a48;
+  --ink: #e8e8f0; --ink2: #a3a9b6; --ink3: #7a8190;
+  --accent: #4a9eff; --accent-soft: #14233a;
+  --crit: #f87171; --crit-soft: #3a1618; --on-crit: #0a0a0f;
+  --imp: #fbbf24; --imp-soft: #33280c;
+  --sug: #b98cf9; --sug-soft: #261a3d;
+  --hs: #a3a9b6; --hs-soft: #22222b;
+  --good: #4ade80; --good-soft: #10281a;
+  --code-bg: #0f0f15;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 20px rgba(0, 0, 0, .3);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--sans); font-size: 16px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1000px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 56px; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+h1, h2 { font-family: var(--cond); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2.25rem, 6vw, 3.25rem); font-weight: 700; letter-spacing: -.01em; }
+h2 { font-size: 1.625rem; font-weight: 600; }
+h3 { font-size: 1.0625rem; font-weight: 600; margin: 0; line-height: 1.35; text-wrap: balance; }
+p { margin: 0; }
+code { font-family: var(--mono); font-size: .86em; background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: .05em .35em; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--mono); font-size: .75rem; letter-spacing: .09em; text-transform: uppercase; color: var(--ink3); }
+.muted { color: var(--ink2); }
+.section { display: grid; gap: 20px; }
+.section-head { display: grid; gap: 6px; }
+.section-head p { color: var(--ink2); max-width: 68ch; }
 
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-size: 16px;
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
-  h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0; }
-  p { margin: 0; }
-  a { color: var(--accent-ink); }
-  code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* En-tête */
+.hero { display: grid; gap: 22px; }
+.hero .lead { font-size: 1.125rem; color: var(--ink2); max-width: 62ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono); font-size: .8125rem; color: var(--ink3); }
+.board { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; box-shadow: var(--shadow); }
+.verdict { display: grid; gap: 6px; align-content: start; padding-right: 20px; border-right: 1px solid var(--line); }
+.verdict .v { font-family: var(--cond); font-size: 1.625rem; font-weight: 700; color: var(--imp); line-height: 1.1; }
+.verdict .g { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 2.5rem; font-weight: 600; line-height: 1; }
+.verdict .g small { font-size: 1rem; color: var(--ink3); font-weight: 500; }
+.tally { display: grid; gap: 14px; }
+.counts { display: flex; flex-wrap: wrap; gap: 8px; }
+.count { display: inline-flex; align-items: baseline; gap: 6px; font-size: .875rem; padding: 3px 10px; border-radius: 999px; background: var(--panel2); color: var(--ink2); }
+.count b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; align-self: center; }
+.dot-crit { background: var(--crit); } .dot-imp { background: var(--imp); } .dot-sug { background: var(--sug); } .dot-hs { background: var(--hs); }
+.pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px; }
+.pad { display: grid; place-items: center; aspect-ratio: 1; max-width: 100%; border-radius: 5px; background: var(--panel2); border: 1.5px solid var(--line2); font-family: var(--mono); font-size: .75rem; font-weight: 600; color: var(--ink2); text-decoration: none; }
+.pad:hover { background: var(--panel); }
+.pad-crit { background: var(--crit); border-color: var(--crit); color: var(--on-crit); }
+.pad-crit:hover { background: var(--crit); filter: brightness(1.08); }
+.pad-imp { border-color: var(--imp); color: var(--imp); }
+.pad-sug { border-color: var(--sug); color: var(--sug); }
+.pad-hs { border-color: var(--line2); color: var(--ink3); }
+.legend { font-size: .8125rem; color: var(--ink3); }
 
-  .eyebrow {
-    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
-    text-transform: uppercase; color: var(--ink-3); font-weight: 600;
-  }
+/* Essentiel */
+.keys { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.keys li { display: grid; gap: 2px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.keys li:last-child { border-bottom: 0; padding-bottom: 0; }
+.keys strong { font-size: 1.0625rem; }
+.keys span { color: var(--ink2); }
+.ref { font-family: var(--mono); font-size: .78rem; font-weight: 600; text-decoration: none; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line2); color: var(--ink2); white-space: nowrap; }
+.ref-crit { border-color: var(--crit); color: var(--crit); }
+.ref-imp { border-color: var(--imp); color: var(--imp); }
+.ref-sug { border-color: var(--sug); color: var(--sug); }
+.ref:hover { background: var(--panel2); }
 
-  /* Header */
-  header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-  .header-inner { padding: 34px 24px 30px; max-width: var(--maxw); margin: 0 auto; }
-  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 26px; }
-  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; letter-spacing: -.01em; }
-  .brand .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
-  .theme-toggle {
-    font: inherit; font-size: 13px; cursor: pointer; color: var(--ink-2);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
-    padding: 7px 14px; display: inline-flex; align-items: center; gap: 7px;
-  }
-  .theme-toggle:hover { color: var(--ink); border-color: var(--ink-3); }
+/* Action immédiate */
+.now { background: var(--crit-soft); border: 1px solid var(--crit); border-radius: 10px; padding: 20px 22px; display: grid; gap: 12px; }
+.now h2 { font-size: 1.375rem; color: var(--ink); }
+.now ol { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; }
+.now .why { color: var(--ink2); }
 
-  h1 { font-size: clamp(28px, 4.4vw, 42px); font-weight: 780; letter-spacing: -.02em; }
-  .subtitle { color: var(--ink-2); margin-top: 10px; max-width: 60ch; font-size: 17px; }
+/* Plan */
+.plan { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; counter-reset: step; }
+.plan li { counter-increment: step; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 10px; align-content: start; }
+.plan li::before { content: "Priorité " counter(step); font-family: var(--mono); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.plan p { color: var(--ink2); font-size: .9375rem; }
+.plan .refs { display: flex; flex-wrap: wrap; gap: 6px; }
+.quick { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.quick-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel2); }
+.quick-head h3 { font-size: 1rem; }
+.quick ul { list-style: none; margin: 0; padding: 0; }
+.quick li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); align-items: baseline; }
+.quick li:last-child { border-bottom: 0; }
+.quick .where { display: block; font-family: var(--mono); font-size: .78rem; color: var(--ink3); overflow-wrap: anywhere; }
 
-  .meta-row { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 22px; }
-  .meta {
-    font-family: var(--mono); font-size: 12.5px; color: var(--ink-2);
-    background: var(--surface-2); border: 1px solid var(--border);
-    padding: 5px 11px; border-radius: 999px;
-  }
-  .meta b { color: var(--ink); font-weight: 600; }
+/* Scores */
+.scores { display: grid; gap: 14px; }
+.score { display: grid; grid-template-columns: 170px minmax(0, 1fr) 44px; gap: 8px 16px; align-items: center; }
+.score .name { font-weight: 600; }
+.score .num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.score .why { grid-column: 2 / 4; color: var(--ink2); font-size: .875rem; margin-top: -4px; }
+.meter { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; height: 14px; }
+.seg { background: var(--panel2); border: 1px solid var(--line); border-radius: 2px; }
+.lvl-low .on { background: var(--crit); border-color: var(--crit); }
+.lvl-mid .on { background: var(--imp); border-color: var(--imp); }
+.lvl-high .on { background: var(--good); border-color: var(--good); }
+.score-global { padding-top: 14px; border-top: 1px solid var(--line); }
+.score-global .name { font-family: var(--cond); font-size: 1.125rem; }
 
-  /* Verdict banner */
-  .verdict {
-    display: grid; grid-template-columns: auto 1fr auto; gap: 22px; align-items: center;
-    margin-top: 26px; padding: 20px 22px;
-    background: var(--imp-soft); border: 1px solid color-mix(in srgb, var(--imp) 40%, transparent);
-    border-radius: var(--radius);
-  }
-  .verdict-badge {
-    font-family: var(--mono); font-weight: 700; font-size: 13px; letter-spacing: .04em;
-    text-transform: uppercase; color: var(--imp);
-    border: 1.5px solid var(--imp); border-radius: 999px; padding: 8px 16px; white-space: nowrap;
-  }
-  .verdict-text { color: var(--ink); font-size: 15px; }
-  .verdict-text b { font-weight: 700; }
-  .gauge { text-align: center; white-space: nowrap; }
-  .gauge .num { font-family: var(--mono); font-size: 34px; font-weight: 700; line-height: 1; color: var(--imp); }
-  .gauge .den { font-family: var(--mono); font-size: 15px; color: var(--ink-3); }
-  .gauge .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 6px; }
+/* Carte des risques */
+.matrix-wrap { overflow-x: auto; }
+.matrix { display: grid; grid-template-columns: 92px repeat(3, minmax(150px, 1fr)); gap: 6px; min-width: 560px; }
+.mx-h { font-family: var(--mono); font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); display: flex; align-items: end; padding: 4px 6px; }
+.mx-r { font-family: var(--mono); font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); display: flex; align-items: center; }
+.mx-c { min-height: 84px; border-radius: 8px; padding: 10px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; border: 1px solid var(--line); background: var(--panel); }
+.heat-3, .heat-4 { background: var(--crit-soft); border-color: var(--crit); }
+.heat-2 { background: var(--imp-soft); }
+.heat-1 { background: var(--panel); }
+.heat-0 { background: var(--panel); opacity: .8; }
+.mx-c .ref { background: var(--panel); }
+.axis-note { font-size: .8125rem; color: var(--ink3); }
 
-  main { padding: 40px 0 72px; }
-  section { margin-top: 46px; }
-  .sec-head { margin-bottom: 20px; }
-  .sec-head h2 { font-size: 22px; font-weight: 720; letter-spacing: -.01em; margin-top: 6px; }
-  .sec-head p { color: var(--ink-2); margin-top: 6px; font-size: 15px; max-width: 68ch; }
+/* Constats */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: inherit; font-size: .875rem; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line2); background: var(--panel); color: var(--ink2); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.chip b { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip[aria-pressed="true"] .dot { outline: 1px solid rgba(255, 255, 255, .7); }
+.linkbtn { font: inherit; font-size: .875rem; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 4px 2px; text-decoration: underline; text-underline-offset: 3px; }
+.list { display: grid; gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 12px; scroll-margin-top: 16px; }
+.card:target { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card-top { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.badge { font-family: var(--mono); font-size: .72rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; }
+.b-crit { background: var(--crit); color: var(--on-crit); }
+.b-imp { background: var(--imp-soft); color: var(--imp); }
+.b-sug { background: var(--sug-soft); color: var(--sug); }
+.b-hs { background: var(--hs-soft); color: var(--hs); }
+.idtag { font-family: var(--mono); font-weight: 600; font-size: .875rem; color: var(--ink); }
+.tag { font-size: .8125rem; color: var(--ink3); }
+.loc { font-family: var(--mono); font-size: .8125rem; color: var(--ink2); overflow-wrap: anywhere; }
+.plain { color: var(--ink); }
+.todo { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; background: var(--panel2); border-radius: 8px; padding: 10px 12px; font-size: .9375rem; }
+.todo .k { font-family: var(--mono); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.todo .effort { font-family: var(--mono); font-size: .78rem; color: var(--ink3); white-space: nowrap; }
+details.tech > summary { cursor: pointer; font-size: .875rem; color: var(--accent); list-style: none; display: inline-flex; gap: 6px; align-items: center; }
+details.tech > summary::-webkit-details-marker { display: none; }
+details.tech > summary::before { content: "▸"; font-size: .8em; }
+details.tech[open] > summary::before { content: "▾"; }
+.tech-body { display: grid; gap: 14px; margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.tech-body h4 { margin: 0 0 4px; font-size: .75rem; font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); font-weight: 500; }
+.tech-body p { color: var(--ink2); font-size: .9375rem; }
+.tech-body p + p { margin-top: 8px; }
+.code-wrap { overflow-x: auto; margin-top: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--code-bg); }
+.code-wrap pre { margin: 0; padding: 12px 14px; font-family: var(--mono); font-size: .8125rem; line-height: 1.55; color: var(--ink); }
+.code-wrap code { background: none; border: 0; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.ctx { display: flex; flex-wrap: wrap; gap: 6px; }
+.ctx span { font-size: .78rem; padding: 2px 8px; border-radius: 4px; background: var(--panel2); color: var(--ink2); }
+.ctx b { font-weight: 600; color: var(--ink); }
+.empty { color: var(--ink3); }
 
-  /* KPI strip */
-  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  .kpi {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 16px 16px 15px; box-shadow: var(--shadow); position: relative; overflow: hidden;
-  }
-  .kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--k); }
-  .kpi .n { font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: 1; color: var(--k); }
-  .kpi .t { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; font-weight: 500; }
-  .kpi.crit { --k: var(--crit); }
-  .kpi.imp { --k: var(--imp); }
-  .kpi.sug { --k: var(--sug); }
-  .kpi.neutral { --k: var(--neutral); }
+/* Points positifs, docs, archi */
+.goods { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.goods li { background: var(--good-soft); border-radius: 10px; padding: 14px 16px; font-size: .9375rem; color: var(--ink); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: .875rem; }
+th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--mono); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); font-weight: 500; background: var(--panel2); }
+tr:last-child td { border-bottom: 0; }
+td.doc { font-family: var(--mono); font-size: .8rem; color: var(--ink); width: 18%; overflow-wrap: anywhere; }
+td { color: var(--ink2); }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; align-content: start; }
+.box h3 { font-size: 1rem; }
+.box ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; color: var(--ink2); font-size: .9375rem; }
+.diagram { overflow-x: auto; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; }
+.diagram pre { margin: 0; padding: 16px; font-family: var(--mono); font-size: .78rem; line-height: 1.5; color: var(--ink); }
+dl.infra { margin: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+dl.infra > div { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+dl.infra > div:last-child { border-bottom: 0; }
+dl.infra dt { font-weight: 600; font-size: .9375rem; }
+dl.infra dd { margin: 0; color: var(--ink2); font-size: .9375rem; }
+dl.infra ul { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; }
+footer { font-size: .8125rem; color: var(--ink3); border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 4px; }
 
-  /* Scores */
-  .scores { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow); }
-  .score-row { display: grid; grid-template-columns: 200px 1fr 42px; align-items: center; gap: 16px; padding: 9px 0; }
-  .score-row + .score-row { border-top: 1px solid var(--border); }
-  .score-row .name { font-size: 14.5px; color: var(--ink); font-weight: 500; }
-  .score-row .name small { display: block; color: var(--ink-3); font-size: 12px; font-weight: 400; }
-  .bar { height: 9px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
-  .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--sc); }
-  .score-row .val { font-family: var(--mono); font-size: 15px; font-weight: 600; text-align: right; color: var(--sc); }
-  .sc-good { --sc: var(--good); }
-  .sc-mid { --sc: var(--imp); }
-  .sc-low { --sc: var(--crit); }
-  .score-global { margin-top: 4px; }
-  .score-global .name { font-weight: 700; }
-
-  /* Two-column generic */
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-  .card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 20px 22px; box-shadow: var(--shadow);
-  }
-  .card h3 { font-size: 15px; font-weight: 680; margin-bottom: 12px; display: flex; align-items: center; gap: 9px; }
-  .card h3 .ic { color: var(--accent); font-family: var(--mono); font-weight: 700; }
-  ul.clean { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-  ul.clean li { position: relative; padding-left: 20px; color: var(--ink-2); font-size: 14.5px; }
-  ul.clean li::before { content: ""; position: absolute; left: 2px; top: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-  ul.clean.warn li::before { background: var(--imp); }
-  ul.clean.good li::before { background: var(--good); }
-  ul.clean li b { color: var(--ink); font-weight: 600; }
-
-  /* Actions */
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-  .action-list { counter-reset: step; display: flex; flex-direction: column; gap: 14px; }
-  .action {
-    display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start;
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow);
-  }
-  .action .step {
-    counter-increment: step; font-family: var(--mono); font-weight: 700; font-size: 14px;
-    width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center;
-    background: var(--accent-soft); color: var(--accent-ink);
-  }
-  .action .step::before { content: counter(step); }
-  .action p { font-size: 14.5px; color: var(--ink); }
-  .qw { display: flex; flex-direction: column; gap: 9px; }
-  .qw .qwi { display: flex; gap: 11px; align-items: flex-start; font-size: 14px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; }
-  .qw .qwi .tick { color: var(--good); font-weight: 700; font-family: var(--mono); flex: none; }
-
-  /* Risk matrix */
-  .matrix-wrap { overflow-x: auto; }
-  .matrix { border-collapse: separate; border-spacing: 8px; min-width: 640px; width: 100%; }
-  .matrix caption { text-align: left; color: var(--ink-3); font-size: 12.5px; margin-bottom: 6px; }
-  .matrix th { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 4px; }
-  .matrix th.rowh { text-align: right; width: 90px; white-space: nowrap; }
-  .matrix td { vertical-align: top; border-radius: 10px; padding: 10px; min-height: 74px; border: 1px solid var(--border); background: var(--surface); }
-  .zone-hi { background: var(--crit-soft); border-color: color-mix(in srgb, var(--crit) 35%, transparent); }
-  .zone-mid { background: var(--imp-soft); border-color: color-mix(in srgb, var(--imp) 30%, transparent); }
-  .zone-lo { background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 28%, transparent); }
-  .risk-chip { display: block; font-size: 12.5px; line-height: 1.35; color: var(--ink); margin: 4px 0; padding-left: 14px; position: relative; }
-  .risk-chip::before { content: ""; position: absolute; left: 0; top: 6px; width: 7px; height: 7px; border-radius: 2px; background: var(--rc, var(--ink-3)); }
-  .rc-crit { --rc: var(--crit); }
-  .rc-imp { --rc: var(--imp); }
-  .rc-sug { --rc: var(--sug); }
-
-  /* Findings */
-  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-  .filter {
-    font: inherit; font-size: 13px; cursor: pointer; padding: 6px 13px; border-radius: 999px;
-    border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
-    display: inline-flex; align-items: center; gap: 7px;
-  }
-  .filter .c { width: 8px; height: 8px; border-radius: 50%; }
-  .filter[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-  .filter:hover { border-color: var(--ink-3); }
-
-  .findings { display: flex; flex-direction: column; gap: 14px; }
-  .finding {
-    background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--sev);
-    border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
-  }
-  .finding.sev-critique { --sev: var(--crit); --sev-soft: var(--crit-soft); }
-  .finding.sev-important { --sev: var(--imp); --sev-soft: var(--imp-soft); }
-  .finding.sev-suggestion { --sev: var(--sug); --sev-soft: var(--sug-soft); }
-  .finding.sev-hors_securite { --sev: var(--neutral); --sev-soft: var(--neutral-soft); }
-  .f-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 11px; }
-  .sev-tag {
-    font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--sev); background: var(--sev-soft); border-radius: 6px; padding: 4px 9px;
-  }
-  .cat-tag { font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; }
-  .f-loc { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--ink-3); word-break: break-all; }
-  .f-title { font-size: 15.5px; font-weight: 650; color: var(--ink); margin-bottom: 10px; }
-  .f-body { display: flex; flex-direction: column; gap: 9px; }
-  .f-line { font-size: 14px; color: var(--ink-2); }
-  .f-line .k { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); display: inline-block; min-width: 78px; }
-  .f-line.impact { color: var(--ink); }
-  .f-line.fix { background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px; }
-  .f-ctx { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
-  .ctx { font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--surface-2); border-radius: 6px; padding: 3px 8px; }
-  .ctx b { color: var(--ink); font-weight: 600; }
-  .conf { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
-
-  /* Divergences table */
-  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
-  table.div { border-collapse: collapse; width: 100%; min-width: 680px; }
-  table.div th, table.div td { text-align: left; padding: 13px 16px; font-size: 14px; vertical-align: top; border-bottom: 1px solid var(--border); }
-  table.div th { font-family: var(--mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; background: var(--surface-2); }
-  table.div tr:last-child td { border-bottom: none; }
-  table.div td.doc { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); }
-  table.div td b { color: var(--ink); }
-
-  footer { border-top: 1px solid var(--border); margin-top: 60px; padding: 26px 0 40px; color: var(--ink-3); font-size: 13px; }
-  .footer-inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
-
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-
-  @media (max-width: 780px) {
-    .kpis { grid-template-columns: repeat(2, 1fr); }
-    .cols, .actions { grid-template-columns: 1fr; }
-    .verdict { grid-template-columns: 1fr; text-align: left; }
-    .gauge { text-align: left; }
-    .score-row { grid-template-columns: 130px 1fr 38px; }
-    .score-row .name small { display: none; }
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .bar > i { transition: width .6s cubic-bezier(.2,.7,.2,1); }
-    .finding, .kpi { transition: opacity .2s ease; }
-  }
+@media (max-width: 760px) {
+  .board { grid-template-columns: minmax(0, 1fr); }
+  .verdict { border-right: 0; padding-right: 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .plan, .goods, .two { grid-template-columns: minmax(0, 1fr); }
+  .score { grid-template-columns: minmax(0, 1fr) 44px; }
+  .score .meter { grid-column: 1 / 3; grid-row: 2; }
+  .score .why { grid-column: 1 / 3; margin-top: 0; }
+  dl.infra > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .todo { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .wrap { gap: 44px; padding-inline: 16px; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 </style>
 </head>
 <body>
-<header>
-  <div class="header-inner">
-    <div class="topbar">
-      <div class="brand"><span class="dot"></span> Flash Drum · Audit technique</div>
-      <button class="theme-toggle" id="themeBtn" type="button" aria-label="Changer de thème">
-        <span id="themeIcon">◑</span><span id="themeLbl">Thème</span>
-      </button>
-    </div>
-    <p class="eyebrow">Revue de code, architecture &amp; infrastructure</p>
-    <h1>Plugin VST3 solide et bien testé, mais son cœur temps-réel enfreint ses propres règles.</h1>
-    <p class="subtitle">Séquenceur de batterie 64 pas en Rust (nih-plug + egui), grille modulaire de 14 slots. L'ossature est saine ; les corrections à mener touchent surtout la sécurité du thread audio et quelques angles morts de couverture.</p>
-    <div class="meta-row">
-      <span class="meta">Projet&nbsp;: <b>drum-pattern-vst</b></span>
-      <span class="meta">Build audité&nbsp;: <b>20260705-122315</b></span>
-      <span class="meta">Langage&nbsp;: <b>Rust</b></span>
-      <span class="meta">Tests&nbsp;: <b>106</b></span>
-      <span class="meta">Findings&nbsp;: <b>16</b></span>
-    </div>
-    <div class="verdict">
-      <span class="verdict-badge">À retravailler</span>
-      <p class="verdict-text">Aucun blocage majeur d'architecture&nbsp;: la base peut évoluer. Mais <b>une faille critique de temps-réel</b> (verrous et allocations dans le callback audio) contredit une règle interne du projet et doit être traitée avant toute nouvelle fonctionnalité.</p>
-      <div class="gauge">
-        <span class="num">6</span><span class="den">/10</span>
-        <span class="lbl">Score global</span>
-      </div>
-    </div>
-  </div>
-</header>
-
-<main class="wrap">
-
-  <!-- KPIs -->
-  <section aria-label="Répartition des findings">
-    <div class="kpis">
-      <div class="kpi crit"><div class="n">1</div><div class="t">Critique — à corriger en priorité</div></div>
-      <div class="kpi imp"><div class="n">7</div><div class="t">Important — impact réel</div></div>
-      <div class="kpi sug"><div class="n">5</div><div class="t">Suggestion — amélioration</div></div>
-      <div class="kpi neutral"><div class="n">3</div><div class="t">Hors sécurité — dette qualité</div></div>
-    </div>
-  </section>
-
-  <!-- Résumé exécutif -->
-  <section>
-    <div class="sec-head">
-      <p class="eyebrow">Pour le pilotage</p>
-      <h2>Ce qu'il faut retenir</h2>
-    </div>
-    <div class="cols">
-      <div class="card">
-        <h3><span class="ic">▲</span> Le risque principal, en clair</h3>
-        <p class="f-line">Dans un plugin audio, le « thread audio » doit rendre le son sans jamais s'interrompre. La règle d'or (écrite noir sur blanc dans la doc du projet) interdit d'y poser un <b>verrou</b> ou d'y <b>réserver de la mémoire</b>, car cela peut geler le rendu quelques millisecondes&nbsp;— assez pour produire un <b>craquement audible</b> voire faire décrocher le DAW.</p>
-        <p class="f-line" style="margin-top:10px">L'audit a trouvé les deux à la fois&nbsp;: des verrous <span class="mono">Mutex</span> et des allocations mémoire s'exécutent dans ce thread, dont certains <b>automatiquement pendant la lecture</b> (mode song) et à chaque <b>changement d'instrument</b>. C'est le seul point classé critique.</p>
-      </div>
-      <div class="card">
-        <h3><span class="ic">✓</span> Ce qui est déjà bien tenu</h3>
-        <ul class="clean good">
-          <li>La boucle de rendu échantillon par échantillon, elle, est <b>propre</b> (sans allocation ni verrou)&nbsp;: le problème est localisé, pas systémique.</li>
-          <li><b>106 tests</b> couvrent le timing, la sauvegarde/restauration et les anti-craquements — un vrai filet de sécurité.</li>
-          <li>Conception <b>« data-driven »</b> claire et <b>aucun secret</b> dans le code.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <!-- Scores -->
-  <section>
-    <div class="sec-head">
-      <p class="eyebrow">Notation /10 · plus c'est haut, mieux c'est</p>
-      <h2>Scores par dimension</h2>
-    </div>
-    <div class="scores">
-      <div class="score-row"><div class="name">Sécurité <small>surface d'attaque, secrets, mémoire</small></div><div class="bar"><i class="sc-good" style="width:70%"></i></div><div class="val sc-good">7</div></div>
-      <div class="score-row"><div class="name">Performance <small>discipline temps-réel</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
-      <div class="score-row"><div class="name">Architecture <small>structure, couplage</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
-      <div class="score-row"><div class="name">Qualité de code <small>lisibilité, dette</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
-      <div class="score-row"><div class="name">Bugs potentiels <small>robustesse</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
-      <div class="score-row"><div class="name">Dépendances <small>gestion, reproductibilité</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
-      <div class="score-row"><div class="name">Tests <small>couverture</small></div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
-      <div class="score-row"><div class="name">Infrastructure <small>build, CI, livraison</small></div><div class="bar"><i class="sc-mid" style="width:50%"></i></div><div class="val sc-mid">5</div></div>
-      <div class="score-row score-global"><div class="name">Global</div><div class="bar"><i class="sc-mid" style="width:60%"></i></div><div class="val sc-mid">6</div></div>
-    </div>
-  </section>
-
-  <!-- Actions -->
-  <section>
-    <div class="sec-head">
-      <p class="eyebrow">Plan d'action</p>
-      <h2>Top 3 des priorités &amp; quick wins</h2>
-      <p>À gauche, les 3 chantiers à ordonnancer. À droite, cinq actions faisables en moins de 30 minutes chacune.</p>
-    </div>
-    <div class="actions">
-      <div class="action-list">
-        <div class="action"><div class="step"></div><p><b>Sortir les verrous et allocations du thread audio.</b> Remplacer les <span class="mono">Mutex::lock()</span> par une tentative non bloquante avec report, ou passer par une file lock-free UI→audio. Pré-allouer les voix pour éviter le <span class="mono">Box::new</span> au changement d'instrument.</p></div>
-        <div class="action"><div class="step"></div><p><b>Corriger l'export MIDI.</b> Couvrir les 14 slots (aujourd'hui le 14ᵉ est perdu) et respecter la note MIDI configurée par slot dans l'onglet Track. Ajouter un test dédié.</p></div>
-        <div class="action"><div class="step"></div><p><b>Fiabiliser le générateur &amp; le combler de tests.</b> Adapter la génération aux instruments réels de chaque slot (au lieu des rôles figés par ligne), et couvrir par des tests le générateur et le routage mute/solo — aujourd'hui sans aucun filet.</p></div>
-      </div>
-      <div class="qw">
-        <div class="qwi"><span class="tick">✓</span> Versionner <span class="mono">Cargo.lock</span> (le retirer du <span class="mono">.gitignore</span>) pour des builds reproductibles.</div>
-        <div class="qwi"><span class="tick">✓</span> Retirer du dépôt <span class="mono">fix_roles.pdb</span> et les <span class="mono">.zip</span> redondants&nbsp;; ajouter <span class="mono">*.pdb</span> au <span class="mono">.gitignore</span>.</div>
-        <div class="qwi"><span class="tick">✓</span> Corriger les docs «&nbsp;13 voix / 13 sorties&nbsp;» → 14, et «&nbsp;pattern-v1&nbsp;» → «&nbsp;pattern-v5&nbsp;».</div>
-        <div class="qwi"><span class="tick">✓</span> Sortir <span class="mono">.claude/settings.local.json</span> du suivi git (chemins propres à un poste).</div>
-        <div class="qwi"><span class="tick">✓</span> Conditionner les journaux <span class="mono">nih_log!</span> du thread audio au build debug.</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Risk matrix -->
-  <section>
-    <div class="sec-head">
-      <p class="eyebrow">Impact × Probabilité</p>
-      <h2>Matrice des risques</h2>
-      <p>Positionnement des principaux risques. La zone rouge (haut-droite) concentre ce qui est à la fois grave et probable.</p>
-    </div>
-    <div class="matrix-wrap">
-      <table class="matrix">
-        <caption>Lignes&nbsp;: impact — Colonnes&nbsp;: probabilité d'occurrence</caption>
-        <thead>
-          <tr><th></th><th>Faible</th><th>Moyenne</th><th>Élevée</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <th class="rowh">Impact&nbsp;élevé</th>
-            <td class="zone-mid"><span class="risk-chip rc-sug">panic=abort&nbsp;: un bug d'index fait tomber le DAW</span></td>
-            <td class="zone-hi"><span class="risk-chip rc-crit">Verrou Mutex sur le thread audio</span><span class="risk-chip rc-crit">Allocation mémoire sur le thread audio</span></td>
-            <td class="zone-hi"></td>
-          </tr>
-          <tr>
-            <th class="rowh">Impact&nbsp;moyen</th>
-            <td class="zone-lo"><span class="risk-chip rc-imp">Journaux/alloc au save/load</span></td>
-            <td class="zone-mid"><span class="risk-chip rc-imp">Export MIDI perd le 14ᵉ slot</span><span class="risk-chip rc-imp">Zones sans tests (générateur, routing)</span></td>
-            <td class="zone-hi"><span class="risk-chip rc-imp">Générateur&nbsp;: rôles incohérents</span></td>
-          </tr>
-          <tr>
-            <th class="rowh">Impact&nbsp;faible</th>
-            <td class="zone-lo"></td>
-            <td class="zone-lo"><span class="risk-chip rc-sug">Cargo.lock non versionné</span></td>
-            <td class="zone-mid"></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- Findings détaillés -->
-  <section>
-    <div class="sec-head">
-      <p class="eyebrow">Détail technique · 16 findings</p>
-      <h2>Constats détaillés</h2>
-      <p>Chaque constat indique l'impact concret, la correction proposée, et des facteurs de contexte (exposition, exploitabilité, protections en place, données concernées). Filtrez par priorité&nbsp;:</p>
-    </div>
-    <div class="filters" role="group" aria-label="Filtrer par priorité">
-      <button class="filter" data-f="all" aria-pressed="true">Tous (16)</button>
-      <button class="filter" data-f="critique" aria-pressed="false"><span class="c" style="background:var(--crit)"></span> Critique (1)</button>
-      <button class="filter" data-f="important" aria-pressed="false"><span class="c" style="background:var(--imp)"></span> Important (7)</button>
-      <button class="filter" data-f="suggestion" aria-pressed="false"><span class="c" style="background:var(--sug)"></span> Suggestion (5)</button>
-      <button class="filter" data-f="hors_securite" aria-pressed="false"><span class="c" style="background:var(--neutral)"></span> Hors sécurité (3)</button>
-    </div>
-
-    <div class="findings" id="findings">
-
-      <!-- CRITIQUE -->
-      <article class="finding sev-critique" data-sev="critique">
-        <div class="f-top"><span class="sev-tag">Critique</span><span class="cat-tag">code</span><span class="f-loc">lib.rs:2750 · 1981 · 1954</span></div>
-        <div class="f-title">Verrous <span class="mono">Mutex</span> bloquants sur le thread audio (mode song, chargement, sauvegarde)</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Viole la règle interne « no blocking locks in the audio thread » (AGENTS.md L172). Si l'UI détient le verrou de la banque de patterns pendant que l'audio le demande, le rendu se bloque → craquement, voire décrochage (xrun). Le mode song déclenche ce verrou <b>automatiquement à chaque bouclage</b>. Aggravant&nbsp;: la sauvegarde alloue aussi de la mémoire dans ce thread.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Utiliser <span class="mono">try_lock()</span> avec report au bloc suivant, ou une file lock-free (SPSC) UI→audio + double-buffer atomique pour la banque de patterns.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>partielle</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <!-- IMPORTANTS -->
-      <article class="finding sev-important" data-sev="important">
-        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">synthesis/mod.rs:847 · lib.rs:2353</span></div>
-        <div class="f-title">Allocation mémoire (<span class="mono">Box::new</span>) sur le thread audio au changement d'instrument</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Réassigner ou ajouter un instrument pendant la lecture réserve de la mémoire dans le callback temps-réel → risque de craquement. Action utilisateur courante dans une grille modulaire.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Pré-allouer les 14 voix possibles (ou un pool par type) et se contenter d'un reset sans allocation&nbsp;; ou construire la voix côté UI et l'échanger via un pointeur atomique.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <article class="finding sev-important" data-sev="important">
-        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">midi_export.rs:81</span></div>
-        <div class="f-title">L'export MIDI perd le 14ᵉ slot et ignore les notes MIDI par slot</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> L'export parcourt 13 voix alors que la grille en compte 14&nbsp;: un pattern utilisant le 14ᵉ slot exporte/glisse vers le DAW sans cette piste. Et les notes MIDI personnalisées (onglet Track) ne sont pas respectées → le clip généré ne correspond pas au réglage utilisateur.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Itérer sur les 14 slots et dériver la note depuis le layout (type + note du slot), avec un test couvrant le 14ᵉ slot et une note personnalisée.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <article class="finding sev-important" data-sev="important">
-        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">lib.rs:1961 (×9)</span></div>
-        <div class="f-title">Journaux <span class="mono">nih_log!</span> (formatage + I/O) sur le thread audio</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Neuf appels de journalisation dans les chemins sauvegarde/chargement/migration exécutés sur le callback audio&nbsp;: formatage de chaîne et écriture = allocation + I/O interdites en temps-réel. Combiné au verrou du même chemin, cela amplifie le risque de glitch.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Retirer ces journaux du thread audio ou les conditionner à <span class="mono">#[cfg(debug_assertions)]</span>&nbsp;; remonter tout diagnostic via un compteur atomique côté UI.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>partielle</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <article class="finding sev-important" data-sev="important">
-        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">infrastructure</span><span class="f-loc">.gitignore:3</span></div>
-        <div class="f-title"><span class="mono">Cargo.lock</span> ignoré par git alors que le projet livre un binaire</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Sans <span class="mono">Cargo.lock</span> versionné, deux compilations à des dates différentes peuvent tirer des versions de dépendances différentes → builds non reproductibles, régressions difficiles à diagnostiquer, risque supply-chain (mise à jour transitive non maîtrisée).</p>
-          <p class="f-line fix"><span class="k">Correction</span> Committer <span class="mono">Cargo.lock</span> et le retirer du <span class="mono">.gitignore</span>&nbsp;; figer une baseline connue.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>théorique</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <article class="finding sev-important" data-sev="important">
-        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">generator/mod.rs:69</span></div>
-        <div class="f-title">Le générateur cable les rôles d'instruments par ligne, incohérent avec la grille modulaire</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> La génération suppose « ligne 0 = kick, 1 = snare, 3 = open hi-hat… » alors que le layout par défaut est BD/SD/HH/Tom et qu'un slot peut porter n'importe quel instrument. Résultat&nbsp;: GENERATE place des événements sur les mauvaises pistes (musicalement incohérent). Correspond à la tâche MG-10 du backlog.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Piloter le générateur par le type réel de chaque slot plutôt que par l'index de ligne&nbsp;; gérer les slots dupliqués.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>triviale</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <article class="finding sev-important" data-sev="important">
-        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">generator/ (tout le module)</span></div>
-        <div class="f-title">Aucun test sur le générateur de patterns</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Fonctionnalité utilisateur majeure (4 techniques de génération) sans aucun filet de régression&nbsp;: toute modification, dont le correctif des rôles ci-dessus, ne pourra pas être validée automatiquement.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Ajouter des tests déterministes avec générateur aléatoire seedé&nbsp;: densité/nombre de hits attendus, validité euclidienne, bornes de probabilité, cohérence Markov.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <article class="finding sev-important" data-sev="important">
-        <div class="f-top"><span class="sev-tag">Important</span><span class="cat-tag">code</span><span class="f-loc">lib.rs:2271</span></div>
-        <div class="f-title">Le routage mute / solo / mix n'a aucun test</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Logique combinatoire critique (le solo prime sur le mute, gestion de plusieurs solos, exclusion du mix principal) sans test&nbsp;: une régression (solo qui ne coupe pas, mute inversé) ne serait détectée qu'à l'oreille.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Extraire la logique de gating dans une fonction pure testable&nbsp;; cas&nbsp;: 1 mute, 1 solo, mute+solo, plusieurs solos, aucun.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <!-- SUGGESTIONS -->
-      <article class="finding sev-suggestion" data-sev="suggestion">
-        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">infrastructure</span><span class="f-loc">lib.rs:38</span></div>
-        <div class="f-title">Les noms des sorties auxiliaires sont figés sur l'ancien mapping</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Les bus auxiliaires portent des noms d'instruments legacy (« Open HH », « Tom 1 »…) qui ne correspondent plus au slot réel&nbsp;: dans le DAW, l'utilisateur route « Open HH » alors que la piste joue un Tom.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Utiliser des noms stables et génériques (Out 1…14), ou exposer le nom du slot courant si l'hôte le supporte.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>triviale</b></span><span class="ctx">Protections&nbsp;: <b>aucune</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
-      </article>
-
-      <article class="finding sev-suggestion" data-sev="suggestion">
-        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">code</span><span class="f-loc">lib.rs:47</span></div>
-        <div class="f-title"><span class="mono">panic = "abort"</span> combiné à des accès par index directs sur le thread audio</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Choix raisonnable pour un plugin, mais il transforme tout bug d'index en crash du DAW (perte de session non sauvegardée). La surface est aujourd'hui maîtrisée (indices bornés) mais fragile à l'évolution.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Garder <span class="mono">panic="abort"</span> mais préférer <span class="mono">get()</span>/<span class="mono">get_mut()</span> + branche défensive pour les indices dérivés de l'état, comme déjà fait ailleurs.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>théorique</b></span><span class="ctx">Protections&nbsp;: <b>robuste</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
-      </article>
-
-      <article class="finding sev-suggestion" data-sev="suggestion">
-        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">infrastructure</span><span class="f-loc">.claude/settings.local.json</span></div>
-        <div class="f-title">Configuration locale d'outillage versionnée (chemins propres au poste)</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Le fichier contient des chemins absolus spécifiques à une machine&nbsp;: churn git inutile, fuite de l'arborescence locale, sans valeur pour un autre contributeur.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Retirer du suivi git et ajouter au <span class="mono">.gitignore</span>&nbsp;; ne versionner qu'un settings partagé si nécessaire.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>inconnu</b></span><span class="ctx">Données&nbsp;: <b>publiques</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
-      </article>
-
-      <article class="finding sev-suggestion" data-sev="suggestion">
-        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">code</span><span class="f-loc">synthesis/settings/</span></div>
-        <div class="f-title">Un seul instrument testé pour la sauvegarde/restauration de ses réglages</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Sur ~11 modules de réglages, seul le kick a un test de round-trip. Pour les autres, un champ oublié = perte silencieuse d'un réglage utilisateur au rechargement du projet.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Généraliser le test de round-trip à toutes les voix (macro ou test paramétré), en vérifiant l'égalité de tous les champs.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>conditionnelle</b></span><span class="ctx">Protections&nbsp;: <b>partielle</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
-      </article>
-
-      <article class="finding sev-suggestion" data-sev="suggestion">
-        <div class="f-top"><span class="sev-tag">Suggestion</span><span class="cat-tag">code</span><span class="f-loc">native_drag.rs:348</span></div>
-        <div class="f-title">Code Windows bas niveau (COM/OLE) sans test ni documentation de sûreté</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> 31 blocs <span class="mono">unsafe</span> manipulant des pointeurs bruts et de la mémoire Win32 pour le drag MIDI. Fonctionnel et correct, mais une régression y serait une corruption mémoire dans le processus du DAW, difficile à diagnostiquer.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Documenter les invariants (<span class="mono">// SAFETY:</span>) sur chaque fonction unsafe et ajouter un test de la construction de la structure de drag.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>authentifié</b></span><span class="ctx">Exploitabilité&nbsp;: <b>théorique</b></span><span class="ctx">Protections&nbsp;: <b>partielle</b></span><span class="ctx">Données&nbsp;: <b>métier</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
-      </article>
-
-      <!-- HORS SÉCURITÉ -->
-      <article class="finding sev-hors_securite" data-sev="hors_securite">
-        <div class="f-top"><span class="sev-tag">Hors sécurité</span><span class="cat-tag">infrastructure</span><span class="f-loc">fix_roles.pdb + .zip</span></div>
-        <div class="f-title">Artefacts binaires et archives commités dans le dépôt</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Un fichier de debug (<span class="mono">fix_roles.pdb</span>) et plusieurs <span class="mono">.zip</span> redondants sont versionnés (le <span class="mono">.gitignore</span> couvre .dll/.exe mais pas .pdb/.zip). Gonfle le dépôt et brouille l'historique&nbsp;; le nom « fix_roles » suggère un résidu de réparation.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Supprimer du suivi git et ajouter <span class="mono">*.pdb</span> / <span class="mono">*.zip</span> au <span class="mono">.gitignore</span>.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>inconnu</b></span><span class="ctx">Données&nbsp;: <b>publiques</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-      <article class="finding sev-hors_securite" data-sev="hors_securite">
-        <div class="f-top"><span class="sev-tag">Hors sécurité</span><span class="cat-tag">code</span><span class="f-loc">ui.rs (5919 l.) · lib.rs (3173 l.)</span></div>
-        <div class="f-title">Fichiers « god object » difficiles à maintenir</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> <span class="mono">ui.rs</span> concentre grille, éditeur de son, menus et popups sur près de 6000 lignes&nbsp;; cette densité a directement causé des bugs d'indexation répétés dans l'historique récent. Le risque de régression croît avec la taille.</p>
-          <p class="f-line fix"><span class="k">Correction</span> Découper <span class="mono">ui.rs</span> en sous-modules (grille, éditeur, menus, popups)&nbsp;; extraire les grosses tables de <span class="mono">lib.rs</span>.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>inconnu</b></span><span class="ctx">Données&nbsp;: <b>publiques</b></span><span class="conf">confiance&nbsp;: moyenne</span></div>
-      </article>
-
-      <article class="finding sev-hors_securite" data-sev="hors_securite">
-        <div class="f-top"><span class="sev-tag">Hors sécurité</span><span class="cat-tag">code</span><span class="f-loc">ui/design_system.rs · theme.rs</span></div>
-        <div class="f-title">Code d'échafaudage mort (~37 warnings de compilation)</div>
-        <div class="f-body">
-          <p class="f-line impact"><span class="k">Impact</span> Widgets et constantes jamais utilisés + une API dépréciée (<span class="mono">allocate_ui_at_rect</span>) génèrent ~37 warnings qui masquent d'éventuels vrais avertissements et entretiennent la confusion sur ce qui est réellement câblé. Déjà noté (tâche 100aa).</p>
-          <p class="f-line fix"><span class="k">Correction</span> Supprimer le code non câblé ou l'annoter avec justification&nbsp;; remplacer l'API dépréciée&nbsp;; viser 0 warning.</p>
-        </div>
-        <div class="f-ctx"><span class="ctx">Exposition&nbsp;: <b>interne</b></span><span class="ctx">Exploitabilité&nbsp;: <b>inconnu</b></span><span class="ctx">Protections&nbsp;: <b>inconnu</b></span><span class="ctx">Données&nbsp;: <b>publiques</b></span><span class="conf">confiance&nbsp;: haute</span></div>
-      </article>
-
-    </div>
-  </section>
-
-  <!-- Architecture & Infra -->
-  <section>
-    <div class="sec-head">
-      <p class="eyebrow">Vue d'ensemble</p>
-      <h2>Architecture &amp; infrastructure</h2>
-    </div>
-    <div class="cols">
-      <div class="card">
-        <h3><span class="ic">◆</span> Points forts d'architecture</h3>
-        <ul class="clean good">
-          <li>Séparation nette UI / audio, état partagé lock-free dans la boucle de rendu.</li>
-          <li>Registre d'instruments « source unique de vérité » — ajout d'instrument = édition de données.</li>
-          <li>Migrations de sauvegarde versionnées et testées.</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3><span class="ic">◆</span> Points faibles</h3>
-        <ul class="clean warn">
-          <li>Verrous/allocations dans le thread audio (voir constat critique).</li>
-          <li>Double indexation « slot / voix », source récurrente de bugs.</li>
-          <li>Fichiers géants et code d'échafaudage mort.</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3><span class="ic">▸</span> Infrastructure</h3>
-        <ul class="clean">
-          <li><b>Livrable</b>&nbsp;: un unique bundle VST3 chargé par un DAW. Aucun réseau, base de données ni secret.</li>
-          <li><b>Build</b>&nbsp;: script PowerShell manuel (compile, assemble, installe). <b>Aucune CI/CD.</b></li>
-          <li><b>Monitoring</b>&nbsp;: aucun (normal pour un plugin desktop)&nbsp;; identifiant de build affiché dans l'UI.</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h3><span class="ic">▸</span> Résilience</h3>
-        <ul class="clean">
-          <li><span class="mono">panic = "abort"</span>&nbsp;: tout panic dans le rendu fait tomber le DAW hôte.</li>
-          <li>Contention possible du verrou de banque entre UI et audio.</li>
-          <li>Pas de sauvegarde hors état de projet du DAW.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <!-- Divergences doc -->
-  <section>
-    <div class="sec-head">
-      <p class="eyebrow">Documentation vs code réel</p>
-      <h2>Divergences de documentation</h2>
-      <p>La documentation décrit par endroits un état antérieur du produit. À aligner pour éviter les erreurs d'un nouvel arrivant.</p>
-    </div>
-    <div class="table-wrap">
-      <table class="div">
-        <thead><tr><th>Document</th><th>Ce que dit la doc</th><th>La réalité du code</th><th>Conséquence</th></tr></thead>
-        <tbody>
-          <tr>
-            <td class="doc">CLAUDE.md · README.md · infrastructure.md</td>
-            <td>«&nbsp;13 voix&nbsp;» et «&nbsp;13 sorties stéréo aux&nbsp;»</td>
-            <td><b>14 slots</b> et <b>14 sorties</b> (13 voix DSP legacy, mais 14 slots).</td>
-            <td>Sous-estime le modèle modulaire&nbsp;; entretient la confusion slot/voix, justement source de bugs.</td>
-          </tr>
-          <tr>
-            <td class="doc">AGENTS.md · CLAUDE.md</td>
-            <td>La grille est persistée dans le champ «&nbsp;pattern-v1&nbsp;».</td>
-            <td>Le champ réel est <b>«&nbsp;pattern-v5&nbsp;»</b> (migrations v3/v4 → v5).</td>
-            <td>Instruction contradictoire&nbsp;: un agent pourrait croire devoir préserver «&nbsp;pattern-v1&nbsp;».</td>
-          </tr>
-          <tr>
-            <td class="doc">docs/infrastructure.md</td>
-            <td>Diagramme «&nbsp;13 voices + Plocks&nbsp;».</td>
-            <td>14 slots actifs possibles, défaut 4 pistes (BD/SD/HH/Tom).</td>
-            <td>Documentation d'architecture obsolète vs modèle actuel.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- Positifs -->
-  <section>
-    <div class="sec-head">
-      <p class="eyebrow">À préserver</p>
-      <h2>Points positifs</h2>
-    </div>
-    <div class="card">
-      <ul class="clean good">
-        <li><b>Discipline temps-réel exemplaire dans le hot path</b>&nbsp;: la boucle de rendu échantillon par échantillon n'alloue pas et ne verrouille pas — état lock-free, file de déclenchements pré-allouée, types copiables. Le problème critique est en périphérie, pas au cœur.</li>
-        <li><b>Suite de tests solide (106 tests)</b>&nbsp;: timing du séquenceur (dérive, swing, polyrythmie), round-trips et migrations de sauvegarde, anti-craquement du kick, tests de charge longue durée.</li>
-        <li><b>Conception data-driven propre</b>&nbsp;: registre d'instruments unique, UI générée depuis les données, pas de dispatch dynamique dans le moteur audio.</li>
-        <li><b>Aucun secret en dur</b>, dépendances minimales et ciblées, invariants critiques documentés (AGENTS.md, guides, handoffs de session).</li>
-      </ul>
-    </div>
-  </section>
-
-</main>
-
-<footer>
-  <div class="wrap footer-inner">
-    <span>Audit généré par Claude Code · Flash Drum (drum-pattern-vst)</span>
-    <span class="mono">verdict : À retravailler · global 6/10 · 16 findings</span>
-  </div>
-</footer>
-
-<script>
-  (function () {
-    var root = document.documentElement;
-    var btn = document.getElementById('themeBtn');
-    var icon = document.getElementById('themeIcon');
-    var lbl = document.getElementById('themeLbl');
-    function apply(mode) {
-      if (mode === 'system') { root.removeAttribute('data-theme'); }
-      else { root.setAttribute('data-theme', mode); }
-      var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      icon.textContent = dark ? '☀' : '☾';
-      lbl.textContent = dark ? 'Clair' : 'Sombre';
+<div class="wrap">
+<header class="hero">
+<p class="eyebrow">Rapport d'audit · 24 septembre 2026 · code, architecture et infrastructure</p>
+<h1>Audit Flash Drum</h1>
+<p class="lead">Le plugin est bien construit et bien testé côté moteur, mais un chemin du thread audio enfreint ses propres règles temps réel, deux bugs visibles attendent un correctif de quelques minutes, et la chaîne de livraison (installation, journalisation, CI) est le maillon faible.</p>
+<div class="meta"><span>Modèle : claude-opus-5-5[1m]</span><span>Méthode : 4 audits parallèles, 21 constats bruts → 18 après fusion et vérification dans le code</span><span>Source : audit_cr/claude-code.json</span></div>
+<div class="board">
+<div class="verdict"><span class="eyebrow">Verdict</span><span class="v">À retravailler</span><span class="g">6<small> / 10</small></span><span class="muted" style="font-size:.875rem">note globale</span></div>
+<div class="tally"><div class="counts">
+<span class="count"><span class="dot dot-crit"></span>Critique <b>1</b></span>
+<span class="count"><span class="dot dot-imp"></span>Important <b>10</b></span>
+<span class="count"><span class="dot dot-sug"></span>Suggestion <b>5</b></span>
+<span class="count"><span class="dot dot-hs"></span>Hors sécurité <b>2</b></span>
+</div><nav class="pads" aria-label="Accès direct aux 18 constats">
+<a class="pad pad-crit" href="#f1" title="F1 · Critique — Sauvegarder un pattern pendant la lecture fait craquer l&#x27;audio">F1</a>
+<a class="pad pad-imp" href="#f2" title="F2 · Important — Un WAV remplacé peut être libéré en plein rendu audio">F2</a>
+<a class="pad pad-imp" href="#f3" title="F3 · Important — Chemins réseau des textures ouverts sans contrôle">F3</a>
+<a class="pad pad-imp" href="#f4" title="F4 · Important — L&#x27;installation peut laisser un plugin incomplet (c&#x27;est le cas sur ce poste)">F4</a>
+<a class="pad pad-imp" href="#f5" title="F5 · Important — Le build livré écrit un journal de dev dans E:\tmp">F5</a>
+<a class="pad pad-imp" href="#f6" title="F6 · Important — Renommer un preset le fait disparaître du navigateur">F6</a>
+<a class="pad pad-imp" href="#f7" title="F7 · Important — La fenêtre Presets relit le disque à chaque image">F7</a>
+<a class="pad pad-imp" href="#f8" title="F8 · Important — Dossier Documents mal déterminé (OneDrive, macOS)">F8</a>
+<a class="pad pad-imp" href="#f9" title="F9 · Important — Les tests ne protègent pas le format des projets sauvegardés">F9</a>
+<a class="pad pad-imp" href="#f10" title="F10 · Important — La CI ne vérifie ni macOS, ni clippy, ni les patchs vendorés">F10</a>
+<a class="pad pad-imp" href="#f11" title="F11 · Important — Dépôt public : scan d&#x27;un livre protégé, aucune licence">F11</a>
+<a class="pad pad-sug" href="#f12" title="F12 · Suggestion — Oh6smp : le Sound Editor montre la forme d&#x27;onde du charley fermé">F12</a>
+<a class="pad pad-sug" href="#f13" title="F13 · Suggestion — Générateur : un futur instrument oublié ferait planter GENERATE">F13</a>
+<a class="pad pad-sug" href="#f14" title="F14 · Suggestion — Échecs d&#x27;enregistrement des presets passés sous silence">F14</a>
+<a class="pad pad-sug" href="#f15" title="F15 · Suggestion — Fork nih-plug et dépendances git non traçables">F15</a>
+<a class="pad pad-sug" href="#f16" title="F16 · Suggestion — Symboles de débogage conservés trop peu de temps">F16</a>
+<a class="pad pad-hs" href="#f17" title="F17 · Hors sécurité — Dette de maintenance : code mort, listes par index, fichiers géants">F17</a>
+<a class="pad pad-hs" href="#f18" title="F18 · Hors sécurité — Hygiène du dépôt et de l&#x27;outillage">F18</a>
+</nav><p class="legend">Chaque touche est un constat, comme un pas du séquenceur : pleine = critique ; contour ambre = important, violet = suggestion, gris = hors sécurité.</p></div>
+</div></header>
+<section class="now" aria-labelledby="now-t">
+<h2 id="now-t">À faire maintenant : réinstaller le plugin</h2>
+<p class="why">Le dossier VST3 installé ne contient plus que le DLL du build 20260923-233248 : le programme de glisser MIDI a été supprimé lors de l'install refusée du 23 septembre à 23:53 (Studio One ouvert). Détail : <a class="ref ref-imp" href="#f4">F4</a>.</p>
+<ol>
+<li>Fermer complètement Studio One.</li>
+<li>Dans PowerShell, depuis <code>drum-pattern-vst</code>, lancer <code>.\build.ps1 -Install</code>.</li>
+<li>Vérifier que <code>C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3\Contents\x86_64-win\</code> contient deux fichiers : <code>drum-pattern-vst.vst3</code> et <code>drum-pattern-midi-drag-helper.exe</code>.</li>
+<li>Rouvrir Studio One : l'en-tête du plugin doit afficher le build ID annoncé par le script.</li>
+</ol></section>
+<section class="section" aria-labelledby="key-t"><div class="section-head"><p class="eyebrow">En 30 secondes</p><h2 id="key-t">Les constats clés</h2></div>
+<ul class="keys">
+<li><strong>Le moteur audio respecte ses règles, à une exception près.</strong><span>Le traitement audio ne contient ni allocation ni verrou bloquant, et les trois défauts temps réel de l&#x27;audit de juillet sont corrigés. Mais sauvegarder un pattern dans la banque pendant la lecture fait exactement l&#x27;inverse <a class="ref ref-crit" href="#f1">F1</a>, et un WAV remplacé peut être libéré en plein rendu <a class="ref ref-imp" href="#f2">F2</a>.</span></li>
+<li><strong>Deux bugs visibles, corrigeables en quelques minutes.</strong><span>Un preset renommé disparaît du navigateur <a class="ref ref-imp" href="#f6">F6</a> ; la lane Oh6smp affiche la forme d&#x27;onde du charley fermé <a class="ref ref-sug" href="#f12">F12</a>.</span></li>
+<li><strong>La livraison est le maillon faible.</strong><span>L&#x27;installation peut laisser un plugin incomplet, et c&#x27;est le cas sur ce poste <a class="ref ref-imp" href="#f4">F4</a> ; le build livré écrit un journal de dev dans E:\tmp <a class="ref ref-imp" href="#f5">F5</a> ; la CI ne vérifie ni macOS ni clippy <a class="ref ref-imp" href="#f10">F10</a>.</span></li>
+<li><strong>Les tests ne protègent pas les projets sauvegardés.</strong><span>477 tests verts, mais aucun ne recharge un vrai projet d&#x27;un ancien build ni ne vérifie l&#x27;absence d&#x27;allocation audio <a class="ref ref-imp" href="#f9">F9</a>.</span></li>
+<li><strong>Un risque juridique et un risque de sécurité.</strong><span>Le dépôt public contient le scan d&#x27;un livre protégé et aucune licence <a class="ref ref-imp" href="#f11">F11</a> ; un projet ou un preset reçu peut faire ouvrir un chemin réseau par Windows <a class="ref ref-imp" href="#f3">F3</a>.</span></li>
+</ul></section>
+<section class="section" aria-labelledby="plan-t"><div class="section-head"><p class="eyebrow">Points d'amélioration</p><h2 id="plan-t">Plan d'action</h2><p>Trois chantiers par ordre de priorité, puis les correctifs faisables en moins de 30 minutes chacun.</p></div>
+<ol class="plan">
+<li><h3>Rendre la sauvegarde de pattern réellement temps réel</h3><p>Rendre la sauvegarde de pattern réellement temps réel : remplacer refresh_snapshot() par mark_snapshot_dirty() dans save_pattern_to_slot (lib.rs:2288), rétablir la préallocation des slots après restauration, puis confier à une file de retraite les WAV libérés par One-Shot/Rift ; verrouiller le tout par des tests assert_no_alloc.</p><div class="refs"><a class="ref ref-crit" href="#f1">F1</a><a class="ref ref-imp" href="#f2">F2</a><a class="ref ref-imp" href="#f9">F9</a></div></li>
+<li><h3>Fiabiliser la livraison</h3><p>Fiabiliser la livraison : installation atomique avec test de verrou dans build.ps1 (le plugin installé sur ce poste est actuellement amputé du helper MIDI), journal E:\tmp du fork nih-plug rendu optionnel, journal de crash avec build ID, symboles conservés plus longtemps.</p><div class="refs"><a class="ref ref-imp" href="#f4">F4</a><a class="ref ref-imp" href="#f5">F5</a><a class="ref ref-sug" href="#f16">F16</a></div></li>
+<li><h3>Poser le filet de sécurité qui manque</h3><p>Poser le filet de sécurité qui manque : fixture d&#x27;état réel + test de restauration complète, job CI macOS, -D warnings, clippy, --locked et toolchain épinglée ; en parallèle, retirer le PDF tiers du dépôt public et ajouter un fichier LICENSE.</p><div class="refs"><a class="ref ref-imp" href="#f9">F9</a><a class="ref ref-imp" href="#f10">F10</a><a class="ref ref-imp" href="#f11">F11</a></div></li>
+</ol>
+<div class="quick"><div class="quick-head"><h3>Quick wins</h3><span class="muted" style="font-size:.875rem">9 correctifs de moins de 30 min</span></div><ul>
+<li><a class="ref ref-crit" href="#f1">F1</a><span>Remplacer refresh_snapshot() par mark_snapshot_dirty() (une ligne).<span class="where">lib.rs:2288</span></span></li>
+<li><a class="ref ref-imp" href="#f6">F6</a><span>Passer le PresetKind à rename_preset() et utiliser kind.extension() ; corriger le test qui part d&#x27;une extension simple.<span class="where">presets.rs:376</span></span></li>
+<li><a class="ref ref-sug" href="#f12">F12</a><span>Ajouter le cas voice_idx == 24 → oh606() pour le graphe d&#x27;Oh6smp.<span class="where">ui/sound_editor.rs:3033</span></span></li>
+<li><a class="ref ref-imp" href="#f5">F5</a><span>Conditionner le journal d&#x27;état à une variable d&#x27;environnement et l&#x27;écrire dans temp_dir().<span class="where">vendor/nih-plug/…/wrapper.rs:44</span></span></li>
+<li><a class="ref ref-imp" href="#f4">F4</a><span>Tester le verrou du DLL avant Remove-Item et sortir sans rien toucher.<span class="where">build.ps1:121</span></span></li>
+<li><a class="ref ref-sug" href="#f13">F13</a><span>Borner le repli (.min(INSTRUMENT_COUNT - 1)) et tester chaque kind dans generate().<span class="where">generator/mod.rs:159</span></span></li>
+<li><a class="ref ref-imp" href="#f10">F10</a><span>Corriger les deux constantes refusées par clippy (TAU, FRAC_1_SQRT_2) et ajouter rust-toolchain.toml (1.94.0).<span class="where">ac606/common.rs:7, clap.rs:263</span></span></li>
+<li><a class="ref" href="#docs">Docs</a><span>Mettre à jour les comptes de voix et de kinds (27 / 25).<span class="where">CLAUDE.md, ADDING_AN_INSTRUMENT.md…</span></span></li>
+<li><a class="ref ref-imp" href="#f11">F11</a><span>Ajouter un fichier LICENSE (GPL-3.0) et license = &quot;GPL-3.0-only&quot; dans Cargo.toml.<span class="where">racine du dépôt</span></span></li>
+</ul></div></section>
+<section class="section" aria-labelledby="sc-t"><div class="section-head"><p class="eyebrow">Notes sur 10</p><h2 id="sc-t">Scores par dimension</h2></div><div class="scores">
+<div class="score"><span class="name">Sécurité</span><div class="meter lvl-high" role="img" aria-label="7 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">7</span><span class="why">Ni réseau ni secret, blobs persistés bien validés ; chemins de textures réseau non filtrés (F3).</span></div>
+<div class="score"><span class="name">Performance</span><div class="meter lvl-mid" role="img" aria-label="6 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">6</span><span class="why">Callback propre hormis la sauvegarde de pattern (F1) et la libération de WAV (F2) ; l&#x27;interface relit le disque à chaque image (F7).</span></div>
+<div class="score"><span class="name">Architecture</span><div class="meter lvl-high" role="img" aria-label="7 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">7</span><span class="why">Séparation UI/audio exemplaire et registre data-driven ; coutures d&#x27;index fragiles et fork non tracé.</span></div>
+<div class="score"><span class="name">Qualité du code</span><div class="meter lvl-mid" role="img" aria-label="6 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">6</span><span class="why">0 warning rustc, mais clippy en erreur, 63 fichiers non formatés, fichiers de plus de 3 000 lignes.</span></div>
+<div class="score"><span class="name">Bugs potentiels</span><div class="meter lvl-mid" role="img" aria-label="6 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">6</span><span class="why">Trois bugs réels déclenchables (F1, F6, F12) et un latent (F13).</span></div>
+<div class="score"><span class="name">Dépendances</span><div class="meter lvl-mid" role="img" aria-label="5 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">5</span><span class="why">nih-plug en maintenance, patchs non tracés, vst3-sys suivi par branche, atty non maintenu.</span></div>
+<div class="score"><span class="name">Tests</span><div class="meter lvl-mid" role="img" aria-label="6 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">6</span><span class="why">477 tests verts, séquenceur très couvert ; aucun test de format réel ni d&#x27;allocation audio.</span></div>
+<div class="score"><span class="name">Infrastructure</span><div class="meter lvl-mid" role="img" aria-label="5 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">5</span><span class="why">Install non atomique constatée, CI Windows seule, pas de journal de crash, PDF tiers dans le dépôt.</span></div>
+<div class="score score-global"><span class="name">Global</span><div class="meter lvl-mid" role="img" aria-label="6 sur 10"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span></div><span class="num">6</span><span class="why">Justifie le verdict « À retravailler » : architecture saine, mais un défaut critique temps réel et une chaîne de livraison fragile.</span></div>
+</div></section>
+<section class="section" aria-labelledby="rk-t"><div class="section-head"><p class="eyebrow">Impact × probabilité</p><h2 id="rk-t">Carte des risques</h2><p>Les constats en haut à droite sont à traiter en premier.</p></div>
+<div class="matrix-wrap"><div class="matrix" aria-label="Carte des risques">
+<div class="mx-h"></div>
+<div class="mx-h">Probabilité faible</div>
+<div class="mx-h">Moyenne</div>
+<div class="mx-h">Élevée</div>
+<div class="mx-r">Impact élevé</div>
+<div class="mx-c heat-2"><a class="ref ref-imp" href="#f3">F3</a><a class="ref ref-imp" href="#f9">F9</a><a class="ref ref-imp" href="#f11">F11</a><a class="ref ref-sug" href="#f13">F13</a></div>
+<div class="mx-c heat-3"><span class="empty">—</span></div>
+<div class="mx-c heat-4"><a class="ref ref-crit" href="#f1">F1</a></div>
+<div class="mx-r">Moyen</div>
+<div class="mx-c heat-1"><span class="empty">—</span></div>
+<div class="mx-c heat-2"><a class="ref ref-imp" href="#f2">F2</a><a class="ref ref-imp" href="#f7">F7</a><a class="ref ref-imp" href="#f8">F8</a><a class="ref ref-imp" href="#f10">F10</a></div>
+<div class="mx-c heat-3"><a class="ref ref-imp" href="#f4">F4</a><a class="ref ref-imp" href="#f5">F5</a><a class="ref ref-imp" href="#f6">F6</a></div>
+<div class="mx-r">Faible</div>
+<div class="mx-c heat-0"><span class="empty">—</span></div>
+<div class="mx-c heat-1"><span class="empty">—</span></div>
+<div class="mx-c heat-2"><span class="empty">—</span></div>
+</div></div>
+<p class="axis-note">Les suggestions et points hors sécurité sans risque chiffré (F12, F14 à F18) ne figurent pas sur la carte.</p></section>
+<section class="section" id="constats" aria-labelledby="fd-t"><div class="section-head"><p class="eyebrow">18 constats vérifiés</p><h2 id="fd-t">Constats détaillés</h2><p>Chaque constat dit d'abord ce qui se passe et quoi faire ; le détail technique (fichiers, scénario, correctif avec code) se déplie à la demande.</p></div>
+<div class="toolbar"><div class="filters" role="group" aria-label="Filtrer par priorité">
+<button type="button" class="chip" id="flt-all" data-f="all" aria-pressed="true">Tous <b>18</b></button>
+<button type="button" class="chip" id="flt-crit" data-f="crit" aria-pressed="false"><span class="dot dot-crit"></span>Critique <b>1</b></button>
+<button type="button" class="chip" id="flt-imp" data-f="imp" aria-pressed="false"><span class="dot dot-imp"></span>Important <b>10</b></button>
+<button type="button" class="chip" id="flt-sug" data-f="sug" aria-pressed="false"><span class="dot dot-sug"></span>Suggestion <b>5</b></button>
+<button type="button" class="chip" id="flt-hs" data-f="hs" aria-pressed="false"><span class="dot dot-hs"></span>Hors sécurité <b>2</b></button>
+</div><div><button type="button" class="linkbtn" id="open-all">Tout déplier</button> · <button type="button" class="linkbtn" id="close-all">Tout replier</button></div></div>
+<div class="list">
+<article class="card" id="f1" data-p="crit">
+<div class="card-top"><span class="idtag">F1</span><span class="badge b-crit">Critique</span><span class="tag">Code · confiance haute</span></div>
+<h3>Sauvegarder un pattern pendant la lecture fait craquer l&#x27;audio</h3>
+<p class="plain">Cliquer « Save » sur un slot P1…P16 transport lancé fait copier et convertir en JSON plusieurs mégaoctets dans le traitement audio : craquement ou coupure quasi certains.</p>
+<div class="todo"><span class="k">À faire</span><span>Remplacer refresh_snapshot() par mark_snapshot_dirty() et rétablir la préallocation des slots après l&#x27;ouverture d&#x27;un projet.</span><span class="effort">≈ 15 min</span></div>
+<p class="loc">drum-pattern-vst/src/lib.rs:2288</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Sauvegarder un pattern dans la banque (P1…P16) exécute sur le thread audio un verrou bloquant, un clone profond de la banque et une sérialisation JSON complète. <code>process()</code> traite la requête via <code>deferred_save_slot</code> (lib.rs:2633-2645) → <code>save_pattern_to_slot()</code> → <code>self.params.pattern_bank.refresh_snapshot()</code>, qui fait <code>self.bank.lock()</code> (Mutex bloquant), <code>guard.clone()</code> des 16 slots puis <code>serde_json::to_vec</code> (pattern_bank.rs:1029-1047). Le commentaire de <code>refresh_snapshot</code> interdit pourtant explicitement tout appel « from the audio callback ». Aggravant : après réouverture d&#x27;un projet, les <code>Vec&lt;u8&gt;</code> des slots désérialisés n&#x27;ont plus la capacité préallouée par <code>PatternSlot::default()</code> (pattern_bank.rs:61-64 ; un slot vide est relu avec une capacité nulle), donc <code>capture()</code> (pattern_bank.rs:192-214) réalloue elle aussi ~165 Ko de p-locks dans le callback.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Scénario courant : pendant la lecture, l&#x27;utilisateur clique « Save » sur un slot de la banque pour garder une variante. Au buffer suivant, le callback alloue et copie plusieurs mégaoctets puis sérialise un JSON où chaque octet des blobs plock/seq-plock/fusion devient un nombre JSON (l&#x27;état observé pèse de 0,4 à 9,7 Mo selon la session). Le budget d&#x27;un buffer de 256 échantillons à 48 kHz est de 5,3 ms : dropout/craquement audible quasi certain, rallongé si le thread UI tient le même Mutex au même instant (<code>clear_lane_in_saved_patterns</code> / <code>permute_lanes_in_saved_patterns</code> le prennent en bloquant, pattern_bank.rs:993-1017). C&#x27;est une violation directe de l&#x27;invariant temps réel n°1 de CLAUDE.md, sur un chemin par ailleurs écrit avec soin en <code>try_lock</code> + relance.</p></div>
+<div><h4>Correctif proposé</h4><p>1) Remplacer l&#x27;appel par la variante déjà prévue pour le thread audio (pattern_bank.rs:1019-1024, « safe to call from the audio thread ») ; <code>PersistentField::map()</code> reconstruit alors le snapshot paresseusement quand l&#x27;hôte demande l&#x27;état (pattern_bank.rs:1070-1071), hors callback :</p><div class="code-wrap"><pre><code>        drop(bank);
+-       self.params.pattern_bank.refresh_snapshot();
++       self.params.pattern_bank.mark_snapshot_dirty();</code></pre></div><p>2) Rétablir la préallocation après restauration, côté thread principal, dans <code>PersistentField::set</code> (pattern_bank.rs:1055-1062) :</p><div class="code-wrap"><pre><code>for slot in guard.slots.iter_mut() {
+    slot.plock_bytes.reserve(MAX_PLOCK_BYTES.saturating_sub(slot.plock_bytes.len()));
+    slot.seq_plock_bytes.reserve(MAX_SEQ_PLOCK_BYTES.saturating_sub(slot.seq_plock_bytes.len()));
+    slot.fusion_bytes.reserve(MAX_FUSION_BYTES.saturating_sub(slot.fusion_bytes.len()));
+}</code></pre></div><p>Test à ajouter : <code>save_pattern_to_slot_is_realtime_safe</code> — restaurer une banque sérialisée contenant des slots vides, puis appeler <code>save_pattern_to_slot(3)</code> à l&#x27;intérieur de <code>assert_no_alloc(|| …)</code> (dev-dependency <code>assert_no_alloc</code>) ; vérifier ensuite que <code>snapshot_dirty</code> vaut <code>true</code> et que <code>map()</code> renvoie un snapshot où P4 est occupé.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>triviale</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f2" data-p="imp">
+<div class="card-top"><span class="idtag">F2</span><span class="badge b-imp">Important</span><span class="tag">Code · confiance haute</span></div>
+<h3>Un WAV remplacé peut être libéré en plein rendu audio</h3>
+<p class="plain">Sur une lane One-Shot ou Rift, après avoir essayé deux autres fichiers, le premier (jusqu&#x27;à 23 Mo) est libéré au coup suivant, dans le thread audio.</p>
+<div class="todo"><span class="k">À faire</span><span>Confier l&#x27;ancien fichier à une file de retraite vidée par l&#x27;interface.</span><span class="effort">≈ 1 à 2 h</span></div>
+<p class="loc">drum-pattern-vst/src/synthesis/oneshot.rs:454</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Les voix One-Shot et Rift gardent leur propre <code>Arc&lt;TextureBank&gt;</code> (<code>self.source</code>, oneshot.rs:62, rift.rs:86) d&#x27;un coup à l&#x27;autre ; le « parking » d&#x27;une génération de <code>TexturePool</code> (sample_bank.rs:155-166) ne protège que les références détenues par le pool. Après deux remplacements du fichier d&#x27;une lane sans coup entre-temps, la voix détient la DERNIÈRE référence du premier fichier : <code>self.source = source;</code> dans <code>trigger()</code> (oneshot.rs:454, rift.rs:686) le libère sur le thread audio. Même chose quand le kind d&#x27;une lane change en lecture : <code>reinitialize_slot()</code> (synthesis/mod.rs:1577-1588, appelé depuis <code>process()</code> lib.rs:2836) écrase la voix par <code>**existing = new_voice;</code> et libère son <code>source</code>.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Lane One-Shot, transport lancé : l&#x27;utilisateur glisse le fichier A (joué au moins une fois), puis auditionne B et C sur la même lane pendant que celle-ci ne rejoue pas (lane mutée, pas de pas sur la page en cours). Au coup suivant, la libération de A — jusqu&#x27;à ~23 Mo pour 60 s de stéréo à 48 kHz (<code>USER_TEXTURE_MAX_SECS</code>) — a lieu dans le callback : pic de latence et craquement possibles, au moment précis où l&#x27;on promet zéro allocation/libération. La garantie écrite dans CLAUDE.md (§ Lane textures : « the last reference is never dropped on the audio thread ») est donc incomplète.</p></div>
+<div><h4>Correctif proposé</h4><p>Ne jamais laisser une voix détenir la dernière référence : pousser l&#x27;ancien <code>Arc</code> dans une file de retraite préallouée, vidée par le thread UI (le projet utilise déjà crossbeam) :</p><div class="code-wrap"><pre><code>// DrumSynthesizer ou TexturePool : retire: Arc&lt;crossbeam::queue::ArrayQueue&lt;Arc&lt;TextureBank&gt;&gt;&gt; (capacité 64)
+if let Some(old) = std::mem::replace(&amp;mut self.source, source) {
+    let _ = self.retire.push(old); // file pleine = drop immédiat, cas dégradé
+}</code></pre></div><p>Appliquer le même traitement au <code>source</code> de la voix remplacée dans <code>reinitialize_slot</code>. Test à ajouter : <code>trigger_never_frees_a_texture_on_the_audio_thread</code> — publier A, <code>trigger()</code>, publier B puis C, puis appeler <code>trigger()</code> dans <code>assert_no_alloc(|| …)</code> (qui détecte aussi les libérations) : doit échouer aujourd&#x27;hui et passer après correctif.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>partielle</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f3" data-p="imp">
+<div class="card-top"><span class="idtag">F3</span><span class="badge b-imp">Important</span><span class="tag">Code · confiance moyenne</span></div>
+<h3>Chemins réseau des textures ouverts sans contrôle</h3>
+<p class="plain">Un projet ou un preset reçu peut pointer vers \\serveur\… : à l&#x27;ouverture, Windows s&#x27;y connecte (fuite possible des identifiants) ou Studio One gèle en attendant un NAS absent.</p>
+<div class="todo"><span class="k">À faire</span><span>N&#x27;ouvrir automatiquement que des chemins locaux ; un chemin réseau seulement sur choix explicite, hors du thread principal.</span><span class="effort">≈ 1 h</span></div>
+<p class="loc">drum-pattern-vst/src/user_textures.rs:44</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Les chemins de WAV par lane venant d&#x27;un état VST3 restauré (<code>lane-textures-v1</code>) ou d&#x27;un preset JSON (<code>user_texture</code>, presets.rs:87 et 106) sont ouverts tels quels, sans aucune validation : <code>FileKey::of()</code> → <code>std::fs::metadata(path)</code> (user_textures.rs:44), puis <code>hound::WavReader::open</code> (synthesis/sample_bank.rs:244). À l&#x27;ouverture d&#x27;un projet, <code>PersistentField::set</code> (user_textures.rs:230-240) appelle <code>reload_all()</code> qui résout les 14 chemins de façon synchrone sur le thread principal de l&#x27;hôte ; même chemin au chargement d&#x27;un preset (ui/preset_browser.rs:665-667).</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>(a) Sécurité : un projet ou un preset reçu d&#x27;un tiers contenant <code>\\hote-distant\partage\x.wav</code> déclenche, sans aucun clic dès l&#x27;ouverture, une authentification SMB (ou WebDAV via <code>\\hote@80\…</code>) de Windows vers cet hôte, qui expose le hash NTLMv2 de la session (fuite d&#x27;identifiants classique par chemin UNC). (b) Fiabilité, sans attaquant : un projet dont les textures étaient sur un NAS ouvert sur une autre machine attend le timeout SMB (souvent 20 s ou plus) pour chaque lane concernée, en série, sur le thread principal — Studio One paraît gelé à l&#x27;ouverture. Mitigation partielle : un projet DAW peut déjà référencer des fichiers audio UNC ; en revanche les presets JSON sont un vecteur propre au plugin.</p></div>
+<div><h4>Correctif proposé</h4><p>Ne résoudre automatiquement (restauration d&#x27;état, chargement de preset) que des chemins locaux ; un chemin réseau n&#x27;est accepté que s&#x27;il vient du sélecteur de fichiers ou d&#x27;un glisser-déposer explicite, et sa résolution se fait hors du thread principal (comme <code>TexturePick</code>).</p><div class="code-wrap"><pre><code>#[cfg(windows)]
+fn is_local_path(p: &amp;Path) -&gt; bool {
+    use std::path::{Component, Prefix};
+    matches!(p.components().next(),
+        Some(Component::Prefix(pr)) if matches!(pr.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_)))
+}
+#[cfg(not(windows))]
+fn is_local_path(p: &amp;Path) -&gt; bool { p.is_absolute() }</code></pre></div><p>Appeler ce garde-fou en tête de <code>reload_all()</code> et de <code>write_slot_sound</code> (le chemin est conservé, la lane passe en état « missing » avec un message). Test à ajouter : <code>restore_skips_unc_texture_paths</code> — <code>set(vec![Some(r&quot;\\203.0.113.1\s\x.wav&quot;.into())])</code> doit retourner immédiatement avec <code>status(0) == Missing</code>, plus un test unitaire de <code>is_local_path</code> sur <code>\\h\s</code>, <code>\\?\UNC\h\s</code>, <code>C:\a.wav</code>, <code>\\?\C:\a.wav</code>.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>public</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>partielle</b></span><span>Données : <b>pii sensibles</b></span></div></div>
+</div></details></article>
+<article class="card" id="f4" data-p="imp">
+<div class="card-top"><span class="idtag">F4</span><span class="badge b-imp">Important</span><span class="tag">Infrastructure · confiance haute</span></div>
+<h3>L&#x27;installation peut laisser un plugin incomplet (c&#x27;est le cas sur ce poste)</h3>
+<p class="plain">Si Studio One est ouvert, build.ps1 -Install supprime d&#x27;abord le programme de glisser MIDI puis échoue sur le DLL : le build installé n&#x27;est plus celui annoncé.</p>
+<div class="todo"><span class="k">À faire</span><span>Tester le verrou avant de supprimer, installer via un dossier temporaire, comparer les empreintes.</span><span class="effort">≈ 30 min</span></div>
+<p class="loc">drum-pattern-vst/build.ps1:121</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>L&#x27;installation n&#x27;est pas atomique : <code>Remove-Item -Path $destPath -Recurse -Force</code> (ligne 121) supprime le bundle installé AVANT la copie (ligne 124), sans vérifier que le DLL n&#x27;est pas verrouillé. Si Studio One (ou l&#x27;antivirus) tient le DLL, la suppression efface d&#x27;abord <code>drum-pattern-midi-drag-helper.exe</code> puis échoue sur le DLL ; <code>$ErrorActionPreference = &quot;Stop&quot;</code> arrête le script avec un bundle à moitié détruit. Constaté sur ce poste le 2026-09-24 : <code>C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3\Contents\x86_64-win\</code> ne contient plus que le DLL du build 20260923-233248, sans le helper, depuis la tentative d&#x27;install du build 235211 (23:53, « install refusée car S1 ouvert », CHANGELOG). Le défaut est masqué par <code>ui/midi.rs:67</code>, qui ajoute en dur <code>env!(&quot;CARGO_MANIFEST_DIR&quot;)\build\…</code> aux emplacements de recherche du helper, y compris dans le binaire release.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Après une install refusée, l&#x27;utilisateur ferme Studio One et valide « le build » : il teste en réalité l&#x27;ancien DLL, et le glisser MIDI ne fonctionne que grâce au dossier de build du poste de dev (helper d&#x27;une autre version). Sur toute autre machine (bundle copié, artefact CI), le glisser MIDI échoue (« MIDI drag helper not found »). Pire cas : un verrou antivirus passager pendant <code>Copy-Item</code>, juste après une suppression complète, ne laisse plus aucun plugin installé. <code>test-verification.ps1</code> ne contrôle pas le helper et ne traite un hash différent que comme un avertissement (ligne 42).</p></div>
+<div><h4>Correctif proposé</h4><p>Tester le verrou avant de toucher à quoi que ce soit, installer via un dossier intermédiaire, puis vérifier le résultat :</p><div class="code-wrap"><pre><code>$dll = Join-Path $destPath &quot;Contents\x86_64-win\$vst3File&quot;
+if (Test-Path $dll) {
+  try { [IO.File]::Open($dll,&#x27;Open&#x27;,&#x27;ReadWrite&#x27;,&#x27;None&#x27;).Close() }
+  catch { Write-Color Red &quot;DLL verrouillé (Studio One ouvert ?) : rien n&#x27;a été modifié.&quot;; exit 2 }
+}
+$staging = &quot;$destPath.new&quot;; $old = &quot;$destPath.old&quot;
+Remove-Item $staging,$old -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item $bundleDir $staging -Recurse -Force
+if (Test-Path $destPath) { Rename-Item $destPath $old }
+Rename-Item $staging $destPath
+Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue</code></pre></div><p>Puis comparer les hash des deux fichiers installés au bundle (échec bloquant), restreindre le chemin <code>CARGO_MANIFEST_DIR</code> de ui/midi.rs:67 à <code>#[cfg(debug_assertions)]</code>, et faire échouer <code>test-verification.ps1</code> si le helper manque ou si le hash diffère. Test à ajouter : paramètre <code>-InstallRoot</code> + test CI qui ouvre le DLL cible en exclusif, relance l&#x27;install et exige un code de sortie non nul avec les deux fichiers d&#x27;origine intacts.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>triviale</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f5" data-p="imp">
+<div class="card-top"><span class="idtag">F5</span><span class="badge b-imp">Important</span><span class="tag">Code · confiance haute</span></div>
+<h3>Le build livré écrit un journal de dev dans E:\tmp</h3>
+<p class="plain">À chaque sauvegarde du projet, le plugin ajoute des lignes dans E:\tmp\drum-pattern-vst-state.log (1 Mo aujourd&#x27;hui), et rien ne trace un plantage.</p>
+<div class="todo"><span class="k">À faire</span><span>N&#x27;activer ce journal que par variable d&#x27;environnement ; ajouter un crash.log avec le build ID.</span><span class="effort">≈ 30 min</span></div>
+<p class="loc">drum-pattern-vst/vendor/nih-plug/src/wrapper/vst3/wrapper.rs:44</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Le fork nih-plug livré en release écrit un journal de diagnostic vers un chemin de développement codé en dur, <code>const DRUM_PATTERN_STATE_LOG_PATH: &amp;str = r&quot;E:\tmp\drum-pattern-vst-state.log&quot;;</code> (ligne 44), à chaque <code>get_state</code>/<code>set_state</code> (IComponent et IEditController, lignes 94-246), sans variable d&#x27;activation ni rotation. <code>log_current_params</code> (lignes 120 et 185) re-sérialise l&#x27;état complet uniquement pour en extraire un résumé : chaque sauvegarde coûte le double de sérialisations. Le fichier fait aujourd&#x27;hui 1,07 Mo et continue de grossir. Ce patch n&#x27;est pas documenté dans <code>drum-pattern-vst/STUDIO_ONE_MULTI_OUT.md</code>. En parallèle, aucun diagnostic de crash n&#x27;existe : <code>panic = &quot;abort&quot;</code> (Cargo.toml:53) tue l&#x27;hôte, le hook de panique de nih-plug n&#x27;écrit que via nih_log (invisible sans <code>NIH_LOG</code>), et aucun journal ne porte le build ID.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>(a) Chez tout utilisateur dont le lecteur E: existe (clé USB, disque de sauvegarde, partition), le plugin y écrit en silence à chaque autosave de Studio One ; sur macOS la chaîne devient un nom de fichier relatif créé dans le répertoire courant de l&#x27;hôte. (b) Sur une session lourde (état de 9,7 Mo observé), les sérialisations supplémentaires allongent chaque sauvegarde sur le thread principal. (c) Un testeur fait planter Studio One : pas de message, pas de build ID, pas de fichier — rien à analyser.</p></div>
+<div><h4>Correctif proposé</h4><p>Rendre ce journal opt-in et le déplacer dans le dossier temporaire :</p><div class="code-wrap"><pre><code>fn state_log_path() -&gt; Option&lt;std::path::PathBuf&gt; {
+    std::env::var_os(&quot;FLASH_DRUM_STATE_LOG&quot;)?;
+    Some(std::env::temp_dir().join(&quot;flash-drum-state.log&quot;))
+}</code></pre></div><p>N&#x27;appeler <code>log_current_params</code> que si le journal est actif, et documenter ce patch avec les autres. Ajouter un hook de panique (chaîné, allocation permise) qui écrit <code>BUILD_ID | thread | message | location</code> dans <code>%LOCALAPPDATA%\Flash Drum\crash.log</code> (taille bornée). Test à ajouter : sans <code>FLASH_DRUM_STATE_LOG</code>, un aller-retour get_state/set_state ne crée aucun fichier (dossier temporaire injecté).</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>triviale</b></span><span>Mitigations : <b>partielle</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f6" data-p="imp">
+<div class="card-top"><span class="idtag">F6</span><span class="badge b-imp">Important</span><span class="tag">Code · confiance haute</span></div>
+<h3>Renommer un preset le fait disparaître du navigateur</h3>
+<p class="plain">Après un renommage dans la fenêtre Presets, le fichier perd son extension .fdinst / .fdpat / .fdgrid / .fdsong et n&#x27;apparaît plus dans aucun onglet.</p>
+<div class="todo"><span class="k">À faire</span><span>Passer le type de preset à rename_preset() et utiliser kind.extension().</span><span class="effort">≈ 15 min</span></div>
+<p class="loc">drum-pattern-vst/src/presets.rs:376</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Renommer un preset lui fait perdre son extension de type, et il disparaît du navigateur. <code>save_json</code> écrit <code>Nom.fdinst.json</code> / <code>.fdpat.json</code> / <code>.fdgrid.json</code> / <code>.fdsong.json</code> (presets.rs:54-61 et 355), mais <code>rename_preset</code> reconstruit le nom avec <code>path.extension()</code>, qui ne renvoie que <code>json</code> (ligne 376) : le fichier devient <code>NouveauNom.json</code>. <code>list_dir</code> ne retient que les fichiers finissant par <code>.{kind.extension()}</code> (ligne 451). Le test existant (<code>rename_preset_updates_json_name_and_filename</code>, ligne 772) masque le défaut car il part d&#x27;un fichier <code>Old_Name.fdpat</code> à extension simple, que <code>save_json</code> ne produit jamais.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>L&#x27;utilisateur sauvegarde « Kick punchy » puis le renomme en « Kick punchy v2 » dans le modal Presets (ui/preset_browser.rs:396) : le fichier devient <code>Kick_punchy_v2.json</code>, n&#x27;apparaît plus dans aucun onglet (Instrument/Pattern/Grid/Song) ni dans le chargeur de l&#x27;onglet Track. Pour l&#x27;utilisateur, le preset est perdu ; il n&#x27;existe plus que sous un nom orphelin dans <code>Documents\Flash Drum\presets</code>.</p></div>
+<div><h4>Correctif proposé</h4><p>Passer le type de preset, déjà connu de l&#x27;appelant, au lieu de le redériver du chemin :</p><div class="code-wrap"><pre><code>pub fn rename_preset(path: &amp;Path, new_name: &amp;str, kind: PresetKind) -&gt; Result&lt;PathBuf, String&gt; {
+    // ...
+    let new_path = dir.join(format!(&quot;{}.{}&quot;, sanitize_name(new_name), kind.extension()));</code></pre></div><p>et appeler <code>presets::rename_preset(&amp;path, &amp;new_name, kind)</code> dans preset_browser.rs:396. Test à ajouter : <code>rename_preset_keeps_double_extension_and_stays_listed</code> — créer le fichier via <code>save_json(dir, &quot;Old&quot;, PresetKind::Instrument, …)</code>, le renommer, vérifier que le chemin finit par <code>.fdinst.json</code> et que <code>list_dir(dir, PresetKind::Instrument)</code> le contient.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>triviale</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f7" data-p="imp">
+<div class="card-top"><span class="idtag">F7</span><span class="badge b-imp">Important</span><span class="tag">Code · confiance haute</span></div>
+<h3>La fenêtre Presets relit le disque à chaque image</h3>
+<p class="plain">Tant qu&#x27;elle est ouverte, elle relit et décode tous les fichiers presets à chaque rafraîchissement ; la grille recopie aussi toute la configuration des lanes à chaque image.</p>
+<div class="todo"><span class="k">À faire</span><span>Mettre la liste en cache et ne la rafraîchir qu&#x27;après une action (ouverture, onglet, save, renommage, suppression).</span><span class="effort">≈ 45 min</span></div>
+<p class="loc">drum-pattern-vst/src/ui/preset_browser.rs:245</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Le thread UI refait à chaque image un travail qui ne change qu&#x27;à l&#x27;occasion d&#x27;une action. (1) Tant que le modal Presets est ouvert, <code>presets::list_presets(browser.kind)</code> (ligne 245, appelé depuis ui.rs:383 à chaque frame) refait un <code>read_dir</code>, lit ENTIÈREMENT chaque fichier et le parse en JSON pour n&#x27;en extraire que le nom, plus un <code>stat()</code> par fichier (presets.rs:445-489). (2) Dans la grille, chaque lane active clone tout <code>TrackLayoutState</code> — verrou et <code>String</code> par slot (track.rs:1075-1114) — pour une seule question booléenne (grid.rs:309-310), soit jusqu&#x27;à 14 reconstructions par image alors que <code>AtomicTrackLayout::grid_slot()</code> répond sans verrou ni allocation.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Pendant la lecture, egui redessine en continu (playhead) : avec quelques dizaines de presets de pattern (qui embarquent les p-locks), le modal lit et parse des mégaoctets à chaque image sur le thread d&#x27;interface de l&#x27;hôte ; si <code>Documents</code> est synchronisé par OneDrive/Dropbox (fichiers à la demande), chaque <code>read_dir</code>/<code>stat</code> peut en plus solliciter le client de synchronisation. Résultat : modal saccadé et interface de Studio One ralentie tant qu&#x27;il reste ouvert. Le clone de layout par lane ajoute une charge CPU constante évitable sur les machines modestes.</p></div>
+<div><h4>Correctif proposé</h4><p>Mettre la liste en cache dans <code>PresetBrowserState</code> : la construire à l&#x27;ouverture, au changement d&#x27;onglet et après save/rename/delete réussis, jamais dans le chemin de rendu :</p><div class="code-wrap"><pre><code>if browser.files.is_none() || browser.files_kind != browser.kind {
+    browser.files = Some(presets::list_presets(browser.kind));
+    browser.files_kind = browser.kind;
+}
+let files = browser.files.as_deref().unwrap_or(&amp;[]);</code></pre></div><p>Dans grid.rs:309, remplacer le clone par <code>params.track_layout.state.grid_slot(slot_idx) != slot_idx</code> (vérifier l&#x27;équivalence avec <code>TrackLayoutState::is_grid_follower</code>). Test à ajouter : équivalence <code>is_grid_follower</code> / <code>grid_slot</code> sur toutes les combinaisons de liaisons de lanes ; compteur d&#x27;appels à <code>list_presets</code> sur deux frames successives sans action.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>triviale</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>publiques</b></span></div></div>
+</div></details></article>
+<article class="card" id="f8" data-p="imp">
+<div class="card-top"><span class="idtag">F8</span><span class="badge b-imp">Important</span><span class="tag">Code · confiance haute</span></div>
+<h3>Dossier Documents mal déterminé (OneDrive, macOS)</h3>
+<p class="plain">Avec OneDrive, presets et config partent dans un dossier Documents fantôme ; sur Mac, ils ne peuvent pas être écrits du tout.</p>
+<div class="todo"><span class="k">À faire</span><span>Un seul utilitaire de chemin basé sur la crate dirs, avec migration de l&#x27;ancien dossier.</span><span class="effort">≈ 1 h</span></div>
+<p class="loc">drum-pattern-vst/src/presets.rs:311</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Le dossier utilisateur est calculé à la main à partir de <code>USERPROFILE</code> + <code>Documents</code>, avec repli sur <code>.</code>, dans quatre copies de la même logique : config.rs:62, presets.rs:311, preset_dumps.rs:24, ui/midi.rs:20. C&#x27;est contraire à la règle de portabilité de CLAUDE.md (« avoid hardcoded paths (USERPROFILE) — use dirs/HOME ») ; la crate <code>dirs</code> n&#x27;est même pas une dépendance.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Windows avec OneDrive « sauvegarde des dossiers » (Known Folder Move, fréquent sur Windows 11) : le vrai dossier Documents est <code>%USERPROFILE%\OneDrive\Documents</code>, mais le plugin crée et lit un <code>C:\Users\x\Documents\Flash Drum</code> fantôme, absent de l&#x27;Explorateur et non synchronisé — l&#x27;utilisateur croit ses presets perdus et ne les retrouve pas sur son autre PC. macOS (cible obligatoire) : <code>USERPROFILE</code> n&#x27;existe pas, le code se rabat sur le répertoire courant de l&#x27;hôte (souvent <code>/</code>, non inscriptible) : config et presets échouent en silence (<code>let _ = config.save()</code>, config.rs:45) et l&#x27;export MIDI renvoie « Cannot find Documents folder ».</p></div>
+<div><h4>Correctif proposé</h4><p>Un seul helper, fondé sur les dossiers connus du système :</p><div class="code-wrap"><pre><code>// src/paths.rs  (dépendance dirs = &quot;6&quot;)
+pub fn flash_drum_dir() -&gt; std::path::PathBuf {
+    dirs::document_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join(&quot;Flash Drum&quot;)
+}</code></pre></div><p>Remplacer les quatre sites ; au premier lancement, si l&#x27;ancien <code>%USERPROFILE%\Documents\Flash Drum</code> existe et que le nouveau dossier est absent, en copier le contenu. Test à ajouter : <code>user_dirs_share_one_root</code> — <code>config_path()</code>, <code>presets_root()</code>, <code>dumps_dir()</code> et le dossier d&#x27;export commencent tous par <code>flash_drum_dir()</code>.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f9" data-p="imp">
+<div class="card-top"><span class="idtag">F9</span><span class="badge b-imp">Important</span><span class="tag">Code · confiance haute</span></div>
+<h3>Les tests ne protègent pas le format des projets sauvegardés</h3>
+<p class="plain">Aucun test ne recharge un vrai projet écrit par un ancien build, ni ne vérifie l&#x27;absence d&#x27;allocation audio : une régression de format ne s&#x27;entendrait qu&#x27;en rouvrant un projet.</p>
+<div class="todo"><span class="k">À faire</span><span>Fixture d&#x27;état réel, test de restauration complète, tests assert_no_alloc, config de test isolée.</span><span class="effort">≈ ½ à 1 jour</span></div>
+<p class="loc">drum-pattern-vst/src/lib.rs:288</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Les tests (477 tests lib, tous verts) ne protègent pas les contrats les plus coûteux à casser. (a) Aucune fixture d&#x27;état réel écrit par un build passé : les dix champs persistés (<code>editor-state-v2</code>, <code>pattern-v5</code>, <code>sound-settings-v2</code>, <code>track-layout-v1</code>, <code>plock-v1</code>, <code>seq-plock-v1</code>, <code>pattern-bank-v1</code>, <code>lane-locks-v1</code>, <code>lane-textures-v1</code>, <code>macro-map-v1</code>, lib.rs:288-325) ne sont testés qu&#x27;en aller-retour avec le code courant ou avec des blobs legacy fabriqués dans le test. (b) Aucune restauration complète via <code>deserialize_fields()</code> (zéro occurrence dans src/) alors que nih-plug restaure dans l&#x27;ordre alphabétique (<code>track-layout-v1</code> en dernier). (c) La règle « pas d&#x27;allocation sur le thread audio » n&#x27;est pas outillée (<code>assert_no_alloc</code> absent, feature <code>assert_process_allocs</code> de nih-plug désactivée) — les deux défauts temps réel de ce rapport sont passés inaperçus. (d) Tests non hermétiques : <code>DrumFlashParams::default()</code> passe par <code>GlobalConfig::load()</code> (sound_settings.rs:573), qui lit — et crée s&#x27;il manque — le vrai <code>Documents\Flash Drum\config.json</code>. (e) Les 306 tests de <code>test_standalone</code> sont les mêmes tests recompilés via <code>#[path]</code> (src/bin/test_standalone.rs:3-14) : le total « 784 » du CHANGELOG surévalue la couverture.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Un agent modifie l&#x27;ordre ou la taille d&#x27;un champ du blob sound-settings et met à jour les tests d&#x27;aller-retour dans le même commit : tout reste vert, et les projets Studio One se rouvrent avec des sons décalés d&#x27;un champ, ce qui ne se remarque qu&#x27;à l&#x27;écoute. De même, une future allocation dans <code>process()</code> ou un <code>trigger()</code> ne sera détectée qu&#x27;en session, par un craquement. Enfin un test peut passer chez NicoM et échouer en CI (ou l&#x27;inverse) selon la valeur <code>default_analog</code> de son config.json réel.</p></div>
+<div><h4>Correctif proposé</h4><p>Ajouter, par ordre de rentabilité : 1) <code>golden_state_restores_identically</code> — capturer dans <code>tests/fixtures/</code> le JSON réel d&#x27;une instance (get_state d&#x27;un build daté), le restaurer via <code>filter_state</code> + <code>deserialize_fields</code>, et comparer un résumé stable (masques des 14 slots, kinds, réglages, nombre de p-locks, chemins de textures) à un snapshot figé ; ajouter une fixture à chaque changement de format, n&#x27;en supprimer jamais. 2) <code>full_state_roundtrip_is_order_independent</code> — restaurer champ par champ dans l&#x27;ordre alphabétique puis inverse, état identique attendu. 3) Un test <code>assert_no_alloc</code> par kind : 48 000 échantillons de <code>process_sample</code> avec retrigger, stutter, microtiming négatif et <code>set_settings</code> en cours de lecture. 4) Injecter le dossier de config (<code>GlobalConfig::load_from(dir)</code> ou variable <code>FLASH_DRUM_CONFIG_DIR</code>) dans les tests. 5) Ne plus compter les tests de <code>test_standalone</code> dans les bilans.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>partielle</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f10" data-p="imp">
+<div class="card-top"><span class="idtag">F10</span><span class="badge b-imp">Important</span><span class="tag">Infrastructure · confiance haute</span></div>
+<h3>La CI ne vérifie ni macOS, ni clippy, ni les patchs vendorés</h3>
+<p class="plain">Une rupture de compilation macOS ou d&#x27;un patch Studio One resterait au vert, et la CI compile avec un autre Rust que celui du binaire livré.</p>
+<div class="todo"><span class="k">À faire</span><span>Job macOS, -D warnings, clippy, --locked et toolchain 1.94.0 épinglée.</span><span class="effort">≈ 1 à 2 h</span></div>
+<p class="loc">.github/workflows/ci.yml:18</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>La CI ne vérifie qu&#x27;une partie des règles que CLAUDE.md impose. (1) Pas de job macOS (<code>runs-on: windows-latest</code> seul) alors que le code doit compiler sur macOS ; aucune cible Apple n&#x27;est installée en local non plus. (2) Warnings non bloquants (pas de <code>RUSTFLAGS=-D warnings</code>) : le build est à 0 warning aujourd&#x27;hui, rien ne le garantit. (3) Ni clippy ni fmt : <code>cargo clippy --all-targets</code> sort en erreur (code 101) sur 2 lints <code>approx_constant</code> refusés par défaut (synthesis/ac606/common.rs:7 <code>TWO_PI = 6.2831853…</code>, synthesis/ac606/clap.rs:263 <code>0.7071067…</code>) ; <code>cargo fmt --check</code> signale 63 fichiers. (4) Toolchain flottante (<code>dtolnay/rust-toolchain@stable</code>, ligne 24 ; pas de <code>rust-toolchain.toml</code>) : la CI teste avec un autre compilateur que le 1.94.0 qui produit le binaire livré. (5) Pas de <code>--locked</code>. (6) Les tests des patchs vendorés critiques ne tournent pas en CI (egui-baseview <code>file_drop</code>, remap multi-out de nih-plug). (7) Actions épinglées par tag et non par SHA, dépôt public, branche <code>main</code> non protégée ; aucune veille des vulnérabilités (ni dependabot, ni cargo-audit/cargo-deny).</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Un agent ajoute <code>use std::os::windows::ffi::OsStrExt;</code> sans <code>#[cfg(windows)]</code> dans un module commun : la CI reste verte et la rupture n&#x27;est découverte qu&#x27;au premier build macOS, noyée parmi d&#x27;autres. Un patch vendor casse le remap des sorties aux clairsemées de Studio One : la CI reste verte et c&#x27;est NicoM qui le découvre en session.</p></div>
+<div><h4>Correctif proposé</h4><div class="code-wrap"><pre><code>permissions: { contents: read }
+env: { CARGO_TERM_COLOR: always, RUSTFLAGS: &quot;-D warnings&quot; }
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@&lt;sha&gt;   # v4
+      - uses: dtolnay/rust-toolchain@&lt;sha&gt;
+        with: { toolchain: &quot;1.94.0&quot;, components: &quot;clippy,rustfmt&quot; }
+      - run: cargo check --all-targets --locked
+      - run: cargo test --locked
+      - run: cargo test --locked -p egui-baseview --lib
+      - run: cargo clippy --all-targets --locked -- -A clippy::excessive_precision
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@&lt;sha&gt;
+      - uses: dtolnay/rust-toolchain@&lt;sha&gt;
+        with: { toolchain: &quot;1.94.0&quot; }
+      - run: cargo check --all-targets --locked</code></pre></div><p>Ajouter <code>drum-pattern-vst/rust-toolchain.toml</code> (<code>channel = &quot;1.94.0&quot;</code>), corriger d&#x27;abord les deux constantes (<code>std::f32::consts::TAU</code>, <code>std::f64::consts::FRAC_1_SQRT_2</code>), faire un <code>cargo fmt</code> unique, activer la protection de <code>main</code> et dependabot pour les actions et les crates.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>public</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>partielle</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f11" data-p="imp">
+<div class="card-top"><span class="idtag">F11</span><span class="badge b-imp">Important</span><span class="tag">Infrastructure · confiance moyenne</span></div>
+<h3>Dépôt public : scan d&#x27;un livre protégé, aucune licence</h3>
+<p class="plain">Le PDF « 260 Drum Machine Patterns » (16 Mo) expose à un retrait DMCA ; sans fichier LICENSE, les conditions de réutilisation du code ne sont pas claires.</p>
+<div class="todo"><span class="k">À faire</span><span>Retirer le PDF de l&#x27;historique, ajouter LICENSE (GPL-3.0) et THIRD-PARTY.md.</span><span class="effort">≈ 1 h</span></div>
+<p class="loc">resources/Drum.Machine.-.260.Patterns.pdf:1</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Le dépôt GitHub <code>TiiPaa/drumflash</code> est PUBLIC et contient le scan d&#x27;un recueil publié (« 260 Drum Machine Patterns », PDF de 16,9 Mo produit par conversion d&#x27;images, commit 140fdf8), vraisemblablement protégé par le droit d&#x27;auteur de son éditeur ; il représente à lui seul près de la moitié du pack git et restera dans l&#x27;historique même supprimé. Le dépôt n&#x27;a par ailleurs aucun fichier LICENSE/COPYING (GitHub : licence nulle) alors que Cargo.toml:7 déclare <code>GPL-3.0</code> (identifiant SPDX déprécié) et que l&#x27;export VST3 de nih-plug impose la GPLv3 ; les binaires diffusés par les artefacts CI publics sont livrés sans texte de licence, et la provenance des WAV embarqués (assets/bd606.wav, sd606.wav, ch606.wav, oh606.wav, textures/) n&#x27;est documentée nulle part.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Une demande DMCA de l&#x27;éditeur peut conduire GitHub à désactiver le dépôt entier (code, historique, CI) jusqu&#x27;à réécriture de l&#x27;historique. Sans licence explicite, un tiers ne sait pas à quelles conditions il peut réutiliser le code, et la conformité GPL des binaires distribués n&#x27;est pas assurée.</p></div>
+<div><h4>Correctif proposé</h4><p>Retirer le PDF et purger l&#x27;historique (<code>git filter-repo --path resources/Drum.Machine.-.260.Patterns.pdf --invert-paths</code>, sauvegarde préalable, puis force-push assumé), en gardant une simple référence bibliographique. Ajouter <code>LICENSE</code> (texte GPL-3.0) à la racine et dans le bundle, passer à <code>license = &quot;GPL-3.0-only&quot;</code> (ou <code>-or-later</code>), et créer <code>THIRD-PARTY.md</code> : nih-plug (ISC + GPL pour VST3), egui-baseview (MIT), code ac606 (MIT), polices IBM Plex (OFL), provenance et droits des échantillons.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>public</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f12" data-p="sug">
+<div class="card-top"><span class="idtag">F12</span><span class="badge b-sug">Suggestion</span><span class="tag">Code · confiance haute</span></div>
+<h3>Oh6smp : le Sound Editor montre la forme d&#x27;onde du charley fermé</h3>
+<p class="plain">Sur une lane Oh6smp, Start, End et l&#x27;offset se règlent sur un dessin deux fois plus court que le son réellement joué.</p>
+<div class="todo"><span class="k">À faire</span><span>Une fonction sampler_bank() commune au moteur audio et à l&#x27;interface.</span><span class="effort">≈ 10 min</span></div>
+<p class="loc">drum-pattern-vst/src/ui/sound_editor.rs:3033</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Le graphe de forme d&#x27;onde du Sound Editor affiche la banque du charley FERMÉ pour Oh6smp. <code>is_sampler()</code> est vrai pour les voix 13, 14, 15 et 24 (instrument_registry.rs:352-353), mais la cascade de sound_editor.rs:3033-3040 ne distingue que 13 (bd606) et 14 (sd606) ; le <code>else</code> donne <code>ch606()</code> à Ch6smp (15) ET à Oh6smp (24). Le moteur audio, lui, joue bien <code>sample_bank::oh606()</code> (synthesis/mod.rs:1323-1324), dont les tranches sont deux fois plus longues (sample_bank.rs:54-55).</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Sur une lane Oh6smp, l&#x27;utilisateur règle Start/End et l&#x27;offset en regardant la forme d&#x27;onde et les marqueurs d&#x27;un autre fichier, deux fois plus court que celui qui est réellement joué : un réglage « à 50 % de ce qu&#x27;on voit » tombe ailleurs dans le son. Défaut présent depuis l&#x27;ajout d&#x27;Oh6smp ([208]) ; impact visuel uniquement, mais trompeur.</p></div>
+<div><h4>Correctif proposé</h4><p>Une seule fonction de choix de banque, partagée par le DSP et l&#x27;UI, sans branche fourre-tout :</p><div class="code-wrap"><pre><code>pub fn sampler_bank(voice_idx: usize) -&gt; Option&lt;&amp;&#x27;static SampleBank&gt; {
+    match voice_idx {
+        13 =&gt; Some(bd606()), 14 =&gt; Some(sd606()), 15 =&gt; Some(ch606()), 24 =&gt; Some(oh606()),
+        _ =&gt; None,
     }
-    var current = 'system';
-    apply(current);
-    btn.addEventListener('click', function () {
-      var dark = current === 'dark' || (current === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      current = dark ? 'light' : 'dark';
-      apply(current);
-    });
-
-    // Filtres de priorité
-    var filters = document.querySelectorAll('.filter');
-    var cards = document.querySelectorAll('#findings .finding');
-    filters.forEach(function (f) {
-      f.addEventListener('click', function () {
-        filters.forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
-        f.setAttribute('aria-pressed', 'true');
-        var v = f.getAttribute('data-f');
-        cards.forEach(function (c) {
-          c.style.display = (v === 'all' || c.getAttribute('data-sev') === v) ? '' : 'none';
-        });
-      });
-    });
-  })();
+}</code></pre></div><p>Test à ajouter : <code>sampler_bank_matches_dsp_for_every_sampler_voice</code> — pour chaque <code>voice_idx</code> où <code>is_sampler</code> est vrai, <code>sampler_bank(voice_idx)</code> est <code>Some</code> et, pour 24, sa première tranche a la longueur de <code>oh606().hits[0]</code>.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>triviale</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>publiques</b></span></div></div>
+</div></details></article>
+<article class="card" id="f13" data-p="sug">
+<div class="card-top"><span class="idtag">F13</span><span class="badge b-sug">Suggestion</span><span class="tag">Code · confiance haute</span></div>
+<h3>Générateur : un futur instrument oublié ferait planter GENERATE</h3>
+<p class="plain">Sans effet aujourd&#x27;hui ; mais un nouvel instrument non déclaré dans le générateur ferait fermer Studio One, alors que la documentation parle d&#x27;un simple instrument muet.</p>
+<div class="todo"><span class="k">À faire</span><span>Borner le repli ou supprimer la branche « _ », et tester tous les kinds.</span><span class="effort">≈ 20 min</span></div>
+<p class="loc">drum-pattern-vst/src/generator/mod.rs:161</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Dans <code>remap_roles_to_slots</code>, la table <code>assigned_per_voice</code> fait <code>INSTRUMENT_COUNT = 14</code> cases (ligne 127) et le <code>match kind</code> se termine par <code>_ =&gt; kind.drum_voice_index()</code> (ligne 159). Aujourd&#x27;hui les 11 kinds qui passent par ce repli ont un index de voix &lt; 13 : aucun plantage. Mais tout futur kind ajouté en fin d&#x27;enum (règle de persistance) aura un <code>drum_voice_index()</code> ≥ 27 ; s&#x27;il est oublié dans ce <code>match</code>, <code>assigned_per_voice[base_voice]</code> (ligne 161) panique. ADDING_AN_INSTRUMENT.md §9 annonce pourtant un simple « instrument muet sur GENERATE ».</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>TODO.md prévoit de nouveaux instruments ([56] Tom Simmons, [84] RX11, [95] instrument MIDI). Un agent qui suit la procédure et oublie l&#x27;étape « Générateur », rassuré par la documentation, livre un build où cliquer GENERATE avec une lane de ce kind fait paniquer le thread UI — avec <code>panic = &quot;abort&quot;</code>, Studio One se ferme et la session non sauvegardée est perdue. Aucun test ne balaie les kinds à travers <code>generate()</code>.</p></div>
+<div><h4>Correctif proposé</h4><p>Rendre le repli sûr (<code>_ =&gt; kind.drum_voice_index().min(INSTRUMENT_COUNT - 1)</code>) ou, mieux, supprimer le <code>_</code> pour que le compilateur exige un rôle pour chaque kind, comme le fait déjà le dispatch <code>DrumVoiceKind</code>. Corriger la ligne du tableau §9 d&#x27;ADDING_AN_INSTRUMENT.md. Test à ajouter : <code>every_kind_survives_generate</code> — pour chaque <code>TrackInstrumentKind</code>, construire un layout d&#x27;une lane de ce kind et appeler <code>generate()</code> avec les quatre types de générateurs.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f14" data-p="sug">
+<div class="card-top"><span class="idtag">F14</span><span class="badge b-sug">Suggestion</span><span class="tag">Code · confiance moyenne</span></div>
+<h3>Échecs d&#x27;enregistrement des presets passés sous silence</h3>
+<p class="plain">Disque plein, nom réservé (CON, AUX…), dossier verrouillé : « Save » vide le champ comme si tout allait bien, sans créer de fichier.</p>
+<div class="todo"><span class="k">À faire</span><span>Afficher l&#x27;erreur dans la fenêtre Presets et écrire les fichiers de façon atomique.</span><span class="effort">≈ 45 min</span></div>
+<p class="loc">drum-pattern-vst/src/ui/preset_browser.rs:494</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Les échecs d&#x27;écriture de presets et de configuration sont avalés en silence : <code>let _ = result;</code> après save (ligne 494), <code>let _ = presets::rename_preset(…)</code> (ligne 396), <code>let _ = presets::delete_file(…)</code> (ligne 390), et le champ de nom est vidé même en cas d&#x27;échec (ligne 381-383). <code>sanitize_name</code> (presets.rs:331) n&#x27;écarte pas les noms de périphériques réservés de Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9). <code>GlobalConfig::load()</code> réécrit les valeurs par défaut par-dessus un config.json illisible (config.rs:43-45), et les écritures (<code>fs::write</code>, presets.rs:356, config.rs:57) ne sont pas atomiques.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Disque plein, dossier Documents verrouillé par un client de synchronisation, nom « Aux » ou « Con » (selon la version de Windows), dossier non inscriptible sur macOS : l&#x27;utilisateur clique « Save », le champ se vide comme si tout allait bien, et le preset n&#x27;existe pas — il ne s&#x27;en aperçoit qu&#x27;en le cherchant plus tard. Un plantage pendant <code>fs::write</code> laisse un fichier tronqué, ignoré ensuite (config écrasée par les défauts).</p></div>
+<div><h4>Correctif proposé</h4><p>Conserver l&#x27;erreur dans <code>PresetBrowserState</code> (<code>last_error: Option&lt;String&gt;</code>) et l&#x27;afficher dans le modal ; ne vider le champ qu&#x27;en cas de succès. Suffixer les noms réservés dans <code>sanitize_name</code> (<code>if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(&amp;s)) { s.push(&#x27;_&#x27;) }</code>). Écrire via un fichier temporaire + <code>rename</code>, et renommer un config.json illisible en <code>config.json.bad</code> au lieu de l&#x27;écraser. Test à ajouter : <code>sanitize_name_avoids_reserved_device_names</code> et <code>save_into_readonly_dir_reports_error</code>.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f15" data-p="sug">
+<div class="card-top"><span class="idtag">F15</span><span class="badge b-sug">Suggestion</span><span class="tag">Infrastructure · confiance moyenne</span></div>
+<h3>Fork nih-plug et dépendances git non traçables</h3>
+<p class="plain">On ne sait plus de quelle version amont part le nih-plug vendoré, et vst3-sys suit une branche d&#x27;un dépôt personnel : un build sur machine neuve pourrait devenir impossible.</p>
+<div class="todo"><span class="k">À faire</span><span>Documenter les patchs sur le modèle d&#x27;egui-baseview, vendorer ou épingler les dépendances git.</span><span class="effort">≈ ½ jour</span></div>
+<p class="loc">drum-pattern-vst/vendor/nih-plug/Cargo.toml:115</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Le fork nih-plug, sur lequel reposent le multi-out et la restauration d&#x27;état sous Studio One, n&#x27;est pas traçable : importé déjà patché (commit ea6e69d) sans révision amont notée ; <code>drum-pattern-vst/STUDIO_ONE_MULTI_OUT.md</code> liste 5 patchs alors que le code en porte au moins 4 de plus (remap des aux clairsemés <code>active_output_buses</code>/<code>mapped_aux_output_idx</code>, état côté IEditController, fenêtre de messages clavier, journal <code>E:\tmp</code>). L&#x27;amont est passé en mode maintenance (2026-05-10). Trois dépendances git ne sont pas vendorées, dont <code>vst3-sys</code> suivi par BRANCHE sur un fork personnel (<code>branch = &quot;fix/drop-box-from-raw&quot;</code>, ligne 115 ; dernier push en 2022), plus baseview (rev 9a0b42c) et clap-sys (rev 25d7f53). <code>atty 0.2.14</code> (non maintenu, avis RustSec) est tiré par nih_log ; <code>windows-sys</code> est déclaré sans condition de cible (drum-pattern-vst/Cargo.toml:32).</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Si la branche <code>vst3-sys</code> est supprimée ou réécrite et le commit verrouillé ramassé par GitHub, plus aucun build n&#x27;est possible sur une machine neuve ou en CI après expiration du cache. Le jour d&#x27;une migration vers le fork communautaire de nih-plug ou d&#x27;un portage macOS, il est impossible de produire le diff « amont contre Flash Drum » : un patch Studio One peut être perdu sans bruit — précisément l&#x27;invariant que CLAUDE.md déclare critique. Contre-exemple à suivre : egui-baseview (FLASH-DRUM-PATCHES.md, révision ec70c3f, patchs et tests).</p></div>
+<div><h4>Correctif proposé</h4><p>Écrire <code>vendor/nih-plug/FLASH-DRUM-PATCHES.md</code> sur le modèle d&#x27;egui-baseview (SHA amont retrouvé, liste exhaustive, <code>.patch</code> issu d&#x27;un <code>git diff</code>) ; vendorer les trois dépendances git (<code>cargo vendor</code> + remplacement de source dans <code>.cargo/config.toml</code>) ou les épingler par <code>rev</code> sur un fork contrôlé ; déplacer windows-sys dans <code>[target.&#x27;cfg(windows)&#x27;.dependencies]</code> ; ajouter <code>cargo deny check advisories</code> à la CI.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>theorique</b></span><span>Mitigations : <b>partielle</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f16" data-p="sug">
+<div class="card-top"><span class="idtag">F16</span><span class="badge b-sug">Suggestion</span><span class="tag">Infrastructure · confiance haute</span></div>
+<h3>Symboles de débogage conservés trop peu de temps</h3>
+<p class="plain">Seuls les 10 derniers PDB sont gardés (tous datés d&#x27;hier soir) : un plantage sur un build d&#x27;il y a une semaine ne pourra pas être analysé.</p>
+<div class="todo"><span class="k">À faire</span><span>PDB selon le profil, 30 jours de rétention, line-tables-only, tests avant l&#x27;install.</span><span class="effort">≈ 30 min</span></div>
+<p class="loc">drum-pattern-vst/build.ps1:90</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>L&#x27;archivage des symboles ne permet pas de diagnostiquer un crash ancien. <code>$sourcePdb</code> pointe toujours vers <code>target/release/…</code> (ligne 90) même avec <code>-Debug</code>, qui archive donc un PDB release périmé sous son propre build ID ; seuls 10 PDB sont conservés (ligne 97 <code>Select-Object -Skip 10</code>), tous datés du 2026-09-23 au soir alors que le CHANGELOG cite 493 builds ; l&#x27;archivage a lieu même quand l&#x27;install échoue ; le profil release n&#x27;active pas <code>debug</code>, le PDB ne contient que les symboles publics. Le DLL livré contient des chemins locaux (<code>E:\Dev\Projets\Drum Flash\…</code>, <code>C:\Users\baboost\.cargo\registry\…</code>). <code>build.ps1</code> ne lance aucun <code>cargo test</code> avant <code>-Install</code>.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Un crash Studio One survient sur le build installé une semaine plus tôt : sa pile ne se résout plus, le PDB a été évincé — la situation que cet archivage devait justement éviter. Les chemins intégrés exposent la structure du poste et le nom du compte dans un binaire destiné à être distribué.</p></div>
+<div><h4>Correctif proposé</h4><p><code>$profileDir = if ($Debug) { &quot;debug&quot; } else { &quot;release&quot; }</code> puis <code>Join-Path $PSScriptRoot &quot;target\$profileDir\drum_pattern_vst.pdb&quot;</code> ; archiver seulement après une install réussie et conserver 30 jours ; <code>debug = &quot;line-tables-only&quot;</code> dans <code>[profile.release]</code> (les infos vont dans le PDB sous MSVC) ; <code>--remap-path-prefix</code> dans RUSTFLAGS ; lancer <code>cargo test</code> avant <code>-Install</code> avec une option <code>-SkipTests</code>.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>conditionnelle</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>pii sensibles</b></span></div></div>
+</div></details></article>
+<article class="card" id="f17" data-p="hs">
+<div class="card-top"><span class="idtag">F17</span><span class="badge b-hs">Hors sécurité</span><span class="tag">Code · confiance moyenne</span></div>
+<h3>Dette de maintenance : code mort, listes par index, fichiers géants</h3>
+<p class="plain">61 allow(dead_code), listes d&#x27;index de voix codées en dur dans l&#x27;interface, fichiers de plus de 3 000 lignes : chaque nouvel instrument risque d&#x27;en oublier une.</p>
+<div class="todo"><span class="k">À faire</span><span>Déplacer les listes dans le registre, générer le dispatch par macro, auditer le code mort.</span><span class="effort">≈ Au fil de l&#x27;eau</span></div>
+<p class="loc">drum-pattern-vst/src/synthesis/mod.rs:1017</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Dette de maintenabilité agrégée (sans défaillance directe) : 61 <code>#[allow(dead_code)]</code> répartis sur 13 fichiers (instrument_registry.rs ×16, synthesis/dsp.rs ×11, synthesis/mod.rs ×9, ui/theme.rs ×7, sequencer/pattern.rs ×4…) qui empêchent de distinguer le code réellement mort du code gardé pour <code>test_standalone</code> ; dispatch manuel de <code>DrumVoiceKind</code> (synthesis/mod.rs:1017 et suivantes) répétant 9 fois un <code>match</code> d&#x27;une vingtaine de bras (~250 lignes de boilerplate, mais exhaustif) ; listes codées en dur par index de voix dans l&#x27;UI (<code>matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12)</code>, ui/sound_editor.rs:2032 ; <code>voice_idx == 0 || voice_idx == 11 || voice_idx == 18</code>, ui/sound_editor.rs:2379) alors que CLAUDE.md impose de passer par le registre ; fichiers géants (lib.rs 4 388 lignes, instrument_registry.rs 4 186, ui/sound_editor.rs 3 474, ui/grid.rs 3 242).</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Chaque nouvelle voix doit penser à des listes par index dispersées : c&#x27;est exactement le patron qui a produit le défaut Oh6smp du Sound Editor et le repli fragile du générateur relevés plus haut.</p></div>
+<div><h4>Correctif proposé</h4><p>Remplacer les listes par des champs du registre (<code>InstrumentDef::has_analog_drift</code>, <code>InstrumentDef::is_bass_drum</code>) à l&#x27;occasion du prochain ajout d&#x27;instrument ; générer le dispatch <code>DrumVoiceKind</code> par une macro <code>macro_rules!</code> ; auditer les 61 <code>#[allow(dead_code)]</code> (les remplacer par <code>#[cfg_attr(not(test), allow(dead_code))]</code> ou supprimer le code) ; découper <code>process()</code> et <code>sound_editor.rs</code> par responsabilité.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>theorique</b></span><span>Mitigations : <b>partielle</b></span><span>Données : <b>metier</b></span></div></div>
+</div></details></article>
+<article class="card" id="f18" data-p="hs">
+<div class="card-top"><span class="idtag">F18</span><span class="badge b-hs">Hors sécurité</span><span class="tag">Infrastructure · confiance haute</span></div>
+<h3>Hygiène du dépôt et de l&#x27;outillage</h3>
+<p class="plain">935 avertissements clippy, 63 fichiers non formatés, CHANGELOG de 640 Ko réécrit à chaque commit, image de 11 Mo suivie, règles .gitignore trop larges.</p>
+<div class="todo"><span class="k">À faire</span><span>Un commit cargo fmt, allow ciblé sur la table ac606, .gitignore resserré.</span><span class="effort">≈ 1 h</span></div>
+<p class="loc">.gitignore:22</p>
+<details class="tech"><summary>Détail technique</summary><div class="tech-body">
+<div><h4>Problème</h4><p>Hygiène du dépôt et de l&#x27;outillage, agrégée : 935 avertissements clippy (dont 767 <code>excessive_precision</code> dans la table sinc de synthesis/ac606/clap.rs, 38 <code>manual_clamp</code>, 27 <code>too_many_arguments</code>, 25 <code>needless_range_loop</code>) ; 63 fichiers non formatés ; <code>CHANGELOG.md</code> de 640 Ko réécrit à chaque commit (~240 Ko compressés par version) ; <code>design-pack/design_pads/pads-pack/atlas-pads.png</code> de 11 Mo suivi ; règles <code>.gitignore</code> trop larges (<code>*backup*</code>, <code>*fixed*</code>, <code>temp_*</code>, lignes 22-24) qui ignoreraient par exemple un futur <code>src/synthesis/fixed_point.rs</code> ; <code>drum-pattern-vst/bundle.toml</code> inutilisé et faux (« 7 drum voices, 16-step », version 0.1.0) ; commentaire obsolète dans <code>install.ps1</code> ; 1 662 objets git non empaquetés (38,7 Mo) et 2 <code>tmp_obj</code> orphelins.</p></div>
+<div><h4>Pourquoi c'est un problème</h4><p>Pas de défaillance immédiate : ces points alourdissent chaque clone et chaque revue, et le bruit clippy empêche d&#x27;activer les lints utiles en CI.</p></div>
+<div><h4>Correctif proposé</h4><p><code>#![allow(clippy::excessive_precision)]</code> sur le module de table ac606 puis traiter les lints restants par lot ; <code>cargo fmt</code> unique dans un commit dédié ; archiver les entrées anciennes du CHANGELOG par trimestre ; déplacer les gros assets de design hors du dépôt (ou Git LFS) ; resserrer <code>.gitignore</code> (<code>/drum-pattern-vst/backups/</code> au lieu de <code>*backup*</code>, retirer <code>*fixed*</code>) ; supprimer <code>bundle.toml</code> ; <code>git gc</code>.</p></div>
+<div><h4>Contexte</h4><div class="ctx"><span>Exposition : <b>interne</b></span><span>Exploitabilité : <b>theorique</b></span><span>Mitigations : <b>aucune</b></span><span>Données : <b>publiques</b></span></div></div>
+</div></details></article>
+</div></section>
+<section class="section" aria-labelledby="ok-t"><div class="section-head"><p class="eyebrow">À conserver</p><h2 id="ok-t">Ce qui est bien fait</h2></div><ul class="goods">
+<li>Thread audio largement conforme aux règles temps réel : process() ne contient ni unwrap sur données hôte, ni allocation, ni format!, ni verrou bloquant hors du défaut critique signalé ; voix préallouées par slot et banques préchauffées hors RT (synthesis/mod.rs:1413-1452) ; requêtes de banque en try_lock avec relance (lib.rs:2633-2659, testé par pattern_bank_actions_return_busy_instead_of_blocking_when_locked) ; nih_log du chemin audio compilés seulement en debug.</li>
+<li>Sorties aux robustes aux buffers clairsemés de Studio One : <code>aux.outputs.get_mut()</code> et <code>add_stereo_aux_sample</code> vérifient canaux et longueur (lib.rs:55-71, 3339-3348), avec tests dédiés.</li>
+<li>Parseurs de blobs persistés disciplinés : plock.rs, pattern_bank.rs (restore_from_buffers, deserialize_fusions, slots rembourrés), macros.rs et sound_settings.rs contrôlent la longueur avant tout accès indexé ; migrations legacy couvertes par des tests.</li>
+<li>Décodage des WAV utilisateur borné : sample rate nul rejeté, 60 s maximum avant allocation, fichiers de moins de 4 trames refusés (sample_bank.rs::load_texture_file) ; sélecteur de fichiers exécuté sur un thread dédié, jamais dans la frame egui.</li>
+<li>Helper de glisser MIDI sûr : chemin canonisé, préfixes de bundle autorisés, nom exact exigé, tests anti-traversée (ui/midi.rs) ; lancement par Command sans shell ; code COM/OLE de native_drag.rs correct (propriété du HGLOBAL, durée de vie des objets pendant DoDragDrop).</li>
+<li>Build sans aucun warning (cargo check --all-targets : 0), 477 tests lib et 3 tests egui-baseview verts, 67 tests nih-plug verts depuis leur workspace, CI verte sur les 8 derniers pushes, Cargo.lock suivi ; vendoring d&#x27;egui-baseview exemplaire (révision amont, patchs expliqués, tests).</li>
+<li>Séquenceur très bien testé : anti double déclenchement avec humanize maximal, microtiming positif et négatif à travers le bouclage, page loop, polyrythmie, push/pull avec sync_to_host (sequencer/mod.rs, stress_tests.rs).</li>
+</ul></section>
+<section class="section" id="docs" aria-labelledby="doc-t"><div class="section-head"><p class="eyebrow">11 écarts</p><h2 id="doc-t">Documentation et code divergent</h2><p>Le plus visible : CLAUDE.md, lu par tous les agents, annonce 17 voix et 15 kinds alors que le code en compte 27 et 25.</p></div>
+<div class="table-wrap"><table><thead><tr><th>Document</th><th>Ce que dit la doc</th><th>Ce que montre le code</th><th>Conséquence</th></tr></thead><tbody>
+<tr><td class="doc">CLAUDE.md</td><td>Section « What this is » : « 17 synthesis voices (DrumVoice::COUNT = 17) » et « TrackInstrumentKind, 15 kinds ».</td><td>DrumVoice::COUNT = 27 (drum-pattern-vst/src/synthesis/mod.rs:119, dernier variant OneShot = 26) et TrackInstrumentKind::COUNT = 25 (drum-pattern-vst/src/track.rs:81, dernier variant OneShot = 24). Sdrex, les 6 voix AC606, Oh6smp, Rift et One-Shot manquent au résumé.</td><td>Le document désigné comme source de vérité pour tous les agents sous-estime de 10 voix la surface réelle ; un agent qui s&#x27;arrête au résumé se fait une idée fausse du périmètre.</td></tr>
+<tr><td class="doc">ADDING_AN_INSTRUMENT.md (§2, tableau des trois espaces d&#x27;index)</td><td>« TrackInstrumentKind … COUNT = 23, dernier Oh6smp = 22 » ; « DrumVoice … COUNT = 25, dernier Oh606 = 24 » (état au 2026-09-13).</td><td>COUNT = 25 (dernier OneShot = 24) côté kinds, COUNT = 27 (dernier OneShot = 26) côté voix, depuis l&#x27;ajout de One-Shot ([243], commit 69279b3).</td><td>Le guide qui sert à éviter les confusions d&#x27;index lors du prochain ajout d&#x27;instrument ([56], [84], [95]) donne des repères périmés.</td></tr>
+<tr><td class="doc">ADDING_AN_INSTRUMENT.md (§9, tableau des pièges)</td><td>« Rôle générateur oublié → Instrument muet sur GENERATE ».</td><td>drum-pattern-vst/src/generator/mod.rs:159-161 : pour un futur kind oublié, le repli <code>_ =&gt; kind.drum_voice_index()</code> indexe hors bornes <code>assigned_per_voice</code> (14 cases) → panique, donc arrêt de l&#x27;hôte avec panic = &quot;abort&quot;.</td><td>La documentation minimise un plantage en simple silence ; un contributeur peut reporter la correction.</td></tr>
+<tr><td class="doc">CLAUDE.md (§ Lane textures [228])</td><td>Les textures remplacées sont gardées une génération côté UI « so the last reference is never dropped on the audio thread ».</td><td>Vrai pour les références du TexturePool, faux pour celle que chaque voix One-Shot/Rift garde dans <code>self.source</code> (synthesis/oneshot.rs:454, synthesis/rift.rs:686) : après deux remplacements sans coup, la libération a lieu dans trigger().</td><td>Garantie temps réel annoncée mais non tenue ; les relecteurs se fient à la doc.</td></tr>
+<tr><td class="doc">drum-pattern-vst/src/pattern_bank.rs:1026-1028 (commentaire de refresh_snapshot)</td><td>« only called from UI/persistence code paths, never from the audio callback ».</td><td>Appelé depuis process() via save_pattern_to_slot (drum-pattern-vst/src/lib.rs:2288).</td><td>Défaut critique temps réel masqué par un commentaire rassurant.</td></tr>
+<tr><td class="doc">CLAUDE.md (§ Portability rule)</td><td>« avoid hardcoded paths (USERPROFILE) — use dirs/HOME ».</td><td>Quatre fonctions construisent le dossier utilisateur à partir de USERPROFILE (config.rs:62, presets.rs:311, preset_dumps.rs:24, ui/midi.rs:20) ; la crate dirs n&#x27;est pas une dépendance.</td><td>Presets et config au mauvais endroit avec OneDrive, cassés sur macOS.</td></tr>
+<tr><td class="doc">drum-pattern-vst/STUDIO_ONE_MULTI_OUT.md</td><td>Liste 5 patchs appliqués au nih-plug vendoré.</td><td>Au moins 4 patchs supplémentaires dans vendor/nih-plug : remap des aux clairsemés (active_output_buses / mapped_aux_output_idx), état côté IEditController, fenêtre de messages clavier (FLASH_DRUM_KBD_LOG), journal E:\tmp\drum-pattern-vst-state.log (wrapper.rs:44). Aucune révision amont notée.</td><td>Impossible de reconstituer le diff amont ; risque de perdre un patch Studio One lors d&#x27;une mise à jour ou d&#x27;une migration.</td></tr>
+<tr><td class="doc">README.md (racine) et drum-pattern-vst/README.md</td><td>« 13 voix de synthèse dans 14 slots modulaires » ; « 13 instruments … Kick, Snare, HiHat, OpenHH, Tom1-3 … » ; « Presets Rock, Funk, Disco ».</td><td>27 voix / 25 kinds, un seul kind Tom ; les presets de style ont été remplacés par le Generator (generator/styles.rs) et le navigateur de presets [150] (src/presets.rs).</td><td>Le point d&#x27;entrée du dépôt décrit le produit tel qu&#x27;il était plusieurs générations de fonctionnalités plus tôt.</td></tr>
+<tr><td class="doc">docs/user-guide.md</td><td>Ligne 26 : « 13 voix de synthèse … Tom1-3 » ; ligne 21 : « Auto-Edit » dans la barre supérieure.</td><td>25 kinds dont un seul Tom (track.rs:20) ; Auto-Edit a été déplacé dans un popup de réglages (ui/popups.rs:382).</td><td>Le guide envoie l&#x27;utilisateur chercher un contrôle qui n&#x27;est plus là et sous-compte l&#x27;offre d&#x27;instruments.</td></tr>
+<tr><td class="doc">docs/infrastructure.md</td><td>Tableau « Voix de synthèse (13 dans 14 slots) » avec Tom1/Tom2/Tom3 ; « hound — Export WAV (tests) » ; « Tests unitaires (175) » ; « Rust (dernière stable) » ; aucune mention de la CI.</td><td>27 voix ; hound sert en production au décodage des WAV utilisateur (sample_bank.rs:244) ; 477 tests lib ; toolchain 1.94.0 utilisée pour le binaire livré ; une CI GitHub Actions existe (.github/workflows/ci.yml).</td><td>Le document d&#x27;infrastructure ne permet pas de comprendre la chaîne de build et de test réelle.</td></tr>
+<tr><td class="doc">drum-pattern-vst/bundle.toml</td><td>« 7 drum voices, 16-step », version 0.1.0, © 2024.</td><td>Fichier inutilisé par build.ps1 ; le plugin est en 0.2.0, 64 pas, 27 voix.</td><td>Fausse piste pour qui cherche la configuration de packaging.</td></tr>
+</tbody></table></div></section>
+<section class="section" aria-labelledby="ar-t"><div class="section-head"><p class="eyebrow">Vue d'ensemble</p><h2 id="ar-t">Architecture</h2><p>Monolithe Rust compilé en une seule DLL VST3. L&#x27;hôte appelle <code>process()</code> (lib.rs), qui fait avancer un séquenceur maître (sequencer/, groove.rs), déclenche les voix DSP d&#x27;un pool de 14 slots (synthesis/, 27 voix) et mixe vers une sortie principale et 14 sorties aux stéréo, tout en émettant du MIDI sur le canal 10. L&#x27;éditeur egui (ui.rs + ui/) écrit dans des structures atomiques partagées que le thread audio lit sans verrou ; l&#x27;état complet est persisté par nih-plug en dix champs versionnés (pattern-v5, sound-settings-v2, plock-v1…). Le registre instrument_registry.rs est la source de vérité des voix et rend l&#x27;essentiel de l&#x27;UI data-driven. Deux crates amont sont vendorées et patchées : nih-plug (multi-out et restauration d&#x27;état sous Studio One) et egui-baseview (glisser-déposer entrant et replanification des repaints).</p></div>
+<div class="diagram"><pre>Hôte VST3 (Studio One / REAPER)
+   |  process() par buffer            ^ audio Main + 14 Aux, MIDI ch.10
+   v                                  |
++------------------ THREAD AUDIO (lib.rs) ------------------+
+| Sequencer (sequencer/, groove.rs) -&gt; DrumSynthesizer      |
+|   (synthesis/, 14 slots x 27 voix, TexturePool)           |
++-----------------------------------------------------------+
+        ^ lecture atomique / try_lock        | états publiés
+        |                                    v
+  SharedPattern . AtomicTrackLayout . SoundSettingsState . PlockState
+  MacroMap . PatternBank (Mutex) . SongController (ArrayQueue)
+        ^ écritures (setters, bump de version)
+        |
++---------------- THREAD UI (egui, ui.rs + ui/) ------------+
+| grille, Sound Editor, p-locks, banque, song, presets      |
++-----------------------------------------------------------+
+   |  fichiers                       |  processus séparé
+   v                                 v
+Documents\Flash Drum\ (presets, config, exports)   drum-pattern-midi-drag-helper.exe (OLE)
+WAV utilisateur (Rift, One-Shot)
+État VST3 (10 champs persistés) &lt;-&gt; nih-plug vendoré &lt;-&gt; projet DAW</pre></div>
+<div class="two"><div class="box"><h3>Points forts</h3><ul><li>Séparation UI/audio rigoureuse : process() est exempt d&#x27;unwrap, de format!, de Box::new et de verrou bloquant, à l&#x27;exception du défaut critique de ce rapport ; les trois défauts temps réel de l&#x27;audit de juillet 2026 (Mutex en mode song, Box::new dans reinitialize_slot, nih_log dans le callback) sont corrigés</li><li>Registre central qui rend Sound Panel, menus et p-locks data-driven, et dispatch DrumVoiceKind exhaustif sans branche <code>_</code> : le compilateur refuse une voix incomplète</li><li>Persistance disciplinée : longueurs vérifiées avant indexation, migrations legacy explicites et testées (pattern v3/v4, banque 8→16, stride des p-locks, filter_state)</li><li>Robustesse vis-à-vis de l&#x27;hôte : sorties aux clairsemées de Studio One gérées par <code>get_mut</code> et <code>add_stereo_aux_sample</code> avec contrôle de longueur, testées</li></ul></div>
+<div class="box"><h3>Points faibles</h3><ul><li>Points de couture fragiles entre les trois espaces d&#x27;index (slot, kind, voix) écrits en if/else ou match avec repli implicite (générateur, banque d&#x27;échantillons du Sound Editor)</li><li>Garanties temps réel non outillées : aucun test assert_no_alloc, d&#x27;où deux défauts d&#x27;allocation/libération passés inaperçus</li><li>Documentation d&#x27;architecture en retard d&#x27;une ou plusieurs générations d&#x27;instruments (CLAUDE.md, README, guide utilisateur, ADDING_AN_INSTRUMENT.md, docs/infrastructure.md)</li><li>Fork nih-plug non traçable (révision amont inconnue, patchs partiellement documentés) alors que l&#x27;amont est en maintenance</li><li>Fichiers géants (lib.rs, instrument_registry.rs, sound_editor.rs, grid.rs) et travail recalculé à chaque image dans le thread UI</li></ul></div></div>
+<div class="box"><h3>Composants</h3><ul><li>src/lib.rs — point d&#x27;entrée du plugin : DrumFlashParams (paramètres + 10 champs persistés), process() (séquenceur, déclenchements, mute/solo/mix, choke groups, sorties aux, MIDI), requêtes différées de la banque de patterns</li><li>src/sequencer/ + src/groove.rs — position maître, TrackState par lane, SharedPattern lock-free, microtiming ±100 ms (déclenchements anticipés/différés), conditions de pas, swing</li><li>src/synthesis/ — une voix DSP par fichier (27 voix dont TR-606 échantillonnée, AC606 modélisée, Buzz, Rift, One-Shot), primitives dsp.rs (enveloppes AHD, smoothers), saturation, sample_bank.rs (banques embarquées et TexturePool)</li><li>src/instrument_registry.rs + src/synthesis/settings/ — définitions des voix, paramètres standards et spéciaux, valeurs par défaut</li><li>src/sound_settings.rs, src/plock.rs, src/macros.rs — état atomique par slot : réglages, p-locks par pas (46 champs × 14 × 64), macros MIDI</li><li>src/track.rs — modèle de slot (25 kinds), layout atomique, routing, choke groups, migrations des kinds retirés</li><li>src/generator/ — générateurs probabiliste, markov, euclidien, classique et styles, remappés vers les lanes réelles</li><li>src/pattern_bank.rs + src/atomic_song.rs — banque de 16 patterns et mode song</li><li>src/presets.rs, src/factory_presets.rs, src/ui/preset_browser.rs — presets JSON utilisateur et d&#x27;usine</li><li>src/user_textures.rs — WAV utilisateur par lane (Rift, One-Shot), cache de décodage partagé</li><li>src/ui.rs + src/ui/ — éditeur egui (grille, Sound Editor, p-locks, enveloppes, banque, song, macros, rendu skeuomorphe centralisé)</li><li>src/midi_export.rs, src/native_drag.rs, src/bin/midi_drag_helper.rs — export .mid et glisser-déposer OLE via un exécutable séparé</li><li>vendor/nih-plug, vendor/egui-baseview — dépendances amont patchées</li></ul></div>
+</section>
+<section class="section" aria-labelledby="in-t"><div class="section-head"><p class="eyebrow">Build, livraison, exploitation</p><h2 id="in-t">Infrastructure</h2><p>Aucune infrastructure serveur : Flash Drum est un binaire natif chargé par le DAW de l&#x27;utilisateur, sans réseau à l&#x27;exécution. La chaîne se limite à un build local PowerShell (cargo release → bundle VST3 → copie dans C:\Program Files\Common Files\VST3) et à une CI GitHub Actions Windows qui compile, teste et publie le bundle en artefact non signé. L&#x27;état utilisateur vit dans les projets DAW (blob VST3 de 0,4 à 9,7 Mo par instance) et dans Documents\Flash Drum (presets, config, exports). Il n&#x27;y a ni monitoring, ni rapport de crash, ni installeur, ni signature ; macOS est déclaré comme cible mais jamais construit.</p></div><dl class="infra">
+<div><dt>Stack</dt><dd><ul><li>Rust 1.94.0 (stable-x86_64-pc-windows-msvc) en local, stable flottant en CI, édition 2021</li><li>Cible livrée : Windows x64 (cdylib de 19,2 Mo renommée en .vst3 + helper .exe de 134 Ko) ; macOS déclaré, non vérifié ; Linux exclu</li><li>nih-plug vendoré et patché (VST3 via vst3-sys, GPLv3)</li><li>egui 0.31 / egui-baseview vendoré / baseview (OpenGL)</li><li>279 crates dans Cargo.lock (suivi par git), dont 3 sources git non vendorées</li><li>Profil release : opt-level 3, LTO thin, codegen-units 1, strip, panic = &quot;abort&quot;</li><li>Scripts PowerShell 5.1 (build.ps1, install.ps1, install-to-vst3.ps1, test-verification.ps1)</li><li>GitHub Actions (runner windows-latest)</li></ul></dd></div>
+<div><dt>Services externes</dt><dd><ul><li>Aucun service externe à l&#x27;exécution (pas de crate réseau ; la crate <code>open</code> sert seulement au lien About)</li><li>crates.io — dépendances au build</li><li>GitHub : robbert-vdh/vst3-sys (branche fix/drop-box-from-raw), RustAudio/baseview (rev 9a0b42c), clap-sys (rev 25d7f53) — dépendances git au build</li><li>GitHub Actions — CI et stockage des artefacts (bundle VST3 non signé, 90 jours, dépôt public)</li><li>Indirect : partages SMB/WebDAV si un chemin de texture UNC est restauré (voir finding dédié)</li></ul></dd></div>
+<div><dt>Flux de données</dt><dd><ul><li>Hôte VST3 -&gt; process() -&gt; Sequencer -&gt; DrumSynthesizer -&gt; Main Mix + 14 Aux stéréo + NoteOn/NoteOff canal 10 -&gt; Hôte</li><li>MIDI entrant (hôte) -&gt; déclenchement des lanes / macros apprises -&gt; voix DSP</li><li>UI egui -&gt; atomiques partagés (SharedPattern, layout, réglages, p-locks, macros) -&gt; thread audio (lecture par buffer)</li><li>UI -&gt; requête atomique de sauvegarde/chargement de pattern -&gt; process() (try_lock sur PatternBank) -&gt; snapshot persisté</li><li>Hôte get_state/set_state -&gt; nih-plug vendoré (serde_json, 10 champs versionnés) &lt;-&gt; projet DAW ; copie de diagnostic vers E:\tmp\drum-pattern-vst-state.log</li><li>Sélecteur de fichiers (thread dédié) ou glisser-déposer baseview -&gt; user_textures (hound, thread principal) -&gt; TexturePool (arc_swap) -&gt; voix Rift/One-Shot</li><li>UI &lt;-&gt; Documents\Flash Drum\presets\{instruments,patterns,grids,songs}\*.json, config.json, exports\*.mid</li><li>UI -&gt; drum-pattern-midi-drag-helper.exe (argument = chemin du .mid) -&gt; DoDragDrop OLE -&gt; Explorateur / DAW</li><li>build.ps1 -&gt; cargo build --release -&gt; build/drum-pattern-vst.vst3 -&gt; build/symbols (PDB, 10 conservés) -&gt; C:\Program Files\Common Files\VST3</li></ul></dd></div>
+<div><dt>Déploiement et CI</dt><dd>Déploiement manuel par le développeur : <code>build.ps1 -Install</code> (horodatage DRUM_PATTERN_BUILD_ID affiché dans l&#x27;UI, suppression puis copie non atomique du bundle, pas de test préalable), puis validation à la main dans Studio One et entrée dans CHANGELOG.md. La CI GitHub Actions (push/PR sur main) exécute cargo check, cargo test et build.ps1 sur windows-latest et publie le bundle en artefact ; elle ne teste ni macOS, ni clippy, ni fmt, ni les patchs vendorés, et utilise une toolchain différente de celle du binaire livré. Pas d&#x27;installeur, pas de signature Authenticode, pas de bundle macOS ; branche main non protégée ; dernier commit local (e68b48b) non poussé.</dd></div>
+<div><dt>Monitoring</dt><dd>Aucun monitoring ni rapport de crash. Diagnostics disponibles : nih_log (stderr, windbg ou fichier via NIH_LOG, invisible par défaut dans Studio One), FLASH_DRUM_KBD_LOG (%TEMP%\flash_drum_kbd.log, clavier uniquement), journal d&#x27;état toujours actif en release vers E:\tmp (patch non documenté), build ID affiché dans l&#x27;en-tête du plugin. Avec panic = &quot;abort&quot;, une panique ferme l&#x27;hôte sans trace exploitable ; seuls les 10 derniers PDB (symboles publics) sont conservés localement.</dd></div>
+<div><dt>Secrets</dt><dd>Aucun secret dans le code, les scripts ni la CI (recherche de token/secret/password/api_key hors vendor : aucune occurrence hors textes d&#x27;audit). Le workflow n&#x27;utilise aucun secret et a des permissions en lecture par défaut. Point d&#x27;attention : le DLL livré embarque des chemins locaux (E:\Dev\…, C:\Users\baboost\.cargo\…) et les presets partagés embarquent les chemins absolus des WAV de leur auteur.</dd></div>
+<div><dt>Résilience</dt><dd>L&#x27;état utilisateur repose sur le blob VST3 du projet DAW (écrit côté IComponent et IEditController) : solide, avec migrations legacy testées, mais sans fixture d&#x27;état réel pour détecter une régression de format. Presets et config sont écrits par fs::write non atomique, et un config.json illisible est écrasé par les défauts. Points de défaillance uniques : un seul poste de build (le binaire livré n&#x27;est jamais reproduit à l&#x27;identique par la CI), un seul mainteneur, trois dépôts git tiers dont un suivi par branche, symboles uniquement locaux, installation non atomique (bundle installé actuellement amputé du helper MIDI). Le dépôt public contient un document tiers vraisemblablement protégé, exposant à un retrait DMCA.</dd></div>
+<div><dt>Scalabilité</dt><dd>Limites fixes par conception : 14 slots, 14 sorties aux stéréo, 64 pas, 16 patterns, 16 macros, p-locks 46 champs × 14 × 64 en atomiques, WAV utilisateur limités à 60 s. Goulots identifiés : taille de l&#x27;état persisté (jusqu&#x27;à 9,7 Mo, blobs Vec&lt;u8&gt; sérialisés en tableaux de nombres JSON), sérialisation de la banque dans le callback lors d&#x27;une sauvegarde de pattern, relecture complète du dossier de presets à chaque image, résolution synchrone des chemins de textures à la restauration.</dd></div>
+</dl></section>
+<footer><span>Rapport généré le 24 septembre 2026 à partir de <code>audit_cr/claude-code.json</code>.</span><span>Contexte : Plugin audio natif temps réel (VST3, cdylib Windows x64) accompagné d&#x27;un exécutable auxiliaire pour le glisser-déposer MIDI sortant.</span></footer>
+</div>
+<script>
+(function () {
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
+  function apply(f) {
+    chips.forEach(function (c) { c.setAttribute('aria-pressed', String(c.dataset.f === f)); });
+    cards.forEach(function (c) { c.hidden = !(f === 'all' || c.dataset.p === f); });
+  }
+  chips.forEach(function (c) { c.addEventListener('click', function () { apply(c.dataset.f); }); });
+  document.getElementById('open-all').addEventListener('click', function () {
+    document.querySelectorAll('details.tech').forEach(function (d) { if (!d.closest('.card').hidden) d.open = true; });
+  });
+  document.getElementById('close-all').addEventListener('click', function () {
+    document.querySelectorAll('details.tech').forEach(function (d) { d.open = false; });
+  });
+  // Un lien vers un constat masqué par le filtre réaffiche tout.
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#f"]');
+    if (!a) return;
+    var t = document.getElementById(a.getAttribute('href').slice(1));
+    if (t && t.hidden) apply('all');
+  });
+})();
 </script>
 </body>
 </html>

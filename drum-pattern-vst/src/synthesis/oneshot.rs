@@ -381,6 +381,17 @@ impl OneShotVoice {
         };
         dc * self.settings.volume
     }
+
+    /// [253] Hand a replaced file reference to the pool's retirement queue
+    /// (drained on the UI thread) instead of dropping it on the audio thread:
+    /// this voice may hold the LAST reference, and freeing up to ~23 MB in
+    /// the callback is a dropout. No pool = test harness, not real-time:
+    /// the `Arc` is dropped in place.
+    fn retire_source(&self, bank: std::sync::Arc<sample_bank::TextureBank>) {
+        if let Some((pool, _)) = &self.pool {
+            pool.retire(bank);
+        }
+    }
 }
 
 impl Voice for OneShotVoice {
@@ -401,13 +412,17 @@ impl Voice for OneShotVoice {
             .and_then(|(pool, lane)| pool.get(*lane));
         let Some(bank) = source.clone() else {
             self.active = false;
-            self.source = None;
+            if let Some(old) = self.source.take() {
+                self.retire_source(old);
+            }
             return;
         };
         let len = bank.data.len();
         if len < 4 {
             self.active = false;
-            self.source = None;
+            if let Some(old) = self.source.take() {
+                self.retire_source(old);
+            }
             return;
         }
         self.active = true;
@@ -450,13 +465,24 @@ impl Voice for OneShotVoice {
         self.pitch_env_time = 0.0;
         self.filter_tick = 0;
 
-        // Kept alive for the hit.
-        self.source = source;
+        // Kept alive for the hit. [253] The previous file is retired, not
+        // dropped: this trigger may hold its last reference.
+        if let Some(old) = std::mem::replace(&mut self.source, source) {
+            self.retire_source(old);
+        }
     }
 
     fn trigger_hard(&mut self) {
         self.trigger();
         self.amp_env.trigger_hard();
+    }
+
+    /// [253] Before the voice is swapped out on the audio thread
+    /// (`reinitialize_slot`), retire the held file instead of dropping it.
+    fn release_held_texture(&mut self) {
+        if let Some(old) = self.source.take() {
+            self.retire_source(old);
+        }
     }
 
     fn set_texture_pool(&mut self, pool: std::sync::Arc<sample_bank::TexturePool>, lane: usize) {
@@ -631,6 +657,56 @@ mod tests {
         v.trigger();
         let out: Vec<f32> = (0..1000).map(|_| v.process_sample()).collect();
         assert!(peak(&out) < 1e-6, "no file should mean silence");
+    }
+
+    /// [253] A voice holding the LAST reference to a replaced file must hand
+    /// it to the pool's retirement queue, never free it in `trigger()` (the
+    /// audio thread). Fails before [253]: the old `Arc` was dropped in place.
+    #[test]
+    fn trigger_never_frees_a_texture_on_the_audio_thread() {
+        let make_bank = |hz: f32| {
+            let data: Vec<f32> = (0..4410)
+                .map(|i| (i as f32 * hz * 2.0 * std::f32::consts::PI / 44100.0).sin() * 0.8)
+                .collect();
+            let peaks = data.iter().map(|s| (*s, *s)).collect();
+            Arc::new(sample_bank::TextureBank {
+                source_rate: 44100.0,
+                data,
+                right: None,
+                peaks,
+            })
+        };
+        let pool = Arc::new(sample_bank::TexturePool::new());
+        let mut v = OneShotVoice::new(44100.0, OneShotSettings::from(VoiceSettings::oneshot()));
+        v.set_texture_pool(pool.clone(), 2);
+
+        // The lane plays file A once: the voice holds A across the hit.
+        let a = make_bank(220.0);
+        pool.publish(2, Some(a.clone()));
+        v.trigger();
+        let weak_a = Arc::downgrade(&a);
+
+        // The user swaps A for B then C while the lane does not retrigger:
+        // the pool's one-generation parking lets go of A.
+        pool.publish(2, Some(make_bank(330.0)));
+        pool.publish(2, Some(make_bank(440.0)));
+        drop(a);
+        assert!(weak_a.upgrade().is_some(), "the voice still holds A");
+
+        // The next trigger must retire A, not free it — no allocation, no
+        // deallocation on this (simulated audio) thread.
+        assert_no_alloc::assert_no_alloc(|| {
+            v.trigger();
+        });
+        assert!(
+            weak_a.upgrade().is_some(),
+            "A must be retired to the queue, not freed in trigger()"
+        );
+        assert_eq!(pool.retired_len(), 1);
+
+        // The UI thread's drain is where A is actually freed.
+        pool.drain_retired();
+        assert!(weak_a.upgrade().is_none(), "drain frees A on the UI thread");
     }
 
     #[test]
