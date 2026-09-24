@@ -368,13 +368,15 @@ pub fn delete_file(path: &Path) -> Result<(), String> {
 /// Rename a user preset ([237]): the display name lives INSIDE the JSON and
 /// the file name derives from it, so both are updated together. Returns the
 /// new path (unchanged when the sanitized name already matches).
-pub fn rename_preset(path: &Path, new_name: &str) -> Result<PathBuf, String> {
+/// [246] The kind is passed by the caller: re-deriving it from
+/// `path.extension()` only yields `json` and the renamed file would lose its
+/// `.fdinst/.fdpat/...` double extension, becoming invisible to `list_dir`.
+pub fn rename_preset(path: &Path, new_name: &str, kind: PresetKind) -> Result<PathBuf, String> {
     let content = load_json(path)?;
     let mut value: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
     value["name"] = serde_json::Value::String(new_name.to_string());
     let dir = path.parent().ok_or("preset has no parent dir")?.to_path_buf();
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
-    let new_path = dir.join(format!("{}.{}", sanitize_name(new_name), ext));
+    let new_path = dir.join(format!("{}.{}", sanitize_name(new_name), kind.extension()));
     let json = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
     std::fs::write(&new_path, json).map_err(|e| e.to_string())?;
     if new_path != path {
@@ -772,20 +774,48 @@ mod tests {
     fn rename_preset_updates_json_name_and_filename() {
         let dir = std::env::temp_dir().join(format!("fd_rename_test_{:?}", std::thread::current().id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let old = dir.join("Old_Name.fdpat");
+        // [246] Start from a file as save_json produces it: double extension.
+        let old = dir.join("Old_Name.fdpat.json");
         std::fs::write(&old, r#"{"version":1,"name":"Old Name"}"#).unwrap();
 
-        let new_path = rename_preset(&old, "New Name!").unwrap();
-        assert!(new_path.ends_with("New_Name.fdpat"));
+        let new_path = rename_preset(&old, "New Name!", PresetKind::Pattern).unwrap();
+        assert!(new_path.ends_with("New_Name.fdpat.json"));
         assert!(!old.exists());
         let content = std::fs::read_to_string(&new_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(value["name"], "New Name!");
 
         // Renaming to a name that sanitizes to the SAME file stays in place.
-        let same = rename_preset(&new_path, "New_Name").unwrap();
+        let same = rename_preset(&new_path, "New_Name", PresetKind::Pattern).unwrap();
         assert_eq!(same, new_path);
         assert!(same.exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rename_preset_keeps_double_extension_and_stays_listed() {
+        let dir = std::env::temp_dir().join(format!(
+            "fd_rename_listed_test_{:?}",
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let saved = save_json(
+            dir.clone(),
+            "Kick punchy",
+            PresetKind::Instrument,
+            r#"{"version":1,"name":"Kick punchy"}"#,
+        )
+        .unwrap();
+        assert!(saved.ends_with("Kick_punchy.fdinst.json"));
+
+        let renamed = rename_preset(&saved, "Kick punchy v2", PresetKind::Instrument).unwrap();
+        assert!(renamed.ends_with("Kick_punchy_v2.fdinst.json"));
+
+        let listed = list_dir(&dir, PresetKind::Instrument);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].path, renamed);
+        assert_eq!(listed[0].name, "Kick punchy v2");
 
         std::fs::remove_dir_all(&dir).ok();
     }

@@ -156,7 +156,23 @@ fn remap_roles_to_slots(
             TrackInstrumentKind::Oh6Ac => 3,
             TrackInstrumentKind::Cl6Ac => 7,
             TrackInstrumentKind::Tm6Ac => 4,
-            _ => kind.drum_voice_index(),
+            // [248] No `_` fallback: every kind gets an explicit role, so
+            // adding a kind without touching this match is a compile error.
+            // The old `_ => kind.drum_voice_index()` indexed
+            // `assigned_per_voice` (14 cells) out of bounds for any kind
+            // whose voice index is ≥ 14 — a panic, and panic = "abort"
+            // takes the host down.
+            TrackInstrumentKind::Kick => 0,
+            TrackInstrumentKind::Snare => 1,
+            TrackInstrumentKind::HiHat => 2,
+            TrackInstrumentKind::OpenHiHat => 3,
+            TrackInstrumentKind::Tom => 4,
+            TrackInstrumentKind::Clap => 7,
+            TrackInstrumentKind::Ride => 8,
+            TrackInstrumentKind::Cymbal => 9,
+            TrackInstrumentKind::Snare606 => 10,
+            TrackInstrumentKind::BassDrum808 => 11,
+            TrackInstrumentKind::Perc1 => 12,
         };
         let duplicate_index = assigned_per_voice[base_voice];
         assigned_per_voice[base_voice] += 1;
@@ -279,6 +295,36 @@ mod tests {
         assert_eq!(funk, &[1, 3, 5, 7, 9, 11, 13, 15]);
         assert_eq!(latin, &[0, 3, 6, 10, 12, 15]);
         assert_eq!(reggae, &[2, 6, 10, 14]);
+    }
+
+    #[test]
+    fn every_kind_survives_generate() {
+        // [248] A kind forgotten in `remap_roles_to_slots` used to fall into a
+        // `_ => drum_voice_index()` fallback that indexes a 14-cell table out
+        // of bounds → panic → panic = "abort" kills the host. The match is
+        // now exhaustive (compile error on a missing kind); this test is the
+        // runtime net: every kind through every generator type must return.
+        let kinds = TrackInstrumentKind::ALL;
+        for generator_type in [
+            GeneratorType::Probabilistic,
+            GeneratorType::Markov,
+            GeneratorType::Euclidean,
+            GeneratorType::Classic,
+        ] {
+            for kind in kinds {
+                let layout = layout_from_kinds(&[kind]);
+                let params = GeneratorParams {
+                    generator_type,
+                    style_primary: Style::Rock,
+                    style_secondary: Style::Rock,
+                    style_mix: 0.0,
+                    density: 0.8,
+                    variation: 0.5,
+                    seed: 42,
+                };
+                let _ = generate(&params, layout.as_ref());
+            }
+        }
     }
 
     #[test]

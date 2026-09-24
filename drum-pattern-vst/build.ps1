@@ -118,6 +118,20 @@ if ($Install) {
     }
 
     if (Test-Path $destPath) {
+        # [250] Fail fast on a locked DLL (Studio One or antivirus holding it)
+        # BEFORE deleting anything: otherwise Remove-Item wipes the helper and
+        # then dies on the DLL, leaving a half-destroyed installed bundle.
+        $installedDll = Join-Path $destPath "Contents\x86_64-win\$vst3File"
+        if (Test-Path $installedDll) {
+            try {
+                $fs = [System.IO.File]::Open($installedDll, 'Open', 'ReadWrite', 'None')
+                $fs.Close()
+            } catch {
+                Write-Color "Red" "DLL verrouille (Studio One ouvert ?) : rien n'a ete modifie."
+                Write-Host "Ferme Studio One puis relance .\build.ps1 -Install"
+                exit 2
+            }
+        }
         Remove-Item -Path $destPath -Recurse -Force
     }
 

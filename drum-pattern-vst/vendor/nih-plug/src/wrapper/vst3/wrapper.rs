@@ -41,7 +41,15 @@ use crate::wrapper::util::{clamp_input_event_timing, clamp_output_event_timing, 
 // Alias needed for the VST3 attribute macro
 use vst3_sys as vst3_com;
 
-const DRUM_PATTERN_STATE_LOG_PATH: &str = r"E:\tmp\drum-pattern-vst-state.log";
+// FLASH-DRUM-PATCH [249]: state diagnostics log, opt-in via the
+// FLASH_DRUM_STATE_LOG environment variable and written to the system temp
+// dir (never a hardcoded developer path — the previous E:\tmp constant wrote
+// silently on any user machine that had an E: drive). When unset, no file is
+// created and `log_current_params` skips its extra state serialization.
+fn drum_pattern_state_log_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("FLASH_DRUM_STATE_LOG")?;
+    Some(std::env::temp_dir().join("flash-drum-state.log"))
+}
 
 fn mapped_aux_output_idx(
     active_output_buses: u32,
@@ -216,6 +224,10 @@ impl<P: Vst3Plugin> Wrapper<P> {
     }
 
     fn log_current_params(&self, callback_name: &str, phase: &str) {
+        // [249] Skip the extra full state serialization when the log is off.
+        if drum_pattern_state_log_path().is_none() {
+            return;
+        }
         let state = unsafe {
             state::serialize_object::<P>(
                 self.inner.params.clone(),
@@ -229,11 +241,10 @@ impl<P: Vst3Plugin> Wrapper<P> {
     }
 
     fn log_state_diag(&self, args: std::fmt::Arguments<'_>) {
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(DRUM_PATTERN_STATE_LOG_PATH)
-        {
+        let Some(path) = drum_pattern_state_log_path() else {
+            return;
+        };
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
             let _ = writeln!(
                 file,
                 "{:?} [{} {}] {}",

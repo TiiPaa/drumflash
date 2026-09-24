@@ -3031,13 +3031,10 @@ pub fn draw_sound_panel(
                     ui.add_space(16.0);
                 }
                 let sample_graph = if crate::instrument_registry::is_sampler(voice_idx) {
-                    let bank = if voice_idx == 13 {
-                        crate::synthesis::sample_bank::bd606()
-                    } else if voice_idx == 14 {
-                        crate::synthesis::sample_bank::sd606()
-                    } else {
-                        crate::synthesis::sample_bank::ch606()
-                    };
+                    // [247] Shared with the DSP — Oh6smp (24) plays oh606(),
+                    // not ch606(): its slices are twice as long.
+                    let bank = crate::synthesis::sample_bank::sampler_bank(voice_idx)
+                        .expect("is_sampler voices always have a bank");
                     let hit_idx = (src.get(ParamId::Special(1)).round() as usize).clamp(1, 8) - 1;
                     // Legacy sessions (pitch marker unset) predate End: full length.
                     let end = if src.get(ParamId::Special(10)) < 0.5 {
