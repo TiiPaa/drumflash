@@ -260,7 +260,7 @@ mod detail {
             for _ in 0..6 {
                 sum += self.bipolar();
             }
-            (sum * 0.70710678118654752440) as f32
+            (sum * std::f64::consts::FRAC_1_SQRT_2) as f32
         }
 
         fn bipolar(&mut self) -> f64 {

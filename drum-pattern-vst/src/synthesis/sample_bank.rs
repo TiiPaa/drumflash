@@ -57,6 +57,20 @@ pub fn oh606() -> &'static SampleBank {
     OH606_BANK.get_or_init(|| load_bank(OH606_BYTES))
 }
 
+/// [247] Single source for "which bank does this sampler voice play", shared
+/// by the DSP (`DrumSynthesizer`) and the Sound Editor waveform graph.
+/// Indices are `DrumVoice` discriminants, kept in sync with
+/// `instrument_registry::is_sampler` (13 | 14 | 15 | 24).
+pub fn sampler_bank(voice_idx: usize) -> Option<&'static SampleBank> {
+    match voice_idx {
+        13 => Some(bd606()),
+        14 => Some(sd606()),
+        15 => Some(ch606()),
+        24 => Some(oh606()),
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Rift textures ([221])
 // ---------------------------------------------------------------------------
@@ -160,10 +174,22 @@ pub const USER_TEXTURE_MAX_SECS: f32 = 60.0;
 /// for one more generation, so the voice that may still be reading it never
 /// holds the last reference - freeing on the audio thread is what that would
 /// mean. It is freed on the NEXT publish into the same lane, on the UI thread.
+///
+/// [253] Voices also keep their OWN `Arc` for the length of a hit
+/// (`OneShotVoice::source`, `RiftVoice::source`), which can outlive the pool's
+/// one-generation parking (file replaced twice without an intervening hit).
+/// Those references go to `retired`, a preallocated queue drained by the UI
+/// thread (`drain_retired`), so the audio thread never frees a texture.
 pub struct TexturePool {
     slots: [arc_swap::ArcSwapOption<TextureBank>; LANE_TEXTURE_SLOTS],
     previous: std::sync::Mutex<[Option<Arc<TextureBank>>; LANE_TEXTURE_SLOTS]>,
+    retired: crossbeam::queue::ArrayQueue<Arc<TextureBank>>,
 }
+
+/// [253] How many replaced textures wait for the UI to free them. Full =
+/// the UI is not draining (editor closed): the push fails and the texture is
+/// dropped on the spot — a bounded, degraded case, never a leak or a panic.
+pub const RETIRE_QUEUE_CAPACITY: usize = 64;
 
 impl Default for TexturePool {
     fn default() -> Self {
@@ -176,6 +202,7 @@ impl TexturePool {
         Self {
             slots: std::array::from_fn(|_| arc_swap::ArcSwapOption::from(None)),
             previous: std::sync::Mutex::new(std::array::from_fn(|_| None)),
+            retired: crossbeam::queue::ArrayQueue::new(RETIRE_QUEUE_CAPACITY),
         }
     }
 
@@ -188,6 +215,29 @@ impl TexturePool {
         if let Ok(mut previous) = self.previous.lock() {
             previous[lane] = old;
         }
+        // [253] We are on a non-RT thread: free whatever the audio thread
+        // retired since the last drain.
+        self.drain_retired();
+    }
+
+    /// Audio thread: hand over a replaced texture instead of dropping it here.
+    /// A hit may hold the LAST reference; freeing up to ~23 MB
+    /// (`USER_TEXTURE_MAX_SECS` of stereo f32) in the callback is a dropout.
+    /// Lock-free push into a preallocated queue; on a full queue the texture
+    /// is dropped in place (bounded degraded case, see RETIRE_QUEUE_CAPACITY).
+    pub fn retire(&self, bank: Arc<TextureBank>) {
+        let _ = self.retired.push(bank);
+    }
+
+    /// UI / main thread: free every texture the audio thread retired. Called
+    /// from `publish` and once per editor frame (`ui.rs`).
+    pub fn drain_retired(&self) {
+        while self.retired.pop().is_some() {}
+    }
+
+    #[cfg(test)]
+    pub fn retired_len(&self) -> usize {
+        self.retired.len()
     }
 
     /// Audio thread: the lane's texture, held alive by the returned `Arc`.
@@ -409,6 +459,39 @@ mod tests {
     #[test]
     fn bd606_bank_decodes_eight_nonempty_hits() {
         check_bank(bd606(), 44100);
+    }
+
+    /// [247] Every sampler voice must map to the bank the DSP actually plays —
+    /// the Sound Editor waveform used to show ch606() for Oh6smp (24), whose
+    /// slices are twice as long, so Start/End markers lied by 2×.
+    #[test]
+    fn sampler_bank_matches_dsp_for_every_sampler_voice() {
+        for voice_idx in 0..crate::synthesis::DrumVoice::COUNT {
+            let expected = match voice_idx {
+                13 => Some(bd606()),
+                14 => Some(sd606()),
+                15 => Some(ch606()),
+                24 => Some(oh606()),
+                _ => None,
+            };
+            assert_eq!(
+                crate::instrument_registry::is_sampler(voice_idx),
+                expected.is_some(),
+                "is_sampler({voice_idx}) disagrees with sampler_bank"
+            );
+            let actual = sampler_bank(voice_idx);
+            match (actual, expected) {
+                (Some(a), Some(e)) => assert!(
+                    std::ptr::eq(a, e),
+                    "sampler_bank({voice_idx}) returns the wrong bank"
+                ),
+                (None, None) => {}
+                _ => panic!("sampler_bank({voice_idx}) presence mismatch"),
+            }
+        }
+        // The [247] regression specifically: Oh6smp slices are 1 s, not 0.5 s.
+        assert_eq!(sampler_bank(24).unwrap().hits[0].len(), oh606().hits[0].len());
+        assert_ne!(sampler_bank(24).unwrap().hits[0].len(), ch606().hits[0].len());
     }
 
     #[test]

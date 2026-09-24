@@ -4,7 +4,7 @@
 //! — MIT License, Copyright (c) 2026 Matthew Fecher (see `LICENSE-MIT.txt`).
 
 pub const PI: f32 = std::f32::consts::PI;
-pub const TWO_PI: f32 = 6.28318530717958647692;
+pub const TWO_PI: f32 = std::f32::consts::TAU;
 pub const T60_TO_TAU: f32 = 6.9077553;
 pub const MINIMUM_STATE_MAGNITUDE: f32 = 1.0e-20;
 

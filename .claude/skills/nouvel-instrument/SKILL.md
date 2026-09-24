@@ -266,7 +266,7 @@ Puis, obligatoirement :
 | Enveloppes recreees dans `set_settings` | Le son se coupe a chaque mouvement de slider. |
 | Phase conservee au retrigger | Contredit [179] : l'etat repart neuf + `RetrigDeclick`. |
 | Allocation dans `create_voice_for_kind` | Craquement/underrun : il tourne sur le thread audio. |
-| Role generateur oublie | Instrument muet sur GENERATE, qui passe pour un bug. |
+| Role generateur oublie | Match exhaustif dans `remap_roles_to_slots` ([248]) : erreur de compilation. Ne jamais remettre un `_ =>` - l'ancien repli paniquait hors bornes (`panic = "abort"` ferme l'hote). |
 | Mauvais ordre de `sound_settings_default` | Parametres melanges, souvent silencieusement. |
 | `category()` oublie | Le compilateur le signale (match exhaustif) - ne le contourne pas par un `_ =>`. |
 | Studio One ouvert au build | `-Install` echoue en « acces refuse ». |

@@ -18,12 +18,13 @@
 - **▶ Play** — Démarre le séquenceur (sync avec le DAW)
 - **BPM** — Tempo du séquenceur (sync avec le transport hôte)
 - **Choke** — Active le choke HiHat/OpenHiHat
-- **Auto-Edit** — Active l'édition automatique des réglages
+
+*(Auto-Edit a été déplacé dans le popup de réglages.)*
 
 ### Grille de séquence (64 steps)
 
 - **4 pages** de 16 steps (boutons 1-2-3-4)
-- **13 voix de synthèse** dans **14 slots modulaires** (Kick, Snare, HiHat, OpenHiHat, Tom1-3, Clap, Ride, Cymbal, Snare606, 808 Kick, Perc1)
+- **25 types d'instruments** dans **14 slots modulaires** (Kick, Snare, HiHat, Clap, Ride, Cymbal, 808 Kick, Perc1, Tom, samplers TR-606 BD/SD/CH/OH, Buzz, Sdrex, 6 voix AC606, Rift, One-Shot, …)
 - **Navigation** : cliquez sur les boutons de page ou activez **Follow** pour suivre la lecture
 - **Longueur** : ajustable de 1 à 64 steps (slider Len + boutons rapides 16/32/48/64)
 - **x2** : Double la longueur du pattern en copiant les steps existants

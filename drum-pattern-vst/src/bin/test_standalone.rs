@@ -1,5 +1,12 @@
 #![allow(dead_code)]
 
+// [254] Same allocation watchdog as lib.rs: this binary recompiles the same
+// modules through `#[path]`, and their `assert_no_alloc` tests need the
+// disabler registered in THIS crate's test build too.
+#[cfg(test)]
+#[global_allocator]
+static ALLOC_DISABLER: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+
 #[path = "../groove.rs"]
 mod groove;
 #[path = "../instrument_registry.rs"]

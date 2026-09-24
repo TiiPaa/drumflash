@@ -46,6 +46,12 @@ crate-type = ["cdylib"]
 name = "drum_pattern_vst"
 path = "src/lib.rs"
 
+[dev-dependencies]
+# [254] Allocation watchdog for the real-time safety tests. Same fork and
+# revision as nih-plug's `assert_process_allocs` feature (nested
+# permit/forbid), pinned by rev — never by branch.
+assert_no_alloc = { git = "https://github.com/robbert-vdh/rust-assert-no-alloc.git", rev = "a6fb4f62b9624715291e320ea5f0f70e73b035cf" }
+
 [profile.release]
 opt-level = 3
 lto = "thin"

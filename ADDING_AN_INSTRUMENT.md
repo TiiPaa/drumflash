@@ -9,7 +9,7 @@
 > un sampler qui réutilise un moteur existant) et la famille **AC606** ([195],
 > six voix portées d'un moteur externe). Relisez leurs commits avant de commencer.
 >
-> Dernière mise à jour : **2026-09-13**.
+> Dernière mise à jour : **2026-09-24**.
 
 ---
 
@@ -40,10 +40,10 @@ Le DAW appelle process()
 Ajouter un instrument, c'est toucher **trois numérotations distinctes**. Les
 confondre est l'erreur classique du projet.
 
-| Enum | Fichier | État au 2026-09-13 | Rôle |
+| Enum | Fichier | État au 2026-09-24 | Rôle |
 |------|---------|--------------------|------|
-| `TrackInstrumentKind` | `src/track.rs` | `COUNT = 23`, dernier `Oh6smp = 22` | Le kind exposé à l'UI et au track. **Sérialisé dans `track-layout-v1`** → nouvelles variantes **à la fin**. |
-| `DrumVoice` | `src/synthesis/mod.rs` | `COUNT = 25`, dernier `Oh606 = 24` | L'espace d'index du registre `INSTRUMENTS`. Garde `Tom1/2/3` séparés pour raisons historiques. |
+| `TrackInstrumentKind` | `src/track.rs` | `COUNT = 25`, dernier `OneShot = 24` | Le kind exposé à l'UI et au track. **Sérialisé dans `track-layout-v1`** → nouvelles variantes **à la fin**. |
+| `DrumVoice` | `src/synthesis/mod.rs` | `COUNT = 27`, dernier `OneShot = 26` | L'espace d'index du registre `INSTRUMENTS`. Garde `Tom1/2/3` séparés pour raisons historiques. |
 | `DrumVoiceKind` | `src/synthesis/mod.rs` | enum de wrappers | La voix DSP concrète, pré-allouée par slot (enum, pas de `dyn`). |
 
 Le pont entre les deux premiers : `TrackInstrumentKind::drum_voice_index()`.
@@ -243,7 +243,7 @@ bancs » : `ch606.rs` avec `Ch606Voice::with_bank` ([208]).
 | Enveloppes recréées dans `set_settings` | Le son se coupe à chaque mouvement de slider. |
 | Phase conservée au retrigger | Contredit [179] : l'état repart neuf + `RetrigDeclick`. |
 | Allocation dans `create_voice_for_kind` | Craquement ou underrun : il tourne sur le thread audio. |
-| Rôle générateur oublié | Instrument muet sur GENERATE, ce qui passe pour un bug. |
+| Rôle générateur oublié | Le match de `remap_roles_to_slots` est exhaustif ([248]) : **erreur de compilation**, pas un instrument muet. Ne jamais réintroduire un repli `_ =>` — l'ancien indexait une table de 14 cases hors bornes → panique → `panic = "abort"` ferme l'hôte. |
 | Mauvais ordre de `sound_settings_default` | Paramètres mélangés, souvent silencieusement. |
 | `category()` oublié | Le compilateur le signale (match exhaustif) — ne pas le contourner par un `_ =>`. |
 | Studio One ouvert au build | `-Install` échoue en « accès refusé » (lock DLL). |

@@ -565,6 +565,18 @@ impl RiftVoice {
             x
         }
     }
+
+    /// [253] Retire a replaced USER texture to the pool's queue (drained on
+    /// the UI thread) instead of dropping it on the audio thread — the voice
+    /// may hold its last reference. Embedded textures are `'static`, nothing
+    /// to free. No pool = test harness: dropped in place.
+    fn retire_source(&self, old: sample_bank::TextureSource) {
+        if let sample_bank::TextureSource::User(bank) = old {
+            if let Some((pool, _)) = &self.pool {
+                pool.retire(bank);
+            }
+        }
+    }
 }
 
 impl Voice for RiftVoice {
@@ -683,12 +695,24 @@ impl Voice for RiftVoice {
             self.filter_lfo.retrigger();
         }
         // Keep the texture alive for the hit (last use of `bank` is above).
-        self.source = source;
+        // [253] The replaced texture is retired, not dropped on this thread.
+        let old = std::mem::replace(&mut self.source, source);
+        self.retire_source(old);
     }
 
     fn trigger_hard(&mut self) {
         self.trigger();
         self.amp_env.trigger_hard();
+    }
+
+    /// [253] Before the voice is swapped out on the audio thread
+    /// (`reinitialize_slot`), retire the held texture instead of dropping it.
+    fn release_held_texture(&mut self) {
+        let old = std::mem::replace(
+            &mut self.source,
+            sample_bank::TextureSource::Embedded(sample_bank::texture(0)),
+        );
+        self.retire_source(old);
     }
 
     fn set_hit_index(&mut self, index: u32) {

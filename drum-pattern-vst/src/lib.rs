@@ -36,6 +36,14 @@ use sequencer::{pattern::PersistentPattern, Pattern, Sequencer, SharedPattern};
 use sound_settings::{PersistentSoundSettings, SoundSettingsState};
 use synthesis::DrumSynthesizer;
 
+// [254] Allocation watchdog, active only inside `assert_no_alloc(...)`
+// closures in tests (forbid/permit counters are per-thread; inactive
+// otherwise). Also registered in `test_standalone.rs`, which recompiles the
+// same modules through `#[path]`.
+#[cfg(test)]
+#[global_allocator]
+static ALLOC_DISABLER: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+
 const VST3_CLASS_ID: [u8; 16] = *b"DrumFlashPlugin1";
 pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
     Some(build_id) => build_id,
@@ -2285,7 +2293,11 @@ impl DrumFlashVst {
             self.params.pattern_length.value() as u8,
         );
         drop(bank);
-        self.params.pattern_bank.refresh_snapshot();
+        // [244] RT-safe: the persisted snapshot is rebuilt lazily by
+        // `PersistentField::map()` when the host asks for the state, off the
+        // audio callback. `refresh_snapshot()` would lock, deep-clone the
+        // bank and serialize JSON right here in process().
+        self.params.pattern_bank.mark_snapshot_dirty();
         #[cfg(debug_assertions)]
         {
             nih_log!("Pattern saved to slot P{}", slot + 1);
