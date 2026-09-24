@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-24 (soir) - [255]-[258] Remédiation audit, phase 2 : installation atomique, journal de crash, symboles exploitables (build 20260924-194326)
+
+**Branche:** `main` - **Builds:** `20260924-193928` -> `20260924-194326`
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 483 verts ; `test-verification.ps1` vert (helper présent, hash DLL+helper identiques) ; binaire vérifié sans chemins locaux (`baboost`, `E:\Dev`, `E:\tmp` absents). À valider dans Studio One (liste dans le rapport).
+
+- **[255] Install atomique** : fini le bundle à moitié détruit du 2026-09-23. `build.ps1` copie d'abord vers `<dest>.new`, vérifie les **hash** du DLL et du helper stagés contre les artefacts compilés (échec = rien n'est modifié), puis bascule par **rename** (`<dest>` → `<dest>.old`, staging → `<dest>`, rollback sur l'ancien si le rename échoue). Nouveau paramètre `-InstallRoot` pour tester hors dossier système. `test-verification.ps1` durci : helper manquant ou hash différent = **échec** (plus un avertissement).
+- **[256] Fallback du helper MIDI réservé au dev** : le chemin `CARGO_MANIFEST_DIR\build\…` dans `ui/midi.rs` n'existe plus qu'en `debug_assertions` — en release, un helper absent de l'install est enfin visible (« MIDI drag helper not found ») au lieu d'être masqué par le dossier de build du poste de dev.
+- **[257] Journal de crash** : avec `panic = "abort"`, une panique fermait Studio One sans la moindre trace. Hook chaîné installé à la création du plugin : chaque panique ajoute une ligne `date | build ID | thread | fichier:ligne | message` dans `%TEMP%\flash-drum-crash.log` (borné à 256 Ko, repart de zéro au-delà).
+- **[258] Symboles et chemins** : le PDB archivé suit maintenant le profil (`-Debug` archivait un PDB release périmé), l'archivage n'a lieu **qu'après une install réussie**, conservation portée de 10 fichiers à **30 jours**, `debug = "line-tables-only"` enrichit les PDB (piles de crash résolubles), et `--remap-path-prefix` (via `CARGO_ENCODED_RUSTFLAGS`, qui tolère l'espace de « Drum Flash ») purge les chemins locaux du binaire — vérifié : `baboost`, `E:\Dev\Projets` et `E:\tmp` ne figurent plus dans le DLL livré. `cargo test --lib` tourne avant chaque `-Install` (désactivable : `-SkipTests`).
+
 ## 2026-09-24 (soir) - [253][254] Remédiation audit, phase 1 : plus aucune libération de WAV sur le thread audio + filet assert_no_alloc (build 20260924-185138)
 
 **Branche:** `main` - **Build:** `20260924-185138`

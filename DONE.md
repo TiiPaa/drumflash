@@ -8,6 +8,12 @@
 
 ## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
 
+### Phase 2 — Fiabilité de la livraison (build 20260924-194326)
+- [x] [255] **Install atomique** : `build.ps1` — staging `$destPath.new` + rename (jamais de suppression avant copie réussie) ; comparer les hash DLL+helper après install (échec bloquant) ; `test-verification.ps1` doit échouer si le helper manque ou si le hash diffère ; archiver les PDB seulement après install réussie. Paramètre `-InstallRoot` + test CI (DLL ouvert en exclusif → code non nul, fichiers intacts).
+- [x] [256] **Chemin de secours du helper MIDI** : `ui/midi.rs:67` — restreindre le fallback `env!("CARGO_MANIFEST_DIR")\build\…` à `#[cfg(debug_assertions)]` (masque aujourd'hui le helper manquant du bundle installé).
+- [x] [257] **Journal de crash** : hook de panique chaîné écrivant `BUILD_ID | thread | message | location` dans `%LOCALAPPDATA%\Flash Drum\crash.log` (taille bornée) — avec `panic = "abort"`, aucun crash n'est aujourd'hui exploitable. *(Implémenté dans le dossier temporaire — `%TEMP%\flash-drum-crash.log` — en attendant le helper de chemins unifié [260].)*
+- [x] [258] **Archivage des symboles** : `build.ps1:90` — `$profileDir` debug/release correct, conservation 30 jours (au lieu de 10 PDB), `debug = "line-tables-only"` dans `[profile.release]`, `--remap-path-prefix` (les chemins `E:\Dev\…` et `C:\Users\baboost\…` ne doivent pas figurer dans le binaire distribué), `cargo test` avant `-Install` (option `-SkipTests`).
+
 ### Phase 1 — Temps réel (build 20260924-185138)
 - [x] [253] **Libération de WAV sur le thread audio** : One-Shot/Rift gardent leur propre `Arc<TextureBank>` (`self.source`, oneshot.rs:454, rift.rs:686) — le parking d'une génération du TexturePool ne protège que les refs du pool. Ajouter une file de retraite préallouée (`crossbeam::queue::ArrayQueue`, capacité 64) vidée par le thread UI ; même traitement dans `reinitialize_slot` (synthesis/mod.rs:1577-1588). Corrige la garantie fausse de CLAUDE.md § Lane textures (mettre la doc à jour après fix).
 - [x] [254] **Tests assert_no_alloc** : dev-dependency `assert_no_alloc` — `save_pattern_to_slot_is_realtime_safe` (banque restaurée avec slots vides → save → `snapshot_dirty == true`), `trigger_never_frees_a_texture_on_the_audio_thread` (A→B→C sans coup puis trigger), un test par kind (48 000 échantillons, retrigger, stutter, microtiming négatif, `set_settings` en cours de lecture).
