@@ -58,3 +58,6 @@ lto = "thin"
 strip = true
 panic = "abort"
 codegen-units = 1
+# [258] Line tables land in the PDB (separate from the stripped DLL) so a
+# crash on an older build stays symbolisable from build/symbols/.
+debug = "line-tables-only"

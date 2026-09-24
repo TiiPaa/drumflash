@@ -44,6 +44,49 @@ use synthesis::DrumSynthesizer;
 #[global_allocator]
 static ALLOC_DISABLER: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
+/// [257] Crash journal. With `panic = "abort"` a panic kills the host DAW
+/// without any trace; this chained hook appends one bounded line per panic
+/// (`crash.log` in the temp dir, restarted past 256 Ko) carrying the build
+/// ID, thread, location and message. Installed once, before any processing.
+fn install_crash_hook() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let path = std::env::temp_dir().join("flash-drum-crash.log");
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() > 256 * 1024 {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path)
+            {
+                use std::io::Write;
+                let location = info
+                    .location()
+                    .map(|l| format!("{}:{}", l.file(), l.line()))
+                    .unwrap_or_default();
+                let message = info
+                    .payload()
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.as_str()))
+                    .unwrap_or("(no message)");
+                let _ = writeln!(
+                    file,
+                    "{:?} build={} thread={:?} {} {}",
+                    std::time::SystemTime::now(),
+                    BUILD_ID,
+                    std::thread::current().id(),
+                    location,
+                    message
+                );
+            }
+            previous(info);
+        }));
+    });
+}
+
 const VST3_CLASS_ID: [u8; 16] = *b"DrumFlashPlugin1";
 pub(crate) const BUILD_ID: &str = match option_env!("DRUM_PATTERN_BUILD_ID") {
     Some(build_id) => build_id,
@@ -868,6 +911,7 @@ pub struct DrumFlashParams {
 
 impl Default for DrumFlashParams {
     fn default() -> Self {
+        install_crash_hook();
         let default_layout = crate::track::TrackLayoutState::default_layout();
         let default_pattern = Pattern::rock_pattern();
         let _default_masks = default_pattern.step_masks();

@@ -8,7 +8,11 @@
 
 param(
     [switch]$Install = $false,
-    [switch]$Debug = $false
+    [switch]$Debug = $false,
+    # [255] Install elsewhere than the system VST3 folder (CI tests).
+    [string]$InstallRoot = "",
+    # [258] Skip the test run before -Install (tests run by default).
+    [switch]$SkipTests = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,6 +55,11 @@ New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 $env:TEMP = $tempDir
 $env:TMP = $tempDir
 $env:DRUM_PATTERN_BUILD_ID = $buildId
+# [258] Keep local absolute paths (workspace, cargo registry) out of the
+# shipped binary's panic locations. CARGO_ENCODED_RUSTFLAGS is 0x1F-separated,
+# so the space in "Drum Flash" survives (plain RUSTFLAGS is split on spaces).
+$rustflagsSep = [char]31
+$env:CARGO_ENCODED_RUSTFLAGS = "--remap-path-prefix=$PSScriptRoot=drum-pattern-vst$rustflagsSep--remap-path-prefix=$($env:USERPROFILE)\.cargo\registry\src=cargo-registry$rustflagsSep--remap-path-prefix=$($env:USERPROFILE)\.cargo\git\checkouts=cargo-git"
 Write-Host "Build ID: $buildId"
 
 if ($Debug) {
@@ -77,26 +86,21 @@ if (-not (Test-Path $sourceDragHelper)) {
 Write-Color "Green" "Compilation reussie."
 Write-Host ""
 
+if ($Install -and -not $SkipTests) {
+    # [258] Never install a build whose tests fail.
+    Write-Color "Yellow" "Tests avant installation (desactivable avec -SkipTests)..."
+    cargo test --lib
+    if ($LASTEXITCODE -ne 0) {
+        Write-Color "Red" "ERREUR: tests en echec, installation annulee (rien n'a ete modifie)."
+        exit 1
+    }
+    Write-Host ""
+}
+
 Write-Color "Yellow" "[3/4] Regeneration du bundle VST3..."
 New-Item -ItemType Directory -Force -Path $contentDir | Out-Null
 Copy-Item -Path $sourceDll -Destination $destFile -Force
 Copy-Item -Path $sourceDragHelper -Destination $destDragHelper -Force
-
-# Archive the debug symbols under the build id. The .pdb is NOT shipped inside
-# the bundle (it stays out of the VST3), but each build overwrites
-# target/release/*.pdb, so without this a crash dump from an older build can no
-# longer be symbolised. See task [186]: a stripped-looking stack cost an hour.
-$symbolDir = Join-Path $PSScriptRoot "build/symbols"
-$sourcePdb = Join-Path $PSScriptRoot "target/release/drum_pattern_vst.pdb"
-if (Test-Path $sourcePdb) {
-    New-Item -ItemType Directory -Force -Path $symbolDir | Out-Null
-    Copy-Item -Path $sourcePdb -Destination (Join-Path $symbolDir "drum_pattern_vst-$buildId.pdb") -Force
-    # Keep the 10 most recent so the folder does not grow without bound.
-    Get-ChildItem $symbolDir -Filter "drum_pattern_vst-*.pdb" |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -Skip 10 |
-        Remove-Item -Force -ErrorAction SilentlyContinue
-}
 
 $dllInfo = Get-Item $sourceDll
 $bundleInfo = Get-Item $destFile
@@ -110,36 +114,77 @@ Write-Host ""
 
 if ($Install) {
     Write-Color "Yellow" "[4/4] Installation du plugin..."
-    $vst3Path = "C:\Program Files\Common Files\VST3"
-    $destPath = Join-Path $vst3Path $vst3File
+    if (-not $InstallRoot) { $InstallRoot = "C:\Program Files\Common Files\VST3" }
+    $destPath = Join-Path $InstallRoot $vst3File
 
-    if (-not (Test-Path $vst3Path)) {
-        New-Item -ItemType Directory -Force -Path $vst3Path | Out-Null
+    if (-not (Test-Path $InstallRoot)) {
+        New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
     }
 
-    if (Test-Path $destPath) {
+    $installedDll = Join-Path $destPath "Contents\x86_64-win\$vst3File"
+    if (Test-Path $installedDll) {
         # [250] Fail fast on a locked DLL (Studio One or antivirus holding it)
-        # BEFORE deleting anything: otherwise Remove-Item wipes the helper and
-        # then dies on the DLL, leaving a half-destroyed installed bundle.
-        $installedDll = Join-Path $destPath "Contents\x86_64-win\$vst3File"
-        if (Test-Path $installedDll) {
-            try {
-                $fs = [System.IO.File]::Open($installedDll, 'Open', 'ReadWrite', 'None')
-                $fs.Close()
-            } catch {
-                Write-Color "Red" "DLL verrouille (Studio One ouvert ?) : rien n'a ete modifie."
-                Write-Host "Ferme Studio One puis relance .\build.ps1 -Install"
-                exit 2
-            }
+        # BEFORE touching anything.
+        try {
+            $fs = [System.IO.File]::Open($installedDll, 'Open', 'ReadWrite', 'None')
+            $fs.Close()
+        } catch {
+            Write-Color "Red" "DLL verrouille (Studio One ouvert ?) : rien n'a ete modifie."
+            Write-Host "Ferme Studio One puis relance .\build.ps1 -Install"
+            exit 2
         }
-        Remove-Item -Path $destPath -Recurse -Force
     }
 
-    Copy-Item -Path $bundleDir -Destination $destPath -Recurse -Force
+    # [255] Atomic install: stage next to the destination, verify the staged
+    # copy against the compiled artifacts, then swap by rename. The installed
+    # bundle is never half-deleted; a failed swap rolls back.
+    $staging = "$destPath.new"
+    $old = "$destPath.old"
+    Remove-Item $staging, $old -Recurse -Force -ErrorAction SilentlyContinue
+    Copy-Item -Path $bundleDir -Destination $staging -Recurse -Force
+
+    $stagedDll = Join-Path $staging "Contents\x86_64-win\$vst3File"
+    $stagedHelper = Join-Path $staging "Contents\x86_64-win\drum-pattern-midi-drag-helper.exe"
+    $stagedOk = (Test-Path $stagedDll) -and (Test-Path $stagedHelper) -and `
+        ((Get-FileHash $stagedDll).Hash -eq (Get-FileHash $sourceDll).Hash) -and `
+        ((Get-FileHash $stagedHelper).Hash -eq (Get-FileHash $sourceDragHelper).Hash)
+    if (-not $stagedOk) {
+        Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Color "Red" "ERREUR: la copie stagee est incomplete ou differe des artefacts compiles. Rien n'a ete modifie."
+        exit 1
+    }
+
+    if (Test-Path $destPath) { Rename-Item $destPath $old }
+    try {
+        Rename-Item $staging $destPath -ErrorAction Stop
+    } catch {
+        if ((Test-Path $old) -and -not (Test-Path $destPath)) {
+            Rename-Item $old $destPath
+        }
+        throw
+    }
+    Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue
     Write-Color "Green" "Plugin installe dans: $destPath"
 } else {
     Write-Color "Yellow" "[4/4] Installation ignoree"
     Write-Host "Relance avec .\build.ps1 -Install pour copier dans le dossier VST3 systeme."
+}
+
+# [258] Archive the debug symbols under the build id, AFTER a successful
+# install (or a successful bundle without -Install): an archived PDB must
+# always match a bundle that actually shipped. The .pdb is NOT shipped inside
+# the bundle (it stays out of the VST3), but each build overwrites
+# target/<profile>/*.pdb, so without this a crash dump from an older build
+# can no longer be symbolised. See task [186]: a stripped-looking stack cost
+# an hour. PDBs are kept for 30 days.
+$sourcePdb = Join-Path $targetDir "drum_pattern_vst.pdb"
+if (Test-Path $sourcePdb) {
+    $symbolDir = Join-Path $PSScriptRoot "build\symbols"
+    New-Item -ItemType Directory -Force -Path $symbolDir | Out-Null
+    Copy-Item -Path $sourcePdb -Destination (Join-Path $symbolDir "drum_pattern_vst-$buildId.pdb") -Force
+    Get-ChildItem $symbolDir -Filter "drum_pattern_vst-*.pdb" |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ""

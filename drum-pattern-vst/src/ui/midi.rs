@@ -63,6 +63,10 @@ fn helper_bundle_prefixes() -> Vec<PathBuf> {
                 .join("drum-pattern-vst.vst3"),
         );
     }
+    // [256] Dev-machine fallback only: in a release build the helper must come
+    // from the installed bundle — otherwise a broken install stays invisible
+    // on the dev machine (the helper silently comes from the build folder).
+    #[cfg(debug_assertions)]
     prefixes.push(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("build")
