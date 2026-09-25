@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-25 - [267][268] Fork nih-plug traçable + hygiène dépôt (pas de build)
+
+**Branche:** `main` - **CI:** windows + macOS verts. Changements sans impact sur le binaire installé (docs, pins, formatage, poids du dépôt) ; 493 tests verts après `cargo fmt`.
+
+- **[267]** `vendor/nih-plug/FLASH-DRUM-PATCHES.md` : les **9 patchs** du fork enfin inventoriés (5 multi-out documentés + remap aux clairsemés, IEditController, fenêtre clavier, journal d'état) — révision amont inconnue documentée honnêtement, diff reconstituable par contenu. `vst3-sys` épinglé par **rev** au lieu d'une branche mouvante ; `windows-sys` sous `cfg(windows)` ; `STUDIO_ONE_MULTI_OUT.md` à jour (sorties `Out 1..14`).
+- **[268]** `excessive_precision` autorisé au niveau module sur la table FIR ac606 (le `-A` global de la CI retiré) ; `cargo fmt` appliqué aux 63 fichiers ; **CHANGELOG archivé par trimestre** (656 → 273 Ko, le H1 et avant dans `docs/historique/changelog/`) ; `atlas-pads.png` (11 Mo) hors du suivi git (reste sur le poste ; l'historique n'a pas été réécrit une 2e fois — option notée) ; `.gitignore` resserré ; `bundle.toml` (faux et inutilisé) supprimé ; `git gc` (pack 28 Mio).
+
+**Plan d'audit : terminé à 5/6 + traçabilité.** Reste [269] (dettes de maintenabilité : dead_code, dispatch par macro, champs registre, découpage) — session dédiée.
+
 ## 2026-09-25 - [265] PDF « 260 Drum Machine Patterns » purgé du dépôt public (pas de build)
 
 **Branche:** `main` (réécrite) - **CI:** windows + macOS **verts** après réécriture.

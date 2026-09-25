@@ -12,6 +12,10 @@
 
 ## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
 
+### Phase 6 — Traçabilité & dette ([269] restant, session dédiée)
+- [x] [267] **Fork nih-plug traçable** : `vendor/nih-plug/FLASH-DRUM-PATCHES.md` sur le modèle egui-baseview (liste exhaustive des 9 patchs, révision amont inconnue documentée honnêtement) ; `STUDIO_ONE_MULTI_OUT.md` complété (remap aux clairsemés, IEditController, fenêtre clavier, journal d'état) ; vst3-sys épinglé par **rev** `b3ff4d77` (était par branche mouvante) ; `windows-sys` sous `[target.'cfg(windows)'.dependencies]`. *(Reste long terme, noté dans le doc : fork contrôlé de vst3-sys si l'amont disparaît.)* (CI verte 2026-09-25, pas de build)
+- [x] [268] **Hygiène dépôt** : `#![allow(clippy::excessive_precision)]` sur la table FIR ac606 (le `-A` de la CI retiré) ; `cargo fmt` en commit dédié (63 fichiers) ; CHANGELOG archivé par trimestre (656 → 273 Ko, H1 et avant dans `docs/historique/changelog/`) ; `atlas-pads.png` 11 Mo hors suivi (reste local, historique non réécrit — option notée) ; `.gitignore` resserré (`*backup*`/`fixed*`/`temp_*` scropés) ; `bundle.toml` supprimé ; `git gc` (pack 28 Mio). (CI verte 2026-09-25, pas de build)
+
 ### Phase 5 — Légal & dépôt public (terminée)
 - [x] [265] **PDF protégé purgé du dépôt public** : historique réécrit via `git filter-repo` (sauvegarde `drumflash-backup-2026-09-25.bundle` avant), `resources/Drum.Machine.-.260.Patterns.pdf` supprimé des 205 commits, référence bibliographique dans `.gitignore`, force-push assumé, CI verte (windows + macOS) après réécriture.
 - [x] [266] **Licence** : `LICENSE` (GPL-3.0) à la racine + dans le bundle, `license = "GPL-3.0-only"` dans Cargo.toml, `THIRD-PARTY.md` (nih-plug, egui-baseview, ac606 MIT, IBM Plex OFL, provenance des WAV embarqués). (build 20260925-145840 — WAV 606 : enregistrés par l'auteur depuis sa propre TR-606, documenté.)
