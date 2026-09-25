@@ -19,8 +19,10 @@ pub fn plock_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce
             ui.set_max_width(350.0);
             content(ui);
         });
-    ui.painter()
-        .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
+    ui.painter().set(
+        bg,
+        crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32),
+    );
 }
 
 pub fn page_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(&mut egui::Ui)) {
@@ -36,8 +38,10 @@ pub fn page_menu_frame(ui: &mut egui::Ui, accent: Color32, content: impl FnOnce(
             ui.set_max_width(160.0);
             content(ui);
         });
-    ui.painter()
-        .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
+    ui.painter().set(
+        bg,
+        crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32),
+    );
 }
 
 pub fn plock_menu_header(ui: &mut egui::Ui, title: &str, _step: usize, accent: Color32) -> bool {
@@ -47,13 +51,26 @@ pub fn plock_menu_header(ui: &mut egui::Ui, title: &str, _step: usize, accent: C
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // Discreet painted ✓ ("done" — plock changes are applied live, so this
             // is NOT a cancel; a × would wrongly suggest discarding).
-            let (rect, response) = ui.allocate_exact_size(egui::Vec2::new(18.0, 18.0), egui::Sense::click());
+            let (rect, response) =
+                ui.allocate_exact_size(egui::Vec2::new(18.0, 18.0), egui::Sense::click());
             let col = if response.hovered() { accent } else { INK2() };
             let c = rect.center();
             let s = 5.0;
             let st = egui::Stroke::new(2.0, col);
-            ui.painter().line_segment([egui::pos2(c.x - s, c.y + s * 0.1), egui::pos2(c.x - s * 0.25, c.y + s * 0.8)], st);
-            ui.painter().line_segment([egui::pos2(c.x - s * 0.25, c.y + s * 0.8), egui::pos2(c.x + s, c.y - s * 0.8)], st);
+            ui.painter().line_segment(
+                [
+                    egui::pos2(c.x - s, c.y + s * 0.1),
+                    egui::pos2(c.x - s * 0.25, c.y + s * 0.8),
+                ],
+                st,
+            );
+            ui.painter().line_segment(
+                [
+                    egui::pos2(c.x - s * 0.25, c.y + s * 0.8),
+                    egui::pos2(c.x + s, c.y - s * 0.8),
+                ],
+                st,
+            );
             if response.clicked() {
                 close_clicked = true;
             }
@@ -62,7 +79,11 @@ pub fn plock_menu_header(ui: &mut egui::Ui, title: &str, _step: usize, accent: C
     ui.add_space(3.0);
     // Thin accent underline.
     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), egui::Sense::hover());
-    ui.painter().rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 90));
+    ui.painter().rect_filled(
+        r,
+        0.0,
+        Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 90),
+    );
     ui.add_space(6.0);
     close_clicked
 }
@@ -109,13 +130,20 @@ pub fn plock_menu_row(
 
 pub fn plock_menu_action_row(ui: &mut egui::Ui, label: &str, accent: Color32) -> egui::Response {
     // Full-width keycap with the accent-coloured label (red for destructive, etc.).
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), egui::Sense::click());
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), egui::Sense::click());
     crate::ui::skeuo::keycap(ui, rect, crate::ui::widgets::KeycapState::Rest);
     if resp.is_pointer_button_down_on() {
-        ui.painter().rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(60));
+        ui.painter()
+            .rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(60));
     }
-    ui.painter()
-        .text(rect.center(), egui::Align2::CENTER_CENTER, label, f_sans_med(10.5), accent);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        f_sans_med(10.5),
+        accent,
+    );
     resp
 }
 
@@ -129,7 +157,8 @@ pub fn context_menu_button(
     accent: Color32,
     enabled: bool,
 ) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), egui::Sense::click());
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), egui::Sense::click());
     crate::ui::skeuo::keycap(ui, rect, crate::ui::widgets::KeycapState::Rest);
     // Hover highlight: the user must see which row they are about to pick.
     let hovered = enabled && resp.hovered();
@@ -137,7 +166,8 @@ pub fn context_menu_button(
         ui.painter().rect_filled(rect, RADIUS_CTL, P_HOVER());
     }
     if enabled && resp.is_pointer_button_down_on() {
-        ui.painter().rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(60));
+        ui.painter()
+            .rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(60));
     }
     let col = if !enabled {
         INK3()
@@ -146,8 +176,13 @@ pub fn context_menu_button(
     } else {
         accent
     };
-    ui.painter()
-        .text(rect.center(), egui::Align2::CENTER_CENTER, label, f_sans_med(10.5), col);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        f_sans_med(10.5),
+        col,
+    );
     resp
 }
 
@@ -198,7 +233,9 @@ pub fn instrument_category_menu(
     let mut picked = None;
     for cat in InstrumentCategory::ALL {
         ui.menu_button(
-            RichText::new(cat.label()).font(f_sans_med(10.5)).color(INK()),
+            RichText::new(cat.label())
+                .font(f_sans_med(10.5))
+                .color(INK()),
             |ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
                 ui.set_min_width(130.0);
@@ -238,4 +275,3 @@ pub fn context_menu_separator(ui: &mut egui::Ui) {
     ui.painter().rect_filled(r, 0.0, LINE());
     ui.add_space(2.0);
 }
-

@@ -10,10 +10,7 @@ use crate::{
 };
 use nih_plug::prelude::*;
 use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
-use std::sync::{
-    atomic::AtomicU32,
-    Arc,
-};
+use std::sync::{atomic::AtomicU32, Arc};
 
 pub fn draw_pattern_bank(
     ui: &mut egui::Ui,
@@ -35,17 +32,23 @@ pub fn draw_pattern_bank(
         } else {
             crate::ui::widgets::KeycapState::Rest
         };
-        let save_response =
-            crate::ui::controls::keycap_button(ui, "Save", 46.0, save_state, true, f_mono_med(10.5))
-                .on_hover_text(
-                    RichText::new(if state.save_mode_active {
-                        "Click a slot (P1-P16) to save the current pattern there"
-                    } else {
-                        "Activate save mode, then click a slot to store the current pattern"
-                    })
-                    .size(11.0)
-                    .monospace(),
-                );
+        let save_response = crate::ui::controls::keycap_button(
+            ui,
+            "Save",
+            46.0,
+            save_state,
+            true,
+            f_mono_med(10.5),
+        )
+        .on_hover_text(
+            RichText::new(if state.save_mode_active {
+                "Click a slot (P1-P16) to save the current pattern there"
+            } else {
+                "Activate save mode, then click a slot to store the current pattern"
+            })
+            .size(11.0)
+            .monospace(),
+        );
         if save_response.clicked() {
             state.save_mode_active = !state.save_mode_active;
             state.clear_confirm_mode = false;
@@ -391,9 +394,7 @@ pub(crate) fn pattern_is_dirty(
             }
             if let Ok(bank) = params.pattern_bank.bank.lock() {
                 let saved_somewhere = bank.slots.iter().any(|s| {
-                    s.occupied
-                        && s.step_masks == current_masks
-                        && s.pattern_length == current_len
+                    s.occupied && s.step_masks == current_masks && s.pattern_length == current_len
                 });
                 !saved_somewhere
             } else {

@@ -277,8 +277,7 @@ impl RiftVoice {
         // The value is the index into the registry's `options` list (embedded
         // textures, then the user slots). Clamp rather than wrap: an
         // out-of-range value must still play something.
-        (self.settings.texture.round().max(0.0) as usize)
-            .min(sample_bank::TEXTURE_OPTION_COUNT - 1)
+        (self.settings.texture.round().max(0.0) as usize).min(sample_bank::TEXTURE_OPTION_COUNT - 1)
     }
 
     /// Resting playback ratio: coarse semitones plus fine cents.
@@ -322,7 +321,9 @@ impl RiftVoice {
     }
 
     fn filter_env_decay_secs(&self) -> f32 {
-        self.settings.filter_env_decay.clamp(MIN_DECAY_SECS, MAX_DECAY_SECS)
+        self.settings
+            .filter_env_decay
+            .clamp(MIN_DECAY_SECS, MAX_DECAY_SECS)
     }
 
     fn hold_secs(&self) -> f32 {
@@ -452,7 +453,11 @@ impl RiftVoice {
         let two_channels = self.stereo_file();
         let (raw_l, raw_r) = {
             let bank = self.source.bank();
-            let (ch_l, ch_r) = if two_channels { (Some(false), Some(true)) } else { (None, None) };
+            let (ch_l, ch_r) = if two_channels {
+                (Some(false), Some(true))
+            } else {
+                (None, None)
+            };
             let raw_l = Self::sample(bank, ch_l, self.pos) * gain;
             let raw_r = if stereo {
                 // The right head wraps around the texture end rather than
@@ -544,7 +549,11 @@ impl RiftVoice {
         } else {
             self.filter_r.process(pre)
         };
-        let y = if pre_filter { filtered } else { self.lofi(ch, filtered) };
+        let y = if pre_filter {
+            filtered
+        } else {
+            self.lofi(ch, filtered)
+        };
         let post = self.saturation.process_at(false, y);
         let dc = if ch == 0 {
             self.dc_block.process(post)
@@ -599,7 +608,9 @@ impl Voice for RiftVoice {
         // kept for the hit.
         let source = sample_bank::resolve_texture(
             self.texture_idx,
-            self.pool.as_ref().map(|(pool, lane)| (pool.as_ref(), *lane)),
+            self.pool
+                .as_ref()
+                .map(|(pool, lane)| (pool.as_ref(), *lane)),
         );
         let bank = source.bank();
         let len = bank.data.len();
@@ -877,7 +888,6 @@ mod tests {
         buf.iter().map(|s| s.abs()).fold(0.0f32, f32::max)
     }
 
-
     /// The filter must behave like the rest of the plugin: `Filter Env` opens
     /// the cutoff toward 20 kHz and it falls back onto its setting. Same
     /// formula as `buzz.rs` — this test is what keeps the two aligned.
@@ -901,7 +911,11 @@ mod tests {
             (rest - 500.0).abs() < 1.0,
             "the cutoff must fall back onto its setting, got {rest}"
         );
-        assert!((open / rest).log2() > 5.0, "only {} octaves", (open / rest).log2());
+        assert!(
+            (open / rest).log2() > 5.0,
+            "only {} octaves",
+            (open / rest).log2()
+        );
     }
 
     /// `Advance` walks the offset forward one notch per hit, so a single
@@ -946,7 +960,10 @@ mod tests {
         let flat = travelled(0.0);
         let down = travelled(-24.0);
         assert!(up > flat * 1.5, "sweeping up read {up} against {flat}");
-        assert!(down < flat * 0.7, "sweeping down read {down} against {flat}");
+        assert!(
+            down < flat * 0.7,
+            "sweeping down read {down} against {flat}"
+        );
     }
 
     /// The pitch LFO must modulate, and its depth must matter.
@@ -1016,8 +1033,16 @@ mod tests {
         for _ in 0..2000 {
             v.process_sample();
         }
-        assert!(v.pos < start, "the read went forward: {} -> {}", start, v.pos);
-        assert!(v.pos >= v.win_start - 2.0, "the read ran past the slice start");
+        assert!(
+            v.pos < start,
+            "the read went forward: {} -> {}",
+            start,
+            v.pos
+        );
+        assert!(
+            v.pos >= v.win_start - 2.0,
+            "the read ran past the slice start"
+        );
     }
 
     /// Reversed and forward renders of the same slice must differ, and reversed
@@ -1077,7 +1102,10 @@ mod tests {
 
         // During the hold it is fully open.
         v.filter_env_time = 0.13;
-        assert!((v.filter_env_value() - 1.0).abs() < 1e-3, "hold is not flat");
+        assert!(
+            (v.filter_env_value() - 1.0).abs() < 1e-3,
+            "hold is not flat"
+        );
 
         // Well into the decay it has come back down.
         v.filter_env_time = 0.15 + 0.2;
@@ -1168,7 +1196,10 @@ mod tests {
             .map(|(x, y)| (x - y).abs())
             .sum::<f32>()
             / out_a.len() as f32;
-        assert!(diff > 1e-4, "both offsets render the same audio (diff {diff})");
+        assert!(
+            diff > 1e-4,
+            "both offsets render the same audio (diff {diff})"
+        );
     }
 
     /// Wander = 0 must be reproducible — otherwise a pattern would never
@@ -1296,7 +1327,10 @@ mod tests {
             s.filter_freq = 2000.0;
             let mut voice = voice_with(s);
             let out = render(&mut voice, 22050);
-            assert!(out.iter().all(|v| v.is_finite()), "filter mode {mode} blew up");
+            assert!(
+                out.iter().all(|v| v.is_finite()),
+                "filter mode {mode} blew up"
+            );
             assert!(peak(&out) > 1e-4, "filter mode {mode} is silent");
         }
     }
@@ -1320,7 +1354,9 @@ mod tests {
     }
 
     fn zero_crossings(buf: &[f32]) -> usize {
-        buf.windows(2).filter(|w| (w[0] >= 0.0) != (w[1] >= 0.0)).count()
+        buf.windows(2)
+            .filter(|w| (w[0] >= 0.0) != (w[1] >= 0.0))
+            .count()
     }
 
     /// Index of the last sample above the noise floor: how long the hit lasts.
@@ -1352,7 +1388,10 @@ mod tests {
         let mild = render(&mut voice_with(mild_st), 20_000);
         assert!(mean_abs_diff(&clean, &mild) > 1e-6);
         let (end_clean, end_crushed) = (last_audible(&clean), last_audible(&mild));
-        assert!(end_clean > 5_000 && end_clean < 19_000, "clean ends at {end_clean}");
+        assert!(
+            end_clean > 5_000 && end_clean < 19_000,
+            "clean ends at {end_clean}"
+        );
         assert!(
             end_crushed + 100 >= end_clean,
             "crush gated the tail: ends at {end_crushed} vs {end_clean}"
@@ -1376,7 +1415,10 @@ mod tests {
         let a = render(&mut voice_with(post), 6_000);
         let b = render(&mut voice_with(pre), 6_000);
         assert!(peak(&a) > 0.01 && peak(&b) > 0.01);
-        assert!(mean_abs_diff(&a, &b) > 1e-4, "Pre-Filter must move Decimate across the filter");
+        assert!(
+            mean_abs_diff(&a, &b) > 1e-4,
+            "Pre-Filter must move Decimate across the filter"
+        );
 
         // Nothing in the block: the switch is inert.
         let mut clean_post = st;
@@ -1427,12 +1469,18 @@ mod tests {
         let (l, r) = render_stereo(&mut voice_with(wide), 12_000);
         assert!(l.iter().chain(&r).all(|s| s.is_finite()));
         assert!(peak(&l) > 0.01 && peak(&r) > 0.01);
-        assert!(mean_abs_diff(&l, &r) > 1e-4, "spread left the channels identical");
+        assert!(
+            mean_abs_diff(&l, &r) > 1e-4,
+            "spread left the channels identical"
+        );
         // Same envelope on both sides: the right channel lasts as long as
         // the left, the wrap-around never shortens it.
         let (end_l, end_r) = (last_audible(&l), last_audible(&r));
         assert!(end_l > 5_000, "left ends at {end_l}");
-        assert!(end_r + 100 >= end_l, "right channel cut short: {end_r} vs {end_l}");
+        assert!(
+            end_r + 100 >= end_l,
+            "right channel cut short: {end_r} vs {end_l}"
+        );
         // The left channel is the plain mono read: spread adds a head, it
         // does not move the existing one.
         assert_eq!(l, l0);
@@ -1457,7 +1505,10 @@ mod tests {
         let mut noise_st = st;
         noise_st.special[0] = 0.0;
         let noise = render(&mut voice_with(noise_st), 8_000);
-        assert_eq!(fb, noise, "an empty slot must play the first embedded texture");
+        assert_eq!(
+            fb, noise,
+            "an empty slot must play the first embedded texture"
+        );
 
         // A 1 kHz sine in the slot: the output is that tone.
         let rate = 44100.0f32;
@@ -1476,8 +1527,14 @@ mod tests {
         let out = render(&mut user, 8_000);
         assert!(out.iter().all(|s| s.is_finite()));
         // Zero crossings of a 1 kHz tone over the first 100 ms: about 200.
-        let zc = out[..4410].windows(2).filter(|w| (w[0] >= 0.0) != (w[1] >= 0.0)).count();
-        assert!((150..=260).contains(&zc), "expected a 1 kHz tone, got {zc} crossings");
+        let zc = out[..4410]
+            .windows(2)
+            .filter(|w| (w[0] >= 0.0) != (w[1] >= 0.0))
+            .count();
+        assert!(
+            (150..=260).contains(&zc),
+            "expected a 1 kHz tone, got {zc} crossings"
+        );
         assert_ne!(out, noise);
     }
 
@@ -1491,7 +1548,7 @@ mod tests {
         let pool = Arc::new(sample_bank::TexturePool::new());
         let rate = 44100.0f32;
         let n = 22050usize; // 0.5 s
-        // A decaying 300 Hz tone: loud at the start, silent by the end.
+                            // A decaying 300 Hz tone: loud at the start, silent by the end.
         let data: Vec<f32> = (0..n)
             .map(|i| {
                 let t = i as f32 / rate;
@@ -1525,7 +1582,11 @@ mod tests {
         let mut s6 = st;
         s6.special[1] = 0.6;
         let at_middle = render_on(s6);
-        assert!(peak(&at_start) > 0.2, "offset 0 must hit the transient: {}", peak(&at_start));
+        assert!(
+            peak(&at_start) > 0.2,
+            "offset 0 must hit the transient: {}",
+            peak(&at_start)
+        );
         assert!(
             peak(&at_middle) < peak(&at_start) * 0.25,
             "offset 0.6 must land in the quiet part: {} vs {}",
@@ -1554,11 +1615,18 @@ mod tests {
         let mut rv = voice_with(sr);
         rv.set_texture_pool(pool.clone(), 2);
         let reversed = render(&mut rv, 30_000);
-        assert!(peak(&reversed) > 0.1, "reverse must sound: {}", peak(&reversed));
+        assert!(
+            peak(&reversed) > 0.1,
+            "reverse must sound: {}",
+            peak(&reversed)
+        );
         let head = peak(&reversed[..2205]);
         let end = reversed.iter().rposition(|x| x.abs() > 1e-3).unwrap_or(0);
         let tail = peak(&reversed[end.saturating_sub(2205)..end.max(1)]);
-        assert!(tail > head * 2.0, "reversed sample must swell: head {head} tail {tail}");
+        assert!(
+            tail > head * 2.0,
+            "reversed sample must swell: head {head} tail {tail}"
+        );
     }
 
     /// [228] A stereo file: Stereo off mixes the two channels down (both
@@ -1601,10 +1669,23 @@ mod tests {
         let mut wide = voice_with(st);
         wide.set_texture_pool(pool.clone(), 0);
         let (l, r) = render_stereo(&mut wide, 6_000);
-        assert!(peak(&l) > 0.1, "left channel carries the tone: {}", peak(&l));
-        assert!(peak(&r) < 1e-3, "right channel is the file's silence: {}", peak(&r));
+        assert!(
+            peak(&l) > 0.1,
+            "left channel carries the tone: {}",
+            peak(&l)
+        );
+        assert!(
+            peak(&r) < 1e-3,
+            "right channel is the file's silence: {}",
+            peak(&r)
+        );
         // The downmix is half the left signal.
-        assert!((peak(&l0) - 0.5 * peak(&l)).abs() < 0.02, "{} vs {}", peak(&l0), peak(&l));
+        assert!(
+            (peak(&l0) - 0.5 * peak(&l)).abs() < 0.02,
+            "{} vs {}",
+            peak(&l0),
+            peak(&l)
+        );
     }
 
     /// [227] The plugin, not the voice, decides which advance step a hit is:
@@ -1635,14 +1716,20 @@ mod tests {
         st.filter_env_decay = 0.5;
         st.filter_env_amount = 1.0;
         let out = render(&mut voice_with(st), 12_000);
-        let end = out.iter().rposition(|s| s.abs() > 1e-6).expect("the hit sounds");
+        let end = out
+            .iter()
+            .rposition(|s| s.abs() > 1e-6)
+            .expect("the hit sounds");
         assert!(end > 5_000 && end < 11_000, "unexpected end {end}");
         // The last 140 samples cover the 3 ms declick ramp (132 samples)
         // plus the cut itself. The yardstick is the signal just before: the
         // end must not be a bigger discontinuity than the fading noise
         // already is (before the fix: 0.00097 against ~0.0004).
         let max_jump = |range: std::ops::Range<usize>| {
-            out[range].windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max)
+            out[range]
+                .windows(2)
+                .map(|w| (w[1] - w[0]).abs())
+                .fold(0.0f32, f32::max)
         };
         let before = max_jump(end.saturating_sub(600)..end.saturating_sub(140));
         let at_end = max_jump(end.saturating_sub(140)..(end + 4).min(out.len()));

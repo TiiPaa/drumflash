@@ -166,8 +166,7 @@ fn export_pattern_to_midi_data(
                 let base = shifted(base, nudge_ticks(slot, step));
                 let dur = (TICKS_PER_STEP / n).saturating_sub(1).clamp(1, 10);
                 for k in 0..n {
-                    let tick =
-                        base + (k as f32 * TICKS_PER_STEP as f32 / n as f32).round() as u32;
+                    let tick = base + (k as f32 * TICKS_PER_STEP as f32 / n as f32).round() as u32;
                     emit(&mut events, tick, dur, note);
                 }
             }
@@ -301,7 +300,8 @@ mod tests {
     }
 
     #[test]
-    fn midi_export_expands_stutter_into_multiple_notes() {        let pattern = SharedPattern::new(&Pattern::empty());
+    fn midi_export_expands_stutter_into_multiple_notes() {
+        let pattern = SharedPattern::new(&Pattern::empty());
         pattern.set_step_mask(0, 1u16 << 0); // Kick on step 0
         let layout = legacy_layout();
         let seq = SequencerPlockState::new();
@@ -370,9 +370,16 @@ mod tests {
         let pattern = SharedPattern::new(&Pattern::empty());
         pattern.set_step_mask(0, 1u16 << 13);
 
-        let bytes =
-            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight, &SequencerPlockState::new())
-                .expect("MIDI export should succeed");
+        let bytes = export_pattern_to_midi_bytes(
+            &pattern,
+            &layout,
+            120.0,
+            16,
+            0.0,
+            GrooveType::Straight,
+            &SequencerPlockState::new(),
+        )
+        .expect("MIDI export should succeed");
 
         assert!(
             bytes.windows(3).any(|window| window == [0x99, 99, 100]),
@@ -391,9 +398,16 @@ mod tests {
         pattern.set_step_mask(0, 1u16 << perc1_slot);
         let layout = legacy_layout();
 
-        let bytes =
-            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight, &SequencerPlockState::new())
-                .expect("MIDI export should succeed");
+        let bytes = export_pattern_to_midi_bytes(
+            &pattern,
+            &layout,
+            120.0,
+            16,
+            0.0,
+            GrooveType::Straight,
+            &SequencerPlockState::new(),
+        )
+        .expect("MIDI export should succeed");
 
         assert!(
             bytes.windows(3).any(|window| window == [0x99, 37, 100]),
@@ -412,17 +426,16 @@ mod tests {
         pattern.set_step_mask(63, 1u16 << 1); // Snare at step 63
         let layout = legacy_layout();
 
-        let bytes =
-            export_pattern_to_midi_bytes(
-                &pattern,
-                &layout,
-                120.0,
-                64,
-                0.0,
-                GrooveType::Straight,
-                &SequencerPlockState::new(),
-            )
-                .expect("MIDI export should succeed");
+        let bytes = export_pattern_to_midi_bytes(
+            &pattern,
+            &layout,
+            120.0,
+            64,
+            0.0,
+            GrooveType::Straight,
+            &SequencerPlockState::new(),
+        )
+        .expect("MIDI export should succeed");
 
         // Kick note = 36, Snare note = 38
         assert!(
@@ -442,20 +455,26 @@ mod tests {
         pattern.set_step_mask(1, 1u16 << 0);
         let layout = legacy_layout();
 
-        let straight =
-            export_pattern_to_midi_bytes(&pattern, &layout, 120.0, 16, 0.0, GrooveType::Straight, &SequencerPlockState::new())
-                .expect("MIDI export should succeed");
-        let swung =
-            export_pattern_to_midi_bytes(
-                &pattern,
-                &layout,
-                120.0,
-                16,
-                0.5,
-                GrooveType::Swing16,
-                &SequencerPlockState::new(),
-            )
-                .expect("MIDI export should succeed");
+        let straight = export_pattern_to_midi_bytes(
+            &pattern,
+            &layout,
+            120.0,
+            16,
+            0.0,
+            GrooveType::Straight,
+            &SequencerPlockState::new(),
+        )
+        .expect("MIDI export should succeed");
+        let swung = export_pattern_to_midi_bytes(
+            &pattern,
+            &layout,
+            120.0,
+            16,
+            0.5,
+            GrooveType::Swing16,
+            &SequencerPlockState::new(),
+        )
+        .expect("MIDI export should succeed");
 
         // Straight step 1 is at tick 120; with +50 % swing16 ratio = 2/3,
         // the odd step moves to tick 160.

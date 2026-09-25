@@ -1132,31 +1132,101 @@ impl MusicalTemplate {
         Self {
             roles: [
                 // 0 Kick: surdo — 1 & 3 with syncopated pickups
-                RhythmicRole { anchors: &[0, 8], candidates: &[3, 6, 11, 14], candidate_prob: 0.4, exclusions: &[1, 5, 9, 13] },
+                RhythmicRole {
+                    anchors: &[0, 8],
+                    candidates: &[3, 6, 11, 14],
+                    candidate_prob: 0.4,
+                    exclusions: &[1, 5, 9, 13],
+                },
                 // 1 Snare: cross-stick 3-2 son clave
-                RhythmicRole { anchors: &[0, 3, 6, 10, 12], candidates: &[], candidate_prob: 0.0, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 3, 6, 10, 12],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
                 // 2 HiHat: brushed quarter pulse + offbeat lift
-                RhythmicRole { anchors: &[0, 4, 8, 12], candidates: &[2, 6, 10, 14], candidate_prob: 0.3, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 4, 8, 12],
+                    candidates: &[2, 6, 10, 14],
+                    candidate_prob: 0.3,
+                    exclusions: &[],
+                },
                 // 3 Open HH: rare
-                RhythmicRole { anchors: &[], candidates: &[14], candidate_prob: 0.1, exclusions: &[0, 4, 8, 12] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14],
+                    candidate_prob: 0.1,
+                    exclusions: &[0, 4, 8, 12],
+                },
                 // 4-6 Toms: light fills only
-                RhythmicRole { anchors: &[], candidates: &[14, 15], candidate_prob: 0.12, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
-                RhythmicRole { anchors: &[], candidates: &[14, 15], candidate_prob: 0.1, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
-                RhythmicRole { anchors: &[], candidates: &[14, 15], candidate_prob: 0.08, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.12,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14, 15],
+                    candidate_prob: 0.08,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
                 // 7 Clap: none
-                RhythmicRole { anchors: &[], candidates: &[], candidate_prob: 0.0, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
                 // 8 Ride: steady comp
-                RhythmicRole { anchors: &[], candidates: &[0, 2, 4, 6, 8, 10, 12, 14], candidate_prob: 0.15, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.15,
+                    exclusions: &[],
+                },
                 // 9 Cymbal: sparse accent
-                RhythmicRole { anchors: &[], candidates: &[0], candidate_prob: 0.05, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
                 // 10 Snare 606: light clave echo
-                RhythmicRole { anchors: &[], candidates: &[3, 10], candidate_prob: 0.25, exclusions: &[0, 8] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[3, 10],
+                    candidate_prob: 0.25,
+                    exclusions: &[0, 8],
+                },
                 // 11 808 Kick: sub on downbeats
-                RhythmicRole { anchors: &[0, 8], candidates: &[], candidate_prob: 0.0, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 8],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
                 // 12 Perc1: shaker / agogô
-                RhythmicRole { anchors: &[], candidates: &[0, 2, 4, 6, 8, 10, 12, 14], candidate_prob: 0.35, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 4, 6, 8, 10, 12, 14],
+                    candidate_prob: 0.35,
+                    exclusions: &[],
+                },
                 // 13 Extra: sparse filler
-                RhythmicRole { anchors: &[], candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], candidate_prob: 0.05, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (120.0, 140.0),
         }
@@ -1166,31 +1236,101 @@ impl MusicalTemplate {
         Self {
             roles: [
                 // 0 Kick: four-on-the-floor
-                RhythmicRole { anchors: &[0, 4, 8, 12], candidates: &[], candidate_prob: 0.0, exclusions: &[1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15] },
+                RhythmicRole {
+                    anchors: &[0, 4, 8, 12],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15],
+                },
                 // 1 Snare: backbeat
-                RhythmicRole { anchors: &[4, 12], candidates: &[], candidate_prob: 0.0, exclusions: &[0, 8] },
+                RhythmicRole {
+                    anchors: &[4, 12],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[0, 8],
+                },
                 // 2 HiHat: closed 16th ghosts (offbeat open hat carries the pulse)
-                RhythmicRole { anchors: &[], candidates: &[1, 3, 5, 7, 9, 11, 13, 15], candidate_prob: 0.5, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[1, 3, 5, 7, 9, 11, 13, 15],
+                    candidate_prob: 0.5,
+                    exclusions: &[],
+                },
                 // 3 Open HH: classic offbeat open hat
-                RhythmicRole { anchors: &[2, 6, 10, 14], candidates: &[], candidate_prob: 0.0, exclusions: &[0, 4, 8, 12] },
+                RhythmicRole {
+                    anchors: &[2, 6, 10, 14],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[0, 4, 8, 12],
+                },
                 // 4-6 Toms: minimal
-                RhythmicRole { anchors: &[], candidates: &[15], candidate_prob: 0.08, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
-                RhythmicRole { anchors: &[], candidates: &[15], candidate_prob: 0.06, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
-                RhythmicRole { anchors: &[], candidates: &[15], candidate_prob: 0.05, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[15],
+                    candidate_prob: 0.08,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[15],
+                    candidate_prob: 0.06,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[15],
+                    candidate_prob: 0.05,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
                 // 7 Clap: layered on backbeat
-                RhythmicRole { anchors: &[4, 12], candidates: &[], candidate_prob: 0.0, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[4, 12],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
                 // 8 Ride: sparse
-                RhythmicRole { anchors: &[], candidates: &[0, 8], candidate_prob: 0.08, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 8],
+                    candidate_prob: 0.08,
+                    exclusions: &[],
+                },
                 // 9 Cymbal: crash on 1
-                RhythmicRole { anchors: &[], candidates: &[0], candidate_prob: 0.1, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
                 // 10 Snare 606: none
-                RhythmicRole { anchors: &[], candidates: &[], candidate_prob: 0.0, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
                 // 11 808 Kick: sub reinforcement
-                RhythmicRole { anchors: &[0, 8], candidates: &[], candidate_prob: 0.0, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 8],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
                 // 12 Perc1: offbeat percussion
-                RhythmicRole { anchors: &[], candidates: &[2, 6, 10, 14], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[2, 6, 10, 14],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 13 Extra: sparse filler
-                RhythmicRole { anchors: &[], candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], candidate_prob: 0.05, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (118.0, 128.0),
         }
@@ -1200,31 +1340,101 @@ impl MusicalTemplate {
         Self {
             roles: [
                 // 0 Kick: two-step — 1 and the "& of 3"
-                RhythmicRole { anchors: &[0, 10], candidates: &[6, 8], candidate_prob: 0.3, exclusions: &[4, 12] },
+                RhythmicRole {
+                    anchors: &[0, 10],
+                    candidates: &[6, 8],
+                    candidate_prob: 0.3,
+                    exclusions: &[4, 12],
+                },
                 // 1 Snare: 2 and 4 with ghost pickups
-                RhythmicRole { anchors: &[4, 12], candidates: &[7, 10, 15], candidate_prob: 0.3, exclusions: &[0] },
+                RhythmicRole {
+                    anchors: &[4, 12],
+                    candidates: &[7, 10, 15],
+                    candidate_prob: 0.3,
+                    exclusions: &[0],
+                },
                 // 2 HiHat: rolling 16th ride
-                RhythmicRole { anchors: &[0, 4, 8, 12], candidates: &[1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15], candidate_prob: 0.45, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 4, 8, 12],
+                    candidates: &[1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15],
+                    candidate_prob: 0.45,
+                    exclusions: &[],
+                },
                 // 3 Open HH: offbeat lifts
-                RhythmicRole { anchors: &[], candidates: &[6, 14], candidate_prob: 0.2, exclusions: &[0, 8] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[6, 14],
+                    candidate_prob: 0.2,
+                    exclusions: &[0, 8],
+                },
                 // 4-6 Toms: amen-style fills
-                RhythmicRole { anchors: &[], candidates: &[7, 11, 15], candidate_prob: 0.2, exclusions: &[0, 4, 8, 12] },
-                RhythmicRole { anchors: &[], candidates: &[3, 13], candidate_prob: 0.15, exclusions: &[0, 4, 8, 12] },
-                RhythmicRole { anchors: &[], candidates: &[9, 15], candidate_prob: 0.12, exclusions: &[0, 4, 8, 12] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[7, 11, 15],
+                    candidate_prob: 0.2,
+                    exclusions: &[0, 4, 8, 12],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[3, 13],
+                    candidate_prob: 0.15,
+                    exclusions: &[0, 4, 8, 12],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[9, 15],
+                    candidate_prob: 0.12,
+                    exclusions: &[0, 4, 8, 12],
+                },
                 // 7 Clap: reinforce snare
-                RhythmicRole { anchors: &[], candidates: &[4, 12], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 8 Ride: sparse
-                RhythmicRole { anchors: &[], candidates: &[0, 8], candidate_prob: 0.1, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 8],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
                 // 9 Cymbal: crash on 1
-                RhythmicRole { anchors: &[], candidates: &[0], candidate_prob: 0.1, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
                 // 10 Snare 606: ghost snares
-                RhythmicRole { anchors: &[], candidates: &[3, 7, 11, 15], candidate_prob: 0.3, exclusions: &[0, 4, 8, 12] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[3, 7, 11, 15],
+                    candidate_prob: 0.3,
+                    exclusions: &[0, 4, 8, 12],
+                },
                 // 11 808 Kick: sub-bass on kick anchors
-                RhythmicRole { anchors: &[0, 10], candidates: &[6], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 10],
+                    candidates: &[6],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 12 Perc1: syncopated accents
-                RhythmicRole { anchors: &[], candidates: &[3, 11], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[3, 11],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 13 Extra: sparse filler
-                RhythmicRole { anchors: &[], candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], candidate_prob: 0.05, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (160.0, 180.0),
         }
@@ -1234,31 +1444,101 @@ impl MusicalTemplate {
         Self {
             roles: [
                 // 0 Kick: syncopated, tresillo-leaning
-                RhythmicRole { anchors: &[0, 8], candidates: &[3, 6, 11, 14], candidate_prob: 0.4, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 8],
+                    candidates: &[3, 6, 11, 14],
+                    candidate_prob: 0.4,
+                    exclusions: &[],
+                },
                 // 1 Snare / rim: cross accents
-                RhythmicRole { anchors: &[4, 12], candidates: &[2, 7, 10, 14], candidate_prob: 0.3, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[4, 12],
+                    candidates: &[2, 7, 10, 14],
+                    candidate_prob: 0.3,
+                    exclusions: &[],
+                },
                 // 2 HiHat: busy 16th tresillo feel
-                RhythmicRole { anchors: &[0, 3, 6, 8, 11, 14], candidates: &[1, 5, 9, 13], candidate_prob: 0.3, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 3, 6, 8, 11, 14],
+                    candidates: &[1, 5, 9, 13],
+                    candidate_prob: 0.3,
+                    exclusions: &[],
+                },
                 // 3 Open HH: offbeat
-                RhythmicRole { anchors: &[], candidates: &[6, 14], candidate_prob: 0.3, exclusions: &[0, 8] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[6, 14],
+                    candidate_prob: 0.3,
+                    exclusions: &[0, 8],
+                },
                 // 4-6 Toms: conga-like
-                RhythmicRole { anchors: &[], candidates: &[3, 7, 11, 15], candidate_prob: 0.25, exclusions: &[0, 8] },
-                RhythmicRole { anchors: &[], candidates: &[5, 13], candidate_prob: 0.2, exclusions: &[0, 8] },
-                RhythmicRole { anchors: &[], candidates: &[1, 9], candidate_prob: 0.15, exclusions: &[0, 8] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[3, 7, 11, 15],
+                    candidate_prob: 0.25,
+                    exclusions: &[0, 8],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[5, 13],
+                    candidate_prob: 0.2,
+                    exclusions: &[0, 8],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[1, 9],
+                    candidate_prob: 0.15,
+                    exclusions: &[0, 8],
+                },
                 // 7 Clap: offbeat claps
-                RhythmicRole { anchors: &[], candidates: &[4, 12], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 8 Ride: bell pattern
-                RhythmicRole { anchors: &[], candidates: &[0, 3, 6, 8, 11, 14], candidate_prob: 0.3, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 3, 6, 8, 11, 14],
+                    candidate_prob: 0.3,
+                    exclusions: &[],
+                },
                 // 9 Cymbal: sparse
-                RhythmicRole { anchors: &[], candidates: &[0], candidate_prob: 0.05, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0],
+                    candidate_prob: 0.05,
+                    exclusions: &[],
+                },
                 // 10 Snare 606: rim layer on offbeats
-                RhythmicRole { anchors: &[], candidates: &[2, 6, 10, 14], candidate_prob: 0.3, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[2, 6, 10, 14],
+                    candidate_prob: 0.3,
+                    exclusions: &[],
+                },
                 // 11 808 Kick: sub
-                RhythmicRole { anchors: &[0, 8], candidates: &[3, 11], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 8],
+                    candidates: &[3, 11],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 12 Perc1: percussion-forward
-                RhythmicRole { anchors: &[], candidates: &[0, 2, 3, 5, 6, 8, 10, 11, 13, 14], candidate_prob: 0.4, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 2, 3, 5, 6, 8, 10, 11, 13, 14],
+                    candidate_prob: 0.4,
+                    exclusions: &[],
+                },
                 // 13 Extra: filler
-                RhythmicRole { anchors: &[], candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], candidate_prob: 0.1, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (100.0, 125.0),
         }
@@ -1268,31 +1548,101 @@ impl MusicalTemplate {
         Self {
             roles: [
                 // 0 Kick: one-drop — accent on beat 3
-                RhythmicRole { anchors: &[8], candidates: &[0, 11], candidate_prob: 0.25, exclusions: &[4, 12] },
+                RhythmicRole {
+                    anchors: &[8],
+                    candidates: &[0, 11],
+                    candidate_prob: 0.25,
+                    exclusions: &[4, 12],
+                },
                 // 1 Snare: one-drop rim on 3, ghost near 4
-                RhythmicRole { anchors: &[8], candidates: &[12], candidate_prob: 0.2, exclusions: &[0, 4] },
+                RhythmicRole {
+                    anchors: &[8],
+                    candidates: &[12],
+                    candidate_prob: 0.2,
+                    exclusions: &[0, 4],
+                },
                 // 2 HiHat: sparse skank on backbeat
-                RhythmicRole { anchors: &[4, 12], candidates: &[2, 6, 10, 14], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[4, 12],
+                    candidates: &[2, 6, 10, 14],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 3 Open HH: rare accents
-                RhythmicRole { anchors: &[], candidates: &[14], candidate_prob: 0.15, exclusions: &[0, 8] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14],
+                    candidate_prob: 0.15,
+                    exclusions: &[0, 8],
+                },
                 // 4-6 Toms: dub fills, very sparse
-                RhythmicRole { anchors: &[], candidates: &[15], candidate_prob: 0.12, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
-                RhythmicRole { anchors: &[], candidates: &[15], candidate_prob: 0.08, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
-                RhythmicRole { anchors: &[], candidates: &[14], candidate_prob: 0.06, exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[15],
+                    candidate_prob: 0.12,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[15],
+                    candidate_prob: 0.08,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[14],
+                    candidate_prob: 0.06,
+                    exclusions: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                },
                 // 7 Clap: none
-                RhythmicRole { anchors: &[], candidates: &[], candidate_prob: 0.0, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
                 // 8 Ride: sparse
-                RhythmicRole { anchors: &[], candidates: &[0, 8], candidate_prob: 0.1, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 8],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
                 // 9 Cymbal: sparse
-                RhythmicRole { anchors: &[], candidates: &[0], candidate_prob: 0.08, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0],
+                    candidate_prob: 0.08,
+                    exclusions: &[],
+                },
                 // 10 Snare 606: rimshot on 3
-                RhythmicRole { anchors: &[], candidates: &[8], candidate_prob: 0.3, exclusions: &[0, 4, 12] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[8],
+                    candidate_prob: 0.3,
+                    exclusions: &[0, 4, 12],
+                },
                 // 11 808 Kick: heavy sub
-                RhythmicRole { anchors: &[0, 8], candidates: &[3, 11], candidate_prob: 0.3, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 8],
+                    candidates: &[3, 11],
+                    candidate_prob: 0.3,
+                    exclusions: &[],
+                },
                 // 12 Perc1: dub echoes
-                RhythmicRole { anchors: &[], candidates: &[2, 10], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[2, 10],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 13 Extra: very sparse filler
-                RhythmicRole { anchors: &[], candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], candidate_prob: 0.04, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.04,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (60.0, 90.0),
         }
@@ -1302,31 +1652,101 @@ impl MusicalTemplate {
         Self {
             roles: [
                 // 0 Kick: broken / funky, avoids the backbeat
-                RhythmicRole { anchors: &[0], candidates: &[3, 6, 8, 10, 11], candidate_prob: 0.4, exclusions: &[4, 12] },
+                RhythmicRole {
+                    anchors: &[0],
+                    candidates: &[3, 6, 8, 10, 11],
+                    candidate_prob: 0.4,
+                    exclusions: &[4, 12],
+                },
                 // 1 Snare: 2 and 4 with syncopated hits
-                RhythmicRole { anchors: &[4, 12], candidates: &[7, 10, 14, 15], candidate_prob: 0.35, exclusions: &[0] },
+                RhythmicRole {
+                    anchors: &[4, 12],
+                    candidates: &[7, 10, 14, 15],
+                    candidate_prob: 0.35,
+                    exclusions: &[0],
+                },
                 // 2 HiHat: 8th ride with offbeat push
-                RhythmicRole { anchors: &[0, 4, 8, 12], candidates: &[2, 6, 10, 14], candidate_prob: 0.4, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 4, 8, 12],
+                    candidates: &[2, 6, 10, 14],
+                    candidate_prob: 0.4,
+                    exclusions: &[],
+                },
                 // 3 Open HH: offbeat accents
-                RhythmicRole { anchors: &[], candidates: &[6, 14], candidate_prob: 0.25, exclusions: &[0, 8] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[6, 14],
+                    candidate_prob: 0.25,
+                    exclusions: &[0, 8],
+                },
                 // 4-6 Toms: funky-drummer fills
-                RhythmicRole { anchors: &[], candidates: &[7, 11, 15], candidate_prob: 0.25, exclusions: &[0, 4, 8, 12] },
-                RhythmicRole { anchors: &[], candidates: &[3, 13], candidate_prob: 0.2, exclusions: &[0, 4, 8, 12] },
-                RhythmicRole { anchors: &[], candidates: &[9, 15], candidate_prob: 0.15, exclusions: &[0, 4, 8, 12] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[7, 11, 15],
+                    candidate_prob: 0.25,
+                    exclusions: &[0, 4, 8, 12],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[3, 13],
+                    candidate_prob: 0.2,
+                    exclusions: &[0, 4, 8, 12],
+                },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[9, 15],
+                    candidate_prob: 0.15,
+                    exclusions: &[0, 4, 8, 12],
+                },
                 // 7 Clap: reinforce backbeat
-                RhythmicRole { anchors: &[], candidates: &[4, 12], candidate_prob: 0.2, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[4, 12],
+                    candidate_prob: 0.2,
+                    exclusions: &[],
+                },
                 // 8 Ride: sparse
-                RhythmicRole { anchors: &[], candidates: &[0, 8], candidate_prob: 0.1, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 8],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
                 // 9 Cymbal: crash on 1
-                RhythmicRole { anchors: &[], candidates: &[0], candidate_prob: 0.1, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0],
+                    candidate_prob: 0.1,
+                    exclusions: &[],
+                },
                 // 10 Snare 606: ghost snares
-                RhythmicRole { anchors: &[], candidates: &[3, 7, 11, 15], candidate_prob: 0.35, exclusions: &[0, 4, 12] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[3, 7, 11, 15],
+                    candidate_prob: 0.35,
+                    exclusions: &[0, 4, 12],
+                },
                 // 11 808 Kick: sub on downbeats
-                RhythmicRole { anchors: &[0, 8], candidates: &[], candidate_prob: 0.0, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[0, 8],
+                    candidates: &[],
+                    candidate_prob: 0.0,
+                    exclusions: &[],
+                },
                 // 12 Perc1: syncopated accents
-                RhythmicRole { anchors: &[], candidates: &[3, 7, 11], candidate_prob: 0.25, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[3, 7, 11],
+                    candidate_prob: 0.25,
+                    exclusions: &[],
+                },
                 // 13 Extra: filler
-                RhythmicRole { anchors: &[], candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], candidate_prob: 0.06, exclusions: &[] },
+                RhythmicRole {
+                    anchors: &[],
+                    candidates: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    candidate_prob: 0.06,
+                    exclusions: &[],
+                },
             ],
             bpm_range: (120.0, 140.0),
         }

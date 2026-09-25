@@ -4,22 +4,15 @@ use nih_plug_egui::{
     egui::{self, Vec2},
     resizable_window::ResizableWindow,
 };
-use std::{
-    sync::{
-        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
+    Arc,
 };
 
 use crate::{
-    config::GlobalConfig,
-    pattern_bank::SLOT_COUNT,
-    plock::PlockState,
-    sequencer::SharedPattern,
-    sound_settings::SoundSettingsState,
-    DrumFlashParams,
+    config::GlobalConfig, pattern_bank::SLOT_COUNT, plock::PlockState, sequencer::SharedPattern,
+    sound_settings::SoundSettingsState, DrumFlashParams,
 };
-
 
 mod bottom_panel;
 mod controls;
@@ -29,13 +22,13 @@ mod fmt;
 mod grid;
 mod header;
 mod local_param_slider;
+mod macros_panel;
 mod menus;
 pub(crate) mod midi;
 mod pads;
-mod pattern_bank;
 pub mod param_source;
+mod pattern_bank;
 mod plock;
-mod macros_panel;
 mod popups;
 mod preset_browser;
 mod skeuo;
@@ -168,11 +161,11 @@ pub fn create_editor(
     let song_mode_for_ui = song_mode.clone();
     let song_position_for_ui = song_position.clone();
     let pending_pattern_length_for_ui = pending_pattern_length.clone();
-        let audio_last_loaded_slot_for_ui = audio_last_loaded_slot.clone();
+    let audio_last_loaded_slot_for_ui = audio_last_loaded_slot.clone();
 
-        theme::set_skin(&global_config.skin);
+    theme::set_skin(&global_config.skin);
 
-        create_egui_editor(
+    create_egui_editor(
         params.editor_state.clone(),
         {
             let mut initial_state = EditorUIState::default();
@@ -363,8 +356,11 @@ pub fn create_editor(
                     // panel side (skeuo bevel). A plain hairline was invisible now
                     // that both surfaces share the same skeuo grey.
                     let seam_x = right_rect.left();
-                    ui.painter()
-                        .vline(seam_x, body_rect.y_range(), egui::Stroke::new(1.0, PANEL_BORDER));
+                    ui.painter().vline(
+                        seam_x,
+                        body_rect.y_range(),
+                        egui::Stroke::new(1.0, PANEL_BORDER),
+                    );
                     ui.painter().vline(
                         seam_x + 1.0,
                         body_rect.y_range(),

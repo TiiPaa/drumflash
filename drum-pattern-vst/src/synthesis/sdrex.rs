@@ -93,7 +93,11 @@ impl SdrexVoice {
             noise_lp,
             filter: {
                 let mut f = dsp::Biquad::new();
-                f.set_lowpass(settings.filter_freq.max(20.0), std::f32::consts::FRAC_1_SQRT_2, sample_rate);
+                f.set_lowpass(
+                    settings.filter_freq.max(20.0),
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    sample_rate,
+                );
                 f
             },
             filter_env_time: 0.0,
@@ -253,9 +257,7 @@ impl Voice for SdrexVoice {
         }
 
         self.amp_proxy = attack_gain * noise_env;
-        let mixed = (body * 0.50 + noise * 0.80 + metal * 0.18)
-            * attack_gain
-            * self.drift.level;
+        let mixed = (body * 0.50 + noise * 0.80 + metal * 0.18) * attack_gain * self.drift.level;
 
         // 3b. LP filter with A-D envelope (bipolar curves), exponential sweep
         // toward 20 kHz (same law as Tom/Buzz).
@@ -289,9 +291,7 @@ impl Voice for SdrexVoice {
         };
         self.filter
             .set_lowpass(cutoff, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
-        let mixed = self
-            .filter
-            .process(self.saturation.process_at(true, mixed));
+        let mixed = self.filter.process(self.saturation.process_at(true, mixed));
 
         // 4. Flanger target. Filter Mod bypasses the delay line completely.
         let min_delay = FLANGER_MIN_DELAY_MS;
@@ -300,16 +300,14 @@ impl Voice for SdrexVoice {
             mixed
         } else {
             let len = self.flanger_len;
-            let delay_samples = ((min_delay + modulation_depth * modulation_unipolar)
-                * 0.001
-                * self.sample_rate)
-                .clamp(0.0, (len - 2) as f32);
+            let delay_samples =
+                ((min_delay + modulation_depth * modulation_unipolar) * 0.001 * self.sample_rate)
+                    .clamp(0.0, (len - 2) as f32);
             let delay_int = delay_samples.floor() as usize;
             let frac = delay_samples - delay_int as f32;
             let p1 = (self.flanger_pos + len - delay_int.min(len - 1)) % len;
             let p2 = (self.flanger_pos + len - delay_int.min(len - 1) - 1) % len;
-            let delayed =
-                self.flanger_buf[p1] * (1.0 - frac) + self.flanger_buf[p2] * frac;
+            let delayed = self.flanger_buf[p1] * (1.0 - frac) + self.flanger_buf[p2] * frac;
             self.flanger_buf[self.flanger_pos] = mixed + delayed * feedback;
             self.flanger_pos = (self.flanger_pos + 1) % len;
             mixed * (1.0 - modulation_wet) + delayed * modulation_wet
@@ -457,7 +455,10 @@ mod tests {
         for _ in 0..44100 {
             tail = tail.max(voice.process_sample().abs());
         }
-        assert!(tail < 1e-3, "voice should be silent after hits, tail {tail}");
+        assert!(
+            tail < 1e-3,
+            "voice should be silent after hits, tail {tail}"
+        );
         assert!(!voice.is_active());
     }
 
@@ -546,7 +547,9 @@ mod tests {
             settings.special[17] = mode;
             let mut voice = voice_with(settings);
             voice.trigger();
-            (0..8192).map(|_| voice.process_sample()).collect::<Vec<_>>()
+            (0..8192)
+                .map(|_| voice.process_sample())
+                .collect::<Vec<_>>()
         };
         for (mode, name) in [(0.0f32, "flanger"), (1.0, "filter LFO")] {
             let instant = render(mode, 0.0);
@@ -580,7 +583,9 @@ mod tests {
             settings.special[17] = mode;
             let mut voice = voice_with(settings);
             voice.trigger();
-            (0..8192).map(|_| voice.process_sample()).collect::<Vec<_>>()
+            (0..8192)
+                .map(|_| voice.process_sample())
+                .collect::<Vec<_>>()
         };
         let difference = |a: &[f32], b: &[f32]| {
             a.iter()
@@ -792,7 +797,10 @@ mod tests {
         free.body_phase = 1.0;
         free.trigger();
         assert_eq!(free.flanger_phase, 1.25);
-        assert_eq!(free.body_phase, 0.0, "Free Phase must not affect oscillators");
+        assert_eq!(
+            free.body_phase, 0.0,
+            "Free Phase must not affect oscillators"
+        );
         for _ in 0..128 {
             free.process_sample();
         }

@@ -21,7 +21,9 @@
 //! AND the amp envelope restart from a clean state (the attack always plays
 //! from zero, like a sampler), `RetrigDeclick` (3 ms) absorbs the jump.
 
-use super::{dsp, sample_bank, saturation, settings::oneshot::OneShotSettings, Voice, VoiceSettings};
+use super::{
+    dsp, sample_bank, saturation, settings::oneshot::OneShotSettings, Voice, VoiceSettings,
+};
 
 /// Anti-click floor for the amplitude attack (a true 0 ms attack is a step).
 const MIN_AMP_ATTACK_MS: f32 = 0.3;
@@ -204,13 +206,19 @@ impl OneShotVoice {
     }
 
     fn filter_env_decay_secs(&self) -> f32 {
-        (self.settings.filter_env_decay.clamp(0.005, 1.0) * self.region_secs)
-            .max(MIN_DECAY_SECS)
+        (self.settings.filter_env_decay.clamp(0.005, 1.0) * self.region_secs).max(MIN_DECAY_SECS)
     }
 
     /// Generic A-H-D ramp at time `t`, each stage shaped by its own bipolar
     /// curve (the pitch and filter envelopes share this shape).
-    fn ahd_value(t: f32, attack: f32, hold: f32, decay: f32, atk_curve: f32, dec_curve: f32) -> f32 {
+    fn ahd_value(
+        t: f32,
+        attack: f32,
+        hold: f32,
+        decay: f32,
+        atk_curve: f32,
+        dec_curve: f32,
+    ) -> f32 {
         let atk = attack.max(MIN_ENV_ATTACK_S);
         let hold = hold.max(0.0);
         let dec = decay.max(MIN_DECAY_SECS);
@@ -406,10 +414,7 @@ impl Voice for OneShotVoice {
         self.dc_block_r.reset();
 
         // The lane's file is the whole instrument: no file, no sound.
-        let source = self
-            .pool
-            .as_ref()
-            .and_then(|(pool, lane)| pool.get(*lane));
+        let source = self.pool.as_ref().and_then(|(pool, lane)| pool.get(*lane));
         let Some(bank) = source.clone() else {
             self.active = false;
             if let Some(old) = self.source.take() {
@@ -442,13 +447,16 @@ impl Voice for OneShotVoice {
         }
         self.source_rate = bank.source_rate.max(1.0);
         self.base_step = (self.source_rate / self.sample_rate) * self.pitch_ratio();
-        self.pos = if self.reverse() { self.win_end } else { self.win_start };
+        self.pos = if self.reverse() {
+            self.win_end
+        } else {
+            self.win_start
+        };
         // The envelopes scale to what is ACTUALLY heard: the region, at the
         // current pitch ratio (region source-samples ÷ source rate ÷ ratio).
-        self.region_secs = ((self.win_end - self.win_start)
-            / self.source_rate
-            / self.pitch_ratio().max(1e-3))
-        .max(0.001);
+        self.region_secs =
+            ((self.win_end - self.win_start) / self.source_rate / self.pitch_ratio().max(1e-3))
+                .max(0.001);
 
         self.amp_env.set_decay(self.amp_decay_secs());
         self.amp_env
@@ -532,10 +540,9 @@ impl Voice for OneShotVoice {
         // needed.
         if self.active && self.source_rate > 0.0 {
             self.base_step = (self.source_rate / self.sample_rate) * self.pitch_ratio();
-            self.region_secs = ((self.win_end - self.win_start)
-                / self.source_rate
-                / self.pitch_ratio().max(1e-3))
-            .max(0.001);
+            self.region_secs =
+                ((self.win_end - self.win_start) / self.source_rate / self.pitch_ratio().max(1e-3))
+                    .max(0.001);
         }
 
         // Setters only — recreating an envelope resets its state and cuts the
@@ -779,8 +786,14 @@ mod tests {
         let v = voice_with(st);
         let open = v.filter_cutoff(1.0);
         let rest = v.filter_cutoff(0.0);
-        assert!((open - 20000.0).abs() < 1.0, "full amount must reach 20 kHz, got {open}");
-        assert!((rest - 500.0).abs() < 1.0, "cutoff must rest on its setting, got {rest}");
+        assert!(
+            (open - 20000.0).abs() < 1.0,
+            "full amount must reach 20 kHz, got {open}"
+        );
+        assert!(
+            (rest - 500.0).abs() < 1.0,
+            "cutoff must rest on its setting, got {rest}"
+        );
     }
 
     #[test]
@@ -832,9 +845,16 @@ mod tests {
         s.attack = 0.5;
         let mut v = voice_with(s);
         v.trigger();
-        assert!((v.region_secs - 0.25).abs() < 1e-3, "region {}", v.region_secs);
+        assert!(
+            (v.region_secs - 0.25).abs() < 1e-3,
+            "region {}",
+            v.region_secs
+        );
         assert!((v.amp_attack_secs() - 0.125).abs() < 1e-3);
-        assert!((v.amp_decay_secs() - 0.25).abs() < 1e-3, "decay 1.0 = whole region");
+        assert!(
+            (v.amp_decay_secs() - 0.25).abs() < 1e-3,
+            "decay 1.0 = whole region"
+        );
     }
 
     /// Offset is a fraction of the file where playback starts; the head
@@ -846,12 +866,19 @@ mod tests {
         let mut v = voice_with(s);
         v.trigger();
         let last = v.win_end;
-        assert!((v.win_start - 0.5 * last).abs() < 2.0, "marker at {}", v.win_start);
+        assert!(
+            (v.win_start - 0.5 * last).abs() < 2.0,
+            "marker at {}",
+            v.win_start
+        );
         assert_eq!(v.pos, v.win_start, "forward playback starts at the marker");
         for _ in 0..4410 {
             v.process_sample();
         }
-        assert!(v.pos > v.win_start, "the read moved forward from the marker");
+        assert!(
+            v.pos > v.win_start,
+            "the read moved forward from the marker"
+        );
     }
 
     /// Two offsets must not render the same audio.
@@ -895,12 +922,15 @@ mod tests {
         let mut v = voice_with(s);
         v.trigger();
         let first: Vec<f32> = (0..441).map(|_| v.process_sample()).collect(); // 0..10 ms
-        // Skip to the end of the ramp (45..50 ms), where the envelope is ~1.
+                                                                              // Skip to the end of the ramp (45..50 ms), where the envelope is ~1.
         let full: Vec<f32> = (0..1764).map(|_| v.process_sample()).collect();
         let last_window = &full[full.len() - 441..];
         let p1 = peak(&first);
         let p2 = peak(last_window);
-        assert!(p1 < p2 * 0.25, "no fade-in: first 10 ms peak {p1}, full-level peak {p2}");
+        assert!(
+            p1 < p2 * 0.25,
+            "no fade-in: first 10 ms peak {p1}, full-level peak {p2}"
+        );
     }
 
     /// Every retrigger restarts the amp attack from zero, even while the

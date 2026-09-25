@@ -156,9 +156,7 @@ pub struct PatternBank {
 }
 
 /// Length-tolerant deserializer for the `slots` array (see field docs).
-fn deserialize_slots_padded<'de, D>(
-    deserializer: D,
-) -> Result<[PatternSlot; SLOT_COUNT], D::Error>
+fn deserialize_slots_padded<'de, D>(deserializer: D) -> Result<[PatternSlot; SLOT_COUNT], D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -1019,8 +1017,7 @@ impl PersistentPatternBank {
     /// Mark the persisted snapshot stale without allocating or blocking. This
     /// is safe to call from the audio thread after a pattern-bank mutation.
     pub fn mark_snapshot_dirty(&self) {
-        self.snapshot_dirty
-            .store(true, AtomicOrdering::Release);
+        self.snapshot_dirty.store(true, AtomicOrdering::Release);
     }
 
     /// Rebuild the persisted JSON snapshot outside the bank lock.
@@ -1029,8 +1026,7 @@ impl PersistentPatternBank {
     pub fn refresh_snapshot(&self) {
         // Clearing before cloning avoids losing a concurrent dirty mark: a
         // mutation that happens during this rebuild will set the flag again.
-        self.snapshot_dirty
-            .store(false, AtomicOrdering::Release);
+        self.snapshot_dirty.store(false, AtomicOrdering::Release);
         let cloned = match self.bank.lock() {
             Ok(guard) => guard.clone(),
             Err(_) => {
@@ -1064,9 +1060,8 @@ impl<'a> nih_plug::params::persist::PersistentField<'a, Vec<u8>> for PersistentP
                 for slot in guard.slots.iter_mut() {
                     slot.plock_bytes
                         .reserve(MAX_PLOCK_BYTES.saturating_sub(slot.plock_bytes.len()));
-                    slot.seq_plock_bytes.reserve(
-                        MAX_SEQ_PLOCK_BYTES.saturating_sub(slot.seq_plock_bytes.len()),
-                    );
+                    slot.seq_plock_bytes
+                        .reserve(MAX_SEQ_PLOCK_BYTES.saturating_sub(slot.seq_plock_bytes.len()));
                     slot.fusion_bytes
                         .reserve(MAX_FUSION_BYTES.saturating_sub(slot.fusion_bytes.len()));
                 }
@@ -1524,9 +1519,8 @@ mod tests {
         });
 
         for _ in 0..256 {
-            let valid = persistent.map(|bytes| {
-                serde_json::from_slice::<PatternBank>(bytes).is_ok()
-            });
+            let valid =
+                persistent.map(|bytes| serde_json::from_slice::<PatternBank>(bytes).is_ok());
             assert!(valid, "snapshot must always remain valid JSON");
         }
         writer_thread.join().unwrap();
@@ -1688,7 +1682,9 @@ mod tests {
         slot.clear_lane(3);
 
         assert!(
-            slot.plock_bytes[3 * stride..4 * stride].iter().all(|b| *b == 0),
+            slot.plock_bytes[3 * stride..4 * stride]
+                .iter()
+                .all(|b| *b == 0),
             "lane 3's values must be zeroed"
         );
         for lane in [2usize, 4] {

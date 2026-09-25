@@ -490,8 +490,14 @@ mod tests {
             }
         }
         // The [247] regression specifically: Oh6smp slices are 1 s, not 0.5 s.
-        assert_eq!(sampler_bank(24).unwrap().hits[0].len(), oh606().hits[0].len());
-        assert_ne!(sampler_bank(24).unwrap().hits[0].len(), ch606().hits[0].len());
+        assert_eq!(
+            sampler_bank(24).unwrap().hits[0].len(),
+            oh606().hits[0].len()
+        );
+        assert_ne!(
+            sampler_bank(24).unwrap().hits[0].len(),
+            ch606().hits[0].len()
+        );
     }
 
     #[test]
@@ -513,7 +519,10 @@ mod tests {
             );
             let peak = t.data.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
             assert!(peak > 0.5, "texture {i} peaks at {peak}");
-            assert!(t.data.iter().all(|s| s.is_finite()), "texture {i} has non-finite samples");
+            assert!(
+                t.data.iter().all(|s| s.is_finite()),
+                "texture {i} has non-finite samples"
+            );
         }
     }
 
@@ -536,12 +545,22 @@ mod tests {
     fn every_texture_summarises_into_peaks() {
         for i in 0..TEXTURE_COUNT {
             let t = texture(i);
-            assert_eq!(t.peaks.len(), TEXTURE_PEAK_COLUMNS, "texture {i} column count");
+            assert_eq!(
+                t.peaks.len(),
+                TEXTURE_PEAK_COLUMNS,
+                "texture {i} column count"
+            );
             assert!(
-                t.peaks.iter().all(|(lo, hi)| lo <= hi && lo.is_finite() && hi.is_finite()),
+                t.peaks
+                    .iter()
+                    .all(|(lo, hi)| lo <= hi && lo.is_finite() && hi.is_finite()),
                 "texture {i} has a broken column"
             );
-            let tallest = t.peaks.iter().map(|(lo, hi)| hi - lo).fold(0.0f32, f32::max);
+            let tallest = t
+                .peaks
+                .iter()
+                .map(|(lo, hi)| hi - lo)
+                .fold(0.0f32, f32::max);
             assert!(tallest > 0.5, "texture {i} summary is flat ({tallest})");
         }
     }
@@ -550,7 +569,10 @@ mod tests {
     /// persisted plock and preset data.
     #[test]
     fn texture_index_is_clamped() {
-        assert_eq!(texture(99).data.len(), texture(TEXTURE_COUNT - 1).data.len());
+        assert_eq!(
+            texture(99).data.len(),
+            texture(TEXTURE_COUNT - 1).data.len()
+        );
     }
 
     // ── [228] user textures ─────────────────────────────────────────────────
@@ -561,14 +583,22 @@ mod tests {
             .map(|i| (i as f32 * hz * std::f32::consts::TAU / rate).sin() * 0.5)
             .collect();
         let peaks = peak_summary(&data);
-        TextureBank { source_rate: rate, data, right: None, peaks }
+        TextureBank {
+            source_rate: rate,
+            data,
+            right: None,
+            peaks,
+        }
     }
 
     #[test]
     fn pool_publishes_and_resolves_with_a_fallback_for_empty_slots() {
         let pool = TexturePool::new();
         // Embedded indices never touch the pool.
-        assert!(matches!(resolve_texture(1, Some((&pool, 2))), TextureSource::Embedded(_)));
+        assert!(matches!(
+            resolve_texture(1, Some((&pool, 2))),
+            TextureSource::Embedded(_)
+        ));
         // A lane without a file plays the first embedded texture.
         match resolve_texture(CUSTOM_TEXTURE_INDEX, Some((&pool, 2))) {
             TextureSource::Embedded(bank) => assert!(std::ptr::eq(bank, texture(0))),
@@ -581,15 +611,24 @@ mod tests {
             TextureSource::User(bank) => assert_eq!(bank.data.len(), 800),
             TextureSource::Embedded(_) => panic!("loaded lane must be used"),
         }
-        assert!(matches!(resolve_texture(CUSTOM_TEXTURE_INDEX, Some((&pool, 3))), TextureSource::Embedded(_)));
+        assert!(matches!(
+            resolve_texture(CUSTOM_TEXTURE_INDEX, Some((&pool, 3))),
+            TextureSource::Embedded(_)
+        ));
         // Replacing keeps the old one parked (never freed on the reader's side).
         let old = pool.get(2).unwrap();
         pool.publish(2, Some(Arc::new(sine_bank(220.0, 0.2, 8000.0))));
-        assert!(Arc::strong_count(&old) >= 2, "previous generation must be parked");
+        assert!(
+            Arc::strong_count(&old) >= 2,
+            "previous generation must be parked"
+        );
         pool.publish(2, None);
         assert!(!pool.is_loaded(2));
         // Out of range: no pool access, clamps into the menu.
-        assert!(matches!(resolve_texture(999, None), TextureSource::Embedded(_)));
+        assert!(matches!(
+            resolve_texture(999, None),
+            TextureSource::Embedded(_)
+        ));
     }
 
     #[test]
@@ -620,11 +659,18 @@ mod tests {
         // Both channels kept: left in `data`, right in `right`; the picture
         // is their mix.
         assert!((bank.data[10] - 0.5).abs() < 1e-3, "{}", bank.data[10]);
-        let right = bank.right.as_ref().expect("stereo file keeps its right channel");
+        let right = bank
+            .right
+            .as_ref()
+            .expect("stereo file keeps its right channel");
         assert_eq!(right.len(), 1000);
         assert!((right[10] + 0.25).abs() < 1e-3, "{}", right[10]);
         assert_eq!(bank.peaks.len(), TEXTURE_PEAK_COLUMNS);
-        assert!((bank.peaks[100].1 - 0.125).abs() < 1e-3, "{:?}", bank.peaks[100]);
+        assert!(
+            (bank.peaks[100].1 - 0.125).abs() < 1e-3,
+            "{:?}",
+            bank.peaks[100]
+        );
 
         // Float mono, longer than the cap at a low rate: truncated to the cap.
         let long = dir.join("long.wav");

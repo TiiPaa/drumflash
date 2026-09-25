@@ -915,12 +915,7 @@ impl SequencerPlockState {
     }
 
     /// [219] Set or clear the second condition, ANDed with the first.
-    pub fn set_condition_and(
-        &self,
-        instrument: usize,
-        step: usize,
-        value: Option<StepCondition>,
-    ) {
+    pub fn set_condition_and(&self, instrument: usize, step: usize, value: Option<StepCondition>) {
         if instrument >= INSTRUMENT_COUNT || step >= STEP_COUNT {
             return;
         }
@@ -1234,7 +1229,10 @@ mod tests {
             .get_settings(0, 1, &base_settings())
             .expect("plock should exist");
 
-        assert_eq!(restored.special[4], 0.42, "the re-homed special round-trips");
+        assert_eq!(
+            restored.special[4], 0.42,
+            "the re-homed special round-trips"
+        );
         assert_eq!(restored.attack, 0.007, "Attack is untouched by it");
         assert_eq!(
             state.values.get(0, 1, crate::param_id::SPECIAL_4_FIELD),
@@ -1264,7 +1262,10 @@ mod tests {
             "the Clap still reads its legacy echo from field 12"
         );
         // And field 12 is still claimed by nobody as a parameter.
-        assert_eq!(crate::param_id::ParamId::from_plock_field(LEGACY_CLAP_ECHO_FIELD), None);
+        assert_eq!(
+            crate::param_id::ParamId::from_plock_field(LEGACY_CLAP_ECHO_FIELD),
+            None
+        );
     }
 
     #[test]
@@ -1616,13 +1617,7 @@ mod tests {
         state.set_solo(0, 2, true); // normal cell → covers only step 2
         state.set_solo(1, 5, true); // fused cell → covers steps 5,6,7
 
-        let window = state.solo_window(|inst, start| {
-            if inst == 1 && start == 5 {
-                3
-            } else {
-                1
-            }
-        });
+        let window = state.solo_window(|inst, start| if inst == 1 && start == 5 { 3 } else { 1 });
 
         assert_ne!(window & (1 << 2), 0); // normal solo
         assert_ne!(window & (1 << 5), 0);
@@ -1701,14 +1696,20 @@ mod tests {
         assert!((log[0] - 100.0).abs() < 1e-3);
         assert!((log[15] - 12800.0).abs() < 0.5);
         let ratios: Vec<f32> = log.windows(2).map(|w| w[1] / w[0]).collect();
-        assert!(ratios.iter().all(|r| (r - ratios[0]).abs() < 1e-3), "{ratios:?}");
+        assert!(
+            ratios.iter().all(|r| (r - ratios[0]).abs() < 1e-3),
+            "{ratios:?}"
+        );
     }
 
     #[test]
     fn scatter_stays_in_range_and_is_seeded() {
         let a = scatter_values(0.2, 0.8, false, 42);
         assert!(a.iter().all(|v| (0.2..=0.8).contains(v)), "{a:?}");
-        assert!(a.iter().any(|v| (v - a[0]).abs() > 1e-3), "all equal: {a:?}");
+        assert!(
+            a.iter().any(|v| (v - a[0]).abs() > 1e-3),
+            "all equal: {a:?}"
+        );
         assert_eq!(a, scatter_values(0.2, 0.8, false, 42));
         assert_ne!(a, scatter_values(0.2, 0.8, false, 43));
         // A zero seed must not lock xorshift at zero.
@@ -1724,7 +1725,11 @@ mod tests {
         for step in 0..STEP_COUNT {
             let listed = matches!(step, 3 | 17 | 60);
             assert_eq!(state.masks.is_active(2, step), listed, "step {step}");
-            assert_eq!(state.field_masks.is_set(2, step, field), listed, "step {step}");
+            assert_eq!(
+                state.field_masks.is_set(2, step, field),
+                listed,
+                "step {step}"
+            );
         }
         assert_eq!(state.values.get(2, 17, field), 0.75);
         let mut sixty_four = [0.0f32; STEP_COUNT];

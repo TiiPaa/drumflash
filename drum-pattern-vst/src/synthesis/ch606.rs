@@ -86,9 +86,8 @@ impl Ch606Voice {
         let filter = dsp::OnePoleFilter::new(dsp::FilterMode::LowPass);
         // [174/F2] Dedicated filter-envelope steepness — NOT the amp
         // `decay_curve`, which became bipolar (-1..1) in [159].
-        let filter_env =
-            dsp::ExpDecayEnvelope::new(sample_rate, Self::FILTER_ENV_CURVE, 0.15)
-                .with_attack_ms(0.3);
+        let filter_env = dsp::ExpDecayEnvelope::new(sample_rate, Self::FILTER_ENV_CURVE, 0.15)
+            .with_attack_ms(0.3);
 
         let mut voice = Self {
             settings,
@@ -377,7 +376,9 @@ impl Voice for Ch606Voice {
             .process(self.saturation.process_at(true, raw_r * amp));
 
         (
-            self.dc_block.process(self.saturation.process_at(false, out_l)) * self.settings.volume,
+            self.dc_block
+                .process(self.saturation.process_at(false, out_l))
+                * self.settings.volume,
             self.dc_block_r
                 .process(self.saturation.process_at(false, out_r))
                 * self.settings.volume,
@@ -673,11 +674,7 @@ mod tests {
     // ── OH6smp: the same engine on the open-hat bank ([208]) ────────────────
 
     fn open_voice_with(settings: VoiceSettings) -> Ch606Voice {
-        Ch606Voice::with_bank(
-            44100.0,
-            Ch606Settings::from(settings),
-            sample_bank::oh606(),
-        )
+        Ch606Voice::with_bank(44100.0, Ch606Settings::from(settings), sample_bank::oh606())
     }
 
     /// The open bank is embedded and sliced like the others: 8 usable hits.
@@ -687,10 +684,7 @@ mod tests {
         assert_eq!(bank.hits.len(), sample_bank::HIT_COUNT);
         for (i, hit) in bank.hits.iter().enumerate() {
             assert!(!hit.is_empty(), "hit {i} is empty - the WAV did not parse");
-            assert!(
-                hit.iter().any(|s| s.abs() > 0.01),
-                "hit {i} is silent"
-            );
+            assert!(hit.iter().any(|s| s.abs() > 0.01), "hit {i} is silent");
             assert!(
                 hit.iter().all(|s| s.is_finite()),
                 "hit {i} holds a non-finite sample"

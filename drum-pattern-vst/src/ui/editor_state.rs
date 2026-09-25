@@ -4,10 +4,7 @@
 use crate::{
     config::GlobalConfig,
     plock::PlockState,
-    sequencer::{
-        pattern::STEP_COUNT,
-        FusedGroup, SharedPattern,
-    },
+    sequencer::{pattern::STEP_COUNT, FusedGroup, SharedPattern},
     sound_settings::{SoundSettings, SoundSettingsState},
     track::{TrackInstrumentKind, TrackLayoutState, TrackSlot},
     ui::controls::{set_float_param_if_changed, set_int_param_if_changed},
@@ -149,7 +146,7 @@ pub struct EditorUIState {
     pub midi_export_modal: Option<std::path::PathBuf>,
     pub dump_name_input: String,
     pub current_page: usize, // 0-3 (displaying steps current_page*16 .. current_page*16+15)
-    pub follow_mode: bool, // if true, page follows the playhead
+    pub follow_mode: bool,   // if true, page follows the playhead
     pub page_clipboard: Option<PageClipboard>, // copied page data for paste
     pub plock_clipboard: Option<SinglePlockClipboard>, // copied single plock for paste
     pub sequencer_mode: bool, // if true, right-click opens sequencer params instead of sound plocks
@@ -601,7 +598,6 @@ impl EditorUIState {
         }
     }
 
-
     /// Mark the current pattern as dirty so it will be auto-saved back to the
     /// currently loaded pattern-bank slot at the end of the frame when Song Mode
     /// is active. This prevents edits from being lost when the song advances.
@@ -985,7 +981,6 @@ mod tests {
         None
     }
 
-
     /// Cells 4..=7 form fusion 0, emitting `pulses` pulses.
     fn fusion_4_to_7(pulses: u8) -> impl Fn(usize) -> Option<(usize, usize, u8)> {
         move |step| {
@@ -999,7 +994,15 @@ mod tests {
 
     #[test]
     fn no_selection_edits_the_lane_global() {
-        let r = resolve_edit_scope(None, PANEL_SLOT, true, LANE_LEN, no_fusion, true, FusionTab::Step);
+        let r = resolve_edit_scope(
+            None,
+            PANEL_SLOT,
+            true,
+            LANE_LEN,
+            no_fusion,
+            true,
+            FusionTab::Step,
+        );
         assert_eq!(r.scope, EditScope::LaneGlobal);
         assert_eq!(r.highlight_step, None);
         assert!(!r.drop_selection);
@@ -1007,7 +1010,15 @@ mod tests {
 
     #[test]
     fn a_plain_cell_edits_its_plock() {
-        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true, FusionTab::Step);
+        let r = resolve_edit_scope(
+            cell(PANEL_SLOT, 5),
+            PANEL_SLOT,
+            true,
+            LANE_LEN,
+            no_fusion,
+            true,
+            FusionTab::Step,
+        );
         assert_eq!(r.scope, EditScope::StepPlock { step: 5 });
         assert_eq!(r.highlight_step, Some(5));
         assert!(!r.drop_selection);
@@ -1017,16 +1028,35 @@ mod tests {
     /// kept so coming back restores it.
     #[test]
     fn a_selection_on_another_lane_is_kept_but_inactive() {
-        let r = resolve_edit_scope(cell(7, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, true, FusionTab::Step);
+        let r = resolve_edit_scope(
+            cell(7, 5),
+            PANEL_SLOT,
+            true,
+            LANE_LEN,
+            no_fusion,
+            true,
+            FusionTab::Step,
+        );
         assert_eq!(r.scope, EditScope::LaneGlobal);
-        assert!(!r.drop_selection, "switching lanes must not lose the selection");
+        assert!(
+            !r.drop_selection,
+            "switching lanes must not lose the selection"
+        );
     }
 
     /// Song mode / grid Follow: p-lock editing is disabled, but leaving the mode
     /// must bring the selection back — so it is kept, not dropped.
     #[test]
     fn disabled_editing_falls_back_to_global_without_losing_the_selection() {
-        let r = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, true, LANE_LEN, no_fusion, false, FusionTab::Step);
+        let r = resolve_edit_scope(
+            cell(PANEL_SLOT, 5),
+            PANEL_SLOT,
+            true,
+            LANE_LEN,
+            no_fusion,
+            false,
+            FusionTab::Step,
+        );
         assert_eq!(r.scope, EditScope::LaneGlobal);
         assert_eq!(r.highlight_step, None);
         assert!(!r.drop_selection);
@@ -1034,14 +1064,41 @@ mod tests {
 
     #[test]
     fn an_inactive_lane_or_an_out_of_range_step_drops_the_selection() {
-        let inactive = resolve_edit_scope(cell(PANEL_SLOT, 5), PANEL_SLOT, false, LANE_LEN, no_fusion, true, FusionTab::Step);
+        let inactive = resolve_edit_scope(
+            cell(PANEL_SLOT, 5),
+            PANEL_SLOT,
+            false,
+            LANE_LEN,
+            no_fusion,
+            true,
+            FusionTab::Step,
+        );
         assert!(inactive.drop_selection);
         assert_eq!(inactive.scope, EditScope::LaneGlobal);
 
-        let past_len = resolve_edit_scope(cell(PANEL_SLOT, 20), PANEL_SLOT, true, LANE_LEN, no_fusion, true, FusionTab::Step);
-        assert!(past_len.drop_selection, "a step past the lane length is unreachable");
+        let past_len = resolve_edit_scope(
+            cell(PANEL_SLOT, 20),
+            PANEL_SLOT,
+            true,
+            LANE_LEN,
+            no_fusion,
+            true,
+            FusionTab::Step,
+        );
+        assert!(
+            past_len.drop_selection,
+            "a step past the lane length is unreachable"
+        );
 
-        let past_grid = resolve_edit_scope(cell(PANEL_SLOT, 99), PANEL_SLOT, true, 64, no_fusion, true, FusionTab::Step);
+        let past_grid = resolve_edit_scope(
+            cell(PANEL_SLOT, 99),
+            PANEL_SLOT,
+            true,
+            64,
+            no_fusion,
+            true,
+            FusionTab::Step,
+        );
         assert!(past_grid.drop_selection);
     }
 

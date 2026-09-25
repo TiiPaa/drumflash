@@ -80,8 +80,7 @@ pub const RESERVED_SPECIAL_INDEX: usize = 31;
 
 /// Every field a parameter can own. The only hole is field 12, the dead legacy
 /// clap-echo slot, which is not a parameter.
-pub const ADDRESSABLE_MASK: u64 =
-    (((1u64 << FIELD_COUNT) - 1)) & !(1u64 << LEGACY_CLAP_ECHO_FIELD);
+pub const ADDRESSABLE_MASK: u64 = ((1u64 << FIELD_COUNT) - 1) & !(1u64 << LEGACY_CLAP_ECHO_FIELD);
 /// What `set_all()` used to write: all 46 bits, field 12 included. Because a
 /// snapshot taken since [187] writes [`ADDRESSABLE_MASK`] instead, this exact
 /// value now identifies a mask written by an **older build** — which is what lets
@@ -335,7 +334,9 @@ mod tests {
         for id in [ParamId::FreqMode, ParamId::Special(RESERVED_SPECIAL_INDEX)] {
             assert!(id.unlockable_reason().is_some(), "{id:?} needs a reason");
         }
-        assert!(ParamId::Std(StandardField::Freq).unlockable_reason().is_none());
+        assert!(ParamId::Std(StandardField::Freq)
+            .unlockable_reason()
+            .is_none());
     }
 
     /// An old full snapshot wrote all 46 mask bits, field 45 included, with the
@@ -345,8 +346,16 @@ mod tests {
     #[test]
     fn a_legacy_full_snapshot_mask_does_not_claim_the_rehomed_special() {
         let repaired = sanitize_field_mask(LEGACY_ALL_BITS);
-        assert_eq!(repaired & (1u64 << SPECIAL_4_FIELD), 0, "field 45 not trusted");
-        assert_eq!(repaired & (1u64 << LEGACY_CLAP_ECHO_FIELD), 0, "field 12 is not a param");
+        assert_eq!(
+            repaired & (1u64 << SPECIAL_4_FIELD),
+            0,
+            "field 45 not trusted"
+        );
+        assert_eq!(
+            repaired & (1u64 << LEGACY_CLAP_ECHO_FIELD),
+            0,
+            "field 12 is not a param"
+        );
         // Everything else the old snapshot claimed is still claimed.
         for field in 0..FIELD_COUNT {
             if field == SPECIAL_4_FIELD || field == LEGACY_CLAP_ECHO_FIELD {

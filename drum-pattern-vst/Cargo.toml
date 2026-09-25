@@ -36,6 +36,9 @@ dirs = "6"
 rfd = { version = "0.15", default-features = false }
 # [271] "Open folder" in the MIDI export confirmation modal.
 open = "5"
+
+# [267] Windows-only (MIDI drag helper, ui/midi.rs) — not fetched on macOS.
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

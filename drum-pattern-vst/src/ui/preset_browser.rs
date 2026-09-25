@@ -146,10 +146,7 @@ pub fn draw_preset_browser_if_any(
                         );
                         ui.add_space((ui.available_width() - 34.0).max(0.0));
                         let on = browser.load_with_kit;
-                        if ui
-                            .add(crate::ui::widgets::ToggleSwitch::new(on))
-                            .clicked()
-                        {
+                        if ui.add(crate::ui::widgets::ToggleSwitch::new(on)).clicked() {
                             browser.load_with_kit = !on;
                         }
                     });
@@ -170,212 +167,232 @@ pub fn draw_preset_browser_if_any(
                                 ..Default::default()
                             })
                             .show(ui, |ui| {
-                    // Grid tab: the built-in lane layouts (ex page-bar dropdown)
-                    // live here as factory grid presets.
-                    if browser.kind == PresetKind::Grid {
-                        ui.label(
-                            RichText::new("Factory").font(f_sans_sb(10.0)).color(INK3()),
-                        );
-                        ui.add_space(4.0);
-                        for (idx, label) in
-                            ["Clear All", "4 Lanes", "12 Lanes", "AC 4", "AC 12"].iter().enumerate()
-                        {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(*label).font(f_sans_med(10.5)).color(INK2()),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        // Clear All wipes the grid: two clicks.
-                                        let confirming =
-                                            idx == 0 && browser.confirm_clear_all_grid;
-                                        let caption = if confirming { "Sure?" } else { "Load" };
-                                        if keycap_button(
-                                            ui,
-                                            caption,
-                                            44.0,
-                                            KeycapState::Rest,
-                                            true,
-                                            f_sans_med(9.5),
-                                        )
-                                        .clicked()
-                                        {
-                                            if idx == 0 && !confirming {
-                                                browser.confirm_clear_all_grid = true;
-                                            } else {
-                                                apply_builtin_grid = Some(idx);
+                                // Grid tab: the built-in lane layouts (ex page-bar dropdown)
+                                // live here as factory grid presets.
+                                if browser.kind == PresetKind::Grid {
+                                    ui.label(
+                                        RichText::new("Factory")
+                                            .font(f_sans_sb(10.0))
+                                            .color(INK3()),
+                                    );
+                                    ui.add_space(4.0);
+                                    for (idx, label) in
+                                        ["Clear All", "4 Lanes", "12 Lanes", "AC 4", "AC 12"]
+                                            .iter()
+                                            .enumerate()
+                                    {
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                RichText::new(*label)
+                                                    .font(f_sans_med(10.5))
+                                                    .color(INK2()),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    // Clear All wipes the grid: two clicks.
+                                                    let confirming =
+                                                        idx == 0 && browser.confirm_clear_all_grid;
+                                                    let caption =
+                                                        if confirming { "Sure?" } else { "Load" };
+                                                    if keycap_button(
+                                                        ui,
+                                                        caption,
+                                                        44.0,
+                                                        KeycapState::Rest,
+                                                        true,
+                                                        f_sans_med(9.5),
+                                                    )
+                                                    .clicked()
+                                                    {
+                                                        if idx == 0 && !confirming {
+                                                            browser.confirm_clear_all_grid = true;
+                                                        } else {
+                                                            apply_builtin_grid = Some(idx);
+                                                        }
+                                                    }
+                                                },
+                                            );
+                                        });
+                                    }
+                                    ui.add_space(8.0);
+                                }
+
+                                // Factory presets (embedded, read-only).
+                                let factory = presets::factory_presets(browser.kind);
+                                if !factory.is_empty() {
+                                    ui.label(
+                                        RichText::new("Factory")
+                                            .font(f_sans_sb(10.0))
+                                            .color(INK3()),
+                                    );
+                                    ui.add_space(4.0);
+                                    for (name, json) in factory {
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                RichText::new(name)
+                                                    .font(f_sans_med(10.5))
+                                                    .color(INK2()),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if keycap_button(
+                                                        ui,
+                                                        "Load",
+                                                        44.0,
+                                                        KeycapState::Rest,
+                                                        true,
+                                                        f_sans_med(9.5),
+                                                    )
+                                                    .clicked()
+                                                    {
+                                                        load_factory = Some(json);
+                                                    }
+                                                },
+                                            );
+                                        });
+                                    }
+                                    ui.add_space(8.0);
+                                }
+
+                                // User presets. [262] Cached: re-read on open, tab
+                                // change or mutation — not on every frame.
+                                ui.label(RichText::new("User").font(f_sans_sb(10.0)).color(INK3()));
+                                ui.add_space(4.0);
+                                let files = browser.cached_files();
+                                if files.is_empty() {
+                                    ui.label(
+                                        RichText::new("No user preset yet")
+                                            .font(f_sans_med(10.0))
+                                            .color(FAINT()),
+                                    );
+                                }
+                                for info in files {
+                                    ui.horizontal(|ui| {
+                                        let is_renaming =
+                                            browser.renaming.as_ref() == Some(&info.path);
+                                        if is_renaming {
+                                            // [237] Inline rename: Enter commits, Esc cancels.
+                                            let resp = ui.add(
+                                                egui::TextEdit::singleline(
+                                                    &mut browser.rename_input,
+                                                )
+                                                .desired_width(180.0)
+                                                .font(f_sans_med(11.0)),
+                                            );
+                                            if browser.rename_focus_request {
+                                                resp.request_focus();
+                                                browser.rename_focus_request = false;
                                             }
+                                            let commit = resp.lost_focus()
+                                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                            let cancel =
+                                                ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                            if commit {
+                                                let new_name =
+                                                    browser.rename_input.trim().to_string();
+                                                if !new_name.is_empty() {
+                                                    rename_requested =
+                                                        Some((info.path.clone(), new_name));
+                                                }
+                                                browser.renaming = None;
+                                            } else if cancel {
+                                                browser.renaming = None;
+                                            }
+                                            return;
                                         }
-                                    },
-                                );
-                            });
-                        }
-                        ui.add_space(8.0);
-                    }
-
-                    // Factory presets (embedded, read-only).
-                    let factory = presets::factory_presets(browser.kind);
-                    if !factory.is_empty() {
-                        ui.label(
-                            RichText::new("Factory").font(f_sans_sb(10.0)).color(INK3()),
-                        );
-                        ui.add_space(4.0);
-                        for (name, json) in factory {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(name).font(f_sans_med(10.5)).color(INK2()),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if keycap_button(
-                                            ui,
-                                            "Load",
-                                            44.0,
-                                            KeycapState::Rest,
-                                            true,
-                                            f_sans_med(9.5),
-                                        )
-                                        .clicked()
-                                        {
-                                            load_factory = Some(json);
+                                        ui.label(
+                                            RichText::new(&info.name)
+                                                .font(f_sans_med(10.5))
+                                                .color(INK()),
+                                        );
+                                        // [236] Save date from the file mtime (format untouched).
+                                        if let Some(m) = info.modified {
+                                            ui.label(
+                                                RichText::new(presets::format_date(m))
+                                                    .font(f_mono_med(9.0))
+                                                    .color(FAINT()),
+                                            );
                                         }
-                                    },
-                                );
-                            });
-                        }
-                        ui.add_space(8.0);
-                    }
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                let confirming = browser.confirm_delete.as_ref()
+                                                    == Some(&info.path);
+                                                if keycap_button(
+                                                    ui,
+                                                    if confirming { "Sure?" } else { "Del" },
+                                                    44.0,
+                                                    KeycapState::Rest,
+                                                    true,
+                                                    f_sans_med(9.5),
+                                                )
+                                                .clicked()
+                                                {
+                                                    if confirming {
+                                                        delete_user = Some(info.path.clone());
+                                                    } else {
+                                                        browser.confirm_delete =
+                                                            Some(info.path.clone());
+                                                    }
+                                                }
+                                                ui.add_space(4.0);
+                                                if keycap_button(
+                                                    ui,
+                                                    "Load",
+                                                    44.0,
+                                                    KeycapState::Rest,
+                                                    true,
+                                                    f_sans_med(9.5),
+                                                )
+                                                .clicked()
+                                                {
+                                                    load_user = Some(info.path.clone());
+                                                }
+                                                ui.add_space(4.0);
+                                                if keycap_button(
+                                                    ui,
+                                                    "Ren",
+                                                    44.0,
+                                                    KeycapState::Rest,
+                                                    true,
+                                                    f_sans_med(9.5),
+                                                )
+                                                .clicked()
+                                                {
+                                                    browser.renaming = Some(info.path.clone());
+                                                    browser.rename_input = info.name.clone();
+                                                    browser.rename_focus_request = true;
+                                                    browser.confirm_delete = None;
+                                                }
+                                            },
+                                        );
+                                    });
+                                }
 
-                    // User presets. [262] Cached: re-read on open, tab
-                    // change or mutation — not on every frame.
-                    ui.label(RichText::new("User").font(f_sans_sb(10.0)).color(INK3()));
-                    ui.add_space(4.0);
-                    let files = browser.cached_files();
-                    if files.is_empty() {
-                        ui.label(
-                            RichText::new("No user preset yet")
-                                .font(f_sans_med(10.0))
-                                .color(FAINT()),
-                        );
-                    }
-                    for info in files {
-                        ui.horizontal(|ui| {
-                            let is_renaming =
-                                browser.renaming.as_ref() == Some(&info.path);
-                            if is_renaming {
-                                // [237] Inline rename: Enter commits, Esc cancels.
-                                let resp = ui.add(
-                                    egui::TextEdit::singleline(&mut browser.rename_input)
-                                        .desired_width(180.0)
-                                        .font(f_sans_med(11.0)),
-                                );
-                                if browser.rename_focus_request {
-                                    resp.request_focus();
-                                    browser.rename_focus_request = false;
-                                }
-                                let commit = resp.lost_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                                let cancel =
-                                    ui.input(|i| i.key_pressed(egui::Key::Escape));
-                                if commit {
-                                    let new_name = browser.rename_input.trim().to_string();
-                                    if !new_name.is_empty() {
-                                        rename_requested =
-                                            Some((info.path.clone(), new_name));
-                                    }
-                                    browser.renaming = None;
-                                } else if cancel {
-                                    browser.renaming = None;
-                                }
-                                return;
-                            }
-                            ui.label(
-                                RichText::new(&info.name).font(f_sans_med(10.5)).color(INK()),
-                            );
-                            // [236] Save date from the file mtime (format untouched).
-                            if let Some(m) = info.modified {
-                                ui.label(
-                                    RichText::new(presets::format_date(m))
-                                        .font(f_mono_med(9.0))
-                                        .color(FAINT()),
-                                );
-                            }
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                let confirming =
-                                    browser.confirm_delete.as_ref() == Some(&info.path);
-                                if keycap_button(
-                                    ui,
-                                    if confirming { "Sure?" } else { "Del" },
-                                    44.0,
-                                    KeycapState::Rest,
-                                    true,
-                                    f_sans_med(9.5),
-                                )
-                                .clicked()
+                                // Debug factory authoring: export the current state into
+                                // the `_factory` staging dir (then committed into
+                                // `assets/presets/` + registered in factory_presets.rs).
+                                #[cfg(debug_assertions)]
                                 {
-                                    if confirming {
-                                        delete_user = Some(info.path.clone());
-                                    } else {
-                                        browser.confirm_delete = Some(info.path.clone());
+                                    ui.add_space(8.0);
+                                    ui.separator();
+                                    ui.add_space(4.0);
+                                    let can_export = !browser.name_input.trim().is_empty();
+                                    if plock_menu_action_row(
+                                        ui,
+                                        "Export factory (dev)",
+                                        if can_export { AMBER() } else { INK3() },
+                                    )
+                                    .clicked()
+                                        && can_export
+                                    {
+                                        export_requested = true;
                                     }
                                 }
-                                ui.add_space(4.0);
-                                if keycap_button(
-                                    ui,
-                                    "Load",
-                                    44.0,
-                                    KeycapState::Rest,
-                                    true,
-                                    f_sans_med(9.5),
-                                )
-                                .clicked()
-                                {
-                                    load_user = Some(info.path.clone());
-                                }
-                                ui.add_space(4.0);
-                                if keycap_button(
-                                    ui,
-                                    "Ren",
-                                    44.0,
-                                    KeycapState::Rest,
-                                    true,
-                                    f_sans_med(9.5),
-                                )
-                                .clicked()
-                                {
-                                    browser.renaming = Some(info.path.clone());
-                                    browser.rename_input = info.name.clone();
-                                    browser.rename_focus_request = true;
-                                    browser.confirm_delete = None;
-                                }
                             });
-                        });
-                    }
-
-                    // Debug factory authoring: export the current state into
-                    // the `_factory` staging dir (then committed into
-                    // `assets/presets/` + registered in factory_presets.rs).
-                    #[cfg(debug_assertions)]
-                    {
-                        ui.add_space(8.0);
-                        ui.separator();
-                        ui.add_space(4.0);
-                        let can_export = !browser.name_input.trim().is_empty();
-                        if plock_menu_action_row(
-                            ui,
-                            "Export factory (dev)",
-                            if can_export { AMBER() } else { INK3() },
-                        )
-                        .clicked()
-                            && can_export
-                        {
-                            export_requested = true;
-                        }
-                    }
-                            });
-                });
+                    });
             });
         })
         .response;
@@ -447,7 +464,15 @@ pub fn draw_preset_browser_if_any(
                 3 => (TrackLayoutState::preset_ac4_layout(), false),
                 _ => (TrackLayoutState::preset_ac12_layout(), false),
             };
-            apply_lane_layout_preset(setter, params, sound_settings, pattern, state, layout, clear);
+            apply_lane_layout_preset(
+                setter,
+                params,
+                sound_settings,
+                pattern,
+                state,
+                layout,
+                clear,
+            );
             if let Some(b) = state.preset_browser.as_mut() {
                 b.confirm_clear_all_grid = false;
             }
@@ -589,7 +614,15 @@ fn load_preset_json(
                 return;
             };
             let layout = presets::layout_from_kit(&preset.kit);
-            apply_lane_layout_preset(setter, params, sound_settings, pattern, state, layout, false);
+            apply_lane_layout_preset(
+                setter,
+                params,
+                sound_settings,
+                pattern,
+                state,
+                layout,
+                false,
+            );
         }
     }
 }
@@ -736,7 +769,15 @@ fn apply_pattern(
                 }
             }
         }
-        apply_lane_layout_preset(setter, params, sound_settings, pattern, state, layout, false);
+        apply_lane_layout_preset(
+            setter,
+            params,
+            sound_settings,
+            pattern,
+            state,
+            layout,
+            false,
+        );
     }
 
     let Ok(plock_bytes) = presets::hex_decode(&preset.plock_hex) else {

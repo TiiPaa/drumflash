@@ -104,7 +104,8 @@ mod tests {
     fn unreadable_config_is_moved_aside_not_erased() {
         // [261] A corrupt config.json must be renamed to .bad, never silently
         // replaced by defaults.
-        let dir = std::env::temp_dir().join(format!("fd_cfg_bad_{:?}", std::thread::current().id()));
+        let dir =
+            std::env::temp_dir().join(format!("fd_cfg_bad_{:?}", std::thread::current().id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("config.json"), b"{ not json").unwrap();
         std::env::set_var("FLASH_DRUM_CONFIG_DIR", &dir);

@@ -17,9 +17,9 @@ mod groove;
 mod instrument_registry;
 mod macros;
 mod midi_export;
-mod pattern_bank;
 mod param_id;
 mod paths;
+mod pattern_bank;
 mod plock;
 mod preset_dumps;
 mod presets;
@@ -60,7 +60,10 @@ fn install_crash_hook() {
                     let _ = std::fs::remove_file(&path);
                 }
             }
-            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path)
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
             {
                 use std::io::Write;
                 let location = info
@@ -924,10 +927,10 @@ impl Default for DrumFlashParams {
 
         let global_config = crate::config::GlobalConfig::load();
         let track_layout = track::PersistentTrackLayout::new();
-        track_layout
-            .state
-            .global_channel
-            .store(global_config.global_midi_channel.clamp(1, 16), Ordering::Relaxed);
+        track_layout.state.global_channel.store(
+            global_config.global_midi_channel.clamp(1, 16),
+            Ordering::Relaxed,
+        );
 
         Self {
             editor_state: EguiState::from_size(1480, 800),
@@ -1485,20 +1488,76 @@ impl Default for DrumFlashParams {
             // read-only, and while the host is processing audio every change
             // from the editor goes through the host, which then refuses it -
             // the switch could not be toggled at all in Studio One.
-            advance_mode_1: IntParam::new("Slot 1 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_2: IntParam::new("Slot 2 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_3: IntParam::new("Slot 3 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_4: IntParam::new("Slot 4 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_5: IntParam::new("Slot 5 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_6: IntParam::new("Slot 6 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_7: IntParam::new("Slot 7 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_8: IntParam::new("Slot 8 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_9: IntParam::new("Slot 9 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_10: IntParam::new("Slot 10 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_11: IntParam::new("Slot 11 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_12: IntParam::new("Slot 12 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_13: IntParam::new("Slot 13 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
-            advance_mode_14: IntParam::new("Slot 14 Advance Mode", 0, IntRange::Linear { min: 0, max: 15 }),
+            advance_mode_1: IntParam::new(
+                "Slot 1 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_2: IntParam::new(
+                "Slot 2 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_3: IntParam::new(
+                "Slot 3 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_4: IntParam::new(
+                "Slot 4 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_5: IntParam::new(
+                "Slot 5 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_6: IntParam::new(
+                "Slot 6 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_7: IntParam::new(
+                "Slot 7 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_8: IntParam::new(
+                "Slot 8 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_9: IntParam::new(
+                "Slot 9 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_10: IntParam::new(
+                "Slot 10 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_11: IntParam::new(
+                "Slot 11 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_12: IntParam::new(
+                "Slot 12 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_13: IntParam::new(
+                "Slot 13 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
+            advance_mode_14: IntParam::new(
+                "Slot 14 Advance Mode",
+                0,
+                IntRange::Linear { min: 0, max: 15 },
+            ),
 
             freq_mode_kick: BoolParam::new("Kick Freq in Notes", false),
             freq_mode_bassdrum808: BoolParam::new("808 Kick Freq in Notes", false),
@@ -2548,7 +2607,11 @@ impl DrumFlashVst {
         } else {
             self.synthesizer.trigger(slot_idx, velocity);
         }
-        apply_choke_groups(&mut self.synthesizer, &self.params.track_layout.state, slot_idx);
+        apply_choke_groups(
+            &mut self.synthesizer,
+            &self.params.track_layout.state,
+            slot_idx,
+        );
         let (note, channel) = self.resolve_midi_output_for_slot(slot_idx);
         context.send_event(NoteEvent::NoteOn {
             timing: sample_idx as u32,
@@ -2769,7 +2832,10 @@ impl Plugin for DrumFlashVst {
                     } else {
                         4.0
                     };
-                    let host_pos_mod = self.sequencer.host_to_local(position_beats).rem_euclid(circle);
+                    let host_pos_mod = self
+                        .sequencer
+                        .host_to_local(position_beats)
+                        .rem_euclid(circle);
                     let seq_pos_mod = self.sequencer.beat_position().rem_euclid(circle);
                     let diff = (host_pos_mod - seq_pos_mod).abs();
                     // Use shortest distance on the circle
@@ -2878,12 +2944,11 @@ impl Plugin for DrumFlashVst {
         // Per-cell microtiming (nudge): copied from the seq-plock atomics once
         // per buffer; the sequencer fires nudged cells early/late.
         let seq_plock_state = &self.params.seq_plock_state.state;
-        self.sequencer
-            .set_microtimings(std::array::from_fn(|slot| {
-                std::array::from_fn(|step| {
-                    f32::from_bits(seq_plock_state.microtimings[slot][step].load(Ordering::Relaxed))
-                })
-            }));
+        self.sequencer.set_microtimings(std::array::from_fn(|slot| {
+            std::array::from_fn(|step| {
+                f32::from_bits(seq_plock_state.microtimings[slot][step].load(Ordering::Relaxed))
+            })
+        }));
 
         // Reinitialize synthesizer slots whose kind changed (added/removed/reassigned).
         for slot in 0..crate::track::MAX_TRACKS {
@@ -3058,14 +3123,7 @@ impl Plugin for DrumFlashVst {
                         continue;
                     };
                     self.fire_voice_trigger(
-                        slot_idx,
-                        voice_idx,
-                        velocity,
-                        step,
-                        sample_idx,
-                        context,
-                        hard,
-                        settings,
+                        slot_idx, voice_idx, velocity, step, sample_idx, context, hard, settings,
                     );
                     self.pending_triggers[i] =
                         self.pending_triggers[self.pending_trigger_count - 1];
@@ -3133,8 +3191,8 @@ impl Plugin for DrumFlashVst {
                         // Apply step conditions. A trigger that fired early
                         // across the pattern wrap (negative microtiming on the
                         // first step) belongs to the NEXT loop.
-                        let loop_count = self.sequencer.loop_count()
-                            + usize::from(trigger.early_next_loop);
+                        let loop_count =
+                            self.sequencer.loop_count() + usize::from(trigger.early_next_loop);
                         let condition_passes = if let Some(sp) = seq_params {
                             use crate::plock::StepCondition::*;
                             // [218] "Not" inverts the condition. `Always` is
@@ -3299,8 +3357,7 @@ impl Plugin for DrumFlashVst {
                         // plugin also sends on — not the registry's factory
                         // note. Several lanes may share a note on purpose, and
                         // they all trigger.
-                        let listening =
-                            self.params.track_layout.state.slots_listening_to(note);
+                        let listening = self.params.track_layout.state.slots_listening_to(note);
                         if listening != 0 {
                             for slot_idx in 0..crate::track::MAX_TRACKS {
                                 if listening & (1 << slot_idx) == 0 {
@@ -3311,8 +3368,7 @@ impl Plugin for DrumFlashVst {
                                 };
                                 self.external_midi_triggers[slot_idx]
                                     .store(true, Ordering::Release);
-                                let settings =
-                                    self.voice_settings_at_step(slot_idx, voice_idx, 0);
+                                let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
                                 let hit = self.advance_hit_index(slot_idx, 0);
                                 self.synthesizer.set_hit_index(slot_idx, hit);
                                 self.synthesizer.set_voice_settings(slot_idx, settings);
@@ -3735,12 +3791,9 @@ mod tests {
         // Track layout: three lanes with distinct kinds.
         let mut layout =
             PersistentField::<track::TrackLayoutState>::map(&params.track_layout, |s| s.clone());
-        layout.slots[0] =
-            track::TrackSlot::active_with_kind(track::TrackInstrumentKind::Kick);
-        layout.slots[1] =
-            track::TrackSlot::active_with_kind(track::TrackInstrumentKind::OneShot);
-        layout.slots[2] =
-            track::TrackSlot::active_with_kind(track::TrackInstrumentKind::Rift);
+        layout.slots[0] = track::TrackSlot::active_with_kind(track::TrackInstrumentKind::Kick);
+        layout.slots[1] = track::TrackSlot::active_with_kind(track::TrackInstrumentKind::OneShot);
+        layout.slots[2] = track::TrackSlot::active_with_kind(track::TrackInstrumentKind::Rift);
         PersistentField::set(&params.track_layout, layout);
 
         // Pattern steps on slots 0 and 2.
@@ -3773,7 +3826,10 @@ mod tests {
         // Macro 0 → slot 0 volume.
         params.macro_map_state.state.set(
             0,
-            Some(macros::MacroTarget::Std(0, instrument_registry::StandardField::Volume)),
+            Some(macros::MacroTarget::Std(
+                0,
+                instrument_registry::StandardField::Volume,
+            )),
         );
 
         // Lane texture on slot 1 (missing on disk — only the path matters).
@@ -3795,8 +3851,9 @@ mod tests {
         }
         let masks = params.pattern_state.shared().step_masks();
         s.push_str(&format!("|m:{:04x},{:04x}", masks[0], masks[8]));
-        let vol = params.sound_settings.state.instruments[0]
-            .get(param_id::ParamId::Std(instrument_registry::StandardField::Volume));
+        let vol = params.sound_settings.state.instruments[0].get(param_id::ParamId::Std(
+            instrument_registry::StandardField::Volume,
+        ));
         s.push_str(&format!("|v:{vol:.3}"));
         let pv = params.plock_state.state.values.get(0, 5, 2);
         s.push_str(&format!("|p:{pv:.3}"));
@@ -4231,7 +4288,10 @@ mod tests {
             .zip(&overwritten)
             .take(2400)
             .fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
-        assert!(head_diff < 1e-6, "the first half must be identical: {head_diff}");
+        assert!(
+            head_diff < 1e-6,
+            "the first half must be identical: {head_diff}"
+        );
 
         let tail_diff = kept
             .iter()
@@ -4246,9 +4306,7 @@ mod tests {
 
     #[test]
     fn choke_group_silences_same_group_slots() {
-        use crate::track::{
-            AtomicTrackLayout, TrackInstrumentKind, TrackLayoutState, TrackSlot,
-        };
+        use crate::track::{AtomicTrackLayout, TrackInstrumentKind, TrackLayoutState, TrackSlot};
 
         let mut layout = TrackLayoutState::empty_layout();
         layout.slots[0] = TrackSlot::active_with_kind(TrackInstrumentKind::HiHat);
@@ -4282,7 +4340,10 @@ mod tests {
         synth.trigger(0, 1.0);
         apply_choke_groups(&mut synth, &atomic, 0);
         let oh_after = render(&mut synth, 1, 2000);
-        assert_eq!(oh_after, 0.0, "OH must be choked by group 1, got {oh_after}");
+        assert_eq!(
+            oh_after, 0.0,
+            "OH must be choked by group 1, got {oh_after}"
+        );
         // Kick was never triggered here — trigger it now to prove it still works.
         synth.trigger(2, 1.0);
         let kick_out = render(&mut synth, 2, 64);

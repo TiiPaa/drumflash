@@ -43,7 +43,11 @@ pub fn draw_page_popup_if_any(
                 // mode, where the loop is ignored.
                 let looped = params.page_loop.value() == page as i32 + 1;
                 let song_mode = params.song_mode.value();
-                let loop_label = if looped { "Stop page loop" } else { "Loop this page" };
+                let loop_label = if looped {
+                    "Stop page loop"
+                } else {
+                    "Loop this page"
+                };
                 let loop_color = if song_mode { INK3() } else { AMBER() };
                 if plock_menu_action_row(ui, loop_label, loop_color).clicked() && !song_mode {
                     crate::ui::grid::set_page_loop_param(
@@ -55,8 +59,9 @@ pub fn draw_page_popup_if_any(
                 }
 
                 if plock_menu_action_row(ui, "Copy", accent).clicked() {
-                    state.page_clipboard =
-                        Some(crate::ui::grid::copy_page_to_clipboard(pattern, plock, params, page));
+                    state.page_clipboard = Some(crate::ui::grid::copy_page_to_clipboard(
+                        pattern, plock, params, page,
+                    ));
                     state.page_popup = None;
                 }
 
@@ -573,7 +578,11 @@ pub fn draw_midi_export_modal_if_any(ui: &mut egui::Ui, state: &mut EditorUIStat
                 .inner_margin(egui::Margin::same(12))
                 .show(ui, |ui| {
                     ui.set_width(panel_w);
-                    ui.label(RichText::new("MIDI exported").font(f_sans_sb(12.0)).color(INK()));
+                    ui.label(
+                        RichText::new("MIDI exported")
+                            .font(f_sans_sb(12.0))
+                            .color(INK()),
+                    );
                     ui.add_space(4.0);
                     ui.label(
                         RichText::new(path.display().to_string())
@@ -612,8 +621,10 @@ pub fn draw_midi_export_modal_if_any(ui: &mut egui::Ui, state: &mut EditorUIStat
                         }
                     });
                 });
-            ui.painter()
-                .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
+            ui.painter().set(
+                bg,
+                crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32),
+            );
         });
 }
 

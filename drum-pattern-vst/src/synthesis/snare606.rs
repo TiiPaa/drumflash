@@ -280,10 +280,7 @@ impl Voice for Snare606Voice {
             .dc_block_r
             .process(self.saturation.process_at(false, right));
 
-        (
-            left * self.settings.volume,
-            right * self.settings.volume,
-        )
+        (left * self.settings.volume, right * self.settings.volume)
     }
 
     fn is_active(&self) -> bool {

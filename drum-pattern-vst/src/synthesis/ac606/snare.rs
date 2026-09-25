@@ -162,12 +162,14 @@ impl AcSnare {
         };
 
         // Short settings fold the end down instead of chopping it off.
-        let removed_duration = (SNARE_NOISE_DURATION_SECONDS - self.selected_duration_seconds).max(0.0);
+        let removed_duration =
+            (SNARE_NOISE_DURATION_SECONDS - self.selected_duration_seconds).max(0.0);
         self.gate_fade_seconds = self.selected_duration_seconds.min(removed_duration);
         self.gate_hold_seconds = (self.selected_duration_seconds - self.gate_fade_seconds).max(0.0);
 
-        self.natural_frame_count =
-            (self.selected_duration_seconds * self.sample_rate).ceil().max(1.0) as u64;
+        self.natural_frame_count = (self.selected_duration_seconds * self.sample_rate)
+            .ceil()
+            .max(1.0) as u64;
         self.frame_index = 0;
         self.body_phase = SNARE_BODY_START_PHASE;
         self.noise_ring_phase = SNARE_WIRE_RING_START_PHASE;
@@ -216,10 +218,14 @@ impl AcSnare {
     }
 
     fn configure_noise_filters(&mut self) {
-        self.noise_band1
-            .set_band_pass(SNARE_WIRE_BAND1_HZ * self.noise_color_ratio, SNARE_WIRE_BAND1_Q);
-        self.noise_band2
-            .set_band_pass(SNARE_WIRE_BAND2_HZ * self.noise_color_ratio, SNARE_WIRE_BAND2_Q);
+        self.noise_band1.set_band_pass(
+            SNARE_WIRE_BAND1_HZ * self.noise_color_ratio,
+            SNARE_WIRE_BAND1_Q,
+        );
+        self.noise_band2.set_band_pass(
+            SNARE_WIRE_BAND2_HZ * self.noise_color_ratio,
+            SNARE_WIRE_BAND2_Q,
+        );
         self.noise_band1.reset();
         self.noise_band2.reset();
         self.noise_low_pass
@@ -256,10 +262,9 @@ impl AcSnare {
         let bend_hz = SNARE_BODY_BEND_HZ * self.shell_bend;
         let frequency = SNARE_BODY_SETTLED_HZ * self.pitch_ratio
             + bend_hz * (-time / SNARE_BODY_BEND_TIME_SECONDS).exp();
-        let attack = (1.0 - (-time / SNARE_BODY_ATTACK_TIME_SECONDS).exp())
-            .powf(SNARE_BODY_ATTACK_SHAPE);
-        let envelope =
-            attack * (-T60_TO_TAU * tuned_time / SNARE_BODY_T60_SECONDS).exp();
+        let attack =
+            (1.0 - (-time / SNARE_BODY_ATTACK_TIME_SECONDS).exp()).powf(SNARE_BODY_ATTACK_SHAPE);
+        let envelope = attack * (-T60_TO_TAU * tuned_time / SNARE_BODY_T60_SECONDS).exp();
         let transient_envelope =
             attack * (-T60_TO_TAU * time / SNARE_BODY_TRANSIENT_T60_SECONDS).exp();
 
@@ -276,9 +281,7 @@ impl AcSnare {
             + impact)
             * SNARE_BODY_LEVEL
             * self.decay_gate(time);
-        self.body_phase = wrap_phase(
-            self.body_phase + TWO_PI * frequency / self.sample_rate,
-        );
+        self.body_phase = wrap_phase(self.body_phase + TWO_PI * frequency / self.sample_rate);
         flush_denormal(output)
     }
 
@@ -307,9 +310,8 @@ impl AcSnare {
         let ring_attack = 1.0 - (-time / SNARE_WIRE_RING_ATTACK_SECONDS).exp();
         let ring_envelope = ring_attack * (-T60_TO_TAU * time / SNARE_WIRE_T60_SECONDS).exp();
         output += SNARE_WIRE_RING_LEVEL * self.ring * ring_envelope * self.noise_ring_phase.sin();
-        self.noise_ring_phase = wrap_phase(
-            self.noise_ring_phase + TWO_PI * ring_frequency / self.sample_rate,
-        );
+        self.noise_ring_phase =
+            wrap_phase(self.noise_ring_phase + TWO_PI * ring_frequency / self.sample_rate);
         flush_denormal(output * self.decay_gate(time))
     }
 }

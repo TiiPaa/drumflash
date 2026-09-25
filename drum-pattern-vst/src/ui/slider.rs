@@ -226,7 +226,13 @@ mod tests {
         for v in [0.0f32, 0.25, 0.5, 0.75, 1.0, 2.0] {
             let norm = normalize_value(v, 0.0, 2.0, false);
             let back = denormalize_value(norm, 0.0, 2.0, false);
-            assert!((back - v).abs() < 1e-6, "v={} norm={} back={}", v, norm, back);
+            assert!(
+                (back - v).abs() < 1e-6,
+                "v={} norm={} back={}",
+                v,
+                norm,
+                back
+            );
         }
     }
 
@@ -281,7 +287,13 @@ mod tests {
         for v in [20.0f32, 100.0, 1000.0, 8000.0, 20000.0] {
             let norm = normalize_value(v, 20.0, 20000.0, true);
             let back = denormalize_value(norm, 20.0, 20000.0, true);
-            assert!((back - v).abs() / v < 1e-4, "v={} norm={} back={}", v, norm, back);
+            assert!(
+                (back - v).abs() / v < 1e-4,
+                "v={} norm={} back={}",
+                v,
+                norm,
+                back
+            );
         }
     }
 
@@ -317,7 +329,10 @@ mod tests {
         assert!(apply_fine_drag(&mut v, 50.0, 20.0, 20000.0, true, 0.0, 1.0));
         let ratio = v / 100.0;
         let expected = (20000.0f32 / 20.0).powf(50.0 * FINE_DRAG_NORM_PER_PX);
-        assert!((ratio - expected).abs() < 1e-3, "ratio={ratio} expected={expected}");
+        assert!(
+            (ratio - expected).abs() < 1e-3,
+            "ratio={ratio} expected={expected}"
+        );
     }
 
     #[test]

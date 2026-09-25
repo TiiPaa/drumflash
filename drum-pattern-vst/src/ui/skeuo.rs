@@ -53,9 +53,24 @@ pub fn keycap(ui: &egui::Ui, rect: egui::Rect, state: KeycapState) {
 fn keycap_body(p: &egui::Painter, rect: egui::Rect, state: KeycapState, shadow: bool) {
     let radius = 5.0_f32;
     let (ctop, cmid, cbot, border) = match state {
-        KeycapState::Rest => (rgb(74, 75, 82), rgb(56, 57, 63), rgb(51, 52, 57), rgb(23, 23, 27)),
-        KeycapState::PressedBlue => (rgb(47, 134, 196), rgb(30, 95, 146), rgb(26, 84, 128), rgb(13, 44, 68)),
-        KeycapState::PressedAmber => (rgb(201, 122, 30), rgb(168, 100, 24), rgb(138, 78, 12), rgb(70, 40, 8)),
+        KeycapState::Rest => (
+            rgb(74, 75, 82),
+            rgb(56, 57, 63),
+            rgb(51, 52, 57),
+            rgb(23, 23, 27),
+        ),
+        KeycapState::PressedBlue => (
+            rgb(47, 134, 196),
+            rgb(30, 95, 146),
+            rgb(26, 84, 128),
+            rgb(13, 44, 68),
+        ),
+        KeycapState::PressedAmber => (
+            rgb(201, 122, 30),
+            rgb(168, 100, 24),
+            rgb(138, 78, 12),
+            rgb(70, 40, 8),
+        ),
     };
     if shadow {
         soft_shadow(p, rect, radius, 1.5, 2.5, 38.0);
@@ -64,12 +79,30 @@ fn keycap_body(p: &egui::Painter, rect: egui::Rect, state: KeycapState, shadow: 
     // gradient mesh inset ≥ r×0.42 (=2.1) so its square corners never poke past
     // the rounded border.
     grad3(p, rect.shrink(2.2), ctop, cmid, cbot, 0.55);
-    p.rect_stroke(rect, radius, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+    p.rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Inside,
+    );
     let pressed = matches!(state, KeycapState::PressedBlue | KeycapState::PressedAmber);
     let inset = radius + 1.0;
     let w = (rect.width() - 2.0 * inset).max(0.0);
-    fade_line(p, egui::Rect::from_min_size(rect.min + egui::vec2(inset, 1.5), egui::vec2(w, 1.5)), (255, 255, 255), if pressed { 22 } else { 16 });
-    fade_line(p, egui::Rect::from_min_size(egui::pos2(rect.left() + inset, rect.bottom() - 3.0), egui::vec2(w, 2.0)), (0, 0, 0), 44);
+    fade_line(
+        p,
+        egui::Rect::from_min_size(rect.min + egui::vec2(inset, 1.5), egui::vec2(w, 1.5)),
+        (255, 255, 255),
+        if pressed { 22 } else { 16 },
+    );
+    fade_line(
+        p,
+        egui::Rect::from_min_size(
+            egui::pos2(rect.left() + inset, rect.bottom() - 3.0),
+            egui::vec2(w, 2.0),
+        ),
+        (0, 0, 0),
+        44,
+    );
 }
 
 // ============================================================
@@ -89,7 +122,11 @@ pub fn led(p: &egui::Painter, center: egui::Pos2, radius: f32, on: bool) {
     } else {
         Color32::from_rgba_unmultiplied(150, 151, 158, 110)
     };
-    p.circle_filled(center - egui::vec2(radius * 0.28, radius * 0.32), radius * 0.30, spec);
+    p.circle_filled(
+        center - egui::vec2(radius * 0.28, radius * 0.32),
+        radius * 0.30,
+        spec,
+    );
 }
 
 /// Red play-position LED, incrusted in the top-right corner of the page button /
@@ -99,22 +136,39 @@ pub fn play_led(p: &egui::Painter, center: egui::Pos2, radius: f32) {
     let (cc, cm, ce) = (rgb(255, 210, 205), rgb(248, 96, 88), rgb(150, 34, 30));
     p.circle_filled(center, radius, ce);
     radial_circle(p, center, radius * 0.98, cc, cm, ce);
-    p.circle_filled(center - egui::vec2(radius * 0.26, radius * 0.30), radius * 0.30, Color32::from_rgba_unmultiplied(255, 255, 255, 205));
+    p.circle_filled(
+        center - egui::vec2(radius * 0.26, radius * 0.30),
+        radius * 0.30,
+        Color32::from_rgba_unmultiplied(255, 255, 255, 205),
+    );
 }
 
 /// Smooth radial gradient on a circle: fan mesh (centre → mid@45% → edge).
-fn radial_circle(p: &egui::Painter, c: egui::Pos2, radius: f32, cc: Color32, cm: Color32, ce: Color32) {
+fn radial_circle(
+    p: &egui::Painter,
+    c: egui::Pos2,
+    radius: f32,
+    cc: Color32,
+    cm: Color32,
+    ce: Color32,
+) {
     let n = 28usize;
     let mut m = egui::epaint::Mesh::default();
     m.colored_vertex(c, cc);
     let ang = |i: usize| std::f32::consts::TAU * i as f32 / n as f32;
     for i in 0..n {
         let a = ang(i);
-        m.colored_vertex(egui::pos2(c.x + a.cos() * radius * 0.45, c.y + a.sin() * radius * 0.45), cm);
+        m.colored_vertex(
+            egui::pos2(c.x + a.cos() * radius * 0.45, c.y + a.sin() * radius * 0.45),
+            cm,
+        );
     }
     for i in 0..n {
         let a = ang(i);
-        m.colored_vertex(egui::pos2(c.x + a.cos() * radius, c.y + a.sin() * radius), ce);
+        m.colored_vertex(
+            egui::pos2(c.x + a.cos() * radius, c.y + a.sin() * radius),
+            ce,
+        );
     }
     let mid = |i: usize| 1 + i as u32;
     let out = |i: usize| 1 + n as u32 + i as u32;
@@ -133,13 +187,23 @@ fn radial_circle(p: &egui::Painter, c: egui::Pos2, radius: f32, cc: Color32, cm:
 // pressed-blue keycap; inactive options are muted, clickable text. Segments size
 // to their label. Returns the (possibly newly-clicked) selected index.
 // ============================================================
-pub fn segmented(ui: &mut egui::Ui, id_salt: impl std::hash::Hash, labels: &[&str], selected: usize) -> usize {
+pub fn segmented(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    labels: &[&str],
+    selected: usize,
+) -> usize {
     segmented_impl(ui, id_salt, labels, selected, false)
 }
 
 /// Like [`segmented`] but every segment gets the SAME width (widest label) →
 /// symmetric halves (used by the header Seq switch).
-pub fn segmented_equal(ui: &mut egui::Ui, id_salt: impl std::hash::Hash, labels: &[&str], selected: usize) -> usize {
+pub fn segmented_equal(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    labels: &[&str],
+    selected: usize,
+) -> usize {
     segmented_impl(ui, id_salt, labels, selected, true)
 }
 
@@ -156,7 +220,11 @@ fn segmented_impl(
     let mut widths: Vec<f32> = labels
         .iter()
         .map(|l| {
-            let tw = ui.fonts(|f| f.layout_no_wrap((*l).to_string(), font.clone(), Color32::WHITE).size().x);
+            let tw = ui.fonts(|f| {
+                f.layout_no_wrap((*l).to_string(), font.clone(), Color32::WHITE)
+                    .size()
+                    .x
+            });
             (tw + 2.0 * pad).max(52.0)
         })
         .collect();
@@ -174,14 +242,26 @@ fn segmented_impl(
         let p = ui.painter_at(rect);
         p.rect_filled(rect, RADIUS_CTL, rgb(20, 21, 25));
         inner_top_shadow(&p, rect, RADIUS_CTL, 4.0, 120);
-        p.rect_stroke(rect, RADIUS_CTL, egui::Stroke::new(1.0, rgb(11, 11, 14)), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            rect,
+            RADIUS_CTL,
+            egui::Stroke::new(1.0, rgb(11, 11, 14)),
+            egui::StrokeKind::Inside,
+        );
     }
 
     let mut result = selected.min(labels.len().saturating_sub(1));
     let mut cx = rect.left() + 2.0;
     for (i, label) in labels.iter().enumerate() {
-        let seg = egui::Rect::from_min_size(egui::pos2(cx, rect.top() + 2.0), egui::vec2(widths[i], h - 4.0));
-        let resp = ui.interact(seg, ui.make_persistent_id((&id_salt, "seg", i)), egui::Sense::click());
+        let seg = egui::Rect::from_min_size(
+            egui::pos2(cx, rect.top() + 2.0),
+            egui::vec2(widths[i], h - 4.0),
+        );
+        let resp = ui.interact(
+            seg,
+            ui.make_persistent_id((&id_salt, "seg", i)),
+            egui::Sense::click(),
+        );
         let active = i == result;
         if active {
             // No drop shadow: the keycap sits inside the recessed well.
@@ -194,8 +274,13 @@ fn segmented_impl(
         } else {
             INK2()
         };
-        ui.painter()
-            .text(seg.center(), egui::Align2::CENTER_CENTER, *label, font.clone(), color);
+        ui.painter().text(
+            seg.center(),
+            egui::Align2::CENTER_CENTER,
+            *label,
+            font.clone(),
+            color,
+        );
         if resp.clicked() {
             result = i;
         }
@@ -225,7 +310,12 @@ pub fn slider_track(ui: &egui::Ui, track: egui::Rect, norm: f32, fill: Color32, 
     let rr = track.height() * 0.5;
     // recessed groove: dark pill + a dark border + thin inner top shadow
     p.rect_filled(track, rr, groove_fill());
-    p.rect_stroke(track, rr, egui::Stroke::new(1.0, groove_border()), egui::StrokeKind::Inside);
+    p.rect_stroke(
+        track,
+        rr,
+        egui::Stroke::new(1.0, groove_border()),
+        egui::StrokeKind::Inside,
+    );
     let mx = track.left() + rr;
     let gw = (track.width() - 2.0 * rr).max(0.0);
     p.rect_filled(
@@ -240,13 +330,25 @@ pub fn slider_track(ui: &egui::Ui, track: egui::Rect, norm: f32, fill: Color32, 
         let y = track.center().y;
         let x0 = track.left() + 1.0;
         if x_val - x0 >= ih {
-            p.rect_filled(egui::Rect::from_min_max(egui::pos2(x0, y - ih * 0.5), egui::pos2(x_val, y + ih * 0.5)), ih * 0.5, fill);
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(x0, y - ih * 0.5),
+                    egui::pos2(x_val, y + ih * 0.5),
+                ),
+                ih * 0.5,
+                fill,
+            );
         }
     }
     // striped fader cap at the value position — only for full sliders (`cap`),
     // never for the tiny Vol/Hum/Push mini-sliders (which stay a plain fill bar).
     if cap {
-        fader_cap(p, x_val, track.center().y, (track.height() * 2.6).clamp(13.0, 20.0));
+        fader_cap(
+            p,
+            x_val,
+            track.center().y,
+            (track.height() * 2.6).clamp(13.0, 20.0),
+        );
     }
 }
 
@@ -259,11 +361,36 @@ fn fader_cap(p: &egui::Painter, cx: f32, cy: f32, h: f32) {
     p.rect_filled(knob, 3.0, rgb(16, 16, 20)); // silhouette / border
     let k = knob.shrink(1.0);
     let (y0, hh) = (k.top(), k.height());
-    let r_top = egui::epaint::CornerRadius { nw: 2, ne: 2, sw: 0, se: 0 };
-    let r_bot = egui::epaint::CornerRadius { nw: 0, ne: 0, sw: 2, se: 2 };
-    p.rect_filled(egui::Rect::from_min_max(k.min, egui::pos2(k.right(), y0 + hh * 0.40)), r_top, rgb(96, 97, 105));
-    p.rect_filled(egui::Rect::from_min_max(egui::pos2(k.left(), y0 + hh * 0.40), egui::pos2(k.right(), y0 + hh * 0.60)), egui::epaint::CornerRadius::ZERO, rgb(50, 51, 57));
-    p.rect_filled(egui::Rect::from_min_max(egui::pos2(k.left(), y0 + hh * 0.60), k.max), r_bot, rgb(76, 77, 84));
+    let r_top = egui::epaint::CornerRadius {
+        nw: 2,
+        ne: 2,
+        sw: 0,
+        se: 0,
+    };
+    let r_bot = egui::epaint::CornerRadius {
+        nw: 0,
+        ne: 0,
+        sw: 2,
+        se: 2,
+    };
+    p.rect_filled(
+        egui::Rect::from_min_max(k.min, egui::pos2(k.right(), y0 + hh * 0.40)),
+        r_top,
+        rgb(96, 97, 105),
+    );
+    p.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(k.left(), y0 + hh * 0.40),
+            egui::pos2(k.right(), y0 + hh * 0.60),
+        ),
+        egui::epaint::CornerRadius::ZERO,
+        rgb(50, 51, 57),
+    );
+    p.rect_filled(
+        egui::Rect::from_min_max(egui::pos2(k.left(), y0 + hh * 0.60), k.max),
+        r_bot,
+        rgb(76, 77, 84),
+    );
 }
 
 // ============================================================
@@ -314,10 +441,7 @@ pub fn fusion_start_bracket(p: &egui::Painter, rect: egui::Rect, color: Color32)
     // Arms, top and bottom.
     for y in [top, bottom - w] {
         p.rect_filled(
-            egui::Rect::from_min_max(
-                egui::pos2(left, y),
-                egui::pos2(left + arm, y + w),
-            ),
+            egui::Rect::from_min_max(egui::pos2(left, y), egui::pos2(left + arm, y + w)),
             w * 0.5,
             color,
         );
@@ -387,21 +511,39 @@ pub fn lcd_bg(ui: &egui::Ui, rect: egui::Rect, radius: f32) {
     let p = ui.painter();
     // dark rounded base → clean AA corners under the (square) gradient mesh
     p.rect_filled(rect, radius, rgb(7, 13, 9));
-    grad3(p, rect.shrink(2.0), rgb(9, 16, 11), rgb(16, 27, 20), rgb(9, 16, 11), 0.5);
+    grad3(
+        p,
+        rect.shrink(2.0),
+        rgb(9, 16, 11),
+        rgb(16, 27, 20),
+        rgb(9, 16, 11),
+        0.5,
+    );
     // recessed top shadow (inset from the corners so it doesn't poke)
     let ins = radius.max(1.0);
     p.rect_filled(
-        egui::Rect::from_min_size(egui::pos2(rect.left() + ins, rect.top() + 1.0), egui::vec2((rect.width() - 2.0 * ins).max(0.0), 3.0)),
+        egui::Rect::from_min_size(
+            egui::pos2(rect.left() + ins, rect.top() + 1.0),
+            egui::vec2((rect.width() - 2.0 * ins).max(0.0), 3.0),
+        ),
         egui::epaint::CornerRadius::ZERO,
         Color32::from_black_alpha(80),
     );
     // green-black border (the frame is part of the screen)
-    p.rect_stroke(rect, radius, egui::Stroke::new(1.0, rgb(5, 9, 6)), egui::StrokeKind::Inside);
+    p.rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(1.0, rgb(5, 9, 6)),
+        egui::StrokeKind::Inside,
+    );
     // subtle CRT scanlines
     let inner = rect.shrink(2.0);
     let mut y = inner.top() + 1.0;
     while y < inner.bottom() {
-        p.line_segment([egui::pos2(inner.left(), y), egui::pos2(inner.right(), y)], egui::Stroke::new(1.0, Color32::from_black_alpha(28)));
+        p.line_segment(
+            [egui::pos2(inner.left(), y), egui::pos2(inner.right(), y)],
+            egui::Stroke::new(1.0, Color32::from_black_alpha(28)),
+        );
         y += 3.0;
     }
 }
@@ -418,30 +560,70 @@ pub fn switch(ui: &egui::Ui, rect: egui::Rect, t: f32) {
     let track = lerp_c(rgb(19, 20, 24), rgb(38, 104, 156), t);
     let border = lerp_c(rgb(9, 9, 12), rgb(18, 60, 92), t);
     p.rect_filled(rect, rr, track);
-    p.rect_stroke(rect, rr, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+    p.rect_stroke(
+        rect,
+        rr,
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Inside,
+    );
     let kr = rect.height() * 0.5 - 2.0;
     let kx = (rect.left() + rr) + ((rect.right() - rr) - (rect.left() + rr)) * t;
     let kc = egui::pos2(kx, rect.center().y);
     p.circle_filled(kc + egui::vec2(0.0, 1.0), kr, Color32::from_black_alpha(90));
     p.circle_filled(kc, kr, rgb(206, 208, 214));
-    radial_circle(p, kc, kr * 0.96, rgb(232, 234, 240), rgb(196, 198, 205), rgb(150, 152, 160));
+    radial_circle(
+        p,
+        kc,
+        kr * 0.96,
+        rgb(232, 234, 240),
+        rgb(196, 198, 205),
+        rgb(150, 152, 160),
+    );
 }
 
 // ============================================================
 // Tag — small M/S/T lane button (17×17, r3). Raised mini-keycap; when active it
 // takes the accent colour, otherwise a neutral grey. Caller allocates + senses.
 // ============================================================
-pub fn tag(ui: &egui::Ui, rect: egui::Rect, letter: &str, active: bool, accent: Color32, ink_on: Color32) {
+pub fn tag(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    letter: &str,
+    active: bool,
+    accent: Color32,
+    ink_on: Color32,
+) {
     let p = ui.painter();
     let (top, bot, border, ink) = if active {
-        (lerp_c(accent, Color32::WHITE, 0.22), accent, lerp_c(accent, Color32::BLACK, 0.5), ink_on)
+        (
+            lerp_c(accent, Color32::WHITE, 0.22),
+            accent,
+            lerp_c(accent, Color32::BLACK, 0.5),
+            ink_on,
+        )
     } else {
-        (rgb(66, 67, 74), rgb(52, 53, 58), rgb(23, 23, 27), rgb(150, 151, 158))
+        (
+            rgb(66, 67, 74),
+            rgb(52, 53, 58),
+            rgb(23, 23, 27),
+            rgb(150, 151, 158),
+        )
     };
     p.rect_filled(rect, 3.0, bot);
     grad3(p, rect.shrink(1.4), top, lerp_c(top, bot, 0.5), bot, 0.55);
-    p.rect_stroke(rect, 3.0, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
-    p.text(rect.center(), egui::Align2::CENTER_CENTER, letter, f_mono_sb(9.0), ink);
+    p.rect_stroke(
+        rect,
+        3.0,
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Inside,
+    );
+    p.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        letter,
+        f_mono_sb(9.0),
+        ink,
+    );
 }
 
 // ============================================================
@@ -457,14 +639,29 @@ pub fn lane_name(ui: &egui::Ui, rect: egui::Rect, text: &str, selected: bool, fl
     // only the selected lane is filled blue with a thin outline.
     if selected {
         p.rect_filled(rect, 5.0, lerp_c(rgb(42, 104, 156), FLASH_FILL, f));
-        p.rect_stroke(rect, 5.0, egui::Stroke::new(1.0, lerp_c(rgb(60, 132, 186), FLASH_FILL, f)), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            rect,
+            5.0,
+            egui::Stroke::new(1.0, lerp_c(rgb(60, 132, 186), FLASH_FILL, f)),
+            egui::StrokeKind::Inside,
+        );
     } else {
         p.rect_filled(rect, 5.0, lerp_c(rgb(52, 53, 59), FLASH_FILL, f));
     }
-    let rest_ink = if selected { rgb(234, 246, 255) } else { rgb(201, 203, 211) };
+    let rest_ink = if selected {
+        rgb(234, 246, 255)
+    } else {
+        rgb(201, 203, 211)
+    };
     let tc = lerp_c(rest_ink, FLASH_INK, f);
     // Tight left padding so the button doesn't leave much empty space L/R.
-    p.text(egui::pos2(rect.left() + 5.0, rect.center().y), egui::Align2::LEFT_CENTER, text, f_mono_sb(11.0), tc);
+    p.text(
+        egui::pos2(rect.left() + 5.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        text,
+        f_mono_sb(11.0),
+        tc,
+    );
 }
 
 // ============================================================
@@ -487,19 +684,39 @@ pub fn plate_shape(rect: egui::Rect, radius: f32) -> egui::Shape {
         ));
     }
     v.push(egui::Shape::rect_filled(rect, radius, rgb(37, 38, 43)));
-    v.push(grad3_mesh_shape(rect.shrink(2.5), rgb(47, 48, 54), rgb(41, 42, 47), rgb(37, 38, 43), 0.55));
-    v.push(egui::Shape::rect_stroke(rect, radius, egui::Stroke::new(1.0, rgb(20, 20, 24)), egui::StrokeKind::Inside));
+    v.push(grad3_mesh_shape(
+        rect.shrink(2.5),
+        rgb(47, 48, 54),
+        rgb(41, 42, 47),
+        rgb(37, 38, 43),
+        0.55,
+    ));
+    v.push(egui::Shape::rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(1.0, rgb(20, 20, 24)),
+        egui::StrokeKind::Inside,
+    ));
     // top liseré (center-peaked fade)
     let inset = 10.0;
     v.push(fade_line_mesh_shape(
-        egui::Rect::from_min_size(egui::pos2(rect.left() + inset, rect.top() + 1.5), egui::vec2((rect.width() - 2.0 * inset).max(0.0), 1.5)),
+        egui::Rect::from_min_size(
+            egui::pos2(rect.left() + inset, rect.top() + 1.5),
+            egui::vec2((rect.width() - 2.0 * inset).max(0.0), 1.5),
+        ),
         (255, 255, 255),
         18,
     ));
     egui::Shape::Vec(v)
 }
 
-fn grad3_mesh_shape(rect: egui::Rect, ctop: Color32, cmid: Color32, cbot: Color32, mid_t: f32) -> egui::Shape {
+fn grad3_mesh_shape(
+    rect: egui::Rect,
+    ctop: Color32,
+    cmid: Color32,
+    cbot: Color32,
+    mid_t: f32,
+) -> egui::Shape {
     let ym = rect.top() + rect.height() * mid_t;
     let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
     let mut m = egui::epaint::Mesh::default();

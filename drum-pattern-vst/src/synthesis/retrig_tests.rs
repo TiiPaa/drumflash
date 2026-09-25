@@ -37,13 +37,16 @@ struct Attack {
 }
 
 fn analyse(buf: &[f32], previous_out: f32) -> Attack {
-    let (idx, peak) = buf.iter().enumerate().fold((0usize, 0.0f32), |acc, (i, s)| {
-        if s.abs() > acc.1 {
-            (i, s.abs())
-        } else {
-            acc
-        }
-    });
+    let (idx, peak) = buf
+        .iter()
+        .enumerate()
+        .fold((0usize, 0.0f32), |acc, (i, s)| {
+            if s.abs() > acc.1 {
+                (i, s.abs())
+            } else {
+                acc
+            }
+        });
     let mut max_step = (buf[0] - previous_out).abs();
     let two_ms = (SR * 0.002) as usize;
     for i in 1..two_ms.min(buf.len()) {
@@ -214,7 +217,11 @@ fn stutter_repeats_keep_the_same_attack() {
         .map(|&g| probe_gap(&mut kick808(0.0), g, true))
         .collect();
     assert_consistent("bd808 stutter", &attacks);
-    assert_click_free("bd808 stutter", &attacks, &probe_isolated(&mut kick808(0.0)));
+    assert_click_free(
+        "bd808 stutter",
+        &attacks,
+        &probe_isolated(&mut kick808(0.0)),
+    );
 }
 
 /// The declicker must not leak: once the fade is over it contributes nothing, so

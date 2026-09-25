@@ -1,9 +1,7 @@
 //! Pattern grid: lanes, step cells, fusion, lane reorder, page bar.
 
 use crate::plock::PlockState;
-use crate::sequencer::{
-    FusedGroup, SharedPattern,
-};
+use crate::sequencer::{FusedGroup, SharedPattern};
 use crate::sound_settings::SoundSettingsState;
 use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot};
 use crate::ui::controls::*;
@@ -16,9 +14,7 @@ use crate::ui::widgets::*;
 use crate::DrumFlashParams;
 use nih_plug::{params::persist::PersistentField, prelude::*};
 use nih_plug_egui::egui::{self, Color32, RichText, Vec2};
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
-};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 pub fn draw_grid_v2(
     ui: &mut egui::Ui,
@@ -37,8 +33,7 @@ pub fn draw_grid_v2(
     // cell underneath it. Suppress step-cell toggles for this frame.
     state.suppress_step_cell_click = false;
     if state.plock_popup.is_some()
-        && ui
-            .input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
+        && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
     {
         state.suppress_step_cell_click = true;
     }
@@ -191,10 +186,10 @@ pub fn draw_grid_v2(
                     if let Some(gap) = compute_reorder_gap(&lane_row_rects, pointer_pos) {
                         // [191] Same snap as the drop, so the line is drawn where
                         // the lane will actually land - never inside a chain.
-                        let gap = PersistentField::<TrackLayoutState>::map(
-                            &params.track_layout,
-                            |s| s.snap_gap_out_of_chains(gap),
-                        );
+                        let gap =
+                            PersistentField::<TrackLayoutState>::map(&params.track_layout, |s| {
+                                s.snap_gap_out_of_chains(gap)
+                            });
                         draw_lane_reorder_indicator(ui, &lane_row_rects, gap);
                     }
                 }
@@ -1132,11 +1127,7 @@ fn draw_empty_lane_chip_v2(ui: &mut egui::Ui, width: f32, label: &str) -> egui::
 /// qu'une maitresse emporte ses esclaves. `to` est l'index final de la premiere
 /// lane du bloc, la meme convention que `lane_move_order`, dont ceci est la
 /// generalisation (`len == 1` donne exactement le meme resultat - test dedie).
-fn lane_move_order_block(
-    from: usize,
-    len: usize,
-    to: usize,
-) -> [usize; crate::track::MAX_TRACKS] {
+fn lane_move_order_block(from: usize, len: usize, to: usize) -> [usize; crate::track::MAX_TRACKS] {
     let count = crate::track::MAX_TRACKS;
     if len == 0 || from >= count || from + len > count {
         return std::array::from_fn(|i| i);
@@ -1149,7 +1140,6 @@ fn lane_move_order_block(
     }
     std::array::from_fn(|i| ids[i])
 }
-
 
 fn moved_slot_index(order: &[usize; crate::track::MAX_TRACKS], old_idx: usize) -> usize {
     order
@@ -1547,9 +1537,7 @@ pub fn clear_lane_musical_data(
     pattern.store_fusions(slot_idx, &[]);
     crate::ui::editor_state::clear_grid_sound_plocks(plock, slot_idx);
     crate::ui::editor_state::clear_grid_seq_plocks(&params.seq_plock_state.state, slot_idx);
-    params
-        .pattern_bank
-        .clear_lane_in_saved_patterns(slot_idx);
+    params.pattern_bank.clear_lane_in_saved_patterns(slot_idx);
 }
 
 /// Deactivate an active slot so it becomes an empty lane again.
@@ -1593,9 +1581,7 @@ fn deactivate_slot(
         .plock_popup
         .filter(|popup| popup.instrument != slot_idx);
     // [184] The lane's p-locks go with it, so the cell selection must too.
-    state.sound_edit_target = state
-        .sound_edit_target
-        .filter(|cell| cell.slot != slot_idx);
+    state.sound_edit_target = state.sound_edit_target.filter(|cell| cell.slot != slot_idx);
     state.lane_clear_grid_confirm = None;
     state.lane_delete_confirm = None;
 
@@ -1791,7 +1777,6 @@ fn draw_page_bar_v2(
     });
 }
 
-
 fn draw_len_value_fixed(ui: &mut egui::Ui, master_length: usize, width: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, CTL_HEIGHT), egui::Sense::hover());
     let number_text = format!("{:>2}", master_length);
@@ -1915,18 +1900,25 @@ fn handle_wav_drop(
     let active: [bool; crate::track::MAX_TRACKS] =
         std::array::from_fn(|i| params.track_layout.state.is_active(i));
     let available = active.iter().any(|active| !active)
-        && state.preset_browser.is_none() && !state.macros_open && !state.settings_open;
+        && state.preset_browser.is_none()
+        && !state.macros_open
+        && !state.settings_open;
     nih_plug_egui::file_drop::set_target(ui.ctx(), available.then_some(grid_rect), &["wav"]);
     for drop in nih_plug_egui::file_drop::take_dropped(ui.ctx()) {
         if !available || !grid_rect.contains(drop.position) {
             continue;
         }
         let Some(path) = drop.paths.iter().find(|p| {
-            p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
-        }) else { continue };
+            p.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+        }) else {
+            continue;
+        };
         let active: [bool; crate::track::MAX_TRACKS] =
             std::array::from_fn(|i| params.track_layout.state.is_active(i));
-        let Some(slot) = pick_drop_lane(drop.position, lane_row_rects, &active) else { continue };
+        let Some(slot) = pick_drop_lane(drop.position, lane_row_rects, &active) else {
+            continue;
+        };
         if create_oneshot_from_drop(params, sound_settings, state, pattern, plock, slot, path) {
             state.slot_flash_until[slot] = ui.ctx().input(|i| i.time) + 0.5;
             ui.ctx().request_repaint();
@@ -1948,11 +1940,23 @@ fn create_oneshot_from_drop(
     }
     // change_slot_kind deliberately ignores inactive slots; creation must
     // use the same activation/cleanup path as the empty-lane picker.
-    activate_slot(params, sound_settings, state, slot, TrackInstrumentKind::OneShot, pattern, plock);
+    activate_slot(
+        params,
+        sound_settings,
+        state,
+        slot,
+        TrackInstrumentKind::OneShot,
+        pattern,
+        plock,
+    );
     if params.user_textures.load(slot, path).is_ok() {
         sound_settings.instruments[slot].set_standard(
             crate::instrument_registry::StandardField::Stereo,
-            if params.user_textures.is_stereo(slot) { 1.0 } else { 0.0 },
+            if params.user_textures.is_stereo(slot) {
+                1.0
+            } else {
+                0.0
+            },
         );
         sound_settings.bump_version();
     }
@@ -1961,11 +1965,7 @@ fn create_oneshot_from_drop(
 
 /// The drop target: the row UNDER the pointer when it hosts no active lane,
 /// else the first inactive slot. An occupied row is never replaced.
-fn pick_drop_lane(
-    pos: egui::Pos2,
-    rects: &[Option<egui::Rect>],
-    active: &[bool],
-) -> Option<usize> {
+fn pick_drop_lane(pos: egui::Pos2, rects: &[Option<egui::Rect>], active: &[bool]) -> Option<usize> {
     for (i, rect) in rects.iter().enumerate() {
         if let Some(rect) = rect {
             if rect.contains(pos) && !active.get(i).copied().unwrap_or(true) {
@@ -1976,7 +1976,13 @@ fn pick_drop_lane(
     active.iter().position(|a| !*a)
 }
 
-fn draw_lane_name_v2(ui: &mut egui::Ui, width: f32, selected: bool, label: &str, flash: f32) -> egui::Response {
+fn draw_lane_name_v2(
+    ui: &mut egui::Ui,
+    width: f32,
+    selected: bool,
+    label: &str,
+    flash: f32,
+) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 21.0), egui::Sense::click());
     crate::ui::skeuo::lane_name(ui, rect, label, selected, flash);
     response
@@ -2053,7 +2059,11 @@ fn draw_step_cell_v2(
         rect
     };
 
-    let hover = hover_t(ui.ctx(), response.id, response.hovered() && enabled && !is_fusion_mid);
+    let hover = hover_t(
+        ui.ctx(),
+        response.id,
+        response.hovered() && enabled && !is_fusion_mid,
+    );
     let stroke = if hover > 0.01 {
         egui::Stroke::new(1.0, lerp_color(stroke.color, BLUE(), hover))
     } else {
@@ -2074,8 +2084,7 @@ fn draw_step_cell_v2(
             // Downbeats (1/5/9/13): a faint light wash makes the off cells read
             // as anchors — the baked pad-off-beat sprite alone is too subtle.
             if fill == CELL_EMPTY_BEAT() {
-                ui.painter()
-                    .rect_filled(block_rect, 4.0, white_a(6));
+                ui.painter().rect_filled(block_rect, 4.0, white_a(6));
             }
             // Fused-block state overlays (the sprite is always the lit "hit"
             // variant, so muted/editing states can't come from the sprite).
@@ -2213,10 +2222,7 @@ fn step_colors_v2(
     is_editing: bool,
 ) -> (Color32, egui::Stroke) {
     if disabled {
-        return (
-            CELL_DISABLED(),
-            egui::Stroke::new(1.0, Color32::BLACK),
-        );
+        return (CELL_DISABLED(), egui::Stroke::new(1.0, Color32::BLACK));
     }
     if selection_start {
         // [210] The old pair was invisible: a fill of rgb(20,34,58) against an
@@ -2226,11 +2232,7 @@ fn step_colors_v2(
         let f = FUSION_FILL();
         let b = BLUE();
         let lift = |a: u8, t: u8| (a as f32 + (t as f32 - a as f32) * 0.30) as u8;
-        let fill = Color32::from_rgb(
-            lift(f.r(), b.r()),
-            lift(f.g(), b.g()),
-            lift(f.b(), b.b()),
-        );
+        let fill = Color32::from_rgb(lift(f.r(), b.r()), lift(f.g(), b.g()), lift(f.b(), b.b()));
         return (fill, egui::Stroke::new(2.0, b));
     }
 
@@ -2545,18 +2547,37 @@ fn finish_fusion_editing_for_ui(pattern_for_ui: &SharedPattern, state: &mut Edit
 }
 
 fn fusion_text_w(ui: &egui::Ui, s: &str, font: egui::FontId) -> f32 {
-    ui.fonts(|f| f.layout_no_wrap(s.to_string(), font, Color32::WHITE).size().x)
+    ui.fonts(|f| {
+        f.layout_no_wrap(s.to_string(), font, Color32::WHITE)
+            .size()
+            .x
+    })
 }
 
 /// Raised sub-panel background for the fusion strip (relief + border + top liseré).
 fn fusion_strip_bg(ui: &egui::Ui, rect: egui::Rect) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 6.0, rgb(38, 39, 44));
-    grad3(&p, rect.shrink(2.5), rgb(45, 46, 51), rgb(40, 41, 46), rgb(37, 38, 43), 0.55);
-    p.rect_stroke(rect, 6.0, egui::Stroke::new(1.0, rgb(20, 20, 24)), egui::StrokeKind::Inside);
+    grad3(
+        &p,
+        rect.shrink(2.5),
+        rgb(45, 46, 51),
+        rgb(40, 41, 46),
+        rgb(37, 38, 43),
+        0.55,
+    );
+    p.rect_stroke(
+        rect,
+        6.0,
+        egui::Stroke::new(1.0, rgb(20, 20, 24)),
+        egui::StrokeKind::Inside,
+    );
     plateau_line(
         &p,
-        egui::Rect::from_min_size(rect.min + Vec2::new(10.0, 1.5), Vec2::new((rect.width() - 20.0).max(0.0), 1.0)),
+        egui::Rect::from_min_size(
+            rect.min + Vec2::new(10.0, 1.5),
+            Vec2::new((rect.width() - 20.0).max(0.0), 1.0),
+        ),
         (255, 255, 255),
         16,
     );
@@ -2575,14 +2596,18 @@ fn fusion_key(
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 19.0), sense);
     crate::ui::skeuo::keycap(ui, rect, state);
     if resp.is_pointer_button_down_on() {
-        ui.painter().rect_filled(rect, 5.0, Color32::from_black_alpha(60));
+        ui.painter()
+            .rect_filled(rect, 5.0, Color32::from_black_alpha(60));
     }
-    ui.painter()
-        .text(rect.center(), egui::Align2::CENTER_CENTER, label, f_sans_sb(11.0), tc);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        f_sans_sb(11.0),
+        tc,
+    );
     resp
 }
-
-
 
 fn draw_fusion_edit_box(
     ui: &mut egui::Ui,
@@ -2622,11 +2647,16 @@ fn draw_fusion_edit_box(
 
         let (fw, delw, xw) = (40.0_f32, 44.0_f32, 28.0_f32);
         let content = fusion_text_w(ui, &range, font.clone())
-            + g + fusion_text_w(ui, "Steps", font.clone())
-            + g + fw
-            + g + fusion_text_w(ui, &morph, font.clone())
-            + g + delw
-            + g + xw;
+            + g
+            + fusion_text_w(ui, "Steps", font.clone())
+            + g
+            + fw
+            + g
+            + fusion_text_w(ui, &morph, font.clone())
+            + g
+            + delw
+            + g
+            + xw;
         let lead = ((box_size.x - content) * 0.5).max(6.0);
 
         ui.allocate_new_ui(
@@ -2636,7 +2666,11 @@ fn draw_fusion_edit_box(
             |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.add_space(lead);
-                ui.label(RichText::new(range.as_str()).font(font.clone()).color(Color32::WHITE));
+                ui.label(
+                    RichText::new(range.as_str())
+                        .font(font.clone())
+                        .color(Color32::WHITE),
+                );
                 ui.add_space(g);
                 ui.label(RichText::new("Steps").font(font.clone()).color(INK3()));
                 ui.add_space(g);
@@ -2658,10 +2692,21 @@ fn draw_fusion_edit_box(
                     finish_fusion_editing_for_ui(pattern_for_ui, state);
                 }
                 ui.add_space(g);
-                ui.label(RichText::new(morph.as_str()).font(font.clone()).color(INK2()));
+                ui.label(
+                    RichText::new(morph.as_str())
+                        .font(font.clone())
+                        .color(INK2()),
+                );
                 ui.add_space(g);
-                if fusion_key(ui, delw, "Del", KeycapState::Rest, rgb(230, 120, 110), egui::Sense::click())
-                    .clicked()
+                if fusion_key(
+                    ui,
+                    delw,
+                    "Del",
+                    KeycapState::Rest,
+                    rgb(230, 120, 110),
+                    egui::Sense::click(),
+                )
+                .clicked()
                 {
                     let mut new_fusions = pattern_for_ui.load_fusions(instrument);
                     if index < new_fusions.len() {
@@ -2675,7 +2720,8 @@ fn draw_fusion_edit_box(
                     ui.ctx().request_repaint();
                 }
                 ui.add_space(g);
-                if fusion_key(ui, xw, "×", KeycapState::Rest, INK(), egui::Sense::click()).clicked() {
+                if fusion_key(ui, xw, "×", KeycapState::Rest, INK(), egui::Sense::click()).clicked()
+                {
                     finish_fusion_editing_for_ui(pattern_for_ui, state);
                 }
             },
@@ -2691,8 +2737,11 @@ fn draw_fusion_edit_box(
             "+ glisser pour fusionner"
         };
         let majw = 40.0_f32;
-        let content =
-            fusion_text_w(ui, "FUSION", mono.clone()) + g + majw + g + fusion_text_w(ui, hint, font.clone());
+        let content = fusion_text_w(ui, "FUSION", mono.clone())
+            + g
+            + majw
+            + g
+            + fusion_text_w(ui, hint, font.clone());
         let lead = ((box_size.x - content) * 0.5).max(6.0);
         let hint_color = if fusion_mode_active { BLUE() } else { INK3() };
 
@@ -2705,7 +2754,14 @@ fn draw_fusion_edit_box(
                 ui.add_space(lead);
                 ui.label(RichText::new("FUSION").font(mono.clone()).color(INK3()));
                 ui.add_space(g);
-                fusion_key(ui, majw, "Maj", KeycapState::PressedAmber, rgb(255, 240, 214), egui::Sense::hover());
+                fusion_key(
+                    ui,
+                    majw,
+                    "Maj",
+                    KeycapState::PressedAmber,
+                    rgb(255, 240, 214),
+                    egui::Sense::hover(),
+                );
                 ui.add_space(g);
                 ui.label(RichText::new(hint).font(font.clone()).color(hint_color));
             },
@@ -3084,8 +3140,6 @@ fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; crate::track::MAX_TRAC
     })
 }
 
-
-
 // ---------------------------------------------------------------------------------------------------------------
 // Plock context menu
 // ---------------------------------------------------------------------------------------------------------------
@@ -3109,16 +3163,36 @@ mod tests {
         pattern.set_step_mask(0, 1 | (1 << slot));
         plock.set_field(slot, 0, 3, 200.0);
         let wav = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ch606.wav");
-        assert!(super::create_oneshot_from_drop(&params, settings, &mut state, &pattern, plock, slot, &wav));
-        assert_eq!(params.track_layout.state.kind_for_slot(slot), Some(TrackInstrumentKind::OneShot));
+        assert!(super::create_oneshot_from_drop(
+            &params, settings, &mut state, &pattern, plock, slot, &wav
+        ));
+        assert_eq!(
+            params.track_layout.state.kind_for_slot(slot),
+            Some(TrackInstrumentKind::OneShot)
+        );
         assert_eq!(state.selected_track_slot, slot);
         assert!(params.user_textures.pool.is_loaded(slot));
-        assert_eq!(params.user_textures.path(slot).as_deref(), Some(wav.as_path()));
-        assert_eq!(pattern.step_masks()[0], 1, "new lane is blank, existing lane is kept");
+        assert_eq!(
+            params.user_textures.path(slot).as_deref(),
+            Some(wav.as_path())
+        );
+        assert_eq!(
+            pattern.step_masks()[0],
+            1,
+            "new lane is blank, existing lane is kept"
+        );
         assert!(!plock.masks.is_active(slot, 0));
-        assert_eq!(params.track_layout.state.kind_for_slot(0), Some(TrackInstrumentKind::Kick));
-        assert!(!super::create_oneshot_from_drop(&params, settings, &mut state, &pattern, plock, 0, &wav));
-        assert!(params.user_textures.path(0).is_none(), "occupied lane must not receive the file");
+        assert_eq!(
+            params.track_layout.state.kind_for_slot(0),
+            Some(TrackInstrumentKind::Kick)
+        );
+        assert!(!super::create_oneshot_from_drop(
+            &params, settings, &mut state, &pattern, plock, 0, &wav
+        ));
+        assert!(
+            params.user_textures.path(0).is_none(),
+            "occupied lane must not receive the file"
+        );
     }
 
     /// [243] Drop target selection: the empty row under the pointer wins,
@@ -3127,9 +3201,8 @@ mod tests {
     #[test]
     fn pick_drop_lane_prefers_the_empty_row_under_the_pointer() {
         use nih_plug_egui::egui;
-        let rect = |y: f32| {
-            egui::Rect::from_min_max(egui::pos2(0.0, y), egui::pos2(100.0, y + 20.0))
-        };
+        let rect =
+            |y: f32| egui::Rect::from_min_max(egui::pos2(0.0, y), egui::pos2(100.0, y + 20.0));
         let rects: [Option<egui::Rect>; MAX_TRACKS] =
             std::array::from_fn(|i| Some(rect(i as f32 * 21.0)));
         let mut active = [false; MAX_TRACKS];
@@ -3154,7 +3227,7 @@ mod tests {
         if from >= MAX_TRACKS || to >= MAX_TRACKS || from == to {
             return order;
         }
-    
+
         let moved = order[from];
         if from < to {
             for idx in from..to {
@@ -3215,7 +3288,11 @@ mod tests {
         assert!(layout.is_grid_follower(3));
         assert!(!layout.is_grid_follower(4));
         assert_eq!(layout.chain_len(1), 3, "the master carries two followers");
-        assert_eq!(layout.chain_len(2), 2, "seen from a follower, the run below");
+        assert_eq!(
+            layout.chain_len(2),
+            2,
+            "seen from a follower, the run below"
+        );
         assert_eq!(layout.chain_len(0), 1, "a lone lane travels alone");
         assert_eq!(layout.chain_len(4), 1);
     }
@@ -3226,7 +3303,11 @@ mod tests {
     fn a_drop_point_never_lands_inside_a_chain() {
         let layout = layout_with_chain();
         // Gaps 2 and 3 are interior: before follower 2, and between 2 and 3.
-        assert_eq!(layout.snap_gap_out_of_chains(2), 1, "snaps above the master");
+        assert_eq!(
+            layout.snap_gap_out_of_chains(2),
+            1,
+            "snaps above the master"
+        );
         assert_eq!(layout.snap_gap_out_of_chains(3), 4, "snaps below the run");
         // Everything outside is left alone.
         for gap in [0usize, 1, 4, 5, MAX_TRACKS] {

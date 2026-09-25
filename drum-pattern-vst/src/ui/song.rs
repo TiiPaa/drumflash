@@ -54,8 +54,14 @@ pub fn draw_song_editor(
                 }
                 state.song_clear_confirm = false;
             }
-        } else if crate::ui::controls::chip_button(ui, "Clear All", false, BLUE(), egui::Sense::click())
-            .clicked()
+        } else if crate::ui::controls::chip_button(
+            ui,
+            "Clear All",
+            false,
+            BLUE(),
+            egui::Sense::click(),
+        )
+        .clicked()
         {
             state.song_clear_confirm = true;
         }

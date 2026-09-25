@@ -14,10 +14,6 @@ pub fn note_to_freq(note: f32) -> f32 {
     440.0 * 2.0f32.powf((note - 69.0) / 12.0)
 }
 
-
-
-
-
 pub fn note_name(note: f32) -> String {
     let note = note.round() as i32;
     let note = note.clamp(0, 127);

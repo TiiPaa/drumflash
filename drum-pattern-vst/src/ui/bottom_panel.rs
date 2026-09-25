@@ -3,6 +3,7 @@
 use crate::generator::{self, GeneratorType, Style};
 use crate::pattern_bank::SONG_BLOCKS;
 use crate::sequencer::{Pattern, SharedPattern};
+use crate::track::{TrackInstrumentKind, TrackLayoutState};
 use crate::ui::controls::{
     chip_button, compact_chip, enum_combo_compact, generator_song_segmented, genrow_label,
 };
@@ -11,7 +12,6 @@ use crate::ui::header::header_param_slider;
 use crate::ui::pattern_bank::load_pattern_for_ui_with_length;
 use crate::ui::song::draw_song_editor;
 use crate::ui::theme::*;
-use crate::track::{TrackInstrumentKind, TrackLayoutState};
 use crate::DrumFlashParams;
 use nih_plug::{params::persist::PersistentField, prelude::*};
 use nih_plug_egui::egui::{self, Vec2};
@@ -207,7 +207,15 @@ fn draw_preset_bar(
         ];
         for (label, kinds, make) in style_presets {
             if compact_chip(ui, label, false).clicked() {
-                apply_style_preset(params, setter, state, pattern, kinds, make(), pattern_length);
+                apply_style_preset(
+                    params,
+                    setter,
+                    state,
+                    pattern,
+                    kinds,
+                    make(),
+                    pattern_length,
+                );
             }
         }
         ui.add_space(8.0);
@@ -321,7 +329,8 @@ fn draw_generator_bar(
                     variation: params.gen_variation.value(),
                     seed,
                 };
-                let generated = generator::generate(&gen_params, params.track_layout.state.as_ref());
+                let generated =
+                    generator::generate(&gen_params, params.track_layout.state.as_ref());
                 let pattern_length = params.pattern_length.value() as usize;
                 crate::ui::grid::clear_all_fusions(pattern);
                 load_pattern_for_ui_with_length(pattern, &generated, pattern_length);

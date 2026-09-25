@@ -214,7 +214,9 @@ impl Voice for SnareVoice {
                 // Noise: pure white noise, no oscillator
                 let mixed_l = self.noise.next() * 0.5;
                 let mixed_r = self.noise_r.next() * 0.5;
-                let filtered_l = self.filter.process(self.saturation.process_at(true, mixed_l));
+                let filtered_l = self
+                    .filter
+                    .process(self.saturation.process_at(true, mixed_l));
                 let filtered_r = self
                     .filter_r
                     .process(self.saturation.process_at(true, mixed_r));

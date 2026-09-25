@@ -141,13 +141,15 @@ impl BassDrum {
         } else {
             end_hz + (base_start_hz - end_hz) * self.sweep_scale
         };
-        let transient_shape =
-            clampf((self.attack + self.click_amount + self.impulse_amount) / 3.0, 0.0, 1.5);
+        let transient_shape = clampf(
+            (self.attack + self.click_amount + self.impulse_amount) / 3.0,
+            0.0,
+            1.5,
+        );
         let thud_shape = clampf(transient_shape * transient_shape, 0.0, 1.5);
         let body_start_hz = start_hz * (1.0 + thud_shape * 0.28);
         let body_amp = 0.92 + thud_shape * 0.22 + a * 0.08;
-        let body_pitch_decay =
-            lerpf(0.022, 0.008, clampf(thud_shape, 0.0, 1.0)) * self.bend_scale;
+        let body_pitch_decay = lerpf(0.022, 0.008, clampf(thud_shape, 0.0, 1.0)) * self.bend_scale;
         self.body.trigger(
             body_amp,
             body_start_hz,
@@ -158,18 +160,17 @@ impl BassDrum {
         );
         self.click_env
             .set_decay_seconds(0.0020 + self.attack * 0.0045 + self.click_amount * 0.0040);
-        self.click_env.trigger(
-            0.02 + self.attack * 0.06 + self.click_amount * 0.28 + a * 0.02,
-        );
+        self.click_env
+            .trigger(0.02 + self.attack * 0.06 + self.click_amount * 0.28 + a * 0.02);
         self.impulse_env.set_decay_seconds(
             // [196] Past the fitted 1.0 the decay keeps opening (up to ~39 ms
             // at 2.0) so Punch Decay is clearly audible.
-            0.0008 + self.impulse_decay.min(1.0) * 0.0080
+            0.0008
+                + self.impulse_decay.min(1.0) * 0.0080
                 + (self.impulse_decay - 1.0).max(0.0) * 0.03,
         );
-        self.impulse_env.trigger(
-            0.02 + self.impulse_amount * 0.55 + thud_shape * 0.08 + a * 0.04,
-        );
+        self.impulse_env
+            .trigger(0.02 + self.impulse_amount * 0.55 + thud_shape * 0.08 + a * 0.04);
         // [196] Past the fitted 1.0 the body filter keeps opening toward
         // 6 kHz — 620..1200 Hz below, so the fitted tone is unchanged.
         // [196d] Below the fitted 0.34 it now sweeps down to 80 Hz: the body
@@ -181,7 +182,11 @@ impl BassDrum {
         } else if self.tone < 0.34 {
             lerpf(80.0, lerpf(620.0, 1200.0, 0.34), self.tone / 0.34)
         } else if self.tone <= 1.0 {
-            lerpf(lerpf(620.0, 1200.0, 0.34), 1200.0, (self.tone - 0.34) / 0.66)
+            lerpf(
+                lerpf(620.0, 1200.0, 0.34),
+                1200.0,
+                (self.tone - 0.34) / 0.66,
+            )
         } else {
             lerpf(1200.0, 6000.0, self.tone - 1.0)
         };
@@ -195,7 +200,9 @@ impl BassDrum {
         let click = self.click_lpf.process(noise) * self.click_env.process();
         let body_delta = body_raw - self.last_body_raw;
         self.last_body_raw = body_raw;
-        let impulse_core = self.impulse_lpf.process(self.impulse_hpf.process(body_delta));
+        let impulse_core = self
+            .impulse_lpf
+            .process(self.impulse_hpf.process(body_delta));
         let impulse = impulse_core * self.impulse_env.process();
         let out = body * (0.92 + self.drive * 0.10)
             + click * (0.06 + self.click_amount * 0.90)

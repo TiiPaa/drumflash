@@ -93,7 +93,13 @@ fn sprite_name(fill: Color32, fusion_span: Option<usize>) -> String {
 
 /// Blit the atlas sprite for this cell into `cell_rect` (bleed-corrected, scaled
 /// to the real cell size). `in_range == false` dims the sprite (out-of-length).
-pub fn draw_pad(ui: &egui::Ui, cell_rect: egui::Rect, fill: Color32, fusion_span: Option<usize>, in_range: bool) {
+pub fn draw_pad(
+    ui: &egui::Ui,
+    cell_rect: egui::Rect,
+    fill: Color32,
+    fusion_span: Option<usize>,
+    in_range: bool,
+) {
     let name = sprite_name(fill, fusion_span);
     let Some(&[x, y, w, h, ew, eh]) = sprites().get(&name) else {
         // Fallback: never leave a cell invisible if a sprite is missing.
