@@ -20,13 +20,8 @@ pub struct PresetDump {
     pub specials: Vec<f32>,
 }
 
-fn dumps_dir() -> PathBuf {
-    let mut p = std::env::var("USERPROFILE")
-        .map(|profile| PathBuf::from(profile).join("Documents"))
-        .unwrap_or_else(|_| PathBuf::from("."));
-    p.push("Flash Drum");
-    p.push("preset_dumps");
-    p
+pub(crate) fn dumps_dir() -> PathBuf {
+    crate::paths::flash_drum_dir().join("preset_dumps")
 }
 
 /// Ensure the dumps directory exists.

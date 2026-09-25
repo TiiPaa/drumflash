@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-09-25 - [266] Licence GPL-3.0 posée (build 20260925-145840)
+
+**Branche:** `main` - **Build:** `20260925-145840`
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 493 verts lib ; le bundle installé contient `LICENSE.txt` + `THIRD-PARTY.md`. Rien à tester dans Studio One (aucun changement de code).
+
+- **`LICENSE`** (texte canonique GPL-3.0, téléchargé depuis gnu.org) à la racine et copié dans chaque bundle (`build.ps1`) — le dépôt public n'avait aucune licence alors que l'export VST3 (vst3-sys, GPLv3) l'impose aux binaires diffusés.
+- **`Cargo.toml`** : identifiant SPDX correct `GPL-3.0-only` (au lieu de la forme dépréciée `GPL-3.0`).
+- **`THIRD-PARTY.md`** : nih-plug (ISC), vst3-sys (GPL-3.0), baseview + egui-baseview (MIT), egui (MIT/Apache-2.0), code AC606 porté (MIT, Matthew Fecher), polices IBM Plex (OFL), textures Rift (travail original via `tools/gen_textures.py`). **Point ouvert** : provenance exacte des 4 WAV TR-606 à documenter (question posée à l'auteur).
+
+Reste dans la phase 5 : [265] purge du PDF « 260 Drum Machine Patterns » du dépôt public + de l'historique (`git filter-repo` + force-push — accord explicite requis).
+
+## 2026-09-25 - [263][264] Remédiation audit, phase 4 : filet de persistance + CI durcie (build 20260925-143151)
+
+**Branche:** `main` - **Build:** `20260925-143151`
+**Validation:** `cargo check --all-targets --locked` sans avertissement ; `cargo test` 493 verts lib (4 nouveaux ; désormais seuls les tests lib sont comptés, les 310 de `test_standalone` sont les mêmes recompilés) ; clippy vert ; 3 tests egui-baseview verts. À valider dans Studio One (rien d'audible n'a changé — vérification de non-régression seulement).
+
+- **[263] Filet de persistance** : un agent qui change l'ordre/la taille d'un champ persisté ET met à jour les tests d'aller-retour dans le même commit laissait tout au vert — et les projets des utilisateurs se rouvraient décalés. Désormais : `tests/fixtures/state-2026-09-25.json` (état complet écrit par un build daté, peuplé via les 10 champs persistés) restauré par le vrai chemin de l'hôte (`filter_state` + `deserialize_fields`) et comparé à un résumé **figé** ; le générateur `regenerate_golden_fixture` est un test `--ignored` à n'utiliser qu'après un changement de format voulu (une fixture par format, jamais supprimée). Ajouté : `full_state_roundtrip_is_order_independent` (l'hôte restaure par ordre alphabétique — `track-layout-v1` en dernier ; l'ordre inverse doit donner le même état) et la variable `FLASH_DRUM_CONFIG_DIR` qui rend les tests hermétiques (fini la dépendance au `config.json` réel du poste, utilisée par la CI).
+- **[264] CI durcie** : job **macOS** (`cargo check` — la règle de portabilité est enfin surveillée), `-D warnings`, **clippy** (`-A excessive_precision` en attendant [268]), `--locked` partout, toolchain **1.94.0** (= celle du binaire livré, comme `rust-toolchain.toml`), tests du pont `file_drop` d'egui-baseview en CI, `permissions: contents: read`, **actions épinglées par SHA** (checkout v4.3.0, rust-cache v2.8.1, upload-artifact v4.6.2, rust-toolchain) et `dependabot.yml` (actions + cargo, hebdo). Reste manuel : activer la protection de `main` dans GitHub, et cargo-deny (phase 6).
+
+## 2026-09-25 - [271] Modal de confirmation après export MIDI (build 20260925-140504)
+
+**Branche:** `main` - **Build:** `20260925-140504`
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 489 verts ; install atomique OK. À valider dans Studio One (liste dans le rapport).
+
+Demande utilisateur : après un clic sur **Export**, un modal s'ouvre avec le **chemin complet** du fichier `.mid` écrit et un bouton **Open folder** qui ouvre l'Explorateur sur `Documents\Flash Drum\exports` (le dossier d'export était introuvable sans le connaître). Bouton **OK** pour fermer. Le drag MIDI (bouton Drag) est inchangé — pas de modal, le fichier part directement dans le drag. Nouvelle dépendance `open = "5"`.
+
+## 2026-09-25 - [259]-[262] Remédiation audit, phase 3 : données utilisateur robustes (chemins, presets, erreurs) (build 20260925-113806)
+
+**Branche:** `main` - **Builds:** `20260925-101355` (install refusée, S1 ouvert — le garde-fou [250] a protégé le bundle installé) -> `20260925-113806`
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 489 + 1 + 310 verts (6 nouveaux) ; install atomique avec vérification de hash. À valider dans Studio One (liste dans le rapport).
+
+- **[259] Chemins réseau jamais résolus automatiquement** : un projet ou preset reçu d'un tiers pouvait contenir un chemin WAV en `\\hôte\partage` — la restauration le résolvait sans clic, déclenchant une authentification SMB silencieuse (fuite du hash NTLMv2) ou gelant Studio One ~20 s par lane sur un serveur mort. Nouveau garde-fou `is_local_path()` (disques locaux uniquement) : la restauration d'état et le chargement de preset marquent la lane « missing » avec un message, sans toucher au réseau. Un fichier réseau reste chargeable par geste explicite (sélecteur de fichiers, drag & drop).
+- **[260] Dossier utilisateur unifié et correct partout** : les 4 copies de `USERPROFILE\Documents` (config, presets, dumps, exports MIDI) laissaient les données dans un dossier fantôme quand OneDrive déplace Documents, et échouaient en silence sur macOS. Nouveau `src/paths.rs` sur `dirs::document_dir()` (le vrai Documents, OneDrive inclus), migration automatique au premier lancement si l'ancien dossier existe, et test `user_dirs_share_one_root`.
+- **[261] Les erreurs de presets sont enfin visibles** : « Save » qui échoue (disque plein, dossier verrouillé) vidait le champ de nom comme si tout avait marché — l'erreur s'affiche maintenant dans le modal et le nom est conservé ; pareil pour rename/delete. Les noms réservés Windows (CON, AUX, NUL, COM1-9, LPT1-9) sont suffixés au lieu d'échouer bizarrement. Écritures atomiques (fichier temporaire + rename) pour presets et config — un crash en cours d'écriture ne laisse plus de fichier tronqué, et un `config.json` illisible est renommé en `.bad` au lieu d'être effacé par les défauts.
+- **[262] Liste des presets mise en cache** : tant que le modal Presets était ouvert, chaque frame relisait le dossier, relisait et re-parsait CHAQUE JSON (mégaoctets à 60 fps pendant la lecture). La liste est lue à l'ouverture, au changement d'onglet et après chaque mutation, jamais dans le rendu. *Écart par rapport à l'audit :* le clone de layout de la grille est conservé — il porte le nom et le kind de la lane, sans équivalent atomique ; à la place, un test garantit l'équivalence entre le `grid_slot` du thread audio et celui de l'UI.
+
 ## 2026-09-24 (soir) - [255]-[258] Remédiation audit, phase 2 : installation atomique, journal de crash, symboles exploitables (build 20260924-194326)
 
 **Branche:** `main` - **Builds:** `20260924-193928` -> `20260924-194326`

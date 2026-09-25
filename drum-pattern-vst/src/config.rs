@@ -3,8 +3,9 @@ use std::path::PathBuf;
 
 /// Global user preferences stored outside the DAW project.
 ///
-/// Lives in `%USERPROFILE%/Documents/Flash Drum/config.json` so settings
-/// survive across sessions and are shared between all plugin instances.
+/// Lives in `Documents/Flash Drum/config.json` ([260]: the real Documents
+/// folder, OneDrive/macOS-proof) so settings survive across sessions and are
+/// shared between all plugin instances.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GlobalConfig {
     /// Default value for the `Analog` parameter when a slot is created or reset.
@@ -40,6 +41,9 @@ impl GlobalConfig {
                 // Clamp to a sensible range in case the file was hand-edited.
                 return config.clamped();
             }
+            // [261] An unreadable config is preserved, not silently
+            // overwritten by the defaults: rename it aside for the user.
+            let _ = std::fs::rename(&path, path.with_extension("json.bad"));
         }
         let config = GlobalConfig::default();
         let _ = config.save();
@@ -54,17 +58,22 @@ impl GlobalConfig {
         }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(&path, json)
+        // [261] Temp file + rename: no truncated config on crash.
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, json)?;
+        std::fs::rename(&tmp, &path)
     }
 
-    /// Path to the config file: `Documents/Flash Drum/config.json`.
-    fn config_path() -> PathBuf {
-        let mut p = std::env::var("USERPROFILE")
-            .map(|profile| PathBuf::from(profile).join("Documents"))
-            .unwrap_or_else(|_| PathBuf::from("."));
-        p.push("Flash Drum");
-        p.push("config.json");
-        p
+    /// Path to the config file: `Documents/Flash Drum/config.json` — the real
+    /// Documents folder ([260], OneDrive/macOS-proof).
+    /// [263] `FLASH_DRUM_CONFIG_DIR` redirects the whole config (tests, CI):
+    /// without it `DrumFlashParams::default()` reads — and creates — the real
+    /// user config, making tests depend on the machine's `default_analog`.
+    pub(crate) fn config_path() -> PathBuf {
+        if let Some(dir) = std::env::var_os("FLASH_DRUM_CONFIG_DIR") {
+            return PathBuf::from(dir).join("config.json");
+        }
+        crate::paths::flash_drum_dir().join("config.json")
     }
 
     fn clamped(mut self) -> Self {
@@ -77,6 +86,37 @@ impl GlobalConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_dir_env_override_redirects_the_config() {
+        // [263] Hermetic tests: FLASH_DRUM_CONFIG_DIR must win over the user
+        // folder. The window where the var is set is tiny; a concurrent test
+        // reading it would just get a default config, which is always valid.
+        let dir = std::env::temp_dir().join(format!("fd_cfg_{:?}", std::thread::current().id()));
+        std::env::set_var("FLASH_DRUM_CONFIG_DIR", &dir);
+        let path = GlobalConfig::config_path();
+        std::env::remove_var("FLASH_DRUM_CONFIG_DIR");
+        assert!(path.starts_with(&dir));
+        assert!(path.ends_with("config.json"));
+    }
+
+    #[test]
+    fn unreadable_config_is_moved_aside_not_erased() {
+        // [261] A corrupt config.json must be renamed to .bad, never silently
+        // replaced by defaults.
+        let dir = std::env::temp_dir().join(format!("fd_cfg_bad_{:?}", std::thread::current().id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), b"{ not json").unwrap();
+        std::env::set_var("FLASH_DRUM_CONFIG_DIR", &dir);
+        let config = GlobalConfig::load();
+        std::env::remove_var("FLASH_DRUM_CONFIG_DIR");
+        assert_eq!(config, GlobalConfig::default());
+        let bad = std::fs::read_to_string(dir.join("config.json.bad")).unwrap();
+        assert_eq!(bad, "{ not json");
+        // A fresh default config was written next to it.
+        assert!(dir.join("config.json").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn default_analog_is_05() {

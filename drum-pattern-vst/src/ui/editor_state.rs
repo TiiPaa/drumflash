@@ -142,6 +142,11 @@ pub struct EditorUIState {
     pub selected_pattern_slot: usize,
     pub last_midi_export_path: Option<String>,
     pub last_midi_export_error: Option<String>,
+    /// [271] MIDI export confirmation modal: the exported file, shown with an
+    /// "Open folder" button (the exports directory is otherwise invisible).
+    /// Runtime-only.
+    #[serde(skip)]
+    pub midi_export_modal: Option<std::path::PathBuf>,
     pub dump_name_input: String,
     pub current_page: usize, // 0-3 (displaying steps current_page*16 .. current_page*16+15)
     pub follow_mode: bool, // if true, page follows the playhead
@@ -297,6 +302,33 @@ pub struct PresetBrowserState {
     pub rename_input: String,
     /// Focus the rename field on the frame it appears.
     pub rename_focus_request: bool,
+    /// [261] Last failed save/rename/delete, shown in the modal until the next
+    /// success (the old code swallowed errors and cleared the name field as
+    /// if the save had worked).
+    pub last_error: Option<String>,
+    /// [262] Cached preset list for the active tab — re-read from disk only on
+    /// open, tab change, or after a successful save/rename/delete, never per
+    /// frame (the old code re-read and re-parsed every JSON at 60 fps).
+    pub files: Option<Vec<crate::presets::PresetFileInfo>>,
+    /// Which tab `files` was cached for.
+    pub files_kind: Option<crate::presets::PresetKind>,
+}
+
+impl PresetBrowserState {
+    /// [262] The preset list of the active tab, refreshed only when stale.
+    /// Returns an owned snapshot so the render loop can keep mutating `self`.
+    pub fn cached_files(&mut self) -> Vec<crate::presets::PresetFileInfo> {
+        if self.files.is_none() || self.files_kind != Some(self.kind) {
+            self.files = Some(crate::presets::list_presets(self.kind));
+            self.files_kind = Some(self.kind);
+        }
+        self.files.clone().unwrap_or_default()
+    }
+
+    /// Drop the cache after a mutation (save/rename/delete).
+    pub fn invalidate_files(&mut self) {
+        self.files = None;
+    }
 }
 
 impl Default for PresetBrowserState {
@@ -310,6 +342,9 @@ impl Default for PresetBrowserState {
             renaming: None,
             rename_input: String::new(),
             rename_focus_request: false,
+            last_error: None,
+            files: None,
+            files_kind: None,
         }
     }
 }

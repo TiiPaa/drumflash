@@ -6,8 +6,14 @@ on:
   pull_request:
     branches: [main, master]
 
+# [264] Least privilege; the workflow uses no secrets.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
+  # Warnings are errors: the build is warning-clean and must stay so.
+  RUSTFLAGS: -D warnings
 
 defaults:
   run:
@@ -18,34 +24,62 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        # Pinned to the same toolchain as rust-toolchain.toml / the shipped binary.
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: "1.94.0"
+          components: clippy
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           workspaces: |
             drum-pattern-vst -> target
 
       - name: Check
-        run: cargo check
+        run: cargo check --all-targets --locked
         env:
           DRUM_PATTERN_BUILD_ID: ci-${{ github.run_number }}
 
       - name: Test
-        run: cargo test
+        run: cargo test --locked
         env:
           DRUM_PATTERN_BUILD_ID: ci-${{ github.run_number }}
+          # [263] Hermetic tests: never touch the runner's real user config.
+          FLASH_DRUM_CONFIG_DIR: ${{ runner.temp }}/flash-drum-config
+
+      - name: Clippy
+        # excessive_precision stays allowed until the ac606 sinc table is
+        # module-gated (phase 6, [268]); fmt is not gated yet either ([268]).
+        run: cargo clippy --all-targets --locked -- -A clippy::excessive_precision
+
+      - name: Vendored egui-baseview tests (file_drop bridge)
+        run: cargo test --locked -p egui-baseview --lib
 
       - name: Build release bundle
         shell: pwsh
         run: .\build.ps1
 
       - name: Upload VST3 bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: drum-pattern-vst-windows
           path: drum-pattern-vst/build/drum-pattern-vst.vst3
           if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: "1.94.0"
+
+      - name: Check (portability gate — CLAUDE.md portability rule)
+        run: cargo check --all-targets --locked

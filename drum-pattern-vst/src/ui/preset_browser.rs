@@ -126,6 +126,15 @@ pub fn draw_preset_browser_if_any(
                         save_requested = true;
                     }
                 });
+                // [261] A failed save/rename/delete says so — the old code
+                // swallowed the error and cleared the name as if it worked.
+                if let Some(err) = &browser.last_error {
+                    ui.label(
+                        RichText::new(err.as_str())
+                            .font(f_sans_med(9.5))
+                            .color(egui::Color32::from_rgb(224, 122, 95)),
+                    );
+                }
                 // Patterns: choose whether loading also installs the lane kit.
                 if browser.kind == PresetKind::Pattern {
                     ui.add_space(4.0);
@@ -239,10 +248,11 @@ pub fn draw_preset_browser_if_any(
                         ui.add_space(8.0);
                     }
 
-                    // User presets.
+                    // User presets. [262] Cached: re-read on open, tab
+                    // change or mutation — not on every frame.
                     ui.label(RichText::new("User").font(f_sans_sb(10.0)).color(INK3()));
                     ui.add_space(4.0);
-                    let files = presets::list_presets(browser.kind);
+                    let files = browser.cached_files();
                     if files.is_empty() {
                         ui.label(
                             RichText::new("No user preset yet")
@@ -377,9 +387,17 @@ pub fn draw_preset_browser_if_any(
         .map(|b| (b.kind, b.name_input.trim().to_string()));
     if let Some((kind, name)) = browser_snapshot {
         if save_requested && !name.is_empty() {
-            save_current(params, pattern, sound_settings, state, kind, name.clone());
+            let result = save_current(params, pattern, sound_settings, state, kind, name.clone());
+            // [261] The name field clears on success only; errors are shown.
             if let Some(b) = state.preset_browser.as_mut() {
-                b.name_input.clear();
+                match result {
+                    Ok(()) => {
+                        b.name_input.clear();
+                        b.last_error = None;
+                        b.invalidate_files();
+                    }
+                    Err(e) => b.last_error = Some(e),
+                }
             }
         }
         #[cfg(debug_assertions)]
@@ -387,13 +405,29 @@ pub fn draw_preset_browser_if_any(
             export_factory(params, pattern, sound_settings, state, kind, name);
         }
         if let Some(path) = delete_user {
-            let _ = presets::delete_file(&path);
+            let result = presets::delete_file(&path);
             if let Some(b) = state.preset_browser.as_mut() {
-                b.confirm_delete = None;
+                match result {
+                    Ok(()) => {
+                        b.confirm_delete = None;
+                        b.last_error = None;
+                        b.invalidate_files();
+                    }
+                    Err(e) => b.last_error = Some(e),
+                }
             }
         }
         if let Some((path, new_name)) = rename_requested {
-            let _ = presets::rename_preset(&path, &new_name, kind);
+            let result = presets::rename_preset(&path, &new_name, kind);
+            if let Some(b) = state.preset_browser.as_mut() {
+                match &result {
+                    Ok(_) => {
+                        b.last_error = None;
+                        b.invalidate_files();
+                    }
+                    Err(e) => b.last_error = Some(e.clone()),
+                }
+            }
             // The Track-tab instrument loader caches its list by name.
             if matches!(kind, PresetKind::Instrument) {
                 state.track_preset_cache_key = None;
@@ -444,12 +478,12 @@ fn save_current(
     state: &mut EditorUIState,
     kind: PresetKind,
     name: String,
-) {
+) -> Result<(), String> {
     let result = match kind {
         PresetKind::Instrument => {
             let slot = state.selected_instrument.min(crate::track::MAX_TRACKS - 1);
             let Some(slot_kind) = params.track_layout.state.kind_for_slot(slot) else {
-                return;
+                return Err("no instrument on the selected lane".to_string());
             };
             let algo = params.algos()[slot].value();
             presets::save_instrument(&presets::capture_instrument(
@@ -481,7 +515,7 @@ fn save_current(
         }
         PresetKind::Song => {
             let Ok(bank) = params.pattern_bank.bank.lock() else {
-                return;
+                return Err("pattern bank busy — try again".to_string());
             };
             presets::save_song(&presets::capture_song(name, bank.song))
         }
@@ -491,11 +525,11 @@ fn save_current(
             presets::save_grid(&presets::capture_grid(name, &layout))
         }
     };
-    let _ = result;
     // A newly saved instrument preset must show up in the Track-tab loader.
-    if matches!(kind, PresetKind::Instrument) {
+    if result.is_ok() && matches!(kind, PresetKind::Instrument) {
         state.track_preset_cache_key = None;
     }
+    result.map(|_| ())
 }
 
 /// Load a user preset file of the active kind.
@@ -664,7 +698,11 @@ fn write_slot_sound(
     if has_texture_menu {
         match user_texture {
             Some(path) => {
-                let _ = params.user_textures.load(slot, std::path::Path::new(path));
+                // [259] A preset from a third party is an automatic
+                // resolution: local files only, network paths go "missing".
+                let _ = params
+                    .user_textures
+                    .load_restored(slot, std::path::Path::new(path));
             }
             None => params.user_textures.clear(slot),
         }

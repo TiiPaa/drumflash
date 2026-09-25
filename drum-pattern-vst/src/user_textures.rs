@@ -210,6 +210,32 @@ impl UserTextures {
             .unwrap_or(false)
     }
 
+    /// Automatic resolution (state restore, preset load): LOCAL files only.
+    /// A restored network path (`\\host\share`, WebDAV) would otherwise
+    /// trigger a silent SMB authentication from the host process — a classic
+    /// NTLMv2 hash leak if a project/preset comes from a third party — or
+    /// freeze the host's main thread for the SMB timeout (~20 s per lane) on
+    /// a dead server. Network files are still loadable, but only by an
+    /// explicit gesture: the file picker or a WAV drag-and-drop.
+    pub fn load_restored(&self, lane: usize, path: &Path) -> Result<(), String> {
+        if !is_local_path(path) {
+            // Same contract as `load()` on failure: the path is kept and the
+            // lane shows "missing".
+            if lane < LANE_TEXTURE_SLOTS {
+                if let Ok(mut paths) = self.paths.write() {
+                    paths[lane] = Some(path.to_string_lossy().into_owned());
+                }
+            }
+            self.pool.publish(lane, None);
+            if let Ok(mut errors) = self.errors.write() {
+                errors[lane] =
+                    Some("network path not loaded automatically — re-pick the file".to_string());
+            }
+            return Err("network path not loaded automatically".to_string());
+        }
+        self.load(lane, path)
+    }
+
     fn reload_all(&self) {
         let paths: Vec<Option<String>> = self
             .paths
@@ -219,12 +245,30 @@ impl UserTextures {
         for (lane, path) in paths.iter().enumerate().take(LANE_TEXTURE_SLOTS) {
             match path {
                 Some(p) => {
-                    let _ = self.load(lane, Path::new(p));
+                    let _ = self.load_restored(lane, Path::new(p));
                 }
                 None => self.clear(lane),
             }
         }
     }
+}
+
+/// [259] A path that can be resolved without touching the network. Windows:
+/// only real disk prefixes (`C:\…`, `\\?\C:\…`) — UNC (`\\host\…`,
+/// `\\?\UNC\…`) is excluded. Other platforms: absolute paths (macOS mounts
+/// network shares under /Volumes, a local path by then).
+#[cfg(target_os = "windows")]
+fn is_local_path(p: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    matches!(
+        p.components().next(),
+        Some(Component::Prefix(pr)) if matches!(pr.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_local_path(p: &Path) -> bool {
+    p.is_absolute()
 }
 
 impl<'a> PersistentField<'a, Vec<Option<String>>> for UserTextures {
@@ -253,6 +297,43 @@ impl<'a> PersistentField<'a, Vec<Option<String>>> for UserTextures {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nih_plug::params::persist::PersistentField;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn is_local_path_classification() {
+        assert!(is_local_path(Path::new(r"C:\a.wav")));
+        assert!(is_local_path(Path::new(r"\\?\C:\a.wav")));
+        assert!(is_local_path(Path::new(r"D:\dir with space\b.wav")));
+        assert!(!is_local_path(Path::new(r"\\203.0.113.1\s\x.wav")));
+        assert!(!is_local_path(Path::new(r"\\?\UNC\host\share\x.wav")));
+        assert!(!is_local_path(Path::new(r"\\host@80@SSL\DavWWWRoot\x.wav")));
+        assert!(!is_local_path(Path::new(r"relative\x.wav")));
+        assert!(!is_local_path(Path::new("")));
+    }
+
+    /// [259] A restored network path must NOT be resolved (no SMB auth, no
+    /// 20 s freeze): the lane goes to Missing with its path kept, instantly.
+    #[test]
+    fn restore_skips_unc_texture_paths() {
+        let textures = UserTextures::new();
+        let mut paths = vec![None; LANE_TEXTURE_SLOTS];
+        paths[0] = Some(r"\\203.0.113.1\s\x.wav".to_string());
+        let start = std::time::Instant::now();
+        textures.set(paths);
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "resolving a UNC path would block on the SMB timeout"
+        );
+        assert_eq!(textures.status(0), SlotStatus::Missing);
+        assert!(!textures.pool.is_loaded(0));
+        assert_eq!(
+            textures.path(0).as_deref(),
+            Some(Path::new(r"\\203.0.113.1\s\x.wav")),
+            "the path is kept so the user can see what is missing"
+        );
+        assert!(textures.error(0).unwrap().contains("network"));
+    }
 
     fn write_test_wav(path: &Path, frames: usize) {
         let spec = hound::WavSpec {
