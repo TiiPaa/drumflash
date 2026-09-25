@@ -8,6 +8,7 @@
 
 ## Nouvelles tâches — session 2026-09-25 (demandes directes)
 
+- [x] [272] **Installeur Windows (Inno Setup)** — `drum-pattern-vst/installer/flash-drum.iss` : installe le bundle (DLL + helper MIDI + `LICENSE.txt` + `THIRD-PARTY.md`) dans `C:\Program Files\Common Files\VST3`, écran de licence GPL, désinstallateur standard Windows. Compilé via `.\build.ps1 -Installer` (nouveau switch, Inno Setup 6 requis : `winget install JRSoftware.InnoSetup`) → `dist\FlashDrum-Setup-0.2.0.exe` (ignoré par git). La version suit `Cargo.toml` (define en tête du .iss).
 - [x] [271] **Modal après export MIDI** — après un clic sur Export, un modal affiche le chemin complet du `.mid` écrit + bouton **Open folder** (ouvre `Documents\Flash Drum\exports` dans l'Explorateur via la crate `open`) + OK ; le drag MIDI reste sans modal (build 20260925-140504, à valider dans S1).
 
 ## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
