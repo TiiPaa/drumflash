@@ -30,7 +30,7 @@ mod grid;
 mod header;
 mod local_param_slider;
 mod menus;
-mod midi;
+pub(crate) mod midi;
 mod pads;
 mod pattern_bank;
 pub mod param_source;

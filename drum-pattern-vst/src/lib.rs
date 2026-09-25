@@ -19,6 +19,7 @@ mod macros;
 mod midi_export;
 mod pattern_bank;
 mod param_id;
+mod paths;
 mod plock;
 mod preset_dumps;
 mod presets;
@@ -3715,6 +3716,158 @@ mod tests {
     use super::*;
     use nih_plug::params::persist::{deserialize_field, PersistentField};
     use std::collections::BTreeMap;
+
+    // ------------------------------------------------------------------
+    // [263] Golden state fixtures: a state blob written by a PAST build
+    // must keep restoring through filter_state + deserialize_fields, in
+    // any field order. Round-trip tests with the current code cannot catch
+    // a format regression shipped together with its own updated tests;
+    // a frozen fixture can. Regenerate with `regenerate_golden_fixture`
+    // (--ignored) only when the persisted format intentionally changes —
+    // then keep the old file, add a fixture per format, and update the
+    // frozen summary literal.
+    // ------------------------------------------------------------------
+
+    /// A state populated through every persisted field, via public APIs.
+    fn populated_params() -> DrumFlashParams {
+        let params = DrumFlashParams::default();
+
+        // Track layout: three lanes with distinct kinds.
+        let mut layout =
+            PersistentField::<track::TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+        layout.slots[0] =
+            track::TrackSlot::active_with_kind(track::TrackInstrumentKind::Kick);
+        layout.slots[1] =
+            track::TrackSlot::active_with_kind(track::TrackInstrumentKind::OneShot);
+        layout.slots[2] =
+            track::TrackSlot::active_with_kind(track::TrackInstrumentKind::Rift);
+        PersistentField::set(&params.track_layout, layout);
+
+        // Pattern steps on slots 0 and 2.
+        let shared = params.pattern_state.shared();
+        shared.set_step_mask(0, 0b0101);
+        shared.set_step_mask(8, 0b0001);
+
+        // Sound settings: slot 0 volume.
+        params.sound_settings.state.instruments[0].set(
+            param_id::ParamId::Std(instrument_registry::StandardField::Volume),
+            0.42,
+        );
+
+        // Sound plock (slot 0, step 5, volume) + seq plock (slot 1, step 10).
+        params.plock_state.state.set_field(0, 5, 2, 0.75);
+        params.seq_plock_state.state.set_probability(1, 10, 0.5);
+
+        // Bank: capture into slot 0, song step 0 → P1.
+        {
+            let mut guard = params.pattern_bank.bank.lock().unwrap();
+            guard.slots[0].capture(
+                &shared,
+                &params.plock_state.state,
+                &params.seq_plock_state.state,
+                16,
+            );
+            guard.song.set_step(0, 0);
+        }
+
+        // Macro 0 → slot 0 volume.
+        params.macro_map_state.state.set(
+            0,
+            Some(macros::MacroTarget::Std(0, instrument_registry::StandardField::Volume)),
+        );
+
+        // Lane texture on slot 1 (missing on disk — only the path matters).
+        let mut paths = vec![None; synthesis::sample_bank::LANE_TEXTURE_SLOTS];
+        paths[1] = Some("C:\\flash-drum-fixture\\golden-texture.wav".to_string());
+        PersistentField::set(&params.user_textures, paths);
+
+        params
+    }
+
+    /// The stable fingerprint compared against the frozen literal.
+    fn state_summary(params: &DrumFlashParams) -> String {
+        let mut s = String::new();
+        let layout =
+            PersistentField::<track::TrackLayoutState>::map(&params.track_layout, |s| s.clone());
+        for (i, slot) in layout.slots.iter().enumerate() {
+            let kind = if slot.active { slot.kind.index() } else { 255 };
+            s.push_str(&format!("{i}:{kind};"));
+        }
+        let masks = params.pattern_state.shared().step_masks();
+        s.push_str(&format!("|m:{:04x},{:04x}", masks[0], masks[8]));
+        let vol = params.sound_settings.state.instruments[0]
+            .get(param_id::ParamId::Std(instrument_registry::StandardField::Volume));
+        s.push_str(&format!("|v:{vol:.3}"));
+        let pv = params.plock_state.state.values.get(0, 5, 2);
+        s.push_str(&format!("|p:{pv:.3}"));
+        let prob = f32::from_bits(
+            params.seq_plock_state.state.probabilities[1][10].load(Ordering::Relaxed),
+        );
+        s.push_str(&format!("|q:{prob:.3}"));
+        {
+            let bank = params.pattern_bank.bank.lock().unwrap();
+            s.push_str(&format!(
+                "|b:{}|s:{:?}",
+                bank.slots[0].occupied,
+                bank.song.slot_at(0)
+            ));
+        }
+        s.push_str(&format!("|k:{:?}", params.macro_map_state.state.get(0)));
+        s.push_str(&format!("|t:{:?}", params.user_textures.path(1)));
+        s
+    }
+
+    #[test]
+    #[ignore = "fixture generator — run `cargo test regenerate_golden -- --ignored` after an INTENDED format change, then update the frozen literal in golden_state_restores_identically"]
+    fn regenerate_golden_fixture() {
+        let params = populated_params();
+        let state = PluginState {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            params: BTreeMap::new(),
+            fields: params.serialize_fields(),
+        };
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("state-2026-09-25.json");
+        std::fs::write(&out, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+        println!("wrote {}", out.display());
+    }
+
+    #[test]
+    fn golden_state_restores_identically() {
+        let json = include_str!("../tests/fixtures/state-2026-09-25.json");
+        let mut state: PluginState = serde_json::from_str(json).expect("fixture parses");
+        <DrumFlashVst as Plugin>::filter_state(&mut state);
+        let params = DrumFlashParams::default();
+        params.deserialize_fields(&state.fields);
+
+        // Frozen literal, captured from the fixture on 2026-09-25 ([263]).
+        const EXPECTED: &str = "0:0;1:24;2:23;3:4;4:255;5:255;6:255;7:255;8:255;9:255;10:255;11:255;12:255;13:255;|m:0005,0001|v:0.420|p:0.750|q:0.500|b:true|s:Some(0)|k:Some(Std(0, Volume))|t:Some(\"C:\\\\flash-drum-fixture\\\\golden-texture.wav\")";
+        assert_eq!(state_summary(&params), EXPECTED);
+    }
+
+    #[test]
+    fn full_state_roundtrip_is_order_independent() {
+        // The host restores fields in BTreeMap (alphabetical) order, which
+        // puts track-layout-v1 last; restoring in the reverse order must
+        // yield the very same state.
+        let fields = populated_params().serialize_fields();
+        let expected = {
+            let params = DrumFlashParams::default();
+            params.deserialize_fields(&fields);
+            state_summary(&params)
+        };
+
+        let mut singles: Vec<(String, String)> = fields.into_iter().collect();
+        singles.sort_by(|a, b| b.0.cmp(&a.0));
+        let params = DrumFlashParams::default();
+        for (key, value) in singles {
+            let mut one = BTreeMap::new();
+            one.insert(key, value);
+            params.deserialize_fields(&one);
+        }
+        assert_eq!(state_summary(&params), expected);
+    }
 
     #[test]
     fn fresh_plugin_and_params_default_construct_without_panic() {

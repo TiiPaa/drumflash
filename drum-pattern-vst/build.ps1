@@ -101,6 +101,9 @@ Write-Color "Yellow" "[3/4] Regeneration du bundle VST3..."
 New-Item -ItemType Directory -Force -Path $contentDir | Out-Null
 Copy-Item -Path $sourceDll -Destination $destFile -Force
 Copy-Item -Path $sourceDragHelper -Destination $destDragHelper -Force
+# [266] GPL: the license text ships inside every distributed bundle.
+Copy-Item -Path (Join-Path $PSScriptRoot "..\LICENSE") -Destination (Join-Path $bundleDir "LICENSE.txt") -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "..\THIRD-PARTY.md") -Destination (Join-Path $bundleDir "THIRD-PARTY.md") -Force
 
 $dllInfo = Get-Item $sourceDll
 $bundleInfo = Get-Item $destFile

@@ -6,7 +6,24 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
+## Nouvelles tâches — session 2026-09-25 (demandes directes)
+
+- [x] [271] **Modal après export MIDI** — après un clic sur Export, un modal affiche le chemin complet du `.mid` écrit + bouton **Open folder** (ouvre `Documents\Flash Drum\exports` dans l'Explorateur via la crate `open`) + OK ; le drag MIDI reste sans modal (build 20260925-140504, à valider dans S1).
+
 ## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
+
+### Phase 5 — Légal & dépôt public (partiel : [265] en attente de l'accord force-push)
+- [x] [266] **Licence** : `LICENSE` (GPL-3.0) à la racine + dans le bundle, `license = "GPL-3.0-only"` dans Cargo.toml, `THIRD-PARTY.md` (nih-plug, egui-baseview, ac606 MIT, IBM Plex OFL, provenance des WAV embarqués). (build 20260925-145840 — **point ouvert reporté :** provenance des 4 WAV TR-606 à documenter dans THIRD-PARTY.md par l'auteur.)
+
+### Phase 4 — Filets de sécurité (tests & CI) (build 20260925-143151)
+- [x] [263] **Tests de persistance réels** : fixture `tests/fixtures/` (JSON d'un get_state réel, jamais supprimée, une par changement de format) restaurée via `filter_state` + `deserialize_fields` avec snapshot figé ; test roundtrip dans l'ordre alphabétique puis inverse ; tests hermétiques (injecter le dossier de config, `FLASH_DRUM_CONFIG_DIR`) ; ne plus compter les tests `test_standalone` dans les bilans.
+- [x] [264] **CI durcie** (`.github/workflows/ci.yml`) : job macOS (`cargo check`), `RUSTFLAGS=-D warnings`, `cargo clippy --all-targets --locked`, `--locked` partout, toolchain 1.94.0 (= binaire livré), tests des patchs vendorés (egui-baseview `file_drop`, remap multi-out), actions épinglées par SHA, `permissions: contents: read`, dependabot + `cargo deny check advisories`, protection de `main`. *(cargo-deny reporté à la phase 6 — pas d'étape d'installation lourde pour l'instant ; protection de `main` à activer dans l'interface GitHub, hors code.)*
+
+### Phase 3 — Robustesse des données utilisateur (build 20260925-113806)
+- [x] [259] **Chemins de textures réseau (UNC)** : `user_textures.rs:44` — garde-fou `is_local_path()` (Disk/VerbatimDisk uniquement) en tête de `reload_all()` et `write_slot_sound` ; un chemin réseau restauré (état VST3 ou preset reçu) passe la lane en « missing » sans résolution synchrone (fuite NTLMv2 + gel SMB ~20 s/lane à l'ouverture). Résolution réseau uniquement via sélecteur/drag explicite, hors thread principal.
+- [x] [260] **Dossier utilisateur unifié** : nouveau `src/paths.rs` avec `dirs::document_dir()` (dépendance `dirs = "6"`) remplaçant les 4 copies `USERPROFILE` (config.rs:62, presets.rs:311, preset_dumps.rs:24, ui/midi.rs:20) ; migration au 1er lancement si l'ancien dossier existe (OneDrive Known Folder Move, macOS). Règle de portabilité CLAUDE.md enfin appliquée.
+- [x] [261] **Erreurs de presets/config avalées** : `preset_browser.rs` — afficher `last_error` dans le modal, ne vider le champ nom qu'en cas de succès (lignes 381-396, 494) ; `sanitize_name` doit écarter CON/PRN/AUX/NUL/COM1-9/LPT1-9 ; écritures atomiques (temp + rename) ; config.json illisible renommé en `.bad` au lieu d'être écrasé (config.rs:43-45).
+- [x] [262] **Travail recalculé à chaque image UI** : cache de `list_presets` dans `PresetBrowserState` (invalider à l'ouverture/changement d'onglet/save/rename/delete — preset_browser.rs:245). *Non fait, prémisse de l'audit partiellement fausse :* `grid.rs:309-310` — le clone de `TrackLayoutState` ne sert pas qu'à un booléen ; le nom (`String`) et le kind de la lane n'ont pas d'équivalent atomique, le snapshot reste nécessaire. Ajouté à la place : test d'équivalence `grid_slot` état/atomique (200 layouts aléatoires × 14 slots).
 
 ### Phase 2 — Fiabilité de la livraison (build 20260924-194326)
 - [x] [255] **Install atomique** : `build.ps1` — staging `$destPath.new` + rename (jamais de suppression avant copie réussie) ; comparer les hash DLL+helper après install (échec bloquant) ; `test-verification.ps1` doit échouer si le helper manque ou si le hash diffère ; archiver les PDB seulement après install réussie. Paramètre `-InstallRoot` + test CI (DLL ouvert en exclusif → code non nul, fichiers intacts).
