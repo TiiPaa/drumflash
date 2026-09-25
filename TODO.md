@@ -6,10 +6,8 @@
 > Source : `audit_cr/claude-code.json` (audit complet, constats vérifiés dans le code le 2026-09-24). Chaque finding de l'audit est couvert par un ticket ci-dessous. Règle : chaque phase se termine par build + install + CHANGELOG + checklist « À tester dans Studio One ».
 > **Phases 0 à 5 terminées** (archivées dans DONE.md). Reste la phase 6 (dette, sans urgence).
 
-### Phase 6 — Traçabilité & dette (plus tard)
-- [ ] [267] **Fork nih-plug traçable** : `vendor/nih-plug/FLASH-DRUM-PATCHES.md` sur le modèle egui-baseview (SHA amont, liste exhaustive des ~9 patchs, `.patch` issu de `git diff`) ; compléter `STUDIO_ONE_MULTI_OUT.md` (remap aux clairsemés, IEditController, fenêtre clavier, journal d'état) ; vendorer les 3 deps git (vst3-sys par branche !, baseview, clap-sys) ou les épingler par rev sur un fork contrôlé ; `windows-sys` sous `[target.'cfg(windows)'.dependencies]`.
-- [ ] [268] **Hygiène dépôt** : `#![allow(clippy::excessive_precision)]` sur la table sinc ac606 puis traiter les lints par lot ; `cargo fmt` en commit dédié ; archiver le CHANGELOG par trimestre ; sortir les gros PNG de design du dépôt ; resserrer `.gitignore` (`*backup*`, `*fixed*`, `temp_*`) ; supprimer `bundle.toml` (inutilisé et faux) ; `git gc`.
-- [ ] [269] **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
+### Phase 6 — Traçabilité & dette
+- [ ] [269] **REPRENDRE ICI (session dédiée — refactors invasifs)** — **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
 
 ### Idées notées (2026-09-24, validation S1)
 - [ ] [270] **Drop WAV sur une lane occupée = remplacer son fichier ?** — le drop crée toujours une NOUVELLE lane One-Shot (jamais de remplacement, choix [243] anti-accident) ; l'utilisateur s'attendait à un remplacement de la lane ciblée (build 20260924-185138). À arbitrer : remplacement direct, ou modificateur (Alt+drop), ou garder tel quel.
