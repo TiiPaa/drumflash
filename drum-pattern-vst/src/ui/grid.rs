@@ -1605,8 +1605,6 @@ fn deactivate_slot(
     }
 }
 
-/// Instrument picker popup for an empty lane (opened by the `+N` chip).
-
 /// [212] Write the page-loop parameter: `None` = off, `Some(page)` = loop it.
 pub fn set_page_loop_param(setter: &ParamSetter, params: &DrumFlashParams, page: Option<usize>) {
     let value = page.map(|p| p as i32 + 1).unwrap_or(0);

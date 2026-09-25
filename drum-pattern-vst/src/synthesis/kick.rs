@@ -40,9 +40,9 @@ const PITCH_PEAK_RATIO: f32 = 0.7; // start = base + peak = settings.frequency
 /// unaffected: the transient comes from the click layer and the pitch sweep, not
 /// from the body's amplitude ramp.
 const MIN_AMP_ATTACK_MS: f32 = 0.5;
-/// "Analog" per-hit drift depths. In analog mode every trigger pulls a small
-/// random detune + level offset so no two hits are identical (the vintage
-/// "breathing"); digital mode uses 0 drift = bit-identical hits.
+// "Analog" per-hit drift depths. In analog mode every trigger pulls a small
+// random detune + level offset so no two hits are identical (the vintage
+// "breathing"); digital mode uses 0 drift = bit-identical hits.
 // Analog drift is now shared via dsp::AnalogDrift constants.
 // Use those values for consistency across all voices.
 
