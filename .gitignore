@@ -38,5 +38,11 @@ Thumbs.db
 # Scratch WAV sources (the shipped samples live in drum-pattern-vst/assets/)
 /wav/
 
+# [265] Scanned third-party book kept locally for reference — copyrighted,
+# must never be committed again (purged from history on 2026-09-25).
+# Reference: "260 Drum Machine Patterns" (published book; consult the
+# publisher's edition, not this scan).
+/resources/Drum.Machine.-.260.Patterns.pdf
+
 
 
