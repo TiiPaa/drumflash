@@ -23,7 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_arrays = "0.1"
 image = { version = "0.25", default-features = false, features = ["png"] }
-egui_extras = { version = "0.31", default-features = false, features = ["image"] }
+egui_extras = { version = "0.34", default-features = false, features = ["image"] }
 crossbeam = "0.8"
 # [228] User textures for Rift: WAV decoding, lock-free slot swapping read
 # from the audio thread, and the native file dialog (Windows IFileDialog,
