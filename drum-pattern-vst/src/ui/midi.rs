@@ -8,6 +8,10 @@ use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::process::Command;
 
+pub(crate) fn exports_dir() -> PathBuf {
+    crate::paths::flash_drum_dir().join("exports")
+}
+
 pub fn export_midi_to_documents(
     pattern: &SharedPattern,
     track_layout: &crate::track::AtomicTrackLayout,
@@ -17,12 +21,7 @@ pub fn export_midi_to_documents(
     groove_type: crate::groove::GrooveType,
     seq_plock: &crate::plock::SequencerPlockState,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let docs = std::env::var("USERPROFILE")
-        .ok()
-        .map(PathBuf::from)
-        .map(|p| p.join("Documents"))
-        .ok_or("Cannot find Documents folder")?;
-    let export_dir = docs.join("Flash Drum").join("exports");
+    let export_dir = exports_dir();
     create_dir_all(&export_dir)?;
 
     let timestamp = std::time::SystemTime::now()

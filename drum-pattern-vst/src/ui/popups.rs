@@ -550,6 +550,73 @@ pub fn draw_pattern_load_warning_if_any(
         });
 }
 
+/// [271] After a MIDI export, say where the file went and offer to open the
+/// folder — the exports directory is otherwise invisible to the user.
+pub fn draw_midi_export_modal_if_any(ui: &mut egui::Ui, state: &mut EditorUIState) {
+    let Some(path) = state.midi_export_modal.clone() else {
+        return;
+    };
+
+    let screen_rect = ui.ctx().screen_rect();
+    let panel_w = 430.0;
+    let pos = egui::pos2(
+        screen_rect.center().x - panel_w * 0.5,
+        screen_rect.center().y - 30.0,
+    );
+    egui::Area::new(ui.id().with("midi_export_modal"))
+        .kind(egui::UiKind::Popup)
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
+        .show(ui.ctx(), |ui| {
+            let bg = ui.painter().add(egui::Shape::Noop);
+            let resp = egui::Frame::NONE
+                .inner_margin(egui::Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_width(panel_w);
+                    ui.label(RichText::new("MIDI exported").font(f_sans_sb(12.0)).color(INK()));
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(path.display().to_string())
+                            .font(f_mono_med(9.5))
+                            .color(INK2()),
+                    );
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        if crate::ui::controls::chip_button(
+                            ui,
+                            "Open folder",
+                            true,
+                            BLUE(),
+                            egui::Sense::click(),
+                        )
+                        .clicked()
+                        {
+                            let folder = path
+                                .parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or_else(|| path.clone());
+                            let _ = open::that_detached(&folder);
+                            state.midi_export_modal = None;
+                        }
+                        if crate::ui::controls::chip_button(
+                            ui,
+                            "OK",
+                            false,
+                            INK2(),
+                            egui::Sense::click(),
+                        )
+                        .clicked()
+                        {
+                            state.midi_export_modal = None;
+                        }
+                    });
+                });
+            ui.painter()
+                .set(bg, crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32));
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

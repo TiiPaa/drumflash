@@ -4,7 +4,9 @@ version = "0.2.0"
 edition = "2021"
 authors = ["Flash Drum"]
 description = "A 64-step drum sequencer VST3 plugin"
-license = "GPL-3.0"
+# [266] SPDX identifier (the deprecated "GPL-3.0" form warned on publish);
+# the full text lives in LICENSE at the repo root and ships in the bundle.
+license = "GPL-3.0-only"
 
 [[bin]]
 name = "test_standalone"
@@ -28,7 +30,12 @@ crossbeam = "0.8"
 # macOS NSOpenPanel; no GTK backend, Linux is not a target).
 hound = "3.5"
 arc-swap = "1"
+# [260] Real per-user folders (OneDrive-aware Documents, macOS home) —
+# replaces the hand-rolled USERPROFILE logic forbidden by the portability rule.
+dirs = "6"
 rfd = { version = "0.15", default-features = false }
+# [271] "Open folder" in the MIDI export confirmation modal.
+open = "5"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

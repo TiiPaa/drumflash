@@ -295,6 +295,9 @@ pub fn draw_pattern_bank(
                         nih_log!("MIDI exported to: {}", path.display());
                         state.last_midi_export_path = Some(path.display().to_string());
                         state.last_midi_export_error = None;
+                        // [271] Say where the file went, with an "Open folder"
+                        // button (modal drawn below the bank).
+                        state.midi_export_modal = Some(path);
                     }
                     Err(e) => {
                         nih_log!("MIDI export failed: {}", e);
@@ -319,6 +322,9 @@ pub fn draw_pattern_bank(
         state,
         load_pattern_request,
     );
+
+    // [271] MIDI export confirmation.
+    crate::ui::popups::draw_midi_export_modal_if_any(ui, state);
 }
 
 /// Capture the current pattern, plocks and fusions into the given pattern-bank slot.

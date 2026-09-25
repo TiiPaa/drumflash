@@ -307,13 +307,8 @@ pub fn layout_from_kit(kit: &[i8; MAX_TRACKS]) -> crate::track::TrackLayoutState
 // File storage
 // ---------------------------------------------------------------------------
 
-fn presets_root() -> PathBuf {
-    let mut p = std::env::var("USERPROFILE")
-        .map(|profile| PathBuf::from(profile).join("Documents"))
-        .unwrap_or_else(|_| PathBuf::from("."));
-    p.push("Flash Drum");
-    p.push("presets");
-    p
+pub(crate) fn presets_root() -> PathBuf {
+    crate::paths::flash_drum_dir().join("presets")
 }
 
 pub fn presets_dir(kind: PresetKind) -> PathBuf {
@@ -334,11 +329,31 @@ fn sanitize_name(name: &str) -> String {
         .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
         .collect();
     let s = s.trim_matches('_').to_string();
-    if s.is_empty() {
+    let mut s = if s.is_empty() {
         "preset".to_string()
     } else {
         s
+    };
+    // [261] Windows device names are reserved whatever the extension:
+    // "aux.fdpat.json" would fail to write on some Windows versions.
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(&s)) {
+        s.push('_');
     }
+    s
+}
+
+/// [261] Write via a temp file + rename: a crash mid-write never leaves a
+/// truncated file that the next load would silently replace with defaults.
+fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
+    let mut tmp = path.as_os_str().to_os_string();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, contents).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 /// Info about a preset file on disk (name from content, path for load/delete).
@@ -353,7 +368,7 @@ pub struct PresetFileInfo {
 fn save_json(dir: PathBuf, name: &str, kind: PresetKind, json: &str) -> Result<PathBuf, String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{}.{}", sanitize_name(name), kind.extension()));
-    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    write_atomic(&path, json)?;
     Ok(path)
 }
 
@@ -378,7 +393,7 @@ pub fn rename_preset(path: &Path, new_name: &str, kind: PresetKind) -> Result<Pa
     let dir = path.parent().ok_or("preset has no parent dir")?.to_path_buf();
     let new_path = dir.join(format!("{}.{}", sanitize_name(new_name), kind.extension()));
     let json = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-    std::fs::write(&new_path, json).map_err(|e| e.to_string())?;
+    write_atomic(&new_path, &json)?;
     if new_path != path {
         std::fs::remove_file(path).map_err(|e| e.to_string())?;
     }
@@ -817,6 +832,33 @@ mod tests {
         assert_eq!(listed[0].path, renamed);
         assert_eq!(listed[0].name, "Kick punchy v2");
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// [261] Windows device names are reserved whatever the extension.
+    #[test]
+    fn sanitize_name_avoids_reserved_device_names() {
+        assert_eq!(sanitize_name("aux"), "aux_");
+        assert_eq!(sanitize_name("CON"), "CON_");
+        assert_eq!(sanitize_name("Com1"), "Com1_");
+        assert_eq!(sanitize_name("NUL"), "NUL_");
+        assert_eq!(sanitize_name("lpt9"), "lpt9_");
+        assert_eq!(sanitize_name("console"), "console");
+        assert_eq!(sanitize_name("aux cord"), "aux_cord");
+    }
+
+    /// [261] A failing save must come back as an error (the modal shows it)
+    /// instead of being swallowed.
+    #[test]
+    fn save_into_unwritable_dir_reports_error() {
+        let dir =
+            std::env::temp_dir().join(format!("fd_save_err_{:?}", std::thread::current().id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let blocker = dir.join("blocked");
+        // `blocked` is a FILE: creating a directory under it must fail.
+        std::fs::write(&blocker, b"file").unwrap();
+        let result = save_json(blocker.clone(), "x", PresetKind::Pattern, "{}");
+        assert!(result.is_err());
         std::fs::remove_dir_all(&dir).ok();
     }
 

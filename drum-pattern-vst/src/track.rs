@@ -1258,6 +1258,42 @@ mod tests {
         assert_eq!(TrackInstrumentKind::Ride.category(), InstrumentCategory::Other);
     }
 
+    /// [262] The audio thread resolves links via `AtomicTrackLayout::grid_slot`
+    /// while the UI uses `TrackLayoutState::grid_slot`/`is_grid_follower` —
+    /// the two must agree on every mix of links and inactive lanes.
+    #[test]
+    fn grid_slot_atomic_matches_state() {
+        let mut seed = 0x2f6e_2b1a_9c3d_5e7fu64;
+        let mut next = move || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as u32
+        };
+        for _ in 0..200 {
+            let mut slots = std::array::from_fn(|_| TrackSlot::inactive());
+            for (i, s) in slots.iter_mut().enumerate() {
+                if next() & 1 == 0 {
+                    *s = TrackSlot::active_with_kind(TrackInstrumentKind::Kick);
+                }
+                s.linked_up = i > 0 && next() & 1 == 0;
+            }
+            let state = TrackLayoutState {
+                slots,
+                global_midi_channel: 10,
+                global_base_note: 36,
+            };
+            let atomic = AtomicTrackLayout::from_state(&state);
+            for slot in 0..MAX_TRACKS {
+                assert_eq!(
+                    state.grid_slot(slot),
+                    atomic.grid_slot(slot),
+                    "slot {slot} disagrees between state and atomic layouts"
+                );
+            }
+        }
+    }
+
     #[test]
     fn grid_slot_resolves_link_chain_to_active_master() {
         let mut layout = TrackLayoutState::default_layout(); // 4 active lanes 0..=3
