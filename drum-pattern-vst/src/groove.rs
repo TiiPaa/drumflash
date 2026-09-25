@@ -208,7 +208,8 @@ mod tests {
     }
 
     #[test]
-    fn test_total_bar_length_unchanged() {        // Regardless of groove type / swing, one full bar must still map to 16 steps.
+    fn test_total_bar_length_unchanged() {
+        // Regardless of groove type / swing, one full bar must still map to 16 steps.
         for groove in [
             GrooveType::Straight,
             GrooveType::Swing16,

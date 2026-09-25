@@ -1,27 +1,27 @@
 //! Audio synthesis module for drum sounds
 
-mod bd606;
-mod buzz;
-mod sdrex;
 mod ac606;
 mod ac_voice;
+mod bd606;
+mod buzz;
+mod ch606;
 mod clap;
 mod cymbal;
 mod dsp;
 mod hihat;
 mod kick;
 mod kick_808;
+mod oneshot;
+mod open_hihat;
+mod perc1;
 #[cfg(test)]
 mod retrig_tests;
-mod open_hihat;
-mod oneshot;
-mod perc1;
 mod ride;
 mod rift;
 pub mod sample_bank;
-mod ch606;
 mod saturation;
 mod sd606;
+mod sdrex;
 mod settings;
 mod snare;
 mod snare606;
@@ -36,48 +36,48 @@ pub use special_params::{algos_for, AlgoDef};
 
 pub use bd606::Bd606Voice;
 pub use buzz::BuzzVoice;
-pub use sdrex::SdrexVoice;
 pub use ch606::Ch606Voice;
 pub use clap::ClapVoice;
 pub use cymbal::CymbalVoice;
 pub use hihat::HiHatVoice;
 pub use kick::KickVoice;
 pub use kick_808::Kick808Voice;
-pub use open_hihat::OpenHiHatVoice;
 pub use oneshot::OneShotVoice;
+pub use open_hihat::OpenHiHatVoice;
 pub use perc1::Perc1Voice;
 pub use ride::RideVoice;
 #[allow(unused_imports)] // le binaire de test headless n'a pas d'UI
 pub use rift::grain_seconds as rift_grain_seconds;
+pub use sdrex::SdrexVoice;
 // Read by the Sound Panel's pitch-envelope graph; the standalone harness
 // has no UI, hence the allow.
+pub use ac_voice::{AcEngineKind, AcVoice};
+pub use rift::RiftVoice;
 #[allow(unused_imports)]
 pub use rift::PITCH_ENV_CURVE as RIFT_PITCH_ENV_CURVE;
-pub use rift::RiftVoice;
 pub use sd606::Sd606Voice;
+pub use settings::ac_voice::AcVoiceSettings;
 pub use settings::bd606::Bd606Settings;
 pub use settings::buzz::BuzzSettings;
-pub use settings::sdrex::SdrexSettings;
 pub use settings::ch606::Ch606Settings;
 pub use settings::clap::ClapSettings;
 pub use settings::cymbal::CymbalSettings;
 pub use settings::hihat::HiHatSettings;
 pub use settings::kick::KickSettings;
 pub use settings::kick_808::Kick808Settings;
-pub use settings::open_hihat::OpenHiHatSettings;
 pub use settings::oneshot::OneShotSettings;
+pub use settings::open_hihat::OpenHiHatSettings;
 pub use settings::perc1::Perc1Settings;
 pub use settings::ride::RideSettings;
 pub use settings::rift::RiftSettings;
 pub use settings::sd606::Sd606Settings;
+pub use settings::sdrex::SdrexSettings;
 pub use settings::snare::SnareSettings;
 pub use settings::snare606::Snare606Settings;
 pub use settings::tom::TomSettings;
-pub use settings::ac_voice::AcVoiceSettings;
 pub use snare::SnareVoice;
 pub use snare606::Snare606Voice;
 pub use tom::TomVoice;
-pub use ac_voice::{AcEngineKind, AcVoice};
 
 /// Drum voice types matching the original web app
 #[allow(dead_code)]
@@ -908,7 +908,14 @@ impl VoiceSettings {
             0.6,
             0.0003,
             5.0,
-            &[(0, 0.11), (1, 0.35), (2, 0.7), (3, 0.25), (4, 0.0), (5, 0.0)],
+            &[
+                (0, 0.11),
+                (1, 0.35),
+                (2, 0.7),
+                (3, 0.25),
+                (4, 0.0),
+                (5, 0.0),
+            ],
         )
     }
 
@@ -919,7 +926,14 @@ impl VoiceSettings {
             0.7,
             0.0003,
             5.0,
-            &[(0, 0.11), (1, 0.35), (2, 0.7), (3, 0.25), (4, 0.0), (5, 0.0)],
+            &[
+                (0, 0.11),
+                (1, 0.35),
+                (2, 0.7),
+                (3, 0.25),
+                (4, 0.0),
+                (5, 0.0),
+            ],
         )
     }
 
@@ -1041,7 +1055,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.trigger(),
             DrumVoiceKind::Buzz(v) => v.trigger(),
             DrumVoiceKind::Sdrex(v) => v.trigger(),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.trigger(),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.trigger(),
         }
     }
 
@@ -1066,7 +1085,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.trigger_hard(),
             DrumVoiceKind::Buzz(v) => v.trigger_hard(),
             DrumVoiceKind::Sdrex(v) => v.trigger_hard(),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.trigger_hard(),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.trigger_hard(),
         }
     }
 
@@ -1091,7 +1115,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.process_sample(),
             DrumVoiceKind::Buzz(v) => v.process_sample(),
             DrumVoiceKind::Sdrex(v) => v.process_sample(),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.process_sample(),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.process_sample(),
         }
     }
 
@@ -1116,7 +1145,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.process_sample_stereo(),
             DrumVoiceKind::Buzz(v) => v.process_sample_stereo(),
             DrumVoiceKind::Sdrex(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.process_sample_stereo(),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.process_sample_stereo(),
         }
     }
 
@@ -1141,7 +1175,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.is_active(),
             DrumVoiceKind::Buzz(v) => v.is_active(),
             DrumVoiceKind::Sdrex(v) => v.is_active(),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.is_active(),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.is_active(),
         }
     }
 
@@ -1166,7 +1205,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.reset(),
             DrumVoiceKind::Buzz(v) => v.reset(),
             DrumVoiceKind::Sdrex(v) => v.reset(),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.reset(),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.reset(),
         }
     }
 
@@ -1191,7 +1235,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.set_settings(settings),
             DrumVoiceKind::Buzz(v) => v.set_settings(settings),
             DrumVoiceKind::Sdrex(v) => v.set_settings(settings),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_settings(settings),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.set_settings(settings),
         }
     }
 
@@ -1239,7 +1288,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.set_algo(algo),
             DrumVoiceKind::Buzz(v) => v.set_algo(algo),
             DrumVoiceKind::Sdrex(v) => v.set_algo(algo),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_algo(algo),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.set_algo(algo),
         }
     }
 
@@ -1264,7 +1318,12 @@ impl Voice for DrumVoiceKind {
             DrumVoiceKind::OneShot(v) => v.set_special_param(index, value),
             DrumVoiceKind::Buzz(v) => v.set_special_param(index, value),
             DrumVoiceKind::Sdrex(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Bd6Ac(v) | DrumVoiceKind::Sd6Ac(v) | DrumVoiceKind::Hh6Ac(v) | DrumVoiceKind::Oh6Ac(v) | DrumVoiceKind::Cl6Ac(v) | DrumVoiceKind::Tm6Ac(v) => v.set_special_param(index, value),
+            DrumVoiceKind::Bd6Ac(v)
+            | DrumVoiceKind::Sd6Ac(v)
+            | DrumVoiceKind::Hh6Ac(v)
+            | DrumVoiceKind::Oh6Ac(v)
+            | DrumVoiceKind::Cl6Ac(v)
+            | DrumVoiceKind::Tm6Ac(v) => v.set_special_param(index, value),
         }
     }
 }

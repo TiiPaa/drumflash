@@ -1,9 +1,7 @@
-﻿//! P-lock menus: sound plocks, fusion morph, sequencer plocks, popup.
+//! P-lock menus: sound plocks, fusion morph, sequencer plocks, popup.
 
 use crate::plock::PlockState;
-use crate::sequencer::{
-    FusedGroup, SharedPattern,
-};
+use crate::sequencer::{FusedGroup, SharedPattern};
 use crate::ui::editor_state::*;
 use crate::ui::grid::preserve_step_active_from_plock_popup;
 use crate::ui::local_param_slider::LocalParamSlider;
@@ -24,8 +22,8 @@ fn draw_plock_menu(
     step_was_active: bool,
     state: &mut EditorUIState,
 ) {
-
-    #[allow(non_snake_case)] let ACCENT: Color32 = PL_LINK();
+    #[allow(non_snake_case)]
+    let ACCENT: Color32 = PL_LINK();
     // `instrument` is a SLOT index (plock storage is per slot); registry and
     // special-param lookups go through the voice index of the slot's kind.
     let voice_idx = schema_voice_idx(params, instrument);
@@ -125,7 +123,9 @@ fn draw_plock_menu(
             // what makes a row able to create an override at all). So the next
             // control touched brought the p-lock straight back, and the Clear
             // looked like it had done nothing.
-            if state.sound_edit_target.map(|c| c.slot == instrument && c.step == step)
+            if state
+                .sound_edit_target
+                .map(|c| c.slot == instrument && c.step == step)
                 == Some(true)
             {
                 state.sound_edit_target = None;
@@ -184,10 +184,8 @@ fn draw_fusion_group_menu(
         // [184] ph. 4 — the morph is edited in the Lane Editor now: this row just
         // aims the panel at it and closes the popup.
         if plock_menu_action_row(ui, &morph_label, PL_LINK()).clicked() {
-            state.sound_edit_target = Some(crate::ui::editor_state::SelectedCell {
-                slot: inst,
-                step,
-            });
+            state.sound_edit_target =
+                Some(crate::ui::editor_state::SelectedCell { slot: inst, step });
             state.fusion_tab = crate::ui::editor_state::FusionTab::End;
             state.sound_editor_tab = crate::ui::editor_state::SoundEditorTab::Sound;
             state.plock_popup = None;
@@ -252,11 +250,7 @@ pub fn draw_plock_popup(
                     // this one is local to the popup and leaves the grid alone.
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        ui.label(
-                            RichText::new("P-Lock")
-                                .font(f_sans_med(10.0))
-                                .color(INK3()),
-                        );
+                        ui.label(RichText::new("P-Lock").font(f_sans_med(10.0)).color(INK3()));
                         let selected = if popup.sequencer { 1 } else { 0 };
                         let picked = crate::ui::skeuo::segmented(
                             ui,
@@ -266,10 +260,8 @@ pub fn draw_plock_popup(
                         );
                         if picked != selected {
                             let sequencer = picked == 1;
-                            state.plock_popup = Some(crate::ui::editor_state::PlockPopup {
-                                sequencer,
-                                ..popup
-                            });
+                            state.plock_popup =
+                                Some(crate::ui::editor_state::PlockPopup { sequencer, ..popup });
                             // The Lane Editor follows: it edits sound p-locks and
                             // has nothing to say about a sequencer one.
                             if sequencer {
@@ -293,8 +285,7 @@ pub fn draw_plock_popup(
                             // on top, the seq-plock menu below â€” same as
                             // the sound-plock branch.
                             draw_fusion_group_menu(
-                                ui, pattern, params, inst, idx, *group, step,
-                                state,
+                                ui, pattern, params, inst, idx, *group, step, state,
                             );
                             ui.separator();
                             draw_sequencer_plock_menu(
@@ -308,7 +299,6 @@ pub fn draw_plock_popup(
                                 state,
                                 true,
                             );
-                        
                         } else {
                             draw_sequencer_plock_menu(
                                 ui,
@@ -325,8 +315,7 @@ pub fn draw_plock_popup(
                     } else {
                         if let Some((idx, group)) = fusion_info {
                             draw_fusion_group_menu(
-                                ui, pattern, params, inst, idx, *group, step,
-                                state,
+                                ui, pattern, params, inst, idx, *group, step, state,
                             );
                             ui.separator();
 
@@ -342,7 +331,6 @@ pub fn draw_plock_popup(
                                 popup.step_was_active,
                                 state,
                             );
-                        
                         } else {
                             draw_plock_menu(
                                 ui,
@@ -384,8 +372,7 @@ pub fn draw_plock_popup(
     // there. And it must not be the click that OPENED the menu: the popup is
     // drawn at the pointer in the very same frame, so that first click is both
     // "clicked" and inside the rect - the menu would vanish on sight.
-    if !popup.just_opened
-        && ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary))
+    if !popup.just_opened && ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary))
     {
         let inside = ctx
             .input(|i| i.pointer.interact_pos())
@@ -418,7 +405,8 @@ fn draw_sequencer_plock_menu(
 ) {
     use crate::plock::{SequencerStepParams, StepCondition};
 
-    #[allow(non_snake_case)] let ACCENT: Color32 = SEQPL();
+    #[allow(non_snake_case)]
+    let ACCENT: Color32 = SEQPL();
     // `instrument` is a SLOT index; the label comes from the slot's voice schema.
     let inst_def = &crate::instrument_registry::INSTRUMENTS[schema_voice_idx(params, instrument)];
     let title = format!("Seq Plock {}", inst_def.label);
@@ -704,9 +692,7 @@ fn draw_sequencer_plock_menu(
         // Actions
         ui.add_space(8.0);
         if has_seq_plock || changed_this_frame {
-            if plock_menu_action_row(ui, "Clear Seq Plock", DANGER())
-                .clicked()
-            {
+            if plock_menu_action_row(ui, "Clear Seq Plock", DANGER()).clicked() {
                 seq_plock.clear(instrument, step);
             }
         } else {
@@ -716,4 +702,3 @@ fn draw_sequencer_plock_menu(
         }
     });
 }
-

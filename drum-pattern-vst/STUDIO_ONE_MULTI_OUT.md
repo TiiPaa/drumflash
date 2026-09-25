@@ -11,13 +11,19 @@ The drum outputs are reported as `kMain` and `kDefaultActive`. Earlier attempts 
 
 ## Vendored patches
 
-The `nih-plug` copy in `vendor/nih-plug` carries the following patches:
+The `nih-plug` copy in `vendor/nih-plug` carries the following patches
+(**the full inventory, including later additions, lives in
+`vendor/nih-plug/FLASH-DRUM-PATCHES.md`**):
 
 - `get_unit_by_bus()` — resolves valid audio/event buses to the root unit instead of returning `kResultFalse`.
 - `set_bus_arrangements()` — accepts progressive output activation (any valid count from main-only up to full layout), only validating the aux buses that Studio One requested.
 - `num_ins == 0` — accepts a null audio input layout pointer (valid for an instrument with no audio inputs).
 - Buffer validation — ignores disabled auxiliary output buses so the main output or a partial layout can still process.
 - `getRoutingInfo()` — maps the event input bus to audio output bus 0. Without this, Studio One lists the outputs but keeps them grayed.
+- Sparse aux-buffer remap (`active_output_buses` / `mapped_aux_output_idx`) — Studio One only provides buffers for the enabled auxes, in compact order.
+- State save/restore on the `IEditController` side too, not only `IComponent`.
+- Hidden keyboard message window (Studio One / REAPER / Live key capture; diagnostic via `FLASH_DRUM_KBD_LOG`).
+- Opt-in state journal via `FLASH_DRUM_STATE_LOG` → `%TEMP%\flash-drum-state.log` ([249]).
 
 ## Test steps
 
@@ -27,7 +33,7 @@ The `nih-plug` copy in `vendor/nih-plug` carries the following patches:
 4. Add `Flash Drum` as an instrument.
 5. Open the Console, then the Instruments panel.
 6. Expand the plugin output list and enable the extra outputs.
-7. Verify the output channels: Main Mix, Kick, Snare, Hi-Hat, Open HH, Tom 1, Tom 2, Tom 3, Clap, Ride, Cymbal, Snare 606, 808 Kick, Zap.
+7. Verify the output channels: Main Mix, then the generic stereo pairs `Out 1`…`Out 14` (one per lane, routed from the Track tab).
 
 Expected result: extra output checkboxes are clickable, and each enabled channel receives the corresponding drum voice while the main mix still receives the full stereo mix.
 

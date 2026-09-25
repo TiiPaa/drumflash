@@ -115,12 +115,19 @@ impl TrackInstrumentKind {
             Self::Kick | Self::BassDrum808 | Self::Bd6smp | Self::Bd6Ac => {
                 InstrumentCategory::BassDrum
             }
-            Self::Snare | Self::Snare606 | Self::Sd6smp | Self::Clap | Self::Sdrex
-            | Self::Sd6Ac | Self::Cl6Ac => InstrumentCategory::Snare,
-            Self::HiHat | Self::OpenHiHat | Self::Ch6smp | Self::Oh6smp | Self::Hh6Ac
-            | Self::Oh6Ac => {
-                InstrumentCategory::HiHat
-            }
+            Self::Snare
+            | Self::Snare606
+            | Self::Sd6smp
+            | Self::Clap
+            | Self::Sdrex
+            | Self::Sd6Ac
+            | Self::Cl6Ac => InstrumentCategory::Snare,
+            Self::HiHat
+            | Self::OpenHiHat
+            | Self::Ch6smp
+            | Self::Oh6smp
+            | Self::Hh6Ac
+            | Self::Oh6Ac => InstrumentCategory::HiHat,
             Self::Tom | Self::Perc1 | Self::Tm6Ac | Self::OneShot => InstrumentCategory::Perc,
             Self::Buzz | Self::Rift => InstrumentCategory::Fx,
             Self::Ride | Self::Cymbal => InstrumentCategory::Other,
@@ -516,18 +523,12 @@ impl TrackLayoutState {
     /// Whether `slot` can be linked to the lane above (both must be active and
     /// there must be a lane above).
     pub fn can_link_up(&self, slot: usize) -> bool {
-        slot > 0
-            && slot < MAX_TRACKS
-            && self.slots[slot].active
-            && self.slots[slot - 1].active
+        slot > 0 && slot < MAX_TRACKS && self.slots[slot].active && self.slots[slot - 1].active
     }
 
     /// Whether `slot` currently mirrors the lane above (link active + master active).
     pub fn is_linked_up(&self, slot: usize) -> bool {
-        slot > 0
-            && slot < MAX_TRACKS
-            && self.slots[slot].linked_up
-            && self.slots[slot - 1].active
+        slot > 0 && slot < MAX_TRACKS && self.slots[slot].linked_up && self.slots[slot - 1].active
     }
 
     pub fn default_layout() -> Self {
@@ -813,9 +814,7 @@ impl TrackLayoutState {
     pub fn lanes_on_output(&self, out_number: u8) -> usize {
         self.slots
             .iter()
-            .filter(|slot| {
-                slot.active && slot.routing.out_select == TrackAudioOut::Out(out_number)
-            })
+            .filter(|slot| slot.active && slot.routing.out_select == TrackAudioOut::Out(out_number))
             .count()
     }
 
@@ -1148,7 +1147,11 @@ mod tests {
             "shared note must trigger every lane carrying it, and no inactive one"
         );
         // SD6smp's factory note is 40; nothing listens there any more.
-        assert_eq!(atomic.slots_listening_to(40), 0, "factory note still answers");
+        assert_eq!(
+            atomic.slots_listening_to(40),
+            0,
+            "factory note still answers"
+        );
     }
     use nih_plug::params::persist::PersistentField;
 
@@ -1162,11 +1165,7 @@ mod tests {
             let kinds: Vec<_> = TrackInstrumentKind::kinds_in(cat).collect();
             assert!(!kinds.is_empty(), "category {} is empty", cat.label());
             for kind in kinds {
-                assert!(
-                    !seen[kind.index()],
-                    "{:?} appears in two categories",
-                    kind
-                );
+                assert!(!seen[kind.index()], "{:?} appears in two categories", kind);
                 seen[kind.index()] = true;
             }
         }
@@ -1248,14 +1247,35 @@ mod tests {
 
     #[test]
     fn category_spot_checks() {
-        assert_eq!(TrackInstrumentKind::Kick.category(), InstrumentCategory::BassDrum);
-        assert_eq!(TrackInstrumentKind::BassDrum808.category(), InstrumentCategory::BassDrum);
-        assert_eq!(TrackInstrumentKind::Bd6smp.category(), InstrumentCategory::BassDrum);
-        assert_eq!(TrackInstrumentKind::Clap.category(), InstrumentCategory::Snare);
-        assert_eq!(TrackInstrumentKind::Ch6smp.category(), InstrumentCategory::HiHat);
-        assert_eq!(TrackInstrumentKind::Tom.category(), InstrumentCategory::Perc);
+        assert_eq!(
+            TrackInstrumentKind::Kick.category(),
+            InstrumentCategory::BassDrum
+        );
+        assert_eq!(
+            TrackInstrumentKind::BassDrum808.category(),
+            InstrumentCategory::BassDrum
+        );
+        assert_eq!(
+            TrackInstrumentKind::Bd6smp.category(),
+            InstrumentCategory::BassDrum
+        );
+        assert_eq!(
+            TrackInstrumentKind::Clap.category(),
+            InstrumentCategory::Snare
+        );
+        assert_eq!(
+            TrackInstrumentKind::Ch6smp.category(),
+            InstrumentCategory::HiHat
+        );
+        assert_eq!(
+            TrackInstrumentKind::Tom.category(),
+            InstrumentCategory::Perc
+        );
         assert_eq!(TrackInstrumentKind::Buzz.category(), InstrumentCategory::Fx);
-        assert_eq!(TrackInstrumentKind::Ride.category(), InstrumentCategory::Other);
+        assert_eq!(
+            TrackInstrumentKind::Ride.category(),
+            InstrumentCategory::Other
+        );
     }
 
     /// [262] The audio thread resolves links via `AtomicTrackLayout::grid_slot`
@@ -1297,7 +1317,7 @@ mod tests {
     #[test]
     fn grid_slot_resolves_link_chain_to_active_master() {
         let mut layout = TrackLayoutState::default_layout(); // 4 active lanes 0..=3
-        // No links → identity.
+                                                             // No links → identity.
         assert_eq!(layout.grid_slot(2), 2);
         assert!(!layout.is_linked_up(2));
         assert!(layout.can_link_up(2)); // slot 1 & 2 both active
@@ -1529,7 +1549,10 @@ mod tests {
     #[test]
     fn assigning_an_aux_output_takes_the_lane_out_of_the_main_mix() {
         let mut layout = TrackLayoutState::default_layout();
-        assert!(layout.slots[0].routing.main_on, "a fresh lane is in the mix");
+        assert!(
+            layout.slots[0].routing.main_on,
+            "a fresh lane is in the mix"
+        );
 
         layout.assign_slot_output(0, TrackAudioOut::Out(3));
         assert!(

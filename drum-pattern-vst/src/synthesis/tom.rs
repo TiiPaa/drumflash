@@ -199,7 +199,8 @@ impl Voice for TomVoice {
                         (fundamental + overtone, cutoff.max(20.0))
                     }
                 };
-                self.filter.set_lowpass(modulated_cutoff, Self::FILTER_Q, self.sample_rate);
+                self.filter
+                    .set_lowpass(modulated_cutoff, Self::FILTER_Q, self.sample_rate);
                 self.last_cutoff = modulated_cutoff;
                 let filtered = self.filter.process(self.saturation.process_at(true, body));
                 tone = filtered * env * self.drift.level;
@@ -209,7 +210,8 @@ impl Voice for TomVoice {
         // Stick attack — allowed to ring out even if body finished, but routed
         // through the same cutoff so the Filter knob governs the WHOLE voice.
         let attack = if self.stick_amount() > 0.0 && self.stick_attack.is_active() {
-            self.stick_filter.set_lowpass(self.last_cutoff, Self::FILTER_Q, self.sample_rate);
+            self.stick_filter
+                .set_lowpass(self.last_cutoff, Self::FILTER_Q, self.sample_rate);
             self.stick_filter.process(self.stick_attack.next()) * self.stick_amount()
         } else {
             0.0

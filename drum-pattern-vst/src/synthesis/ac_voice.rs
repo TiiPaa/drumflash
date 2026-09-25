@@ -184,8 +184,7 @@ impl AcVoice {
 
     fn update_saturation(&mut self) {
         let s = &self.settings.special;
-        self.saturation.saturation_type =
-            saturation::SaturationType::from(s[SAT_TYPE] as u8);
+        self.saturation.saturation_type = saturation::SaturationType::from(s[SAT_TYPE] as u8);
         self.saturation.amount = s[SAT_AMOUNT];
         self.saturation.mix = s[SAT_MIX];
         self.saturation.output_gain = s[SAT_GAIN];
@@ -206,8 +205,8 @@ impl Voice for AcVoice {
             AcEngine::BassDrum(e) => {
                 // Frequency → semitones vs the fitted landing note; analog
                 // drift → per-hit pitch jitter in semitones.
-                let semis = (12.0 * (freq / AcEngineKind::BassDrum.ref_hz()).log2())
-                    .clamp(-24.0, 24.0);
+                let semis =
+                    (12.0 * (freq / AcEngineKind::BassDrum.ref_hz()).log2()).clamp(-24.0, 24.0);
                 let jitter_semis = 12.0 * self.drift.pitch.log2();
                 // The engine's body amp decay is 0.22 + d*0.12 s with
                 // d = lerpf(-1.75, 3.0, pct^2) — solve so the slider reads as
@@ -227,10 +226,9 @@ impl Voice for AcVoice {
                 e.trigger(decay_pct, semis, jitter_semis, &mods);
             }
             AcEngine::Snare(e) => {
-                let ratio = (freq / AcEngineKind::Snare.ref_hz() * self.drift.pitch)
-                    .clamp(0.25, 4.0);
-                let decay_pct =
-                    (s.decay / AcEngineKind::Snare.decay_ref()).clamp(0.01, 1.0);
+                let ratio =
+                    (freq / AcEngineKind::Snare.ref_hz() * self.drift.pitch).clamp(0.25, 4.0);
+                let decay_pct = (s.decay / AcEngineKind::Snare.decay_ref()).clamp(0.01, 1.0);
                 let mods = ac606::SnareMods {
                     shell_bend: Self::times2(sp[sd::SHELL_BEND]),
                     impact: Self::times2(sp[sd::IMPACT]),
@@ -245,8 +243,7 @@ impl Voice for AcVoice {
                 );
             }
             AcEngine::Hat(e) => {
-                let ratio = (freq / self.kind.ref_hz() * self.drift.pitch)
-                    .clamp(1.0 / 16.0, 16.0);
+                let ratio = (freq / self.kind.ref_hz() * self.drift.pitch).clamp(1.0 / 16.0, 16.0);
                 let decay_pct = (s.decay / self.kind.decay_ref()).clamp(0.0, 1.0);
                 let spec = if self.kind == AcEngineKind::ClosedHat {
                     &ac606::CLOSED_HAT_SPEC
@@ -264,10 +261,8 @@ impl Voice for AcVoice {
                 e.trigger(spec, decay_pct, ratio, &mods);
             }
             AcEngine::Clap(e) => {
-                let ratio = (freq / AcEngineKind::Clap.ref_hz() * self.drift.pitch)
-                    .clamp(0.5, 2.0);
-                let decay_pct =
-                    (s.decay / AcEngineKind::Clap.decay_ref()).clamp(0.05, 1.0);
+                let ratio = (freq / AcEngineKind::Clap.ref_hz() * self.drift.pitch).clamp(0.5, 2.0);
+                let decay_pct = (s.decay / AcEngineKind::Clap.decay_ref()).clamp(0.05, 1.0);
                 e.trigger(
                     decay_pct,
                     ratio,

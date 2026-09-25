@@ -19,7 +19,9 @@ use std::sync::{Arc, Mutex, RwLock, Weak};
 
 use nih_plug::params::persist::PersistentField;
 
-use crate::synthesis::sample_bank::{load_texture_file, TextureBank, TexturePool, LANE_TEXTURE_SLOTS};
+use crate::synthesis::sample_bank::{
+    load_texture_file, TextureBank, TexturePool, LANE_TEXTURE_SLOTS,
+};
 
 /// What the Sound Panel shows for a lane.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -184,8 +186,9 @@ impl UserTextures {
             .read()
             .map(|e| e.clone())
             .unwrap_or_else(|_| vec![None; LANE_TEXTURE_SLOTS]);
-        let old_banks: Vec<Option<Arc<TextureBank>>> =
-            (0..LANE_TEXTURE_SLOTS).map(|lane| self.pool.get(lane)).collect();
+        let old_banks: Vec<Option<Arc<TextureBank>>> = (0..LANE_TEXTURE_SLOTS)
+            .map(|lane| self.pool.get(lane))
+            .collect();
         let mut new_paths = vec![None; LANE_TEXTURE_SLOTS];
         let mut new_errors = vec![None; LANE_TEXTURE_SLOTS];
         for (new_idx, &old_idx) in order.iter().enumerate().take(LANE_TEXTURE_SLOTS) {
@@ -237,11 +240,7 @@ impl UserTextures {
     }
 
     fn reload_all(&self) {
-        let paths: Vec<Option<String>> = self
-            .paths
-            .read()
-            .map(|p| p.clone())
-            .unwrap_or_default();
+        let paths: Vec<Option<String>> = self.paths.read().map(|p| p.clone()).unwrap_or_default();
         for (lane, path) in paths.iter().enumerate().take(LANE_TEXTURE_SLOTS) {
             match path {
                 Some(p) => {
@@ -406,7 +405,10 @@ mod tests {
         assert_eq!(textures.status(3), SlotStatus::Loaded);
         assert!(textures.file_name(3).unwrap().ends_with("moved.wav"));
         let after = textures.pool.get(3).unwrap();
-        assert!(Arc::ptr_eq(&before, &after), "same decoded texture, just renumbered");
+        assert!(
+            Arc::ptr_eq(&before, &after),
+            "same decoded texture, just renumbered"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

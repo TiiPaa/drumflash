@@ -84,9 +84,9 @@ pub struct TomSpec {
 
 pub static HIGH_TOM_SPEC: TomSpec = TomSpec {
     main_hz: 208.0,
-    main_glide_hz: 0.0, // high tom stays on one note
+    main_glide_hz: 0.0,             // high tom stays on one note
     main_glide_time_seconds: 0.050, // unused when glide is zero
-    main_decay_t60_seconds: 0.218, // time to fall 60 dB
+    main_decay_t60_seconds: 0.218,  // time to fall 60 dB
     main_start_phase: 2.674,
     body_attack_seconds: 0.00012,
     lower_mode_ratio: 135.616 / 208.0, // measured 135.616 Hz ring
@@ -132,13 +132,13 @@ pub static HIGH_TOM_SPEC: TomSpec = TomSpec {
 // The narrow noise strike was added after the body was right so the hit had
 // weight.
 pub static LOW_TOM_SPEC: TomSpec = TomSpec {
-    main_hz: 124.435, // settled note in the Kit1 recording
+    main_hz: 124.435,      // settled note in the Kit1 recording
     main_glide_hz: 39.921, // added at the start
     main_glide_time_seconds: 0.050622,
     main_decay_t60_seconds: 0.3276, // time to fall 60 dB
     main_start_phase: 2.2826,
     body_attack_seconds: 0.00012,
-    lower_mode_ratio: 1.0,  // unused here
+    lower_mode_ratio: 1.0, // unused here
     lower_mode_level: 0.0,
     lower_mode_decay_t60_seconds: 0.100,
     lower_mode_start_phase: 0.0,
@@ -358,10 +358,8 @@ impl AcTom {
             (glide_scale - 1.0).max(0.0) * 39.921
         };
         self.main_glide_hz = spec_glide * ratio;
-        self.main_glide_pole = one_pole_coef(
-            self.sample_rate as f64,
-            self.spec.main_glide_time_seconds,
-        );
+        self.main_glide_pole =
+            one_pole_coef(self.sample_rate as f64, self.spec.main_glide_time_seconds);
         self.lower_mode_hz = self.main_hz * self.spec.lower_mode_ratio;
         self.strike_hz = self.spec.strike_hz * ratio;
         self.main_phase = self.spec.main_start_phase;
@@ -376,10 +374,8 @@ impl AcTom {
             self.upper_mode_hz[index] = self.main_hz * m.ratio;
             self.upper_mode_phase[index] = m.start_phase;
             self.upper_mode_envelope[index] = 1.0;
-            self.upper_mode_pole[index] = decay_coef_t60(
-                self.sample_rate as f64,
-                m.decay_t60_seconds * decay,
-            );
+            self.upper_mode_pole[index] =
+                decay_coef_t60(self.sample_rate as f64, m.decay_t60_seconds * decay);
         }
 
         self.snap_envelope = 1.0;
@@ -402,14 +398,22 @@ impl AcTom {
         self.noise_rise = 0.0;
         self.noise_rise_coefficient = 1.0 - one_pole_coef(sr, self.spec.noise_rise_seconds);
 
-        self.low_noise_high_pass
-            .set_high_pass(self.spec.low_high_pass_hz * ratio, std::f32::consts::FRAC_1_SQRT_2);
-        self.low_noise_low_pass
-            .set_low_pass(self.spec.low_low_pass_hz * ratio, std::f32::consts::FRAC_1_SQRT_2);
-        self.high_noise_high_pass
-            .set_high_pass(self.spec.high_high_pass_hz * ratio, std::f32::consts::FRAC_1_SQRT_2);
-        self.high_noise_low_pass
-            .set_low_pass(self.spec.high_low_pass_hz * ratio, std::f32::consts::FRAC_1_SQRT_2);
+        self.low_noise_high_pass.set_high_pass(
+            self.spec.low_high_pass_hz * ratio,
+            std::f32::consts::FRAC_1_SQRT_2,
+        );
+        self.low_noise_low_pass.set_low_pass(
+            self.spec.low_low_pass_hz * ratio,
+            std::f32::consts::FRAC_1_SQRT_2,
+        );
+        self.high_noise_high_pass.set_high_pass(
+            self.spec.high_high_pass_hz * ratio,
+            std::f32::consts::FRAC_1_SQRT_2,
+        );
+        self.high_noise_low_pass.set_low_pass(
+            self.spec.high_low_pass_hz * ratio,
+            std::f32::consts::FRAC_1_SQRT_2,
+        );
         if self.spec.focused_strike_level != 0.0 {
             self.focused_strike_high_pass.set_high_pass(
                 self.spec.focused_strike_high_pass_hz * ratio,
@@ -420,10 +424,14 @@ impl AcTom {
                 std::f32::consts::FRAC_1_SQRT_2,
             );
         }
-        self.tail_noise_high_pass
-            .set_high_pass(self.spec.tail_noise_high_pass_hz * ratio, std::f32::consts::FRAC_1_SQRT_2);
-        self.tail_noise_low_pass
-            .set_low_pass(self.spec.tail_noise_low_pass_hz * ratio, std::f32::consts::FRAC_1_SQRT_2);
+        self.tail_noise_high_pass.set_high_pass(
+            self.spec.tail_noise_high_pass_hz * ratio,
+            std::f32::consts::FRAC_1_SQRT_2,
+        );
+        self.tail_noise_low_pass.set_low_pass(
+            self.spec.tail_noise_low_pass_hz * ratio,
+            std::f32::consts::FRAC_1_SQRT_2,
+        );
         self.low_noise_high_pass.reset();
         self.low_noise_low_pass.reset();
         self.high_noise_high_pass.reset();
@@ -445,13 +453,11 @@ impl AcTom {
             self.main_phase + TWO_PI * (self.main_hz + self.main_glide_hz) / self.sample_rate,
         );
         if self.spec.lower_mode_level != 0.0 {
-            self.lower_mode_phase = wrap_phase(
-                self.lower_mode_phase + TWO_PI * self.lower_mode_hz / self.sample_rate,
-            );
+            self.lower_mode_phase =
+                wrap_phase(self.lower_mode_phase + TWO_PI * self.lower_mode_hz / self.sample_rate);
         }
-        self.strike_phase = wrap_phase(
-            self.strike_phase + TWO_PI * self.strike_hz / self.sample_rate,
-        );
+        self.strike_phase =
+            wrap_phase(self.strike_phase + TWO_PI * self.strike_hz / self.sample_rate);
         for index in 0..self.spec.upper_modes.len() {
             if self.spec.upper_modes[index].level == 0.0 {
                 continue;
@@ -509,10 +515,15 @@ impl AcTom {
         let snap = self.snap_rise * self.snap_envelope;
         let burst = self.noise_rise * self.burst_envelope;
         let mut excitation = low_noise
-                * (self.spec.low_snap_level * self.mod_snap * snap + self.spec.low_burst_level * burst)
+            * (self.spec.low_snap_level * self.mod_snap * snap + self.spec.low_burst_level * burst)
             + high_noise
-                * (self.spec.high_snap_level * self.mod_snap * snap + self.spec.high_burst_level * burst)
-            + tail_noise * self.spec.tail_noise_level * self.mod_tail_noise * self.noise_rise * self.tail_noise_envelope;
+                * (self.spec.high_snap_level * self.mod_snap * snap
+                    + self.spec.high_burst_level * burst)
+            + tail_noise
+                * self.spec.tail_noise_level
+                * self.mod_tail_noise
+                * self.noise_rise
+                * self.tail_noise_envelope;
         if self.spec.focused_strike_level != 0.0 {
             let mut focused_strike = self.focused_strike_high_pass.process(high_noise_source);
             focused_strike = self.focused_strike_low_pass.process(focused_strike);

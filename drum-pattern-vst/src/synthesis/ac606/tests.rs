@@ -6,7 +6,10 @@
 //! contract as Kick/BD808 [179]), which the retrigger test below verifies.
 
 use super::super::{AcEngineKind, AcVoice, AcVoiceSettings, Voice, VoiceSettings};
-use super::{AcBassDrum, AcClap, AcMetalHat, AcSnare, AcTom, BdMods, HatMods, SnareMods, TomMods, CLOSED_HAT_SPEC, HIGH_TOM_SPEC, LOW_TOM_SPEC, OPEN_HAT_SPEC};
+use super::{
+    AcBassDrum, AcClap, AcMetalHat, AcSnare, AcTom, BdMods, HatMods, SnareMods, TomMods,
+    CLOSED_HAT_SPEC, HIGH_TOM_SPEC, LOW_TOM_SPEC, OPEN_HAT_SPEC,
+};
 
 const SR: f32 = 44100.0;
 
@@ -37,12 +40,42 @@ fn fnv_hash(buf: &[f32]) -> u64 {
 fn golden_default_render_unchanged() {
     let n = (SR * 0.15) as usize;
     for (kind, settings, name, expected) in [
-        (AcEngineKind::BassDrum, VoiceSettings::bd6ac(), "BD6", 0xb90a3e82f2063091u64),
-        (AcEngineKind::Snare, VoiceSettings::sd6ac(), "SD6", 0xd7de79b1ab896c5fu64),
-        (AcEngineKind::ClosedHat, VoiceSettings::hh6ac(), "HH6", 0xeb689f09852b5226u64),
-        (AcEngineKind::OpenHat, VoiceSettings::oh6ac(), "OH6", 0x68a5a17b54a65772u64),
-        (AcEngineKind::Clap, VoiceSettings::cl6ac(), "CL6", 0xdc7b957179dc2784u64),
-        (AcEngineKind::Tom, VoiceSettings::tm6ac(), "TM6", 0x2cda402af0f39c7bu64),
+        (
+            AcEngineKind::BassDrum,
+            VoiceSettings::bd6ac(),
+            "BD6",
+            0xb90a3e82f2063091u64,
+        ),
+        (
+            AcEngineKind::Snare,
+            VoiceSettings::sd6ac(),
+            "SD6",
+            0xd7de79b1ab896c5fu64,
+        ),
+        (
+            AcEngineKind::ClosedHat,
+            VoiceSettings::hh6ac(),
+            "HH6",
+            0xeb689f09852b5226u64,
+        ),
+        (
+            AcEngineKind::OpenHat,
+            VoiceSettings::oh6ac(),
+            "OH6",
+            0x68a5a17b54a65772u64,
+        ),
+        (
+            AcEngineKind::Clap,
+            VoiceSettings::cl6ac(),
+            "CL6",
+            0xdc7b957179dc2784u64,
+        ),
+        (
+            AcEngineKind::Tom,
+            VoiceSettings::tm6ac(),
+            "TM6",
+            0x2cda402af0f39c7bu64,
+        ),
     ] {
         let mut voice = make(kind, settings);
         voice.trigger();
@@ -117,7 +150,10 @@ fn ac_engines_go_silent() {
     for _ in 0..(SR * 1.0) as usize {
         hat.process();
     }
-    assert!(!hat.is_active(), "closed hat should be done after its decay");
+    assert!(
+        !hat.is_active(),
+        "closed hat should be done after its decay"
+    );
 
     let mut clap = AcClap::new(SR, 0x0606C1A9);
     clap.trigger(0.8, 1.0, 0.5, 1.0, 1.0, 0.0);
@@ -208,18 +244,77 @@ fn ac_exploration_params_are_wired() {
         name: &'static str,
     }
     let cases = [
-        Case { kind: AcEngineKind::BassDrum, settings: VoiceSettings::bd6ac, name: "BD6",
-            specials: &[bd::SWEEP, bd::BEND, bd::CLICK, bd::CLICK_TONE, bd::PUNCH, bd::TONE, bd::DRIVE] },
-        Case { kind: AcEngineKind::Snare, settings: VoiceSettings::sd6ac, name: "SD6",
-            specials: &[sd::SNAP, sd::WIRE_COLOR, sd::SHELL_BEND, sd::IMPACT, sd::RING] },
-        Case { kind: AcEngineKind::ClosedHat, settings: VoiceSettings::hh6ac, name: "HH6",
-            specials: &[hh::METAL, hh::CLICK, hh::BELL, hh::WOBBLE, hh::SPREAD, hh::BRIGHTNESS] },
-        Case { kind: AcEngineKind::OpenHat, settings: VoiceSettings::oh6ac, name: "OH6",
-            specials: &[hh::METAL, hh::CLICK, hh::BELL, hh::WOBBLE, hh::SPREAD, hh::BRIGHTNESS] },
-        Case { kind: AcEngineKind::Clap, settings: VoiceSettings::cl6ac, name: "CL6",
-            specials: &[cl::NOISE, cl::SPREAD, cl::TAIL, cl::AIR] },
-        Case { kind: AcEngineKind::Tom, settings: VoiceSettings::tm6ac, name: "TM6",
-            specials: &[tm::MODEL, tm::STRIKE, tm::SNAP, tm::GLIDE, tm::MODES, tm::TAIL_NOISE] },
+        Case {
+            kind: AcEngineKind::BassDrum,
+            settings: VoiceSettings::bd6ac,
+            name: "BD6",
+            specials: &[
+                bd::SWEEP,
+                bd::BEND,
+                bd::CLICK,
+                bd::CLICK_TONE,
+                bd::PUNCH,
+                bd::TONE,
+                bd::DRIVE,
+            ],
+        },
+        Case {
+            kind: AcEngineKind::Snare,
+            settings: VoiceSettings::sd6ac,
+            name: "SD6",
+            specials: &[
+                sd::SNAP,
+                sd::WIRE_COLOR,
+                sd::SHELL_BEND,
+                sd::IMPACT,
+                sd::RING,
+            ],
+        },
+        Case {
+            kind: AcEngineKind::ClosedHat,
+            settings: VoiceSettings::hh6ac,
+            name: "HH6",
+            specials: &[
+                hh::METAL,
+                hh::CLICK,
+                hh::BELL,
+                hh::WOBBLE,
+                hh::SPREAD,
+                hh::BRIGHTNESS,
+            ],
+        },
+        Case {
+            kind: AcEngineKind::OpenHat,
+            settings: VoiceSettings::oh6ac,
+            name: "OH6",
+            specials: &[
+                hh::METAL,
+                hh::CLICK,
+                hh::BELL,
+                hh::WOBBLE,
+                hh::SPREAD,
+                hh::BRIGHTNESS,
+            ],
+        },
+        Case {
+            kind: AcEngineKind::Clap,
+            settings: VoiceSettings::cl6ac,
+            name: "CL6",
+            specials: &[cl::NOISE, cl::SPREAD, cl::TAIL, cl::AIR],
+        },
+        Case {
+            kind: AcEngineKind::Tom,
+            settings: VoiceSettings::tm6ac,
+            name: "TM6",
+            specials: &[
+                tm::MODEL,
+                tm::STRIKE,
+                tm::SNAP,
+                tm::GLIDE,
+                tm::MODES,
+                tm::TAIL_NOISE,
+            ],
+        },
     ];
 
     let n = (SR * 0.1) as usize;
@@ -241,8 +336,8 @@ fn ac_exploration_params_are_wired() {
             let bufs: [Vec<f32>; 2] = extremes.map(|extreme| {
                 let mut s = base;
                 s.analog = 0.0; // deterministic
-                // Sensitizer: Click Tone is only measurable when the click
-                // stage is loud.
+                                // Sensitizer: Click Tone is only measurable when the click
+                                // stage is loud.
                 if case.kind == AcEngineKind::BassDrum && idx == bd::CLICK_TONE {
                     s.special[bd::CLICK] = 1.0;
                 }
@@ -283,8 +378,8 @@ fn ac_exploration_params_are_wired() {
 /// `panic = "abort"` in release means any panic here would kill the host.
 #[test]
 fn all_kinds_survive_a_song_load_cycle() {
-    use crate::track::{TrackInstrumentKind, TrackLayoutState};
     use crate::synthesis::DrumSynthesizer;
+    use crate::track::{TrackInstrumentKind, TrackLayoutState};
 
     // Every kind gets a slot at least once (22 kinds over 14 slots → two kits).
     let kits: [&[TrackInstrumentKind]; 2] = [
@@ -338,7 +433,10 @@ fn bd_decay_curve_is_wired() {
         .zip(convex.iter())
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max);
-    assert!(max_diff > 0.01, "decay curve has no effect (max diff {max_diff})");
+    assert!(
+        max_diff > 0.01,
+        "decay curve has no effect (max diff {max_diff})"
+    );
     // Tail energy (last 50 ms): convex > concave.
     let tail = |b: &[f32]| b[b.len() - 2205..].iter().map(|s| s * s).sum::<f32>();
     assert!(
@@ -383,7 +481,9 @@ fn ac_saturation_is_wired() {
 #[test]
 fn ac_voice_retrigger_is_click_free() {
     fn max_step(buf: &[f32]) -> f32 {
-        buf.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max)
+        buf.windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f32::max)
     }
 
     let gap = (SR * 0.031) as usize;

@@ -287,8 +287,7 @@ impl Sequencer {
     fn realign_tracks_to_position(&mut self) {
         let (swing, groove_type, bpm) = (self.swing, self.groove_type, self.bpm);
         for i in 0..MAX_TRACKS {
-            let push_pull_beats =
-                self.tracks[i].push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
+            let push_pull_beats = self.tracks[i].push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
             let shifted_beat = self.fold_shifted(self.beat_position - push_pull_beats);
             let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
             let track = &mut self.tracks[i];
@@ -361,10 +360,7 @@ impl Sequencer {
 
     /// Copy the per-cell microtiming (ms) from the seq-plock atomics. Call once
     /// per audio buffer, never per sample.
-    pub fn set_microtimings(
-        &mut self,
-        microtimings: [[f32; SEQ_STEP_COUNT]; MAX_TRACKS],
-    ) {
+    pub fn set_microtimings(&mut self, microtimings: [[f32; SEQ_STEP_COUNT]; MAX_TRACKS]) {
         self.microtimings = microtimings;
     }
 
@@ -465,8 +461,7 @@ impl Sequencer {
                 // polymetric one included - plays what the grid shows at that
                 // step. The pattern's own wrap is not a jump: 63 -> 0 is the
                 // next step, and polymeter keeps drifting there as before.
-                let expected =
-                    (track.previous_shifted_master + 1) % self.master_length.max(1);
+                let expected = (track.previous_shifted_master + 1) % self.master_length.max(1);
                 if page_loop_on && shifted_master != expected {
                     track.step_counter = shifted_master;
                 } else {
@@ -643,8 +638,7 @@ impl Sequencer {
         let page_loop_on = self.page_loop().is_some();
         let (swing, groove_type) = (self.swing, self.groove_type);
         for i in 0..MAX_TRACKS {
-            let push_pull_beats =
-                self.tracks[i].push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
+            let push_pull_beats = self.tracks[i].push_pull_ms as f64 * bpm as f64 / (60.0 * 1000.0);
             let shifted_beat = self.fold_shifted(self.beat_position - push_pull_beats);
             let shifted_master = groove::beat_to_step(shifted_beat, swing, groove_type);
             let track = &mut self.tracks[i];
@@ -1310,13 +1304,23 @@ mod tests {
         let baseline = {
             let mut seq = Sequencer::new(one_cell_pattern(1));
             seq.play();
-            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 3.0) as usize)
+            collect_slot0_hits(
+                &mut seq,
+                bpm,
+                sample_rate,
+                (samples_per_step * 3.0) as usize,
+            )
         };
         let nudged = {
             let mut seq = Sequencer::new(one_cell_pattern(1));
             seq.set_microtimings(microtiming_grid(1, 25.0));
             seq.play();
-            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 3.0) as usize)
+            collect_slot0_hits(
+                &mut seq,
+                bpm,
+                sample_rate,
+                (samples_per_step * 3.0) as usize,
+            )
         };
 
         assert_eq!(baseline.len(), 1);
@@ -1340,13 +1344,23 @@ mod tests {
         let baseline = {
             let mut seq = Sequencer::new(one_cell_pattern(5));
             seq.play();
-            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 7.0) as usize)
+            collect_slot0_hits(
+                &mut seq,
+                bpm,
+                sample_rate,
+                (samples_per_step * 7.0) as usize,
+            )
         };
         let nudged = {
             let mut seq = Sequencer::new(one_cell_pattern(5));
             seq.set_microtimings(microtiming_grid(5, -75.0));
             seq.play();
-            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 7.0) as usize)
+            collect_slot0_hits(
+                &mut seq,
+                bpm,
+                sample_rate,
+                (samples_per_step * 7.0) as usize,
+            )
         };
 
         assert_eq!(baseline.len(), 1);
@@ -1412,7 +1426,12 @@ mod tests {
     #[test]
     fn page_loop_keeps_the_playhead_in_the_page_and_realigns_shorter_lanes() {
         let mut seq = Sequencer::new(full_pattern_64());
-        seq.set_track_params([64, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16], [0.0; 14], [0.0; 14], 64);
+        seq.set_track_params(
+            [64, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+            [0.0; 14],
+            [0.0; 14],
+            64,
+        );
         seq.set_page_loop(Some(2)); // steps 32..47
         seq.play();
         // Four bars = four page loops.
@@ -1425,7 +1444,9 @@ mod tests {
         );
         let masters: Vec<usize> = hits.iter().map(|h| h.0).collect();
         assert!(
-            masters.windows(17).any(|w| w[..16] == (32..48).collect::<Vec<_>>()[..] && w[16] == 32),
+            masters
+                .windows(17)
+                .any(|w| w[..16] == (32..48).collect::<Vec<_>>()[..] && w[16] == 32),
             "the page must come round: {masters:?}"
         );
         // The 16-step lane plays step k under master step 32 + k, every loop.
@@ -1447,7 +1468,7 @@ mod tests {
         }
         assert_eq!(seq.current_step(), 52);
         seq.set_page_loop(Some(1)); // page 2 = steps 16..31
-        // Step 52 is the fifth step of its page; so is 20.
+                                    // Step 52 is the fifth step of its page; so is 20.
         assert_eq!(seq.current_step(), 20, "same phase within the page");
         // The next hits follow the page, lane realigned to the master.
         let hits = master_steps_at_hits(&mut seq, (samples_per_step * 3.0) as usize);
@@ -1469,9 +1490,17 @@ mod tests {
         seq.set_track_params([64; 14], [0.0; 14], [0.0; 14], 40);
         seq.set_page_loop(Some(2));
         seq.play();
-        let masters: Vec<usize> = master_steps_at_hits(&mut seq, 88200 * 2).iter().map(|h| h.0).collect();
+        let masters: Vec<usize> = master_steps_at_hits(&mut seq, 88200 * 2)
+            .iter()
+            .map(|h| h.0)
+            .collect();
         assert!(masters.iter().all(|m| (32..40).contains(m)), "{masters:?}");
-        assert!(masters.windows(9).any(|w| w == [32, 33, 34, 35, 36, 37, 38, 39, 32]), "{masters:?}");
+        assert!(
+            masters
+                .windows(9)
+                .any(|w| w == [32, 33, 34, 35, 36, 37, 38, 39, 32]),
+            "{masters:?}"
+        );
 
         // 32 steps: page 3 does not exist, the loop is off. (Lane lengths
         // follow the master here, as `resolve_track_length` does in the
@@ -1481,22 +1510,42 @@ mod tests {
         seq.set_page_loop(Some(2));
         assert_eq!(seq.page_loop(), None);
         seq.play();
-        let masters: Vec<usize> = master_steps_at_hits(&mut seq, 88200 * 2).iter().map(|h| h.0).collect();
-        assert!(masters.windows(33).any(|w| w[0] == 0 && w[31] == 31 && w[32] == 0), "{masters:?}");
+        let masters: Vec<usize> = master_steps_at_hits(&mut seq, 88200 * 2)
+            .iter()
+            .map(|h| h.0)
+            .collect();
+        assert!(
+            masters
+                .windows(33)
+                .any(|w| w[0] == 0 && w[31] == 31 && w[32] == 0),
+            "{masters:?}"
+        );
     }
 
     #[test]
     fn page_loop_host_sync_folds_the_host_position_into_the_page() {
         let mut seq = Sequencer::new(full_pattern_64());
-        seq.set_track_params([64, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16], [0.0; 14], [0.0; 14], 64);
+        seq.set_track_params(
+            [64, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+            [0.0; 14],
+            [0.0; 14],
+            64,
+        );
         seq.set_page_loop(Some(1)); // beats 4..8
         seq.play();
         // Host at beat 17 (= step 68 absolute): page phase 1 beat -> step 20.
         seq.sync_to_host(17.0, 120.0, 44100.0);
         assert_eq!(seq.current_step(), 20);
-        assert_eq!(seq.loop_count(), 4, "one loop per page round on the host timeline");
+        assert_eq!(
+            seq.loop_count(),
+            4,
+            "one loop per page round on the host timeline"
+        );
         assert_eq!(seq.tracks[0].previous_step, 20);
-        assert_eq!(seq.tracks[1].previous_step, 4, "16-step lane aligned to the page");
+        assert_eq!(
+            seq.tracks[1].previous_step, 4,
+            "16-step lane aligned to the page"
+        );
         // The mapping the seek detector uses agrees.
         assert!((seq.host_to_local(17.0) - 5.0).abs() < 1e-9);
         assert!((seq.loop_span_beats() - 4.0).abs() < 1e-9);
@@ -1516,7 +1565,11 @@ mod tests {
         seq.set_page_loop(Some(1));
         seq.play();
         let hits = collect_slot0_hits(&mut seq, bpm, sample_rate, samples_per_bar + 100);
-        assert_eq!(hits.len(), 2, "one hit per page loop (start + early wrap): {hits:?}");
+        assert_eq!(
+            hits.len(),
+            2,
+            "one hit per page loop (start + early wrap): {hits:?}"
+        );
         let early = hits[1];
         let expected = samples_per_bar as f64 - 0.025 * sample_rate as f64;
         assert!(
@@ -1537,18 +1590,31 @@ mod tests {
         let baseline = {
             let mut seq = Sequencer::new(one_cell_pattern(3));
             seq.play();
-            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 5.0) as usize)
+            collect_slot0_hits(
+                &mut seq,
+                bpm,
+                sample_rate,
+                (samples_per_step * 5.0) as usize,
+            )
         };
         let zeroed = {
             let mut seq = Sequencer::new(one_cell_pattern(3));
             seq.set_microtimings(microtiming_grid(3, 0.0));
             seq.play();
-            collect_slot0_hits(&mut seq, bpm, sample_rate, (samples_per_step * 5.0) as usize)
+            collect_slot0_hits(
+                &mut seq,
+                bpm,
+                sample_rate,
+                (samples_per_step * 5.0) as usize,
+            )
         };
 
         assert_eq!(baseline.len(), 1);
         assert_eq!(zeroed.len(), 1);
-        assert_eq!(baseline[0].0, zeroed[0].0, "zero nudge must not move the hit");
+        assert_eq!(
+            baseline[0].0, zeroed[0].0,
+            "zero nudge must not move the hit"
+        );
     }
 }
 

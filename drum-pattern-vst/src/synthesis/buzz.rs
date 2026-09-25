@@ -122,7 +122,11 @@ impl BuzzVoice {
                 2.0,
                 settings.filter_freq.max(20.0).min(20000.0),
             ),
-            freq_smoother: dsp::OnePoleSmoother::new(sample_rate, 1.5, settings.frequency.max(20.0)),
+            freq_smoother: dsp::OnePoleSmoother::new(
+                sample_rate,
+                1.5,
+                settings.frequency.max(20.0),
+            ),
             filter_l: dsp::Biquad::new(),
             filter_r: dsp::Biquad::new(),
             saturation: saturation::SaturationConfig {
@@ -201,7 +205,9 @@ impl BuzzVoice {
             }
             self.gate_env.next()
         };
-        let depth = self.depth_smoother.process(self.settings.gate_depth.clamp(0.0, 1.0));
+        let depth = self
+            .depth_smoother
+            .process(self.settings.gate_depth.clamp(0.0, 1.0));
         let gate_mod = 1.0 - depth * (1.0 - g);
 
         // Pitch (sweep) — smoothed so the sweep reset never jumps in one sample.
@@ -597,7 +603,10 @@ mod tests {
             .zip(&saw)
             .map(|(a, b)| (a - b).abs())
             .fold(0.0f32, f32::max);
-        assert!(max_diff > 0.1, "waveform should change the source (diff {max_diff})");
+        assert!(
+            max_diff > 0.1,
+            "waveform should change the source (diff {max_diff})"
+        );
     }
 
     #[test]
@@ -621,6 +630,9 @@ mod tests {
             .zip(&hp)
             .map(|(a, b)| (a - b).abs())
             .fold(0.0f32, f32::max);
-        assert!(max_diff > 0.05, "filter type should change the output (diff {max_diff})");
+        assert!(
+            max_diff > 0.05,
+            "filter type should change the output (diff {max_diff})"
+        );
     }
 }

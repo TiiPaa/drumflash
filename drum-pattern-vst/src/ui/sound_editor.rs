@@ -1,9 +1,8 @@
 //! Sound Editor: tabbed Sound/Track panel, editor rows, lane layout presets.
 
-use crate::sequencer::SharedPattern;
 use crate::instrument_registry::StandardField;
 use crate::param_id::ParamId;
-use crate::ui::param_source::{GlobalSource, ParamSource, PlockSource};
+use crate::sequencer::SharedPattern;
 use crate::sound_settings::SoundSettingsState;
 use crate::synthesis::{self, DrumVoice, VoiceSettings};
 use crate::track::TrackLayoutState;
@@ -13,11 +12,12 @@ use crate::ui::editor_state::{
 };
 use crate::ui::envelope_viz::{
     draw_amp_envelope, draw_buzz_filter_envelope, draw_buzz_gate_graph, draw_filter_envelope,
-    draw_oneshot_amp_graph, draw_oneshot_filter_graph, draw_oneshot_graph, draw_oneshot_pitch_graph,
-    draw_pitch_envelope, draw_texture_graph,
-    draw_sample_amp_graph, draw_sample_filter_graph,
+    draw_oneshot_amp_graph, draw_oneshot_filter_graph, draw_oneshot_graph,
+    draw_oneshot_pitch_graph, draw_pitch_envelope, draw_sample_amp_graph, draw_sample_filter_graph,
+    draw_texture_graph,
 };
 use crate::ui::fmt::{freq_to_note, note_name, note_to_freq};
+use crate::ui::param_source::{GlobalSource, ParamSource, PlockSource};
 use crate::ui::pattern_bank::load_pattern_for_ui;
 use crate::ui::slider;
 use crate::ui::theme::*;
@@ -287,7 +287,17 @@ pub fn draw_editor_slider_row(
     logarithmic: bool,
     suffix: Option<&str>,
 ) -> egui::Response {
-    draw_editor_slider_row_curved(ui, label, value, min, max, default, logarithmic, suffix, 1.0)
+    draw_editor_slider_row_curved(
+        ui,
+        label,
+        value,
+        min,
+        max,
+        default,
+        logarithmic,
+        suffix,
+        1.0,
+    )
 }
 
 /// Editor slider row whose track carries a response curve ([189]).
@@ -367,9 +377,27 @@ fn draw_editor_slider_row_inner(
         // Track flexes to fill the fixed-width params column.
         let track_w = (ui.available_width() - EDITOR_VALUE_W - 8.0).max(60.0);
         let response = if step > 0.0 {
-            draw_editor_slider_track_stepped(ui, value, min, max, default, logarithmic, track_w, step)
+            draw_editor_slider_track_stepped(
+                ui,
+                value,
+                min,
+                max,
+                default,
+                logarithmic,
+                track_w,
+                step,
+            )
         } else if curve != 1.0 {
-            draw_editor_slider_track_curved(ui, value, min, max, default, logarithmic, track_w, curve)
+            draw_editor_slider_track_curved(
+                ui,
+                value,
+                min,
+                max,
+                default,
+                logarithmic,
+                track_w,
+                curve,
+            )
         } else {
             draw_editor_slider_track(ui, value, min, max, default, logarithmic, track_w)
         };
@@ -465,11 +493,8 @@ fn row_gutter(ui: &mut egui::Ui, overridden: bool) -> bool {
         egui::pos2(rect.left() + 3.0, rect.center().y - 7.0),
         Vec2::new(3.0, 18.0),
     );
-    ui.painter().rect_filled(
-        bar,
-        1.0,
-        if hovered { INK() } else { PL_LINK() },
-    );
+    ui.painter()
+        .rect_filled(bar, 1.0, if hovered { INK() } else { PL_LINK() });
     response
         .on_hover_text("Overrides the lane - click to follow the lane again")
         .clicked()
@@ -512,7 +537,8 @@ fn page_lock_menu(
             );
             done = true;
         }
-        if context_menu_button(ui, &format!("Spread down on page {page_no}"), INK(), true).clicked() {
+        if context_menu_button(ui, &format!("Spread down on page {page_no}"), INK(), true).clicked()
+        {
             plock.fill_page(
                 slot,
                 page,
@@ -534,7 +560,8 @@ fn page_lock_menu(
             done = true;
         }
         context_menu_separator(ui);
-        if context_menu_button(ui, &format!("Clear locks on page {page_no}"), INK(), true).clicked() {
+        if context_menu_button(ui, &format!("Clear locks on page {page_no}"), INK(), true).clicked()
+        {
             plock.clear_field_on_page(slot, page, field);
             done = true;
         }
@@ -559,11 +586,8 @@ fn draw_plain_special_row(
     let mut value = src.get(id);
     let inherited = src.inherited(id);
     let logarithmic = def.min > 0.0 && def.max / def.min >= 20.0;
-    let (reverted, edited) = row_scoped(
-        ui,
-        src.is_overridden(id),
-        src.supports(id).reason(),
-        |ui| {
+    let (reverted, edited) =
+        row_scoped(ui, src.is_overridden(id), src.supports(id).reason(), |ui| {
             let row = draw_editor_slider_row_curved(
                 ui,
                 def.label,
@@ -577,8 +601,7 @@ fn draw_plain_special_row(
             );
             page_lock_menu(&row, plock, slot, page, id, def.min, def.max, logarithmic);
             row.changed()
-        },
-    );
+        });
     if reverted {
         src.clear(id);
     } else if edited {
@@ -671,17 +694,20 @@ fn poll_texture_pick(
             if let Some(path) = picked {
                 if params.user_textures.load(lane, &path).is_ok() {
                     // The file was asked for: the Texture menu jumps to it.
-                    let texture_def = params
-                        .track_layout
-                        .state
-                        .kind_for_slot(lane)
-                        .and_then(|kind| {
-                            kind.instrument_def()
-                                .special_params
-                                .iter()
-                                .find(|d| d.name.ends_with("_texture"))
-                        });
-                    if let (Some(def), Some(inst)) = (texture_def, sound_settings.instruments.get(lane)) {
+                    let texture_def =
+                        params
+                            .track_layout
+                            .state
+                            .kind_for_slot(lane)
+                            .and_then(|kind| {
+                                kind.instrument_def()
+                                    .special_params
+                                    .iter()
+                                    .find(|d| d.name.ends_with("_texture"))
+                            });
+                    if let (Some(def), Some(inst)) =
+                        (texture_def, sound_settings.instruments.get(lane))
+                    {
                         inst.set_special(
                             def.special_index,
                             crate::synthesis::sample_bank::CUSTOM_TEXTURE_INDEX as f32,
@@ -880,9 +906,7 @@ fn row_scoped<R>(
     unsupported: Option<&'static str>,
     row: impl FnOnce(&mut egui::Ui) -> R,
 ) -> (bool, R) {
-    let inner = ui.add_enabled_ui(unsupported.is_none(), |ui| {
-        with_gutter(ui, overridden, row)
-    });
+    let inner = ui.add_enabled_ui(unsupported.is_none(), |ui| with_gutter(ui, overridden, row));
     if let Some(reason) = unsupported {
         inner.response.on_hover_text(reason);
     }
@@ -1438,11 +1462,8 @@ pub fn draw_sound_panel(
     // [221] The page the grid is showing: what Spread / Scatter write onto.
     let page = state.current_page.min(3);
     let lane_master_length = params.pattern_length.value().clamp(1, 64) as usize;
-    let lane_length = crate::ui::editor_state::effective_lane_length_for_ui(
-        params,
-        slot,
-        lane_master_length,
-    );
+    let lane_length =
+        crate::ui::editor_state::effective_lane_length_for_ui(params, slot, lane_master_length);
     let fusions = pattern.load_fusions(slot);
     let resolved = crate::ui::editor_state::resolve_edit_scope(
         state.sound_edit_target,
@@ -1456,9 +1477,7 @@ pub fn draw_sound_panel(
                 .find(|(_, group)| {
                     step >= group.start_cell as usize && step <= group.end_cell as usize
                 })
-                .map(|(index, group)| {
-                    (group.start_cell as usize, index, group.step_count)
-                })
+                .map(|(index, group)| (group.start_cell as usize, index, group.step_count))
         },
         // Follow ON is fine ([184]): the selection targets a fixed (lane, step),
         // whatever page the grid happens to be showing. Song mode is not: the
@@ -3378,12 +3397,7 @@ pub fn draw_sound_panel(
         let hint_w = 78.0;
         let text_max_w = (strip_w - 2.0 * text_inset - hint_w).max(80.0);
         let galley = ui.fonts(|fonts| {
-            fonts.layout(
-                notice.to_owned(),
-                f_sans_med(10.5),
-                PL_LINK(),
-                text_max_w,
-            )
+            fonts.layout(notice.to_owned(), f_sans_med(10.5), PL_LINK(), text_max_w)
         });
         let height = (galley.size().y + 12.0).max(26.0);
         let strip = egui::Rect::from_min_size(
@@ -3394,11 +3408,7 @@ pub fn draw_sound_panel(
         // deliberate: while it shows, this strip swallows clicks meant for the row
         // underneath. Acceptable because it is transient AND dismissing it is
         // exactly what a click there means.
-        let response = ui.interact(
-            strip,
-            ui.id().with("scope_refusal"),
-            egui::Sense::click(),
-        );
+        let response = ui.interact(strip, ui.id().with("scope_refusal"), egui::Sense::click());
         let hovered = response.hovered();
         let painter = ui.painter();
         painter.rect_filled(strip, 6.0, if hovered { PANEL() } else { PANEL2() });

@@ -326,7 +326,13 @@ pub fn factory_staging_dir(kind: PresetKind) -> PathBuf {
 fn sanitize_name(name: &str) -> String {
     let s: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let s = s.trim_matches('_').to_string();
     let mut s = if s.is_empty() {
@@ -337,8 +343,8 @@ fn sanitize_name(name: &str) -> String {
     // [261] Windows device names are reserved whatever the extension:
     // "aux.fdpat.json" would fail to write on some Windows versions.
     const RESERVED: [&str; 22] = [
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
-        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
     if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(&s)) {
         s.push('_');
@@ -390,7 +396,10 @@ pub fn rename_preset(path: &Path, new_name: &str, kind: PresetKind) -> Result<Pa
     let content = load_json(path)?;
     let mut value: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
     value["name"] = serde_json::Value::String(new_name.to_string());
-    let dir = path.parent().ok_or("preset has no parent dir")?.to_path_buf();
+    let dir = path
+        .parent()
+        .ok_or("preset has no parent dir")?
+        .to_path_buf();
     let new_path = dir.join(format!("{}.{}", sanitize_name(new_name), kind.extension()));
     let json = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
     write_atomic(&new_path, &json)?;
@@ -499,7 +508,11 @@ fn list_dir(dir: &Path, kind: PresetKind) -> Vec<PresetFileInfo> {
                         .to_string()
                 });
             let modified = entry.metadata().ok().and_then(|m| m.modified().ok());
-            infos.push(PresetFileInfo { name, path, modified });
+            infos.push(PresetFileInfo {
+                name,
+                path,
+                modified,
+            });
         }
     }
     infos.sort_by(|a, b| a.name.cmp(&b.name));
@@ -787,7 +800,8 @@ mod tests {
 
     #[test]
     fn rename_preset_updates_json_name_and_filename() {
-        let dir = std::env::temp_dir().join(format!("fd_rename_test_{:?}", std::thread::current().id()));
+        let dir =
+            std::env::temp_dir().join(format!("fd_rename_test_{:?}", std::thread::current().id()));
         std::fs::create_dir_all(&dir).unwrap();
         // [246] Start from a file as save_json produces it: double extension.
         let old = dir.join("Old_Name.fdpat.json");
@@ -864,10 +878,7 @@ mod tests {
 
     #[test]
     fn format_date_known_days() {
-        assert_eq!(
-            format_date(std::time::UNIX_EPOCH),
-            "1970-01-01"
-        );
+        assert_eq!(format_date(std::time::UNIX_EPOCH), "1970-01-01");
         // 2026-09-22 00:00 UTC = 20718 days after the epoch.
         let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(20718 * 86_400);
         assert_eq!(format_date(t), "2026-09-22");

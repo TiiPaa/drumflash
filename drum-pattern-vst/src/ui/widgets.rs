@@ -24,7 +24,11 @@ pub fn vgrad(painter: &egui::Painter, rect: egui::Rect, stops: &[(f32, Color32)]
         // Follow the rounded corners so the square bands don't poke out past the
         // rounded base (which showed as light pixels at the corners).
         let d = (y0 - inner.top()).min(inner.bottom() - y1).max(0.0);
-        let inset = if d < r { r - (r * r - (r - d) * (r - d)).sqrt() } else { 0.0 };
+        let inset = if d < r {
+            r - (r * r - (r - d) * (r - d)).sqrt()
+        } else {
+            0.0
+        };
         painter.rect_filled(
             egui::Rect::from_min_max(
                 egui::pos2(inner.left() + inset, y0),
@@ -78,14 +82,25 @@ pub fn grad3(
 /// Soft drop shadow: stacked rounded rects with a quadratic alpha falloff (a real
 /// gradient halo, unlike egui's coarse single-ramp `Shadow`). `dy` = downward
 /// offset, `reach` = px spread, `peak` = inner alpha.
-pub fn soft_shadow(p: &egui::Painter, rect: egui::Rect, radius: f32, dy: f32, reach: f32, peak: f32) {
+pub fn soft_shadow(
+    p: &egui::Painter,
+    rect: egui::Rect,
+    radius: f32,
+    dy: f32,
+    reach: f32,
+    peak: f32,
+) {
     let steps = 10;
     for i in (1..=steps).rev() {
         let t = i as f32 / steps as f32;
         let grow = reach * t;
         let a = peak * (1.0 - t) * (1.0 - t);
         let rr = rect.translate(egui::vec2(0.0, dy)).expand(grow);
-        p.rect_filled(rr, radius + grow, Color32::from_black_alpha(a.round().clamp(0.0, 255.0) as u8));
+        p.rect_filled(
+            rr,
+            radius + grow,
+            Color32::from_black_alpha(a.round().clamp(0.0, 255.0) as u8),
+        );
     }
 }
 
@@ -134,7 +149,11 @@ pub fn inner_top_shadow(p: &egui::Painter, rect: egui::Rect, radius: f32, height
         let ins = arc_inset(radius, (y0 - rect.top()).max(0.0)).max(1.0);
         let x0 = rect.left() + ins;
         let x1 = (rect.right() - ins).max(x0);
-        p.rect_filled(egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)), egui::epaint::CornerRadius::ZERO, Color32::from_black_alpha(a));
+        p.rect_filled(
+            egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)),
+            egui::epaint::CornerRadius::ZERO,
+            Color32::from_black_alpha(a),
+        );
     }
 }
 
@@ -153,8 +172,22 @@ pub fn inner_side_shadows(p: &egui::Painter, rect: egui::Rect, radius: f32, widt
         let yt = rect.top() + ins;
         let yb = (rect.bottom() - ins).max(yt);
         let col = Color32::from_black_alpha(a);
-        p.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.left() + 1.0 + d0, yt), egui::pos2(rect.left() + 1.0 + d1, yb)), egui::epaint::CornerRadius::ZERO, col);
-        p.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.right() - 1.0 - d1, yt), egui::pos2(rect.right() - 1.0 - d0, yb)), egui::epaint::CornerRadius::ZERO, col);
+        p.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(rect.left() + 1.0 + d0, yt),
+                egui::pos2(rect.left() + 1.0 + d1, yb),
+            ),
+            egui::epaint::CornerRadius::ZERO,
+            col,
+        );
+        p.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(rect.right() - 1.0 - d1, yt),
+                egui::pos2(rect.right() - 1.0 - d0, yb),
+            ),
+            egui::epaint::CornerRadius::ZERO,
+            col,
+        );
     }
 }
 
@@ -198,7 +231,9 @@ fn vgrad_sample(stops: &[(f32, Color32)], t: f32) -> Color32 {
             let span = (s.0 - prev.0).max(1e-4);
             // Gamma-correct interpolation (designer's `lerp_to_gamma`): linear
             // lerp muddied the mid-tones and read as "flat/ugly".
-            return prev.1.lerp_to_gamma(s.1, ((t - prev.0) / span).clamp(0.0, 1.0));
+            return prev
+                .1
+                .lerp_to_gamma(s.1, ((t - prev.0) / span).clamp(0.0, 1.0));
         }
         prev = s;
     }
@@ -270,7 +305,14 @@ impl Widget for ToggleLED {
         });
         // padding 12 + LED 7 + gap 7 + text + padding 12
         let w = 12.0 + 7.0 + 7.0 + text_w + 12.0;
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), if enabled { Sense::click() } else { Sense::hover() });
+        let (rect, response) = ui.allocate_exact_size(
+            Vec2::new(w, CTL_HEIGHT),
+            if enabled {
+                Sense::click()
+            } else {
+                Sense::hover()
+            },
+        );
 
         if enabled && response.clicked() {
             ui.ctx().request_repaint();
@@ -281,7 +323,11 @@ impl Widget for ToggleLED {
         crate::ui::skeuo::keycap(ui, rect, KeycapState::Rest);
         let painter = ui.painter_at(rect);
         if !enabled {
-            painter.rect_filled(rect, RADIUS_CTL, Color32::from_rgba_unmultiplied(34, 35, 40, 150));
+            painter.rect_filled(
+                rect,
+                RADIUS_CTL,
+                Color32::from_rgba_unmultiplied(34, 35, 40, 150),
+            );
         }
 
         // Backlit LED (no halo): blue when on, dark when off/disabled.
@@ -387,8 +433,14 @@ fn styled_select_impl(
         let caret_center = egui::pos2(rect.right() - 11.0, rect.center().y + 0.5);
         painter.add(egui::Shape::convex_polygon(
             vec![
-                egui::pos2(caret_center.x - caret_size, caret_center.y - caret_size * 0.4),
-                egui::pos2(caret_center.x + caret_size, caret_center.y - caret_size * 0.4),
+                egui::pos2(
+                    caret_center.x - caret_size,
+                    caret_center.y - caret_size * 0.4,
+                ),
+                egui::pos2(
+                    caret_center.x + caret_size,
+                    caret_center.y - caret_size * 0.4,
+                ),
                 egui::pos2(caret_center.x, caret_center.y + caret_size * 0.9),
             ],
             INK3(),
@@ -426,7 +478,8 @@ fn styled_select_impl(
                         for (idx, option) in options.iter().enumerate() {
                             let (opt_rect, opt_response) =
                                 ui.allocate_exact_size(Vec2::new(width, 24.0), Sense::click());
-                            let opt_hover = hover_t(ui.ctx(), opt_response.id, opt_response.hovered());
+                            let opt_hover =
+                                hover_t(ui.ctx(), opt_response.id, opt_response.hovered());
                             if opt_hover > 0.01 {
                                 ui.painter().rect_filled(
                                     opt_rect,

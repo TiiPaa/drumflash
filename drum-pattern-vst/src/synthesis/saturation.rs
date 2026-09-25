@@ -133,8 +133,7 @@ impl SaturationConfig {
         let mut dry_energy = 0.0f32;
         let mut wet_energy = 0.0f32;
         for i in 0..COMP_TEST_POINTS {
-            let phase =
-                std::f32::consts::TAU * i as f32 / COMP_TEST_POINTS as f32;
+            let phase = std::f32::consts::TAU * i as f32 / COMP_TEST_POINTS as f32;
             let dry = COMP_TEST_AMPLITUDE * phase.sin();
             let wet = match self.saturation_type {
                 SaturationType::SoftClip => soft_clip(dry, drive),
@@ -149,8 +148,7 @@ impl SaturationConfig {
         }
         // Borne large : elle n'existe que pour qu'une courbe pathologique ne
         // produise pas un gain absurde, pas pour faconner le son.
-        self.compensation_gain =
-            (dry_energy / wet_energy.max(1e-9)).sqrt().clamp(0.05, 20.0);
+        self.compensation_gain = (dry_energy / wet_energy.max(1e-9)).sqrt().clamp(0.05, 20.0);
     }
 }
 
@@ -335,12 +333,23 @@ mod tests {
         };
         // Post-filter (default): only the post-stage call saturates.
         let post = mk(false);
-        assert_eq!(post.process_at(true, 0.9), 0.9, "pre stage must pass through");
-        assert!(post.process_at(false, 0.9) != 0.9, "post stage must saturate");
+        assert_eq!(
+            post.process_at(true, 0.9),
+            0.9,
+            "pre stage must pass through"
+        );
+        assert!(
+            post.process_at(false, 0.9) != 0.9,
+            "post stage must saturate"
+        );
         // Pre-filter: only the pre-stage call saturates.
         let pre = mk(true);
         assert!(pre.process_at(true, 0.9) != 0.9, "pre stage must saturate");
-        assert_eq!(pre.process_at(false, 0.9), 0.9, "post stage must pass through");
+        assert_eq!(
+            pre.process_at(false, 0.9),
+            0.9,
+            "post stage must pass through"
+        );
     }
 
     /// [207] The contract the compensation actually owes the user: turning the
