@@ -36,6 +36,7 @@ All commands run from `drum-pattern-vst/` (PowerShell on Windows):
 .\build.ps1                    # build + bundle only, no system install
 .\build.ps1 -Debug             # debug build
 .\build.ps1 -Install -InstallRoot <dir>  # install elsewhere (CI tests)
+.\build.ps1 -Installer         # build + bundle + Inno Setup installer → dist/FlashDrum-Setup-<version>.exe
 cargo check                    # fast type-check
 cargo test                     # unit + integration tests
 cargo test <name>              # run a single test by substring match
@@ -45,6 +46,8 @@ cargo run --bin test_standalone  # headless harness — exercises the engine wit
 `build.ps1` stamps `DRUM_PATTERN_BUILD_ID` (a timestamp) into the env so it shows in the plugin UI, builds the `cdylib` to `target/release/drum_pattern_vst.dll`, copies it (plus the `drum-pattern-midi-drag-helper.exe`) into `build/drum-pattern-vst.vst3/Contents/x86_64-win/`, then optionally deploys. The toolchain is pinned by `rust-toolchain.toml` (1.94.0) — the compiler that ships the binary. Panics are journaled to `%TEMP%\flash-drum-crash.log` (build ID + location, [257]).
 
 - **Studio One locks the VST3 DLL** — `-Install` detects the lock and exits (code 2) **without touching the installed bundle**; close Studio One and re-run. The install itself is atomic ([255]): staging folder → hash check → rename swap.
+- **Installer ([272])**: `installer/flash-drum.iss` (Inno Setup 6, `winget install JRSoftware.InnoSetup`) installs the bundle + LICENSE into the system VST3 folder with an uninstaller. Version = `#define AppVersion` in the .iss, kept in sync with `Cargo.toml` on deliberate product bumps. `dist/` is gitignored.
+- **Support note**: a DAW run **as administrator** cannot receive OS file drops (Explorer WAV drag, MIDI drag) — Windows UIPI blocks cross-privilege OLE drops. Run the DAW normally.
 - **Run `build.ps1 -Install` PLAINLY in the foreground.** Do not pipe/redirect it: in PowerShell 5.1, `2>&1` / `2>$null` make PS wrap cargo's stderr as a `NativeCommandError` and abort the run; a backgrounded `... 2>$null` once spawned two contending `cargo` processes deadlocked on the build lock. If a build looks stuck: check `Get-Process cargo,rustc`, kill them, re-run plainly.
 - `build.ps1` runs `cargo build` in the **current** directory (no `--manifest-path`) — run it from `drum-pattern-vst/`. For raw `cargo`, pass an absolute `--manifest-path`.
 - There is no lint config beyond `cargo`'s default warnings. Keep the build **warning-clean**.
