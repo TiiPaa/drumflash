@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-25 - Build de resynchronisation (build 20260925-222838)
+
+**Branche:** `main` - **Build:** `20260925-222838`
+**Validation:** `cargo test` 493 verts lib. Recompile la source exacte après les commits [264]-[268] (formatage, lints, pins — **aucun changement de comportement** par rapport au build 20260925-145840). Non-régression seulement à vérifier dans S1.
+
 ## 2026-09-25 - [267][268] Fork nih-plug traçable + hygiène dépôt (pas de build)
 
 **Branche:** `main` - **CI:** windows + macOS verts. Changements sans impact sur le binaire installé (docs, pins, formatage, poids du dépôt) ; 493 tests verts après `cargo fmt`.
