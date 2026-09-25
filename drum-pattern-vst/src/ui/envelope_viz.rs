@@ -324,7 +324,7 @@ pub fn draw_buzz_filter_envelope(
 /// waveform as the background in heard order (mirrored in Reverse). An
 /// envelope time of 0.5 then lands exactly halfway through the waveform —
 /// the fraction-of-sample semantics become visible instead of abstract.
-
+///
 /// Waveform of the played region as a graph background, heard order.
 fn region_wave_bg(
     painter: &Painter,
