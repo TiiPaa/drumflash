@@ -12,8 +12,9 @@
 
 ## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
 
-### Phase 5 — Légal & dépôt public (partiel : [265] en attente de l'accord force-push)
-- [x] [266] **Licence** : `LICENSE` (GPL-3.0) à la racine + dans le bundle, `license = "GPL-3.0-only"` dans Cargo.toml, `THIRD-PARTY.md` (nih-plug, egui-baseview, ac606 MIT, IBM Plex OFL, provenance des WAV embarqués). (build 20260925-145840 — **point ouvert reporté :** provenance des 4 WAV TR-606 à documenter dans THIRD-PARTY.md par l'auteur.)
+### Phase 5 — Légal & dépôt public (terminée)
+- [x] [265] **PDF protégé purgé du dépôt public** : historique réécrit via `git filter-repo` (sauvegarde `drumflash-backup-2026-09-25.bundle` avant), `resources/Drum.Machine.-.260.Patterns.pdf` supprimé des 205 commits, référence bibliographique dans `.gitignore`, force-push assumé, CI verte (windows + macOS) après réécriture.
+- [x] [266] **Licence** : `LICENSE` (GPL-3.0) à la racine + dans le bundle, `license = "GPL-3.0-only"` dans Cargo.toml, `THIRD-PARTY.md` (nih-plug, egui-baseview, ac606 MIT, IBM Plex OFL, provenance des WAV embarqués). (build 20260925-145840 — WAV 606 : enregistrés par l'auteur depuis sa propre TR-606, documenté.)
 
 ### Phase 4 — Filets de sécurité (tests & CI) (build 20260925-143151)
 - [x] [263] **Tests de persistance réels** : fixture `tests/fixtures/` (JSON d'un get_state réel, jamais supprimée, une par changement de format) restaurée via `filter_state` + `deserialize_fields` avec snapshot figé ; test roundtrip dans l'ordre alphabétique puis inverse ; tests hermétiques (injecter le dossier de config, `FLASH_DRUM_CONFIG_DIR`) ; ne plus compter les tests `test_standalone` dans les bilans.

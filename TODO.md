@@ -4,11 +4,7 @@
 ## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
 
 > Source : `audit_cr/claude-code.json` (audit complet, constats vérifiés dans le code le 2026-09-24). Chaque finding de l'audit est couvert par un ticket ci-dessous. Règle : chaque phase se termine par build + install + CHANGELOG + checklist « À tester dans Studio One ».
-> **Prérequis avant tout** : le bundle installé est actuellement amputé du helper MIDI (install refusée 2026-09-23, S1 ouvert) — la phase 0 se termine par une réinstallation propre, ce qui règle aussi la validation [243] en attente.
-
-### Phase 5 — Légal & dépôt public ([266] fait ; [265] = force-push, accord explicite requis)
-- [ ] [265] **REPRENDRE ICI — accord requis** — **PDF protégé dans le dépôt public** : retirer `resources/Drum.Machine.-.260.Patterns.pdf` et purger l'historique (`git filter-repo`, sauvegarde préalable, force-push assumé) ; garder une référence bibliographique simple.
-- [x] [266b] **Provenance des 4 WAV TR-606** (`assets/bd606/sd606/ch606/oh606.wav`) : documenter l'origine exacte dans `THIRD-PARTY.md` — **répondu le 2026-09-25 : enregistrés par l'auteur depuis sa propre TR-606** (travail original).
+> **Phases 0 à 5 terminées** (archivées dans DONE.md). Reste la phase 6 (dette, sans urgence).
 
 ### Phase 6 — Traçabilité & dette (plus tard)
 - [ ] [267] **Fork nih-plug traçable** : `vendor/nih-plug/FLASH-DRUM-PATCHES.md` sur le modèle egui-baseview (SHA amont, liste exhaustive des ~9 patchs, `.patch` issu de `git diff`) ; compléter `STUDIO_ONE_MULTI_OUT.md` (remap aux clairsemés, IEditController, fenêtre clavier, journal d'état) ; vendorer les 3 deps git (vst3-sys par branche !, baseview, clap-sys) ou les épingler par rev sur un fork contrôlé ; `windows-sys` sous `[target.'cfg(windows)'.dependencies]`.

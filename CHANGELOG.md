@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-25 - [265] PDF « 260 Drum Machine Patterns » purgé du dépôt public (pas de build)
+
+**Branche:** `main` (réécrite) - **CI:** windows + macOS **verts** après réécriture.
+
+Le scan du recueil publié (16,9 Mo, commit `140fdf8`, ~la moitié du pack git) exposait le dépôt public à un retrait DMCA. Historique **réécrit** avec `git filter-repo` : le PDF n'existe plus dans aucun des 205 commits (pack git 28 Mio), sauvegarde complète préalable (`drumflash-backup-2026-09-25.bundle`), force-push assumé. Le fichier reste sur le poste en référence, **ignoré** via `.gitignore` (avec la référence bibliographique) pour ne jamais être recommité. Premier run de la CI durcie [264] au passage : macOS vert, clippy calibré (`-D correctness/suspicious`, 3 `empty_line_after_doc_comments` corrigés, `unexpected_cfgs` toléré sur macOS pour les macros objc vendorées).
+
+**Attention si tu clones le dépôt ailleurs** : l'historique a changé (nouveaux hashes) — il faut re-cloner ou `git fetch && git reset --hard origin/main`.
+
 ## 2026-09-25 - [266] Licence GPL-3.0 posée (build 20260925-145840)
 
 **Branche:** `main` - **Build:** `20260925-145840`
