@@ -18,12 +18,16 @@ drum-pattern-vst/build/
 *.swp
 *~
 
-# Backup / repair cruft
-*backup*
-*fixed*
-temp_*
+# Backup / repair cruft ([268] scoped: a broad *backup*/*fixed* would also
+# ignore legitimate sources like a future fixed_point.rs)
+backups/
+*.backup.*
 remaining_content.txt
 tail_content.txt
+
+# [268] Design source files stay local; the shipped atlases live in
+# drum-pattern-vst/assets/pads/. Kept out of the repo for weight (11 MB).
+/design-pack/design_pads/pads-pack/atlas-pads.png
 
 # OS
 .DS_Store
