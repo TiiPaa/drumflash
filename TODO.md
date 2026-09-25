@@ -9,6 +9,10 @@
 ### Phase 6 — Traçabilité & dette
 - [ ] [269] **REPRENDRE ICI (session dédiée — refactors invasifs)** — **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
 
+### Idées notées (2026-09-25, session)
+- [ ] [273] **Feedback « grille pleine » au drop WAV** — le drop est refusé avec un simple curseur ⊘ quand les 14 slots sont occupés (ou un modal ouvert) : rien n'explique pourquoi. Afficher une étiquette « Grid full » / fermer-les-modals au survol du drop. (Fausse alerte du 2026-09-25 : le drop « cassé » était en fait S1 lancé en admin — barrière UIPI Windows, note support dans CHANGELOG [272].)
+- [ ] [274] **Bump version produit 0.3.0** — arbitrage en attente : `Cargo.toml` + `#define AppVersion` dans `installer/flash-drum.iss` (les deux ensemble), puis rebuild de l'installeur. L'utilisateur décide du moment (voir convention proposée : version produit = étapes visibles, build IDs = quotidien).
+
 ### Idées notées (2026-09-24, validation S1)
 - [ ] [270] **Drop WAV sur une lane occupée = remplacer son fichier ?** — le drop crée toujours une NOUVELLE lane One-Shot (jamais de remplacement, choix [243] anti-accident) ; l'utilisateur s'attendait à un remplacement de la lane ciblée (build 20260924-185138). À arbitrer : remplacement direct, ou modificateur (Alt+drop), ou garder tel quel.
 
