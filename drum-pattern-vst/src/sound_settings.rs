@@ -130,7 +130,10 @@ impl InstrumentSettingsState {
                 }
             }
             ParamId::Algo => {
-                debug_assert!(false, "the algo lives in a nih-plug param, not in the atomics");
+                debug_assert!(
+                    false,
+                    "the algo lives in a nih-plug param, not in the atomics"
+                );
                 0.0
             }
         }
@@ -145,7 +148,10 @@ impl InstrumentSettingsState {
             ParamId::Special(index) => self.set_special(index, value),
             ParamId::FreqMode => self.set_freq_mode(value >= 0.5),
             ParamId::Algo => {
-                debug_assert!(false, "the algo lives in a nih-plug param, not in the atomics")
+                debug_assert!(
+                    false,
+                    "the algo lives in a nih-plug param, not in the atomics"
+                )
             }
         }
     }
@@ -633,7 +639,9 @@ mod tests {
         let state = SoundSettingsState::new(&layout);
         let snap = state.get_settings_for_slot(0);
         // Tweak a standard and a special.
-        state.instruments[0].frequency.store(4321.5f32.to_bits(), Ordering::Relaxed);
+        state.instruments[0]
+            .frequency
+            .store(4321.5f32.to_bits(), Ordering::Relaxed);
         state.instruments[0].set_special(3, 7.25);
         state.set_settings_for_slot(0, &snap);
         let back = state.get_settings_for_slot(0);

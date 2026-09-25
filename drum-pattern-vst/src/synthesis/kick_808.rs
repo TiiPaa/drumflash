@@ -239,7 +239,6 @@ impl Voice for Kick808Voice {
         self.active || self.click.is_active() || self.declick.is_active()
     }
 
-
     fn reset(&mut self) {
         self.active = false;
         self.amp_env.reset();

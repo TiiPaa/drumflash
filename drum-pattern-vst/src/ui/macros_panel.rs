@@ -31,8 +31,7 @@ fn macro_knob(
     param: &FloatParam,
     macro_idx: usize,
 ) -> egui::Response {
-    let (rect, _) =
-        ui.allocate_exact_size(Vec2::new(96.0, 14.0), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(96.0, 14.0), egui::Sense::hover());
     let id = ui.id().with(("macro_knob", macro_idx));
     let response = ui.interact(rect, id, egui::Sense::click_and_drag());
 
@@ -40,8 +39,7 @@ fn macro_knob(
     if response.drag_started() {
         setter.begin_set_parameter(param);
     }
-    if (response.dragged() || response.drag_started())
-        && response.interact_pointer_pos().is_some()
+    if (response.dragged() || response.drag_started()) && response.interact_pointer_pos().is_some()
     {
         setter.set_parameter_normalized(param, frac_at(response.interact_pointer_pos().unwrap().x));
     }
@@ -59,10 +57,7 @@ fn macro_knob(
     let norm = param.unmodulated_normalized_value();
     let p = ui.painter();
     p.rect_filled(rect, 3.0, crate::ui::theme::WELL_FILL);
-    let fill = egui::Rect::from_min_size(
-        rect.min,
-        egui::vec2(rect.width() * norm, rect.height()),
-    );
+    let fill = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * norm, rect.height()));
     p.rect_filled(fill, 3.0, BLUE());
     p.rect_stroke(
         rect,
@@ -88,18 +83,22 @@ fn lane_name(layout: &TrackLayoutState, slot: usize) -> String {
 
 /// Every assignable parameter of a lane's kind: its declared standards (Freq,
 /// Decay, Volume, …) then its declared specials (Offset, Gate Rate, …).
-fn param_options(slot: usize, kind: crate::track::TrackInstrumentKind) -> Vec<(MacroTarget, String)> {
+fn param_options(
+    slot: usize,
+    kind: crate::track::TrackInstrumentKind,
+) -> Vec<(MacroTarget, String)> {
     let def = kind.instrument_def();
     let mut out: Vec<(MacroTarget, String)> = def
         .standard_params
         .iter()
         .map(|d| (MacroTarget::Std(slot, d.field), d.label.to_string()))
         .collect();
-    out.extend(
-        def.special_params
-            .iter()
-            .map(|d| (MacroTarget::Special(slot, d.special_index), d.label.to_string())),
-    );
+    out.extend(def.special_params.iter().map(|d| {
+        (
+            MacroTarget::Special(slot, d.special_index),
+            d.label.to_string(),
+        )
+    }));
     out
 }
 

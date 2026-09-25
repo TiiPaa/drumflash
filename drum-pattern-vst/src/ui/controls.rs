@@ -234,17 +234,33 @@ pub fn compact_chip_colored(
     accent: Color32,
 ) -> egui::Response {
     let font = egui::FontId::proportional(10.5);
-    let tw = ui
-        .fonts(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
+    let tw = ui.fonts(|f| {
+        f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE)
+            .size()
+            .x
+    });
     let w = (tw + 18.0).max(42.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), egui::Sense::click());
     let _ = accent; // active state uses the baked blue keycap; accent kept for API
-    let state = if active { KeycapState::PressedBlue } else { KeycapState::Rest };
+    let state = if active {
+        KeycapState::PressedBlue
+    } else {
+        KeycapState::Rest
+    };
     keycap_tex(ui, rect, state);
     keycap_feedback(ui.painter(), rect, &resp);
-    let text_color = if active { Color32::from_rgb(234, 246, 255) } else { INK_KEYCAP };
-    ui.painter()
-        .text(rect.center(), egui::Align2::CENTER_CENTER, label, font, text_color);
+    let text_color = if active {
+        Color32::from_rgb(234, 246, 255)
+    } else {
+        INK_KEYCAP
+    };
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        font,
+        text_color,
+    );
     resp
 }
 
@@ -298,8 +314,13 @@ pub fn keycap_button(
             .rect_filled(rect, RADIUS_CTL, Color32::from_black_alpha(80));
         Color32::from_rgb(118, 119, 126)
     };
-    ui.painter()
-        .text(rect.center(), egui::Align2::CENTER_CENTER, label, font, text_color);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        font,
+        text_color,
+    );
     resp
 }
 
@@ -320,14 +341,23 @@ pub fn chip_button(
     // Keycap look: momentary action buttons stay at "rest"; the accent (if any)
     // only tints the label (e.g. orange for Random).
     let font = f_sans_sb(11.0);
-    let tw = ui.fonts(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
+    let tw = ui.fonts(|f| {
+        f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE)
+            .size()
+            .x
+    });
     let w = tw + 20.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, CTL_HEIGHT), sense);
     keycap_tex(ui, rect, KeycapState::Rest);
     keycap_feedback(ui.painter(), rect, &resp);
     let text_color = if accent { color } else { INK_KEYCAP };
-    ui.painter()
-        .text(rect.center(), egui::Align2::CENTER_CENTER, label, font, text_color);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        font,
+        text_color,
+    );
     resp
 }
 

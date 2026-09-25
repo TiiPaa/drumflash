@@ -210,10 +210,14 @@ pub fn draw_header_bar(
                     let logo_w = 160.0;
                     let ver = format!("v{} · {}", env!("CARGO_PKG_VERSION"), BUILD_ID);
                     let ver_font = f_mono(9.5);
-                    let ver_w =
-                        ui.fonts(|f| f.layout_no_wrap(ver.clone(), ver_font.clone(), INK3()).size().x);
+                    let ver_w = ui.fonts(|f| {
+                        f.layout_no_wrap(ver.clone(), ver_font.clone(), INK3())
+                            .size()
+                            .x
+                    });
                     let total = logo_w + 12.0 + ver_w;
-                    let (rect, _) = ui.allocate_exact_size(Vec2::new(total, logo_h), egui::Sense::hover());
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::new(total, logo_h), egui::Sense::hover());
                     let img_rect = egui::Rect::from_min_size(
                         egui::pos2(rect.left(), rect.center().y - logo_h * 0.5),
                         Vec2::new(logo_w, logo_h),
@@ -312,7 +316,9 @@ pub fn draw_header_bar(
                     true,
                     f_sans_med(10.5),
                 )
-                .on_hover_text("Clear everything: grid, pattern slots, song AND lanes (click twice)")
+                .on_hover_text(
+                    "Clear everything: grid, pattern slots, song AND lanes (click twice)",
+                )
                 .clicked()
                 {
                     if clear_armed {

@@ -50,7 +50,10 @@ pub fn pack_target(target: Option<MacroTarget>) -> u32 {
     match target {
         None => 0,
         Some(MacroTarget::Std(slot, field)) => {
-            let idx = StandardField::ALL.iter().position(|f| *f == field).unwrap_or(0) as u32;
+            let idx = StandardField::ALL
+                .iter()
+                .position(|f| *f == field)
+                .unwrap_or(0) as u32;
             (slot as u32 + 1) | (idx << 5)
         }
         Some(MacroTarget::Special(slot, idx)) => (slot as u32 + 1) | (1 << 4) | ((idx as u32) << 5),
@@ -69,7 +72,9 @@ pub fn unpack_target(packed: u32) -> Option<MacroTarget> {
         }
         Some(MacroTarget::Special(slot, idx))
     } else {
-        StandardField::ALL.get(idx).map(|f| MacroTarget::Std(slot, *f))
+        StandardField::ALL
+            .get(idx)
+            .map(|f| MacroTarget::Std(slot, *f))
     }
 }
 
@@ -229,7 +234,12 @@ pub fn apply_macros(
         let Some(voice_idx) = slot_voices[target.slot()] else {
             continue;
         };
-        if apply_one(value, target, voice_idx, &sound_settings.instruments[target.slot()]) {
+        if apply_one(
+            value,
+            target,
+            voice_idx,
+            &sound_settings.instruments[target.slot()],
+        ) {
             touched = true;
         }
     }
@@ -326,7 +336,12 @@ mod tests {
             .iter()
             .find(|d| d.field == StandardField::Decay)
             .unwrap();
-        let ParamWidget::Slider { min: dmin, max: dmax, .. } = kick.widget else {
+        let ParamWidget::Slider {
+            min: dmin,
+            max: dmax,
+            ..
+        } = kick.widget
+        else {
             panic!("Decay should be a slider");
         };
         assert_eq!((min, max), (dmin, dmax));
@@ -395,8 +410,7 @@ mod tests {
     fn persistence_blob_roundtrip_and_length_is_the_version() {
         let map = PersistentMacroMap::new();
         map.state.set(5, Some(MacroTarget::Special(2, 7)));
-        let blob = map
-            .map(|b| b.clone());
+        let blob = map.map(|b| b.clone());
         assert_eq!(blob.len(), MACRO_SLOTS * 4);
         let restored = PersistentMacroMap::new();
         restored.set(blob);

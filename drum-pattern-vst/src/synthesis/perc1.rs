@@ -517,7 +517,8 @@ mod tests {
     /// oscillator phases (that unconditional reset was the click parasite). The
     /// body should continue roughly continuously across the retrigger.
     #[test]
-    fn perc1_no_click_on_retrigger_during_tail() {        let sr = 44100.0;
+    fn perc1_no_click_on_retrigger_during_tail() {
+        let sr = 44100.0;
         let mut settings = VoiceSettings::perc1();
         settings.decay = 0.3;
         settings.release = 0.4;

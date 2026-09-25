@@ -1528,7 +1528,10 @@ mod tests {
         lfo.retrigger();
         let values: Vec<f32> = (0..9600).map(|_| lfo.next(LfoShape::SampleHold)).collect();
         // Flat inside a cycle...
-        assert!(values[..4800].windows(2).all(|w| w[0] == w[1]), "S&H is not flat");
+        assert!(
+            values[..4800].windows(2).all(|w| w[0] == w[1]),
+            "S&H is not flat"
+        );
         // ...and it moved at the boundary.
         assert_ne!(values[0], values[5000], "S&H never re-rolled");
 
@@ -1536,9 +1539,7 @@ mod tests {
         // it would be a constant with extra steps.
         let mut lfo = Lfo::new(48000.0, 0xABCD_0002);
         lfo.set_rate(50.0);
-        let drawn: Vec<f32> = (0..48000)
-            .map(|_| lfo.next(LfoShape::SampleHold))
-            .collect();
+        let drawn: Vec<f32> = (0..48000).map(|_| lfo.next(LfoShape::SampleHold)).collect();
         let lo = drawn.iter().cloned().fold(f32::MAX, f32::min);
         let hi = drawn.iter().cloned().fold(f32::MIN, f32::max);
         assert!(hi - lo > 1.2, "S&H only spans {lo}..{hi}");
@@ -1694,7 +1695,10 @@ mod tests {
         d.reset();
         // Factor 4: the ramp comes out as stairs four samples wide.
         let out: Vec<f32> = (0..12).map(|i| d.process(i as f32, 4.0)).collect();
-        assert_eq!(out, vec![0.0, 0.0, 0.0, 0.0, 4.0, 4.0, 4.0, 4.0, 8.0, 8.0, 8.0, 8.0]);
+        assert_eq!(
+            out,
+            vec![0.0, 0.0, 0.0, 0.0, 4.0, 4.0, 4.0, 4.0, 8.0, 8.0, 8.0, 8.0]
+        );
         // The mapping spans 1 .. DECIMATE_MAX_FACTOR.
         assert!((decimate_factor(0.0) - 1.0).abs() < 1e-6);
         assert!((decimate_factor(1.0) - DECIMATE_MAX_FACTOR).abs() < 1e-3);
@@ -1710,7 +1714,10 @@ mod tests {
         b.process(0.5);
         let (x1, y1) = (b.x1, b.y1);
         b.copy_coefficients_from(&a);
-        assert_eq!((b.b0, b.b1, b.b2, b.a1, b.a2), (a.b0, a.b1, a.b2, a.a1, a.a2));
+        assert_eq!(
+            (b.b0, b.b1, b.b2, b.a1, b.a2),
+            (a.b0, a.b1, a.b2, a.a1, a.a2)
+        );
         assert_eq!((b.x1, b.y1), (x1, y1));
     }
 }

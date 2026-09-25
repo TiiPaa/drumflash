@@ -52,10 +52,10 @@ jobs:
           FLASH_DRUM_CONFIG_DIR: ${{ runner.temp }}/flash-drum-config
 
       - name: Clippy
-        # -D warnings would promote all 900+ style lints of the vendored code
-        # to errors; deny the categories that catch real bugs, tolerate the
-        # rest until [268] (bulk lint cleanup + excessive_precision gating).
-        run: cargo clippy --all-targets --locked -- -D clippy::correctness -D clippy::suspicious -A clippy::excessive_precision
+        # -D warnings would promote all style lints to errors; deny the
+        # categories that catch real bugs. excessive_precision is allowed at
+        # module level on the ac606 FIR table ([268]).
+        run: cargo clippy --all-targets --locked -- -D clippy::correctness -D clippy::suspicious
 
       - name: Vendored egui-baseview tests (file_drop bridge)
         run: cargo test --locked -p egui-baseview --lib

@@ -191,7 +191,12 @@ impl<'a> PlockSource<'a> {
 impl ParamSource for PlockSource<'_> {
     fn get(&self, id: ParamId) -> f32 {
         match self.field(id) {
-            Some(field) if self.plock.field_masks.is_set(self.base.slot, self.step, field) => {
+            Some(field)
+                if self
+                    .plock
+                    .field_masks
+                    .is_set(self.base.slot, self.step, field) =>
+            {
                 self.plock.values.get(self.base.slot, self.step, field)
             }
             _ => self.base.get(id),
@@ -213,8 +218,11 @@ impl ParamSource for PlockSource<'_> {
     }
 
     fn is_overridden(&self, id: ParamId) -> bool {
-        self.field(id)
-            .is_some_and(|field| self.plock.field_masks.is_set(self.base.slot, self.step, field))
+        self.field(id).is_some_and(|field| {
+            self.plock
+                .field_masks
+                .is_set(self.base.slot, self.step, field)
+        })
     }
 
     fn clear(&mut self, id: ParamId) {
@@ -443,11 +451,7 @@ impl ParamSource for MorphSource<'_> {
     fn salt(&self) -> (u8, usize, usize) {
         // Distinct from the p-lock scope AND between the two tabs, so a dropdown
         // left open in one never reopens in the other.
-        (
-            2 + self.end as u8,
-            self.base.base.slot,
-            self.base.step,
-        )
+        (2 + self.end as u8, self.base.base.slot, self.base.step)
     }
 
     fn notice(&self) -> Option<&'static str> {
@@ -587,7 +591,10 @@ mod tests {
         src.set(decay, 0.80);
         assert!(src.is_overridden(decay));
         assert_eq!(src.get(decay), 0.80);
-        assert!(plock.masks.is_active(SLOT, STEP), "the step's plock now exists");
+        assert!(
+            plock.masks.is_active(SLOT, STEP),
+            "the step's plock now exists"
+        );
 
         // Only that field is overridden.
         assert!(!src.is_overridden(ParamId::Std(StandardField::Volume)));
@@ -621,7 +628,10 @@ mod tests {
 
         assert!(!src.is_overridden(stereo));
         src.set(stereo, 1.0);
-        assert!(src.is_overridden(stereo), "a switch must be able to create its override");
+        assert!(
+            src.is_overridden(stereo),
+            "a switch must be able to create its override"
+        );
         assert_eq!(src.get(stereo), 1.0);
     }
 
@@ -708,8 +718,14 @@ mod tests {
             PlockSource::new(&plock, 0, global(&settings, &algo)),
         );
         end_tab.set(decay, 0.9);
-        assert!(end_tab.is_overridden(decay), "End tab writes the morph target");
-        assert!(!plock.field_masks.is_set(SLOT, 0, field), "...not the p-lock");
+        assert!(
+            end_tab.is_overridden(decay),
+            "End tab writes the morph target"
+        );
+        assert!(
+            !plock.field_masks.is_set(SLOT, 0, field),
+            "...not the p-lock"
+        );
 
         // On a field that ALREADY has a `Target` target, the start is the live
         // endpoint, so the Start tab writes the start cell's p-lock.
@@ -886,7 +902,9 @@ mod tests {
         );
         // Kick special 1 is the saturation TYPE: `sp_discrete`, so not continuous.
         let discrete = ParamId::Special(1);
-        assert!(!crate::instrument_registry::param_is_morphable(VOICE, discrete));
+        assert!(!crate::instrument_registry::param_is_morphable(
+            VOICE, discrete
+        ));
         assert!(src.supports(discrete).reason().is_some());
         assert_eq!(
             src.supports(ParamId::Std(StandardField::Decay)),
@@ -931,7 +949,10 @@ mod tests {
         let groups = pattern.load_fusions(SLOT);
         assert_eq!(groups.len(), 2, "the other group survives the publish");
         assert_eq!(groups[1].start_cell, 8);
-        assert!(groups[0].morph_active(), "the edited group carries its target");
+        assert!(
+            groups[0].morph_active(),
+            "the edited group carries its target"
+        );
         assert_eq!(groups[0].morph_count, 1);
     }
 

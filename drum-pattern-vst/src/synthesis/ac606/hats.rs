@@ -9,9 +9,7 @@
 //! audible ting; the rest was pulled down by ear so the middle does not turn
 //! into a harsh chord.
 
-use super::common::{
-    clampf, decay_coef, flush_denormal, Biquad, Random, WhiteNoise, PI, TWO_PI,
-};
+use super::common::{clampf, decay_coef, flush_denormal, Biquad, Random, WhiteNoise, PI, TWO_PI};
 
 #[derive(Clone, Copy)]
 pub struct Partial {
@@ -137,17 +135,17 @@ pub static CLOSED_HAT_SPEC: HiHatSpec = HiHatSpec {
     tonal_mix: 0.110,
     noise_mix: 0.909, // final balance set by ear
     saturation_drive: 0.60,
-    output_trim: 1.75, // makeup after the saturation stage
+    output_trim: 1.75,                    // makeup after the saturation stage
     attack_time_constant_seconds: 0.0003, // gate edge, almost instant
     click_amount: 0.35,
     click_decay_seconds: 0.003,
-    bell_accent_amount: 0.70,   // } stronger, snappier strike so
-    bell_accent_decay_seconds: 0.040, // } the ting cuts in a full mix
-    envelope_fast_weight: 1.0,  // single exponential
-    fast_decay_seconds: 0.03355, // falls about 0.26 dB per ms
-    slow_decay_seconds: 0.03355, // matches the fast curve here
+    bell_accent_amount: 0.70,          // } stronger, snappier strike so
+    bell_accent_decay_seconds: 0.040,  // } the ting cuts in a full mix
+    envelope_fast_weight: 1.0,         // single exponential
+    fast_decay_seconds: 0.03355,       // falls about 0.26 dB per ms
+    slow_decay_seconds: 0.03355,       // matches the fast curve here
     decay_scales_time_constants: true, // this moves the actual ring
-                                    // instead of merely closing the gate later
+    // instead of merely closing the gate later
     reference_duration_seconds: 9700.0 / 44100.0, // 44.1 kHz closed hat reference
     minimum_decay_seconds: 0.004,
     minimum_duration_seconds: 0.028,
@@ -163,24 +161,24 @@ pub static OPEN_HAT_SPEC: HiHatSpec = HiHatSpec {
     tonal_mix: 0.110,
     noise_mix: 0.909, // final balance set by ear
     saturation_drive: 0.60,
-    output_trim: 1.63, // makeup after the saturation stage
+    output_trim: 1.63,                    // makeup after the saturation stage
     attack_time_constant_seconds: 0.0003, // gate edge, almost instant
     click_amount: 0.35,
     click_decay_seconds: 0.003,
-    bell_accent_amount: 0.70,   // } stronger, snappier strike so
+    bell_accent_amount: 0.70,         // } stronger, snappier strike so
     bell_accent_decay_seconds: 0.040, // } the ting cuts in a full mix
-    envelope_fast_weight: 0.11, // a little snap over the wash
+    envelope_fast_weight: 0.11,       // a little snap over the wash
     fast_decay_seconds: 0.010,
-    slow_decay_seconds: 0.580, // most of the tail lives here
+    slow_decay_seconds: 0.580,         // most of the tail lives here
     decay_scales_time_constants: true, // knob shortens the sizzle
-                                    // while the outer gate cleans up the end
+    // while the outer gate cleans up the end
     reference_duration_seconds: 77864.0 / 44100.0, // 44.1 kHz open hat reference
     minimum_decay_seconds: 0.004,
     minimum_duration_seconds: 0.050,
     gate_fade_max_seconds: 0.500, // tucks the long tail away cleanly
-    line_wobble_depth: 0.0007, // a few Hz keeps it breathing
+    line_wobble_depth: 0.0007,    // a few Hz keeps it breathing
     line_wobble_correlation_seconds: 0.020, // short enough that the lines
-                                   // never line up into giant crest spikes
+                                  // never line up into giant crest spikes
 };
 
 const FULL_LEVEL_SAMPLE_RATE_RATIO: f32 = 0.40;
@@ -382,11 +380,10 @@ impl AcMetalHat {
         self.active_partial_count = spec.partials.len().min(MAX_PARTIAL_COUNT);
         for index in 0..self.active_partial_count {
             // [196] Spread: deterministic per-partial detune (0 at spread 0).
-            let det = ((index as u32).wrapping_mul(2654435761) >> 8) as f32 / 16777215.0 * 2.0
-                - 1.0;
-            let frequency_hz = spec.partials[index].frequency_hz
-                * frequency_ratio
-                * (1.0 + spread * 0.015 * det);
+            let det =
+                ((index as u32).wrapping_mul(2654435761) >> 8) as f32 / 16777215.0 * 2.0 - 1.0;
+            let frequency_hz =
+                spec.partials[index].frequency_hz * frequency_ratio * (1.0 + spread * 0.015 * det);
             let sample_rate_ratio = frequency_hz / self.sample_rate as f32;
             let mut level = 1.0f32;
             if sample_rate_ratio >= MUTED_SAMPLE_RATE_RATIO {
@@ -464,16 +461,19 @@ impl AcMetalHat {
         self.fast_envelope_weight = clampf(spec.envelope_fast_weight, 0.0, 1.0);
         self.fast_envelope = 1.0;
         self.slow_envelope = 1.0;
-        self.attack_coefficient = 1.0 - decay_coef(self.sample_rate, spec.attack_time_constant_seconds);
+        self.attack_coefficient =
+            1.0 - decay_coef(self.sample_rate, spec.attack_time_constant_seconds);
         self.attack_envelope = 0.0;
 
         let natural_duration_seconds = spec
             .minimum_duration_seconds
             .max(decay * spec.reference_duration_seconds);
-        self.natural_frame_count =
-            (natural_duration_seconds as f64 * self.sample_rate + 0.5).floor().max(1.0) as u64;
-        let mut gate_fade_frames =
-            (spec.gate_fade_max_seconds as f64 * self.sample_rate + 0.5).floor().max(0.0) as u64;
+        self.natural_frame_count = (natural_duration_seconds as f64 * self.sample_rate + 0.5)
+            .floor()
+            .max(1.0) as u64;
+        let mut gate_fade_frames = (spec.gate_fade_max_seconds as f64 * self.sample_rate + 0.5)
+            .floor()
+            .max(0.0) as u64;
         gate_fade_frames = gate_fade_frames.min(self.natural_frame_count);
         self.gate_fade_frames = gate_fade_frames;
         self.inverse_gate_fade_frames = if gate_fade_frames > 0 {
@@ -505,7 +505,11 @@ impl AcMetalHat {
 
         let mut tonal = 0.0f32;
         for index in 0..self.active_partial_count {
-            let line_gain = if self.bell_flags[index] { bell_gain } else { 1.0 };
+            let line_gain = if self.bell_flags[index] {
+                bell_gain
+            } else {
+                1.0
+            };
             tonal += self.phases[index].sin() * self.amplitudes[index] * line_gain;
             self.phases[index] += self.increments[index] * (1.0 + self.wobble_states[index]);
             if self.phases[index] >= TWO_PI {

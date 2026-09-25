@@ -44,8 +44,7 @@ fn prep_graph(
 ) -> (Rect, Painter, nih_plug_egui::egui::Response) {
     let w = ui.available_width().max(120.0);
     let desired_size = Vec2::new(w, height);
-    let (rect, response) =
-        ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
+    let (rect, response) = ui.allocate_at_least(desired_size, nih_plug_egui::egui::Sense::hover());
     crate::ui::skeuo::lcd_bg(ui, rect, RADIUS_PAD as f32);
     let graph = Rect::from_min_size(
         rect.min + Vec2::new(PAD_X, PAD_Y),
@@ -59,10 +58,7 @@ fn draw_grid_lines(painter: &Painter, graph: &Rect) {
     for i in 0..=4 {
         let x = graph.min.x + graph.width() * i as f32 / 4.0;
         painter.line_segment(
-            [
-                Pos2::new(x, graph.min.y),
-                Pos2::new(x, graph.max.y),
-            ],
+            [Pos2::new(x, graph.min.y), Pos2::new(x, graph.max.y)],
             Stroke::new(1.0, white_a(9)),
         );
     }
@@ -297,7 +293,10 @@ pub fn draw_buzz_filter_envelope(
     // Hold: envelope pinned at 1.
     if hold > 0.0 {
         painter.line_segment(
-            [Pos2::new(x_of_t(attack), y_of_env(1.0)), Pos2::new(x_of_t(attack + hold), y_of_env(1.0))],
+            [
+                Pos2::new(x_of_t(attack), y_of_env(1.0)),
+                Pos2::new(x_of_t(attack + hold), y_of_env(1.0)),
+            ],
             Stroke::new(CURVE_W, stage_hold()),
         );
     }
@@ -308,7 +307,10 @@ pub fn draw_buzz_filter_envelope(
     for i in 0..=POINTS {
         let t = (attack + hold) + (span - attack - hold) * (i as f32 / POINTS as f32);
         let p = ((t - attack - hold) / decay).clamp(0.0, 1.0);
-        dec_pts.push(Pos2::new(x_of_t(t), y_of_env(bipolar_shape_curve(1.0 - p, dec_curve))));
+        dec_pts.push(Pos2::new(
+            x_of_t(t),
+            y_of_env(bipolar_shape_curve(1.0 - p, dec_curve)),
+        ));
     }
     painter.add(Shape::line(dec_pts, Stroke::new(CURVE_W, stage_decay())));
 
@@ -394,7 +396,10 @@ fn draw_ahd_on_region(
         let mut pts = Vec::with_capacity(POINTS + 1);
         for i in 0..=POINTS {
             let p = i as f32 / POINTS as f32;
-            pts.push(Pos2::new(x_of(a * p), y_of(bipolar_shape_curve(p, atk_curve))));
+            pts.push(Pos2::new(
+                x_of(a * p),
+                y_of(bipolar_shape_curve(p, atk_curve)),
+            ));
         }
         painter.add(Shape::line(pts, Stroke::new(CURVE_W, stage_attack())));
     }
@@ -404,7 +409,10 @@ fn draw_ahd_on_region(
     let dec_start = (a + h).min(1.0);
     if dec_start > peak_from {
         painter.line_segment(
-            [Pos2::new(x_of(peak_from), y_of(1.0)), Pos2::new(x_of(dec_start), y_of(1.0))],
+            [
+                Pos2::new(x_of(peak_from), y_of(1.0)),
+                Pos2::new(x_of(dec_start), y_of(1.0)),
+            ],
             Stroke::new(CURVE_W, stage_hold()),
         );
     }
@@ -418,7 +426,10 @@ fn draw_ahd_on_region(
             if t > 1.0 {
                 break;
             }
-            pts.push(Pos2::new(x_of(t), y_of(bipolar_shape_curve(1.0 - p, dec_curve))));
+            pts.push(Pos2::new(
+                x_of(t),
+                y_of(bipolar_shape_curve(1.0 - p, dec_curve)),
+            ));
         }
         painter.add(Shape::line(pts, Stroke::new(CURVE_W, stage_decay())));
     }
@@ -443,7 +454,9 @@ pub fn draw_oneshot_amp_graph(
     region_wave_bg(&painter, &graph, peaks, offset, reverse);
     draw_grid_lines(&painter, &graph);
     let y_of = |v: f32| base_y - (base_y - top_y) * v.clamp(0.0, 1.0);
-    draw_ahd_on_region(&painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of);
+    draw_ahd_on_region(
+        &painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of,
+    );
     response
 }
 
@@ -471,7 +484,9 @@ pub fn draw_oneshot_pitch_graph(
     draw_grid_lines(&painter, &graph);
     draw_cutoff_line(&painter, &graph, mid_y);
     let y_of = |env: f32| mid_y - half_h * depth * env;
-    draw_ahd_on_region(&painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of);
+    draw_ahd_on_region(
+        &painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of,
+    );
     response
 }
 
@@ -504,7 +519,9 @@ pub fn draw_oneshot_filter_graph(
         let amt = (env * amount).clamp(0.0, 1.0);
         hz_to_y(base * (20000.0 / base).powf(amt))
     };
-    draw_ahd_on_region(&painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of);
+    draw_ahd_on_region(
+        &painter, &graph, attack, hold, decay, atk_curve, dec_curve, &y_of,
+    );
     draw_cutoff_line(&painter, &graph, hz_to_y(base));
     response
 }
@@ -623,11 +640,17 @@ pub fn draw_texture_graph(
                 let cx = win.min.x + win.width() * t;
                 let a = stage_hold().gamma_multiply(1.0 - k as f32 * 0.22);
                 painter.line_segment(
-                    [Pos2::new(cx - 3.0 * dir, y - 3.5), Pos2::new(cx + 3.0 * dir, y)],
+                    [
+                        Pos2::new(cx - 3.0 * dir, y - 3.5),
+                        Pos2::new(cx + 3.0 * dir, y),
+                    ],
                     Stroke::new(1.4, a),
                 );
                 painter.line_segment(
-                    [Pos2::new(cx + 3.0 * dir, y), Pos2::new(cx - 3.0 * dir, y + 3.5)],
+                    [
+                        Pos2::new(cx + 3.0 * dir, y),
+                        Pos2::new(cx - 3.0 * dir, y + 3.5),
+                    ],
                     Stroke::new(1.4, a),
                 );
             }

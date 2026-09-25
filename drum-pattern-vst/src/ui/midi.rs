@@ -44,9 +44,7 @@ pub fn export_midi_to_documents(
 }
 
 #[cfg(target_os = "windows")]
-pub fn start_external_midi_drag(
-    path: &std::path::Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_external_midi_drag(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let helper = find_midi_drag_helper().ok_or("MIDI drag helper not found")?;
     Command::new(helper).arg(path).spawn()?;
     Ok(())
@@ -112,10 +110,7 @@ fn find_midi_drag_helper() -> Option<PathBuf> {
     }
 
     for prefix in &prefixes {
-        let candidate = prefix
-            .join("Contents")
-            .join("x86_64-win")
-            .join(HELPER_NAME);
+        let candidate = prefix.join("Contents").join("x86_64-win").join(HELPER_NAME);
         if is_valid_helper_candidate(&candidate, &prefixes) {
             return Some(candidate);
         }
@@ -125,9 +120,7 @@ fn find_midi_drag_helper() -> Option<PathBuf> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn start_external_midi_drag(
-    _path: &std::path::Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_external_midi_drag(_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     Err("MIDI drag helper is only implemented on Windows".into())
 }
 
