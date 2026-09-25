@@ -12,7 +12,9 @@ param(
     # [255] Install elsewhere than the system VST3 folder (CI tests).
     [string]$InstallRoot = "",
     # [258] Skip the test run before -Install (tests run by default).
-    [switch]$SkipTests = $false
+    [switch]$SkipTests = $false,
+    # [272] Also compile the Inno Setup installer into ..\dist\.
+    [switch]$Installer = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -193,3 +195,29 @@ if (Test-Path $sourcePdb) {
 Write-Host ""
 Write-Color "Green" "Build termine."
 Write-Host "Bundle pret: $bundleDir"
+
+if ($Installer) {
+    # [272] Inno Setup (winget install JRSoftware.InnoSetup).
+    Write-Host ""
+    Write-Color "Yellow" "Compilation de l'installeur (Inno Setup)..."
+    $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+    $isccPath = if ($iscc) {
+        $iscc.Source
+    } elseif (Test-Path "$env:LOCALAPPDATA\Programs\Inno Setup 6\iscc.exe") {
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\iscc.exe"
+    } elseif (Test-Path "C:\Program Files (x86)\Inno Setup 6\iscc.exe") {
+        "C:\Program Files (x86)\Inno Setup 6\iscc.exe"
+    } else {
+        Write-Color "Red" "Inno Setup 6 introuvable. Installe-le : winget install JRSoftware.InnoSetup"
+        exit 1
+    }
+    & $isccPath (Join-Path $PSScriptRoot "installer\flash-drum.iss")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Color "Red" "ERREUR: compilation de l'installeur echouee."
+        exit 1
+    }
+    Get-ChildItem (Join-Path $PSScriptRoot "..\dist") -Filter "FlashDrum-Setup-*.exe" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1 |
+        ForEach-Object { Write-Color "Green" "Installeur pret: $($_.FullName)" }
+}

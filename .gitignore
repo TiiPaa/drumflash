@@ -8,6 +8,7 @@ target/
 *.pdb
 *.zip
 drum-pattern-vst/build/
+/dist/
 *.dll
 *.exe
 

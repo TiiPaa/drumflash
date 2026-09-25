@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-25 - [272] Installeur Windows (Inno Setup) (pas de nouveau build)
+
+**Pas de build plugin** : outillage de distribution uniquement.
+
+- **`installer/flash-drum.iss`** : installe le bundle complet (DLL + helper MIDI + `LICENSE.txt` + `THIRD-PARTY.md`) dans `C:\Program Files\Common Files\VST3\drum-pattern-vst.vst3`, avec écran de licence GPL et désinstallateur Windows standard (Ajout/Suppression de programmes).
+- **`.\build.ps1 -Installer`** : nouveau switch qui compile le bundle puis l'installeur dans `dist\FlashDrum-Setup-0.2.0.exe` (dossier `dist/` ignoré par git). Inno Setup 6 requis (`winget install JRSoftware.InnoSetup`).
+- La version de l'installeur est le `#define AppVersion` en tête du `.iss` — à synchroniser avec `Cargo.toml` lors d'un bump.
+
+À tester : double-cliquer `dist\FlashDrum-Setup-0.2.0.exe` (UAC admin), vérifier l'install + un drag & drop MIDI dans S1, puis la désinstallation depuis les Paramètres Windows.
+
+**Note support** : un utilisateur qui lance son DAW **en administrateur** ne pourra pas glisser-déposer de WAV/MIDI depuis l'Explorateur (barrière UIPI de Windows, curseur ⊘) — lancer le DAW normalement.
+
 ## 2026-09-25 - Build de resynchronisation (build 20260925-222838)
 
 **Branche:** `main` - **Build:** `20260925-222838`
