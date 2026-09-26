@@ -9,7 +9,7 @@
 ## Nouvelles tâches — session 2026-09-26 (demandes directes)
 
 - [x] **Density Randomize Lane à 80 % par défaut** (était 30 %) — `default_randomize_density` (build 20260926-183316).
-- [x] **Décalage de la grille d'une cellule (flèches ‹ ›)** — dans l'en-tête au-dessus des noms de lanes ; pas + fusions + p-locks son + p-locks séquenceur tournent ensemble avec wrap dans la longueur du pattern ; une fusion enjambant le wrap est supprimée (impossible à représenter) ; banque figée (build 20260926-183316).
+- [x] **Décalage de la grille d'une cellule (flèches ‹ ›)** — dans l'en-tête au-dessus des noms de lanes ; pas + fusions + p-locks son + p-locks séquenceur tournent ensemble avec wrap dans la longueur du pattern ; banque figée. **Avertissement avant casse** : si une fusion enjambe la frontière dans le sens du décalage, un modal liste les fusions concernées — confirmer casse la fusion en gardant sa première cellule (pas actif normal), annuler ne fait rien (builds 20260926-183316 → 191728).
 - [x] **Swing par lane → reporté [275]** sur décision utilisateur (intégrité du séquenceur) : ticketisé avec notes de design complètes dans TODO.md.
 
 ## Nouvelles tâches — session 2026-09-25 (demandes directes)
