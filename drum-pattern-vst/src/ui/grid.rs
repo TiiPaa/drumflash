@@ -230,6 +230,9 @@ pub fn draw_grid_v2(
         crate::ui::skeuo::well_recess(ui, wr, RADIUS_PANEL as f32);
     }
 
+    // Grid-shift warning: asks before breaking an edge fusion.
+    draw_shift_grid_warning_if_any(ui, params, pattern, plock, state, master_length);
+
     let mut fusion_edit_box_rect = None;
     ui.horizontal(|ui| {
         ui.set_height(28.0);
@@ -1844,7 +1847,14 @@ fn draw_seq_header_v2(
                     );
                     let resp = resp.on_hover_text(hover);
                     if resp.clicked() {
-                        shift_grid(params, pattern, plock, state, master_length, delta);
+                        let len = master_length.clamp(1, 64);
+                        if straddling_fusions(pattern, len, delta).is_empty() {
+                            shift_grid(params, pattern, plock, state, master_length, delta);
+                        } else {
+                            // A fusion sits at the edge we push toward: ask
+                            // before breaking it (reduced to its first cell).
+                            state.shift_grid_confirm = Some(delta);
+                        }
                     }
                 }
             });
@@ -2498,11 +2508,130 @@ pub fn preserve_step_active_from_plock_popup(
     }
 }
 
+/// Fusions that would straddle the wrap if the grid shifted by `delta`:
+/// after rotating, their start would land after their end, which the fusion
+/// model cannot represent. The UI warns before breaking them — on confirm,
+/// each is reduced to its first cell (a plain active step), which then
+/// rotates normally.
+fn straddling_fusions(
+    pattern: &SharedPattern,
+    len: usize,
+    delta: isize,
+) -> Vec<(usize, FusedGroup)> {
+    let mut out = Vec::new();
+    for slot in 0..crate::track::MAX_TRACKS {
+        for group in pattern.load_fusions(slot) {
+            let start = (group.start_cell as isize + delta).rem_euclid(len as isize);
+            let end = (group.end_cell as isize + delta).rem_euclid(len as isize);
+            if start > end {
+                out.push((slot, group));
+            }
+        }
+    }
+    out
+}
+
+/// Grid-shift warning (skeuo plate, foreground): a fusion straddles the wrap
+/// in the pending direction. On confirm it is reduced to its first cell (a
+/// plain active step) and the grid shifts; on cancel nothing happens.
+pub fn draw_shift_grid_warning_if_any(
+    ui: &mut egui::Ui,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    plock: &PlockState,
+    state: &mut EditorUIState,
+    master_length: usize,
+) {
+    let Some(delta) = state.shift_grid_confirm else {
+        return;
+    };
+    let len = master_length.clamp(1, 64);
+    let straddling = straddling_fusions(pattern, len, delta);
+    if straddling.is_empty() {
+        state.shift_grid_confirm = None;
+        return;
+    }
+
+    let screen_rect = ui.ctx().screen_rect();
+    let panel_w = 360.0;
+    let pos = egui::pos2(
+        screen_rect.center().x - panel_w * 0.5,
+        screen_rect.center().y - 30.0,
+    );
+    egui::Area::new(ui.id().with("shift_grid_warning"))
+        .kind(egui::UiKind::Popup)
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
+        .show(ui.ctx(), |ui| {
+            let bg = ui.painter().add(egui::Shape::Noop);
+            let resp = egui::Frame::NONE
+                .inner_margin(egui::Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_width(panel_w);
+                    ui.label(RichText::new("Shift grid").font(f_sans_sb(12.0)).color(RED()));
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(
+                            "A fusion at the pattern edge will be broken and reduced to its first cell:",
+                        )
+                        .font(f_sans_med(10.5))
+                        .color(INK2()),
+                    );
+                    ui.add_space(4.0);
+                    for (slot, group) in &straddling {
+                        ui.label(
+                            RichText::new(format!(
+                                "Lane {}: cells {}-{}",
+                                slot + 1,
+                                group.start_cell + 1,
+                                group.end_cell + 1
+                            ))
+                            .font(f_mono_med(9.5))
+                            .color(INK3()),
+                        );
+                    }
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        if crate::ui::controls::chip_button(
+                            ui,
+                            "Break & Shift",
+                            true,
+                            RED(),
+                            egui::Sense::click(),
+                        )
+                        .clicked()
+                        {
+                            shift_grid(params, pattern, plock, state, master_length, delta);
+                            state.shift_grid_confirm = None;
+                        }
+                        if crate::ui::controls::chip_button(
+                            ui,
+                            "Cancel",
+                            false,
+                            INK2(),
+                            egui::Sense::click(),
+                        )
+                        .clicked()
+                        {
+                            state.shift_grid_confirm = None;
+                        }
+                    });
+                });
+            ui.painter().set(
+                bg,
+                crate::ui::skeuo::plate_shape(resp.response.rect, RADIUS_PANEL as f32),
+            );
+        });
+}
+
 /// Shift every lane's grid by one cell — steps, fusions, sound p-locks and
 /// sequencer p-locks rotate together so nothing desyncs. Wraps inside the
 /// pattern length (nothing is lost). `delta` is +1 (right) or -1 (left).
-/// A fusion straddling the wrap cannot be represented (start > end): it is
-/// dropped. Saved bank slots are frozen snapshots and stay untouched.
+/// A fusion straddling the wrap is broken: its first cell stays as a plain
+/// active step. Callers warn first via `straddling_fusions` (the ‹ › arrows
+/// ask before breaking). Saved bank slots are frozen snapshots and stay
+/// untouched.
 fn shift_grid(
     params: &DrumFlashParams,
     pattern: &SharedPattern,
@@ -3361,6 +3490,48 @@ mod tests {
         assert_eq!(plock.values.get(0, 0, 2), 0.42);
         let fusions = pattern.load_fusions(0);
         assert_eq!((fusions[0].start_cell, fusions[0].end_cell), (4, 6));
+    }
+
+    #[test]
+    fn straddling_fusions_detects_only_the_edge_groups_in_the_push_direction() {
+        let params = crate::DrumFlashParams::default();
+        let pattern = params.pattern_state.shared();
+        pattern.store_fusions(
+            0,
+            &[
+                FusedGroup {
+                    start_cell: 4,
+                    end_cell: 6,
+                    step_count: 3,
+                    ..Default::default()
+                },
+                FusedGroup {
+                    start_cell: 14,
+                    end_cell: 15,
+                    step_count: 2,
+                    ..Default::default()
+                },
+            ],
+        );
+        // Pushing right: only the 14-15 group straddles.
+        let straddling = super::straddling_fusions(&pattern, 16, 1);
+        assert_eq!(straddling.len(), 1);
+        assert_eq!((straddling[0].1.start_cell, straddling[0].1.end_cell), (14, 15));
+        // Pushing left: nothing straddles (14-15 → 13-14, 4-6 → 3-5, both fine).
+        assert!(super::straddling_fusions(&pattern, 16, -1).is_empty());
+        // A group at the start straddles only when pushing left.
+        pattern.store_fusions(
+            1,
+            &[FusedGroup {
+                start_cell: 0,
+                end_cell: 1,
+                step_count: 2,
+                ..Default::default()
+            }],
+        );
+        let left = super::straddling_fusions(&pattern, 16, -1);
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].0, 1);
     }
 
     #[test]

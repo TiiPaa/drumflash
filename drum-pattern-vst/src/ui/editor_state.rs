@@ -144,6 +144,10 @@ pub struct EditorUIState {
     /// Runtime-only.
     #[serde(skip)]
     pub midi_export_modal: Option<std::path::PathBuf>,
+    /// Grid-shift confirmation: a fusion straddles the wrap in this direction
+    /// (delta of the pending shift, ±1); the modal asks before breaking it.
+    #[serde(skip)]
+    pub shift_grid_confirm: Option<isize>,
     pub dump_name_input: String,
     pub current_page: usize, // 0-3 (displaying steps current_page*16 .. current_page*16+15)
     pub follow_mode: bool,   // if true, page follows the playhead
