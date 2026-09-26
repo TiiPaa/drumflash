@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-26 - Légende Auto-assign : texte à gauche du bouton, comme la ligne Macros (build 20260926-160139)
+
+**Branche:** `main` - **Build:** `20260926-160139`
+**Validation:** `cargo check` sans avertissement ; `cargo test` 493 verts. Retour utilisateur sur le build 151533 : la ligne de légende pleine largeur cassait la mise en page. Désormais « Number lanes from the root note » à gauche du bouton (même gabarit que la ligne Macros en dessous), l'explication détaillée reste au survol. À valider visuellement dans S1 : Settings › MIDI.
+
 ## 2026-09-26 - [273] Le drop WAV refusé dit pourquoi + légende Auto-assign + version 0.9.0 (build 20260926-151533)
 
 **Branche:** `main` - **Build:** `20260926-151533` - **Version produit:** **0.9.0** (arbitrage utilisateur, était 0.2.0)
