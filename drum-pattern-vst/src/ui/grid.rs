@@ -96,8 +96,13 @@ pub fn draw_grid_v2(
 
             draw_seq_header_v2(
                 ui,
+                params,
+                pattern,
+                plock,
+                state,
                 page_offset,
                 play_step,
+                master_length,
                 grip_w,
                 name_w,
                 vol_w,
@@ -1799,8 +1804,13 @@ fn draw_len_value_fixed(ui: &mut egui::Ui, master_length: usize, width: f32) {
 
 fn draw_seq_header_v2(
     ui: &mut egui::Ui,
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    plock: &PlockState,
+    state: &mut EditorUIState,
     page_offset: usize,
     play_step: usize,
+    master_length: usize,
     grip_w: f32,
     name_w: f32,
     vol_w: f32,
@@ -1812,7 +1822,33 @@ fn draw_seq_header_v2(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         ui.add_sized(Vec2::new(grip_w, 16.0), egui::Label::new(""));
-        ui.add_sized(Vec2::new(name_w, 16.0), egui::Label::new(""));
+
+        // ‹ › above the lane names: shift the whole grid by one cell
+        // (steps, fusions and p-locks wrap inside the pattern length).
+        ui.allocate_ui(Vec2::new(name_w, 16.0), |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = GAP_TIGHT;
+                for (glyph, delta, hover) in [
+                    ("‹", -1isize, "Shift the whole grid one step left (steps, fusions and p-locks wrap inside the pattern length)"),
+                    ("›", 1isize, "Shift the whole grid one step right (steps, fusions and p-locks wrap inside the pattern length)"),
+                ] {
+                    let (rect, resp) =
+                        ui.allocate_exact_size(Vec2::new(14.0, 16.0), egui::Sense::click());
+                    let color = if resp.hovered() { INK() } else { FAINT() };
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        glyph,
+                        f_mono(12.0),
+                        color,
+                    );
+                    let resp = resp.on_hover_text(hover);
+                    if resp.clicked() {
+                        shift_grid(params, pattern, plock, state, master_length, delta);
+                    }
+                }
+            });
+        });
         ui.add_sized(
             Vec2::new(vol_w, 16.0),
             egui::Label::new(RichText::new("Vol").font(f_sans_sb(9.5)).color(INK3())),
@@ -2462,10 +2498,90 @@ pub fn preserve_step_active_from_plock_popup(
     }
 }
 
+/// Shift every lane's grid by one cell — steps, fusions, sound p-locks and
+/// sequencer p-locks rotate together so nothing desyncs. Wraps inside the
+/// pattern length (nothing is lost). `delta` is +1 (right) or -1 (left).
+/// A fusion straddling the wrap cannot be represented (start > end): it is
+/// dropped. Saved bank slots are frozen snapshots and stay untouched.
+fn shift_grid(
+    params: &DrumFlashParams,
+    pattern: &SharedPattern,
+    plock: &PlockState,
+    state: &mut EditorUIState,
+    master_length: usize,
+    delta: isize,
+) {
+    let len = master_length.clamp(1, 64);
+    let wrap = |cell: isize| -> usize { cell.rem_euclid(len as isize) as usize };
+
+    // 1) Step masks — the u16 packs every lane, so all lanes shift at once.
+    let masks = pattern.step_masks();
+    for step in 0..len {
+        pattern.set_step_mask(step, masks[wrap(step as isize - delta)]);
+    }
+
+    // 2) Fusions: shift both endpoints; a group that would straddle the wrap
+    // is dropped (start must stay <= end).
+    for slot in 0..crate::track::MAX_TRACKS {
+        let groups = pattern.load_fusions(slot);
+        let mut shifted = Vec::with_capacity(groups.len());
+        for group in groups {
+            let start = wrap(group.start_cell as isize + delta) as u8;
+            let end = wrap(group.end_cell as isize + delta) as u8;
+            if start <= end {
+                let mut group = group;
+                group.start_cell = start;
+                group.end_cell = end;
+                shifted.push(group);
+            }
+        }
+        pattern.store_fusions(slot, &shifted);
+    }
+
+    // 3) Sound p-locks: values + activity masks + field masks rotate per step
+    // (link/snapshot mode preserved, like move_step_with_plocks).
+    for slot in 0..crate::track::MAX_TRACKS {
+        let active: [bool; 64] =
+            std::array::from_fn(|s| plock.masks.is_active(slot, s));
+        let field_masks: [u64; 64] = std::array::from_fn(|s| plock.field_masks.get(slot, s));
+        let values: [[f32; crate::plock::FIELD_COUNT]; 64] = std::array::from_fn(|s| {
+            std::array::from_fn(|f| plock.values.get(slot, s, f))
+        });
+        for step in 0..len {
+            let src = wrap(step as isize - delta);
+            if active[src] {
+                plock.masks.set_active(slot, step, true);
+                plock.field_masks.set_raw(slot, step, field_masks[src]);
+                for field in 0..crate::plock::FIELD_COUNT {
+                    plock.values.set(slot, step, field, values[src][field]);
+                }
+            } else {
+                plock.clear(slot, step);
+            }
+        }
+    }
+
+    // 4) Sequencer p-locks (probability, stutter, conditions, microtiming,
+    // solo) rotate the same way.
+    let seq = &params.seq_plock_state.state;
+    for slot in 0..crate::track::MAX_TRACKS {
+        let cell_params: [Option<crate::plock::SequencerStepParams>; 64] =
+            std::array::from_fn(|s| seq.get(slot, s));
+        for step in 0..len {
+            let src = wrap(step as isize - delta);
+            match &cell_params[src] {
+                Some(cell_params) => seq.set(slot, step, cell_params),
+                None => seq.clear(slot, step),
+            }
+        }
+    }
+
+    state.mark_pattern_dirty();
+}
+
 /// Move a single step (with its sound and sequencer plocks) from `source` to
 /// `target` within the same slot. Fused cells are left untouched.
-fn move_step_with_plocks(
-    pattern: &SharedPattern,
+fn move_step_with_plocks(    pattern: &SharedPattern,
     plock: &PlockState,
     params: &DrumFlashParams,
     slot: usize,
@@ -3186,7 +3302,90 @@ fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; crate::track::MAX_TRAC
 
 #[cfg(test)]
 mod tests {
+    use crate::sequencer::FusedGroup;
     use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot, MAX_TRACKS};
+
+    #[test]
+    fn shift_grid_rotates_steps_plocks_and_fusions_with_wrap() {
+        use nih_plug::params::persist::PersistentField;
+        let params = crate::DrumFlashParams::default();
+        PersistentField::<TrackLayoutState>::set(
+            &params.track_layout,
+            TrackLayoutState::modular_default_layout(),
+        );
+        let pattern = params.pattern_state.shared();
+        let plock = &params.plock_state.state;
+        let mut state = crate::ui::editor_state::EditorUIState::default();
+        let master_length = 16;
+
+        // Start from an empty grid (the default params carry the rock pattern).
+        pattern.load_step_masks(&[0u16; 64]);
+
+        // Steps on lane 0 at 0 and 15; a plock at 0; a seq plock at 15.
+        pattern.set_step_mask(0, 0b0001);
+        pattern.set_step_mask(15, 0b0101);
+        plock.set_field(0, 0, 2, 0.42);
+        params
+            .seq_plock_state
+            .state
+            .set_probability(0, 15, 0.25);
+        pattern.store_fusions(
+            0,
+            &[FusedGroup {
+                start_cell: 4,
+                end_cell: 6,
+                step_count: 3,
+                ..Default::default()
+            }],
+        );
+
+        // Right by one: 0→1, 15→0 (wrap), fusion 4-6 → 5-7.
+        super::shift_grid(&params, &pattern, plock, &mut state, master_length, 1);
+        assert_eq!(pattern.step_masks()[1], 0b0001);
+        assert_eq!(pattern.step_masks()[0], 0b0101, "step 15 wrapped to 0");
+        assert_eq!(pattern.step_masks()[15], 0, "step 14 moved to 15? no: only 0 and 15 were on");
+        assert_eq!(plock.values.get(0, 1, 2), 0.42, "plock followed its step");
+        assert!(!plock.masks.is_active(0, 0));
+        let prob = f32::from_bits(
+            params.seq_plock_state.state.probabilities[0][0].load(std::sync::atomic::Ordering::Relaxed),
+        );
+        assert_eq!(prob, 0.25, "seq plock wrapped with its step");
+        let fusions = pattern.load_fusions(0);
+        assert_eq!(fusions.len(), 1);
+        assert_eq!((fusions[0].start_cell, fusions[0].end_cell), (5, 7));
+
+        // Left by one restores the original layout.
+        super::shift_grid(&params, &pattern, plock, &mut state, master_length, -1);
+        assert_eq!(pattern.step_masks()[0], 0b0001);
+        assert_eq!(pattern.step_masks()[15], 0b0101);
+        assert_eq!(plock.values.get(0, 0, 2), 0.42);
+        let fusions = pattern.load_fusions(0);
+        assert_eq!((fusions[0].start_cell, fusions[0].end_cell), (4, 6));
+    }
+
+    #[test]
+    fn shift_grid_drops_a_fusion_straddling_the_wrap() {
+        let params = crate::DrumFlashParams::default();
+        let pattern = params.pattern_state.shared();
+        let plock = &params.plock_state.state;
+        let mut state = crate::ui::editor_state::EditorUIState::default();
+        // Fusion 14-15 shifted right by one would become 15-0 (start > end):
+        // unrepresentable, so it is dropped.
+        pattern.store_fusions(
+            0,
+            &[FusedGroup {
+                start_cell: 14,
+                end_cell: 15,
+                step_count: 2,
+                ..Default::default()
+            }],
+        );
+        super::shift_grid(&params, &pattern, plock, &mut state, 16, 1);
+        assert!(
+            pattern.load_fusions(0).is_empty(),
+            "a fusion straddling the wrap must be dropped"
+        );
+    }
 
     #[test]
     fn wav_drop_activates_the_empty_slot_loads_its_file_and_preserves_other_lanes() {

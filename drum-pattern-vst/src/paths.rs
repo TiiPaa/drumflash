@@ -63,6 +63,9 @@ mod tests {
 
     #[test]
     fn user_dirs_share_one_root() {
+        // Hold the env lock: config tests mutate FLASH_DRUM_CONFIG_DIR in
+        // parallel, and config_path() must not be observed mid-mutation here.
+        let _guard = crate::config::CONFIG_ENV_LOCK.lock().unwrap();
         let root = flash_drum_dir();
         assert!(root.is_absolute());
         assert!(root.ends_with("Flash Drum"));

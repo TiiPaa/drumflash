@@ -278,7 +278,8 @@ pub struct EditorUIState {
 }
 
 fn default_randomize_density() -> f32 {
-    0.3
+    // User request 2026-09-26: 80 % by default.
+    0.8
 }
 
 /// State of the Presets modal ([150]).

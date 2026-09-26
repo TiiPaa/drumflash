@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-26 - Density Randomize à 80 % + flèches ‹ › de décalage de la grille (build 20260926-183316)
+
+**Branche:** `main` - **Build:** `20260926-183316`
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 495 verts lib (2 nouveaux + fix d'une race entre tests de config découverte au passage). À valider dans Studio One (liste dans le rapport).
+
+Trois demandes utilisateur du 2026-09-26 ; la troisième (swing par lane) est **reportée par prudence** → ticket [275] dans TODO.md avec notes de design.
+
+- **Density de Randomize Lane à 80 % par défaut** (était 30 %) — `default_randomize_density` dans `editor_state.rs`.
+- **Décalage de la grille d'une cellule** : deux flèches **‹ ›** dans l'en-tête de la grille, au-dessus de la colonne des noms de lanes. Tout tourne ensemble pour que rien ne se désynchronise : pas, **fusions**, **p-locks son** (valeurs + masques + field masks, mode link/snapshot préservé) et **p-locks séquenceur** (probabilité, stutter, conditions, microtiming, solo). Rotation **avec wrap dans la longueur du pattern** (rien n'est perdu). Une fusion qui enjamberait le wrap (ex. 14-15 décalée à droite) ne peut pas être représentée : elle est supprimée (test dédié). Les slots sauvegardés de la banque restent figés, c'est voulu.
+- **Fix tests** : la variable `FLASH_DRUM_CONFIG_DIR` [263] mutée par les tests de config pouvait être observée en parallèle par `user_dirs_share_one_root` → mutex `CONFIG_ENV_LOCK` partagé.
+
 ## 2026-09-26 - Légende Auto-assign : texte à gauche du bouton, comme la ligne Macros (build 20260926-160139)
 
 **Branche:** `main` - **Build:** `20260926-160139`
