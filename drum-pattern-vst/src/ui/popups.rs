@@ -331,6 +331,13 @@ pub fn draw_settings_popup_if_any(
                 });
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
+                    // Label on the left, like the Macros row below — no
+                    // full-width caption shifting the popup's layout.
+                    ui.label(
+                        RichText::new("Number lanes from the root note")
+                            .font(f_sans_med(10.5))
+                            .color(INK3()),
+                    );
                     ui.add_space((ui.available_width() - 96.0).max(0.0));
                     if crate::ui::controls::keycap_button(
                         ui,
@@ -354,13 +361,6 @@ pub fn draw_settings_popup_if_any(
                         assign_midi_notes_in_order(params, base.clamp(0, 127) as u8);
                     }
                 });
-                // Always-visible caption: the hover tooltip alone left the
-                // button unexplained (user report 2026-09-25).
-                ui.label(
-                    RichText::new("Active lanes take consecutive MIDI notes from Lane 1's root.")
-                        .font(f_sans_med(9.0))
-                        .color(FAINT()),
-                );
 
                 ui.add_space(10.0);
 
