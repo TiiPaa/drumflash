@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-26 - Décalage de grille : avertissement avant de casser une fusion au bord (build 20260926-191728)
+
+**Branche:** `main` - **Build:** `20260926-191728`
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 496 verts lib (1 nouveau). À valider dans Studio One (liste dans le rapport).
+
+Retour utilisateur sur le décalage livré au build 183316 : une fusion à la frontière pouvait disparaître sans prévenir. Désormais :
+
+- Les flèches **‹ ›** détectent d'abord si une fusion enjambe la frontière dans le sens du décalage (`straddling_fusions`). Si non : décalage immédiat, comme avant.
+- Si oui : **modal d'avertissement** listant les fusions concernées (« Lane 3: cells 14-15 ») — **Break & Shift** casse la fusion **en gardant sa première cellule** (qui redevient un pas actif normal et tourne avec le reste), **Cancel** annule tout (la grille ne bouge pas).
+
 ## 2026-09-26 - Density Randomize à 80 % + flèches ‹ › de décalage de la grille (build 20260926-183316)
 
 **Branche:** `main` - **Build:** `20260926-183316`
