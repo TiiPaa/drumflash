@@ -6,6 +6,12 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
+## Nouvelles tâches — session 2026-09-26 (demandes directes)
+
+- [x] **Density Randomize Lane à 80 % par défaut** (était 30 %) — `default_randomize_density` (build 20260926-183316).
+- [x] **Décalage de la grille d'une cellule (flèches ‹ ›)** — dans l'en-tête au-dessus des noms de lanes ; pas + fusions + p-locks son + p-locks séquenceur tournent ensemble avec wrap dans la longueur du pattern ; une fusion enjambant le wrap est supprimée (impossible à représenter) ; banque figée (build 20260926-183316).
+- [x] **Swing par lane → reporté [275]** sur décision utilisateur (intégrité du séquenceur) : ticketisé avec notes de design complètes dans TODO.md.
+
 ## Nouvelles tâches — session 2026-09-25 (demandes directes)
 
 - [x] [273] **Feedback « grille pleine » au drop WAV** — le drop refusé (grille pleine ou modal ouvert) n'affichait qu'un curseur ⊘ muet ; une étiquette près du curseur dit maintenant pourquoi (« Grid full - an occupied lane is never replaced… », « Close the Presets/Macros/Settings dialog… »). 3e patch egui-baseview (`rejected_hover_position`, documenté dans FLASH-DRUM-PATCHES.md, testé). + **Légende du bouton Auto-assign MIDI** (demande associée) : explication « Number lanes from the root note » à gauche du bouton, même gabarit que la ligne Macros (builds 20260926-151533 → 160139).
