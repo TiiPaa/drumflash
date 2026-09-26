@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// [263] Serializes the tests that mutate `FLASH_DRUM_CONFIG_DIR`: the env
+/// var is process-global, and a parallel test reading `config_path()` in the
+/// mutation window (e.g. `paths::user_dirs_share_one_root`) would observe the
+/// redirected path and fail.
+#[cfg(test)]
+pub(crate) static CONFIG_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Global user preferences stored outside the DAW project.
 ///
 /// Lives in `Documents/Flash Drum/config.json` ([260]: the real Documents
@@ -90,8 +97,8 @@ mod tests {
     #[test]
     fn config_dir_env_override_redirects_the_config() {
         // [263] Hermetic tests: FLASH_DRUM_CONFIG_DIR must win over the user
-        // folder. The window where the var is set is tiny; a concurrent test
-        // reading it would just get a default config, which is always valid.
+        // folder.
+        let _guard = crate::config::CONFIG_ENV_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("fd_cfg_{:?}", std::thread::current().id()));
         std::env::set_var("FLASH_DRUM_CONFIG_DIR", &dir);
         let path = GlobalConfig::config_path();
@@ -104,6 +111,7 @@ mod tests {
     fn unreadable_config_is_moved_aside_not_erased() {
         // [261] A corrupt config.json must be renamed to .bad, never silently
         // replaced by defaults.
+        let _guard = crate::config::CONFIG_ENV_LOCK.lock().unwrap();
         let dir =
             std::env::temp_dir().join(format!("fd_cfg_bad_{:?}", std::thread::current().id()));
         std::fs::create_dir_all(&dir).unwrap();
