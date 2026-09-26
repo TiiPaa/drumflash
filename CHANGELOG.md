@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-26 - [273] Le drop WAV refusé dit pourquoi + légende Auto-assign + version 0.9.0 (build 20260926-151533)
+
+**Branche:** `main` - **Build:** `20260926-151533` - **Version produit:** **0.9.0** (arbitrage utilisateur, était 0.2.0)
+**Validation:** `cargo check --all-targets` sans avertissement ; `cargo test` 493 verts lib ; 4 tests egui-baseview verts (dont le nouveau) ; install atomique OK ; installeur régénéré : **`dist\FlashDrum-Setup-0.9.0.exe`**. À valider dans Studio One (liste dans le rapport).
+
+- **[273] Le drop refusé s'explique** : glisser un WAV quand la grille est pleine ou qu'un modal est ouvert n'affichait qu'un curseur ⊘ — c'est ce qui avait fait croire à un bug (avant de découvrir le mode admin / UIPI). Désormais une étiquette près du curseur dit pourquoi : « Grid full - an occupied lane is never replaced; remove one first. » ou « Close the Presets/Macros/Settings dialog to drop files. » Troisième patch du vendor egui-baseview (`rejected_hover_position`, documenté dans `FLASH-DRUM-PATCHES.md`, test `rejected_drag_reports_its_position_until_it_leaves`).
+- **Légende Auto-assign MIDI** (Settings › MIDI) : le bouton n'avait d'explication qu'au survol ; une ligne visible en permanence dit ce qu'il fait (« Active lanes take consecutive MIDI notes from Lane 1's root. »).
+- **[274] Version produit 0.9.0** : `Cargo.toml` et l'installeur bumpés ensemble (convention : la version produit bouge sur arbitrage, les build IDs restent la traçabilité quotidienne).
+
 ## 2026-09-25 - [272] Installeur Windows (Inno Setup) (pas de nouveau build)
 
 **Pas de build plugin** : outillage de distribution uniquement.

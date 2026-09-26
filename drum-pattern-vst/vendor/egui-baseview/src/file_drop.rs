@@ -28,6 +28,10 @@ fn pending_id() -> Id {
     Id::new("egui_baseview_pending_file_drops")
 }
 
+fn rejected_id() -> Id {
+    Id::new("egui_baseview_file_drop_rejected_hover")
+}
+
 /// `None` disables drops (for example when the grid is full or a modal is open).
 pub fn set_target(ctx: &Context, rect: Option<Rect>, extensions: &[&str]) {
     ctx.data_mut(|data| match rect {
@@ -47,6 +51,14 @@ pub fn take_dropped(ctx: &Context) -> Vec<FileDrop> {
     ctx.data_mut(|data| {
         std::mem::take(data.get_temp_mut_or_default::<Vec<FileDrop>>(pending_id()))
     })
+}
+
+/// [273] The position of an OS drag this editor is currently REJECTING
+/// (target disabled, outside the rectangle, or wrong file type) — so the UI
+/// can say WHY next to the OS "forbidden" cursor. `None` while no rejected
+/// drag is hovering (or after the drag leaves).
+pub fn rejected_hover_position(ctx: &Context) -> Option<Pos2> {
+    ctx.data_mut(|data| data.get_temp::<Pos2>(rejected_id()))
 }
 
 fn accepted_paths(ctx: &Context, position: Pos2, files: &DropData) -> Vec<PathBuf> {
@@ -77,6 +89,9 @@ pub(crate) fn handle_event(
         MouseEvent::DragDropped { data, .. } => (data, true),
         MouseEvent::DragLeft => {
             input.hovered_files.clear();
+            ctx.data_mut(|data| {
+                data.remove::<Pos2>(rejected_id());
+            });
             ctx.request_repaint();
             return Some(EventStatus::Ignored);
         }
@@ -84,14 +99,25 @@ pub(crate) fn handle_event(
     };
     let Some(position) = position else {
         input.hovered_files.clear();
+        ctx.data_mut(|data| {
+            data.remove::<Pos2>(rejected_id());
+        });
         return Some(EventStatus::Ignored);
     };
     let paths = accepted_paths(ctx, position, files);
     input.hovered_files.clear();
     if paths.is_empty() {
+        // [273] Remember where the rejected drag hovers: the grid shows the
+        // reason (full, modal open) instead of the bare ⊘ cursor.
+        ctx.data_mut(|data| {
+            data.insert_temp(rejected_id(), position);
+        });
         ctx.request_repaint();
         return Some(EventStatus::Ignored);
     }
+    ctx.data_mut(|data| {
+        data.remove::<Pos2>(rejected_id());
+    });
     if dropped {
         input.dropped_files.extend(paths.iter().map(|path| egui::DroppedFile {
             path: Some(path.clone()),
@@ -126,7 +152,39 @@ mod tests {
     }
 
     fn enable(ctx: &Context) {
-        set_target(ctx, Some(Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(100.0, 100.0))), &["wav"]);
+        set_target(
+            ctx,
+            Some(Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(100.0, 100.0))),
+            &["wav"],
+        );
+    }
+
+    /// [273] A rejected drag reports its position until it leaves or is
+    /// accepted, so the UI can explain the refusal.
+    #[test]
+    fn rejected_drag_reports_its_position_until_it_leaves() {
+        let ctx = Context::default();
+        let mut input = RawInput::default();
+        let position = egui::pos2(50.0, 30.0);
+        assert_eq!(rejected_hover_position(&ctx), None);
+
+        // No target published: rejection, and the position is reported.
+        let status = handle_event(&ctx, &mut input, &event(&["kick.wav"], false), Some(position));
+        assert_eq!(status, Some(EventStatus::Ignored));
+        assert_eq!(rejected_hover_position(&ctx), Some(position));
+
+        // Accepted this time: the marker is cleared.
+        enable(&ctx);
+        let status = handle_event(&ctx, &mut input, &event(&["kick.wav"], false), Some(position));
+        assert_eq!(status, Some(EventStatus::AcceptDrop(DropEffect::Copy)));
+        assert_eq!(rejected_hover_position(&ctx), None);
+
+        // Rejected again (wrong type), then DragLeft clears the marker.
+        let status = handle_event(&ctx, &mut input, &event(&["clip.mp3"], false), Some(position));
+        assert_eq!(status, Some(EventStatus::Ignored));
+        assert_eq!(rejected_hover_position(&ctx), Some(position));
+        handle_event(&ctx, &mut input, &MouseEvent::DragLeft, None);
+        assert_eq!(rejected_hover_position(&ctx), None);
     }
 
     #[test]

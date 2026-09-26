@@ -8,6 +8,8 @@
 
 ## Nouvelles tâches — session 2026-09-25 (demandes directes)
 
+- [x] [273] **Feedback « grille pleine » au drop WAV** — le drop refusé (grille pleine ou modal ouvert) n'affichait qu'un curseur ⊘ muet ; une étiquette près du curseur dit maintenant pourquoi (« Grid full - an occupied lane is never replaced… », « Close the Presets/Macros/Settings dialog… »). 3e patch egui-baseview (`rejected_hover_position`, documenté dans FLASH-DRUM-PATCHES.md, testé). + **Légende du bouton Auto-assign MIDI** (demande associée) : explication visible en permanence sous le bouton, plus seulement au survol (build 20260926-151533).
+- [x] [274] **Version produit 0.9.0** — arbitrage utilisateur : `Cargo.toml` + `#define AppVersion` dans `installer/flash-drum.iss` passés de 0.2.0 à **0.9.0** ; installeur régénéré (`dist\FlashDrum-Setup-0.9.0.exe`) (build 20260926-151533).
 - [x] [272] **Installeur Windows (Inno Setup)** — `drum-pattern-vst/installer/flash-drum.iss` : installe le bundle (DLL + helper MIDI + `LICENSE.txt` + `THIRD-PARTY.md`) dans `C:\Program Files\Common Files\VST3`, écran de licence GPL, désinstallateur standard Windows. Compilé via `.\build.ps1 -Installer` (nouveau switch, Inno Setup 6 requis : `winget install JRSoftware.InnoSetup`) → `dist\FlashDrum-Setup-0.2.0.exe` (ignoré par git). La version suit `Cargo.toml` (define en tête du .iss).
 - [x] [271] **Modal après export MIDI** — après un clic sur Export, un modal affiche le chemin complet du `.mid` écrit + bouton **Open folder** (ouvre `Documents\Flash Drum\exports` dans l'Explorateur via la crate `open`) + OK ; le drag MIDI reste sans modal (build 20260925-140504, à valider dans S1).
 
