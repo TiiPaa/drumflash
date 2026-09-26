@@ -1904,6 +1904,46 @@ fn handle_wav_drop(
         && !state.macros_open
         && !state.settings_open;
     nih_plug_egui::file_drop::set_target(ui.ctx(), available.then_some(grid_rect), &["wav"]);
+
+    // [273] A rejected drop says WHY next to the bare OS ⊘ cursor: full grid
+    // (a lane is never replaced) or an open modal blocks the target.
+    if !available {
+        if let Some(pos) = nih_plug_egui::file_drop::rejected_hover_position(ui.ctx()) {
+            if grid_rect.contains(pos) {
+                let reason = if active.iter().all(|a| *a) {
+                    "Grid full - an occupied lane is never replaced; remove one first."
+                } else if state.preset_browser.is_some() {
+                    "Close the Presets dialog to drop files."
+                } else if state.macros_open {
+                    "Close the Macros dialog to drop files."
+                } else {
+                    "Close the Settings dialog to drop files."
+                };
+                egui::Area::new(ui.id().with("wav_drop_rejected_hint"))
+                    .kind(egui::UiKind::Popup)
+                    .order(egui::Order::Tooltip)
+                    .fixed_pos(pos + egui::vec2(14.0, 14.0))
+                    .show(ui.ctx(), |ui| {
+                        let bg = ui.painter().add(egui::Shape::Noop);
+                        let resp = egui::Frame::NONE
+                            .inner_margin(egui::Margin::symmetric(8, 4))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(reason).font(f_sans_med(9.5)).color(INK()),
+                                );
+                            });
+                        ui.painter().set(
+                            bg,
+                            crate::ui::skeuo::plate_shape(
+                                resp.response.rect,
+                                RADIUS_PANEL as f32,
+                            ),
+                        );
+                    });
+            }
+        }
+    }
+
     for drop in nih_plug_egui::file_drop::take_dropped(ui.ctx()) {
         if !available || !grid_rect.contains(drop.position) {
             continue;

@@ -17,3 +17,9 @@ Upstream discarded it, so a time-based effect whose last rendered frame still
 showed a sliver of the effect (the [238] lane-name flash) never got the frame
 that turns it fully off — the lit pixels stayed on screen until an unrelated
 repaint.
+
+[273] rejected-hover reporting (`file_drop.rs`): a drag the editor refuses
+(target disabled, outside the rectangle, wrong file type) reports its hover
+position through `rejected_hover_position()` until it leaves or is accepted.
+The grid uses it to say WHY next to the bare OS ⊘ cursor (full grid, open
+modal). Covered by `rejected_drag_reports_its_position_until_it_leaves`.
