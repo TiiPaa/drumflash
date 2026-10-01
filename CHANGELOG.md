@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-01 - [269] chantier 2 : ménage du code mort, 62 `#[allow(dead_code)]` → 14 (build 20261001-112204)
+
+**Branche:** `main` - **Build:** `20261001-112204`
+**Validation:** `cargo check --all-targets --locked` sans avertissement (bibliothèque, tests et les deux exécutables vérifiés séparément) ; `cargo test` 499 verts lib ; clippy (réglages CI) vert ; `cargo run --bin test_standalone` joue ses 5 s ; install atomique OK. À valider dans Studio One : **rien ne doit changer**, vérification de non-régression seulement.
+
+Méthode : les 61 marqueurs posés sur des éléments ont été retirés d'un coup, puis le compilateur a dit lesquels couvraient réellement du code inutilisé, en production et en test. Les variantes non-Windows (`#[cfg(not(target_os = "windows"))]`) ont été relues : ce sont des stubs qui n'appellent aucun des éléments supprimés.
+
+- **Une trentaine de marqueurs inutiles retirés** : le code est utilisé (dont les deux fonctions de fusions par page de `grid.rs`, annoncées « gardées pour la phase Page-bar » et branchées depuis).
+- **Supprimé (≈ 180 lignes, appelées nulle part)** : `label` / `full_name` / `midi_note` / `algo_count` / `sound_settings_default` du registre ; `Sequencer::set_position` / `slot_voices` / `pattern` ; `DrumVoice::midi_note` / `name` / `label` ; `DrumSynthesizer::process_voice_samples` (rendu mono) ; dans `dsp.rs`, ce qui contredisait les règles anti-clic — `reseed` des bruits rose / brun / bleu, `SawOsc::reset` (remise à zéro de phase), `ExpDecayEnvelope::trigger_from_current` (retrigger d'avant le contrat [179]) — et deux `current()` ; l'option `suffix` de `LocalParamSlider`.
+- **Réservé aux tests** (`#[cfg_attr(not(test), allow(dead_code))]`, raison écrite) : `MorphableField::min` / `max`, `Voice::is_active`, `Voice::set_special_param`, `DrumSynthesizer::initialize` (aussi le harnais) ; `export_pattern_to_midi_bytes` passe en `#[cfg(test)]`.
+- **Gardé volontairement (8, raison écrite à côté)** : API d'origine du portage AC606 (`DecayEnvelope::clear`, `SweepSine::clear`) et les 3 valeurs de référence du charley mesuré (`HiHatSpec`) ; `ExpDecayEnvelope::set_attack_ms` / `set_hold` (la règle anti-clic impose de retoucher une enveloppe par ses setters, jamais de la recréer) ; `DrumSynthesizer::process_sample` (rendu mono du harnais `test_standalone`). Plus le marqueur global du harnais, qui recompile des modules entiers.
+
 ## 2026-10-01 - [269] Snare606 et 808 Kick : un seul algorithme déclaré, comme leur moteur (build 20261001-100120)
 
 **Branche:** `main` - **Build:** `20261001-100120`

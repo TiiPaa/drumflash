@@ -371,7 +371,6 @@ impl<'a> MorphSource<'a> {
     /// How many more fields this group can morph. Reads better than
     /// `group.morph_capacity_left()` at the call site; currently only the tests
     /// use it, `supports` going straight to the group.
-    #[allow(dead_code)]
     pub fn capacity_left(&self) -> usize {
         self.group.morph_capacity_left()
     }

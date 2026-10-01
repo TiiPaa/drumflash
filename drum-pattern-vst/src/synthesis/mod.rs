@@ -80,7 +80,6 @@ pub use snare606::Snare606Voice;
 pub use tom::TomVoice;
 
 /// Drum voice types matching the original web app
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DrumVoice {
     Kick = 0,
@@ -114,7 +113,6 @@ pub enum DrumVoice {
     OneShot = 26,
 }
 
-#[allow(dead_code)]
 impl DrumVoice {
     pub const COUNT: usize = 27;
 
@@ -149,18 +147,6 @@ impl DrumVoice {
             26 => Some(Self::OneShot),
             _ => None,
         }
-    }
-
-    pub fn midi_note(&self) -> u8 {
-        crate::instrument_registry::INSTRUMENTS[*self as usize].midi_note
-    }
-
-    pub fn name(&self) -> &'static str {
-        crate::instrument_registry::INSTRUMENTS[*self as usize].name
-    }
-
-    pub fn label(&self) -> &'static str {
-        crate::instrument_registry::INSTRUMENTS[*self as usize].label
     }
 
     /// Steepness of the filter envelope decay stage for voices that use a fixed
@@ -989,16 +975,17 @@ pub trait Voice: Send + Sync {
         let m = self.process_sample();
         (m, m)
     }
-    #[allow(dead_code)]
+    /// [269] Test-only: the engine tracks activity per slot itself.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn is_active(&self) -> bool;
     fn reset(&mut self);
-    #[allow(dead_code)]
     fn set_settings(&mut self, settings: VoiceSettings);
 
     /// Set synthesis algorithm by index.
     fn set_algo(&mut self, algo: u8);
-    /// Set a special parameter by index (0..7).
-    #[allow(dead_code)]
+    /// Set a special parameter by index (0..7). [269] Test-only: the engine
+    /// delivers specials through `set_settings`.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn set_special_param(&mut self, index: usize, value: f32);
 }
 
@@ -1476,7 +1463,9 @@ impl DrumSynthesizer {
         }
     }
 
-    #[allow(dead_code)]
+    /// [269] Tests and the `test_standalone` harness; the plugin calls
+    /// `initialize_with_layout`.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn initialize(&mut self, sample_rate: f32) {
         let legacy_layout = crate::track::TrackLayoutState::from_legacy_13();
         self.initialize_with_layout(sample_rate, &legacy_layout);
@@ -1555,6 +1544,8 @@ impl DrumSynthesizer {
         }
     }
 
+    /// [269] Mono mix for the `test_standalone` harness (the plugin renders
+    /// per slot in stereo through `process_voice_samples_stereo`).
     #[allow(dead_code)]
     pub fn process_sample(&mut self, output: &mut f32) {
         let mut mixed = 0.0f32;
@@ -1566,22 +1557,6 @@ impl DrumSynthesizer {
             }
         }
         *output = mixed;
-    }
-
-    #[allow(dead_code)]
-    pub fn process_voice_samples(&mut self, outputs: &mut [f32; crate::track::MAX_TRACKS]) {
-        for (i, (voice, output)) in self.voices.iter_mut().zip(outputs.iter_mut()).enumerate() {
-            if !self.active[i] {
-                *output = 0.0;
-                continue;
-            }
-            if let Some(voice) = voice {
-                let vel = self.velocity_smoothers[i].process(self.velocities[i]);
-                *output = voice.process_sample() * vel;
-            } else {
-                *output = 0.0;
-            }
-        }
     }
 
     pub fn process_voice_samples_stereo(
@@ -1612,7 +1587,6 @@ impl DrumSynthesizer {
         }
     }
 
-    #[allow(dead_code)]
     pub fn set_voice_settings(&mut self, slot_idx: usize, settings: VoiceSettings) {
         if !self.active.get(slot_idx).copied().unwrap_or(false) {
             return;

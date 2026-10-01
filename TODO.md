@@ -9,7 +9,7 @@
 ### Phase 6 — Traçabilité & dette
 - [~] [269] **REPRENDRE ICI (session dédiée — refactors invasifs)** — **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
   - [x] Chantier 1 — listes par index de voix dans l'UI → champs du registre : `is_sampler` / `freq_as_notes` / `analog_fixed` dans chaque `InstrumentDef`, règles Gate (Buzz) et Feedback flanger (Sdrex) par noms de paramètres, 3 tests (build 20261001-093056, à valider dans S1 : non-régression).
-  - [ ] Chantier 2 — auditer les 62 `#[allow(dead_code)]` (14 fichiers) : supprimer le mort, réserver le reste aux tests.
+  - [x] Chantier 2 — auditer les 62 `#[allow(dead_code)]` (14 fichiers) : supprimer le mort, réserver le reste aux tests. Fait : 62 → 14 (≈ 180 lignes supprimées, 5 réservés aux tests, 8 gardés avec raison écrite) (build 20261001-112204, à valider dans S1 : non-régression).
   - [ ] Chantier 3 — dispatch `DrumVoiceKind` par macro (9 méthodes × 27 voix).
   - [ ] Chantier 4 — découper `process()` (~880 lignes) et `ui/sound_editor.rs` (déplacement strict, sans changement de comportement).
   - [x] `algo_count: 2` périmé pour Snare606 et 808 Kick → corrigé à 1, test d'égalité stricte sur les 27 voix (build 20261001-100120).

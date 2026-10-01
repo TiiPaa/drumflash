@@ -3109,7 +3109,6 @@ fn normalize_existing_fusion_cells_for_ui(
     set_step_active_for_ui(pattern_for_ui, start_cell, instrument, was_active);
 }
 
-#[allow(dead_code)] // retained: per-page Copy/Paste/Clear menu, re-wired in the Page-bar phase
 fn clear_page_fusions_for_ui(pattern_for_ui: &SharedPattern, page: usize) {
     let page_start = page * 16;
     let page_end = (page_start + 16).min(crate::sequencer::pattern::STEP_COUNT);
@@ -3262,7 +3261,6 @@ pub fn clear_page_for_ui(
     clear_page_fusions_for_ui(pattern_for_ui, page);
 }
 
-#[allow(dead_code)] // retained: per-page Copy/Paste/Clear menu, re-wired in the Page-bar phase
 fn replace_page_fusions_for_ui(
     pattern_for_ui: &SharedPattern,
     params: &DrumFlashParams,
