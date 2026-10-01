@@ -195,8 +195,9 @@ fn export_pattern_to_midi_data(
     file_data
 }
 
-/// Export pattern to MIDI bytes in memory (for drag-and-drop).
-#[allow(dead_code)]
+/// Export pattern to MIDI bytes in memory — the tests' entry point (the
+/// plugin writes the file through `export_pattern_to_midi`).
+#[cfg(test)]
 pub fn export_pattern_to_midi_bytes(
     pattern: &SharedPattern,
     track_layout: &AtomicTrackLayout,

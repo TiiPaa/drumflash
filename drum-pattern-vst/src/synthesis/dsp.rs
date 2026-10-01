@@ -61,14 +61,6 @@ impl PinkNoise {
         sum * 0.25
     }
 
-    #[allow(dead_code)]
-    pub fn reseed(&mut self, seed: u32) {
-        self.white.reseed(seed);
-        for r in self.rows.iter_mut() {
-            *r = self.white.next();
-        }
-        self.index = 0;
-    }
 }
 
 // ── Brown Noise (1/f², integration of white) ────────────────────────────────
@@ -96,11 +88,6 @@ impl BrownNoise {
         self.integrator
     }
 
-    #[allow(dead_code)]
-    pub fn reseed(&mut self, seed: u32) {
-        self.white.reseed(seed);
-        self.integrator = 0.0;
-    }
 }
 
 // ── Blue Noise (+3 dB/octave, differentiation of white) ─────────────────────
@@ -127,11 +114,6 @@ impl BlueNoise {
         diff * 0.8
     }
 
-    #[allow(dead_code)]
-    pub fn reseed(&mut self, seed: u32) {
-        self.white.reseed(seed);
-        self.prev = self.white.next();
-    }
 }
 
 // ── Switchable Noise Source ─────────────────────────────────────────────────
@@ -335,7 +317,6 @@ impl Biquad {
         output
     }
 
-    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.x1 = 0.0;
         self.x2 = 0.0;
@@ -426,7 +407,9 @@ impl ExpDecayEnvelope {
         self
     }
 
-    #[allow(dead_code)] // reusable primitive; amp voices now use DecayReleaseEnvelope
+    /// [269] Unused today, kept on purpose: the anti-click rule says to
+    /// retune a live envelope through its setters, never to recreate it.
+    #[allow(dead_code)]
     pub fn set_attack_ms(&mut self, ms: f32) {
         self.attack_time = ms.max(0.0) / 1000.0;
         // If attack was shortened to zero while a ramp is still in progress,
@@ -439,7 +422,8 @@ impl ExpDecayEnvelope {
 
     /// Set the hold time in seconds. After the attack ramp completes, the
     /// envelope stays at its peak for `hold_seconds` before the decay starts.
-    #[allow(dead_code)] // reusable primitive; amp voices now use DecayReleaseEnvelope
+    /// [269] Kept on purpose, like `set_attack_ms`.
+    #[allow(dead_code)]
     pub fn set_hold(&mut self, hold_seconds: f32) {
         self.hold_time = hold_seconds.max(0.0);
     }
@@ -475,22 +459,10 @@ impl ExpDecayEnvelope {
         }
     }
 
-    /// Analog-style persistent retrigger: bump the envelope to `peak` only if it
-    /// is currently below that value, otherwise keep the existing tail. Bypasses
-    /// the attack ramp — intended for usages where the value carries a physical
-    /// quantity (delta-Hz for a pitch sweep) rather than an amplitude.
-    #[allow(dead_code)] // reusable primitive; superseded by the [179] retrigger
-                        // contract (every hit restarts from a clean slate)
-    pub fn trigger_from_current(&mut self, peak: f32) {
-        let peak = peak.max(0.0);
-        self.value = self.value.max(peak);
-        self.attack_remaining = 0.0;
-    }
-
     /// Deterministic retrigger: snap the value to exactly `value`, no attack ramp.
-    /// Unlike `trigger_from_current` (which only ever raises the value, giving the
-    /// organic "analog" drift), this restarts from the same depth on every hit —
-    /// used by the "digital" path so the pitch sweep is identical each time.
+    /// This restarts from the same depth on every hit, so the pitch sweep is
+    /// identical each time (the [179] retrigger contract: every hit starts from
+    /// a clean slate).
     /// Click-safe because the value drives a *frequency* (phase-accumulator), so a
     /// jump changes the phase slope, never the phase itself.
     pub fn trigger_reset_to(&mut self, value: f32) {
@@ -513,13 +485,6 @@ impl ExpDecayEnvelope {
         } else {
             self.value = peak;
         }
-    }
-
-    /// Returns the envelope's current value without ticking the decay. Useful for
-    /// chaining envelopes that need to observe each other's state at trigger time.
-    #[allow(dead_code)] // reusable primitive; amp voices now use DecayReleaseEnvelope
-    pub fn current(&self) -> f32 {
-        self.value
     }
 
     #[inline]
@@ -745,11 +710,6 @@ impl DecayReleaseEnvelope {
 
     pub fn set_hold(&mut self, hold_seconds: f32) {
         self.hold_time = hold_seconds.max(0.0);
-    }
-
-    #[allow(dead_code)]
-    pub fn current(&self) -> f32 {
-        self.value
     }
 }
 
@@ -1153,11 +1113,6 @@ impl SawOsc {
         self.phase -= self.phase.floor();
         sample
     }
-
-    #[allow(dead_code)]
-    pub fn reset(&mut self) {
-        self.phase = 0.0;
-    }
 }
 
 // ── Triangle Oscillator ─────────────────────────────────────────────────────
@@ -1222,7 +1177,6 @@ impl OnePoleSmoother {
         self.coeff = (-1.0 / (sample_rate * time_seconds)).exp();
     }
 
-    #[allow(dead_code)]
     pub fn reset(&mut self, value: f32) {
         self.current = value;
     }

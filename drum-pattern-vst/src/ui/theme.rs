@@ -392,37 +392,30 @@ pub const TAG_SIZE: f32 = 21.0;
 // Font helpers — weighted IBM Plex families (registered in install_egui_fonts).
 // Convention: "chiffre = mono, mot = sans" → mono_* for numbers/values/codes.
 // ============================================================
-#[allow(dead_code)]
 #[inline]
 pub fn f_sans(size: f32) -> FontId {
     FontId::new(size, FontFamily::Proportional)
 }
-#[allow(dead_code)]
 #[inline]
 pub fn f_sans_med(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("sans_med".into()))
 }
-#[allow(dead_code)]
 #[inline]
 pub fn f_sans_sb(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("sans_sb".into()))
 }
-#[allow(dead_code)]
 #[inline]
 pub fn f_sans_bold(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("sans_bold".into()))
 }
-#[allow(dead_code)]
 #[inline]
 pub fn f_mono(size: f32) -> FontId {
     FontId::new(size, FontFamily::Monospace)
 }
-#[allow(dead_code)]
 #[inline]
 pub fn f_mono_med(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("mono_med".into()))
 }
-#[allow(dead_code)]
 #[inline]
 pub fn f_mono_sb(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("mono_sb".into()))

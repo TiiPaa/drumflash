@@ -14,7 +14,6 @@ pub struct LocalParamSlider<'a> {
     value: &'a mut f32,
     range: RangeInclusive<f32>,
     logarithmic: bool,
-    suffix: Option<&'a str>,
     draw_value: bool,
     slider_width: Option<f32>,
     reset_value: Option<f32>,
@@ -27,18 +26,10 @@ impl<'a> LocalParamSlider<'a> {
             value,
             range,
             logarithmic: false,
-            suffix: None,
             draw_value: true,
             slider_width: None,
             reset_value: None,
         }
-    }
-
-    #[allow(dead_code)]
-    /// Set a suffix to display after the value.
-    pub fn suffix(mut self, suffix: &'a str) -> Self {
-        self.suffix = Some(suffix);
-        self
     }
 
     /// Don't draw the text slider's current value after the slider.
@@ -78,11 +69,7 @@ impl<'a> LocalParamSlider<'a> {
     }
 
     fn string_value(&self) -> String {
-        if let Some(suffix) = self.suffix {
-            format!("{:.2}{}", self.value, suffix)
-        } else {
-            format!("{:.2}", self.value)
-        }
+        format!("{:.2}", self.value)
     }
 
     fn granular_drag(&mut self, _ui: &Ui, drag_delta: Vec2) {

@@ -449,7 +449,6 @@ impl Pattern {
         }
     }
 
-    #[allow(dead_code)]
     pub fn default_pattern() -> Self {
         let mut pattern = Self::empty();
         pattern.name = "Default".to_string();
@@ -701,21 +700,18 @@ impl Pattern {
         array::from_fn(|step| self.get_step(step).bitmask())
     }
 
-    #[allow(dead_code)]
     pub fn toggle(&mut self, instrument: usize, step: usize) {
         if instrument < INSTRUMENT_COUNT && step < STEP_COUNT {
             self.steps[step].instruments[instrument] = !self.steps[step].instruments[instrument];
         }
     }
 
-    #[allow(dead_code)]
     pub fn set(&mut self, instrument: usize, step: usize, value: bool) {
         if instrument < INSTRUMENT_COUNT && step < STEP_COUNT {
             self.steps[step].instruments[instrument] = value;
         }
     }
 
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         for step in &mut self.steps {
             step.instruments = [false; INSTRUMENT_COUNT];

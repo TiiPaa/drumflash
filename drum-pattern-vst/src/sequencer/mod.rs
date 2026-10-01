@@ -731,19 +731,6 @@ impl Sequencer {
         }
     }
 
-    /// Set position from DAW transport (in steps 0-63).
-    #[allow(dead_code)]
-    pub fn set_position(&mut self, step: usize) {
-        self.beat_position = (step as f64) * 0.25;
-        let master_step = groove::beat_to_step(self.beat_position, self.swing, self.groove_type);
-        for track in self.tracks.iter_mut() {
-            track.previous_shifted_master = master_step;
-            track.step_counter = master_step;
-            track.previous_step = track.step_counter % track.track_length.max(1);
-            track.clear_microtiming_state();
-        }
-    }
-
     /// Returns the master step for UI highlighting.
     pub fn current_step(&self) -> usize {
         groove::beat_to_step(self.beat_position, self.swing, self.groove_type)
@@ -773,16 +760,6 @@ impl Sequencer {
 
     pub fn set_slot_voices(&mut self, slot_voices: [Option<usize>; MAX_TRACKS]) {
         self.slot_voices = slot_voices;
-    }
-
-    #[allow(dead_code)]
-    pub fn slot_voices(&self) -> &[Option<usize>; MAX_TRACKS] {
-        &self.slot_voices
-    }
-
-    #[allow(dead_code)]
-    pub fn pattern(&self) -> &Arc<SharedPattern> {
-        &self.pattern
     }
 }
 

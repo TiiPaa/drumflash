@@ -56,7 +56,6 @@ impl SongStateController {
     }
 
     /// Number of snapshots currently in the queue (for diagnostics).
-    #[allow(dead_code)]
     pub fn pending_count(&self) -> usize {
         self.queue.len()
     }

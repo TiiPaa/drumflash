@@ -141,7 +141,6 @@ pub enum ParamWidget {
 }
 
 /// Metadata for a standard (per-instrument) parameter exposed in the Sound Panel.
-#[allow(dead_code)]
 pub struct StandardParamDef {
     pub field: StandardField,
     pub label: &'static str,
@@ -150,7 +149,6 @@ pub struct StandardParamDef {
 }
 
 /// Metadata for a special (per-instrument) parameter exposed in the Sound Panel.
-#[allow(dead_code)]
 pub struct SpecialParamDef {
     pub name: &'static str,
     pub label: &'static str,
@@ -176,7 +174,6 @@ pub struct SpecialParamDef {
 }
 
 /// Helper for continuous special parameters (morphable).
-#[allow(dead_code)]
 const fn sp(
     name: &'static str,
     label: &'static str,
@@ -202,7 +199,6 @@ const fn sp(
 }
 
 /// Helper for a continuous special parameter that carries a display unit ([182]).
-#[allow(dead_code)]
 const fn sp_unit(
     name: &'static str,
     label: &'static str,
@@ -239,7 +235,6 @@ const fn sp_unit(
 pub const SAT_AMOUNT_CURVE: f32 = 1.5;
 
 /// Helper for a continuous special parameter with a slider response curve.
-#[allow(dead_code)]
 const fn sp_curved(
     name: &'static str,
     label: &'static str,
@@ -267,7 +262,6 @@ const fn sp_curved(
 
 /// Helper for a discrete special parameter with NAMED choices ([221]): the
 /// value is the index into `options`, and the Sound Panel renders a dropdown.
-#[allow(dead_code)]
 const fn sp_options(
     name: &'static str,
     label: &'static str,
@@ -292,7 +286,6 @@ const fn sp_options(
 }
 
 /// Helper for discrete special parameters (not morphable).
-#[allow(dead_code)]
 const fn sp_discrete(
     name: &'static str,
     label: &'static str,
@@ -426,7 +419,6 @@ pub fn param_is_morphable(voice_idx: usize, id: crate::param_id::ParamId) -> boo
 }
 
 /// Metadata for an instrument in the registry.
-#[allow(dead_code)]
 pub struct InstrumentDef {
     pub index: usize,
     pub name: &'static str,
@@ -4802,26 +4794,6 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
     },
 ];
 
-#[allow(dead_code)]
-pub fn label(voice_idx: usize) -> &'static str {
-    INSTRUMENTS[voice_idx].label
-}
-
-#[allow(dead_code)]
-pub fn full_name(voice_idx: usize) -> &'static str {
-    INSTRUMENTS[voice_idx].full_name
-}
-
-#[allow(dead_code)]
-pub fn midi_note(voice_idx: usize) -> u8 {
-    INSTRUMENTS[voice_idx].midi_note
-}
-
-#[allow(dead_code)]
-pub fn algo_count(voice_idx: usize) -> usize {
-    INSTRUMENTS[voice_idx].algo_count
-}
-
 /// Highest algo index across all instruments. Used as the shared range of the
 /// per-slot algo params (any kind can live on any slot); kept >= 1 because an
 /// IntRange with min == max crashes nih-plug normalization (bug [42]).
@@ -4839,21 +4811,18 @@ pub fn special_params(voice_idx: usize) -> &'static [SpecialParamDef] {
     INSTRUMENTS[voice_idx].special_params
 }
 
-#[allow(dead_code)]
-pub fn sound_settings_default(voice_idx: usize) -> &'static [f32; SOUND_SETTINGS_FIELD_COUNT] {
-    &INSTRUMENTS[voice_idx].sound_settings_default
-}
-
-#[allow(dead_code)]
 pub fn filter_type_label(voice_idx: usize) -> &'static str {
     INSTRUMENTS[voice_idx].filter_type_label
 }
 
-#[allow(dead_code)]
 pub struct MorphableField {
     pub field_index: usize,
     pub label: &'static str,
+    // [269] The slider range rides along for the morphing tests, which check
+    // it; the engine morphs plock values as stored.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub min: f32,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub max: f32,
 }
 
@@ -4861,7 +4830,6 @@ const SPECIAL_FIELD_START: usize = 14;
 
 /// Returns all plock fields that support continuous morphing for a given instrument.
 /// Includes all standard (slider) fields and continuous special parameters.
-#[allow(dead_code)]
 pub fn morphable_fields(voice_idx: usize) -> Vec<MorphableField> {
     if voice_idx >= INSTRUMENTS.len() {
         return Vec::new();
