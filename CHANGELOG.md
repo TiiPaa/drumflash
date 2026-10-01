@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-01 - [269] chantier 1 : plus de liste par numéro de voix dans le Sound Editor (build 20261001-093056)
+
+**Branche:** `main` - **Build:** `20261001-093056`
+**Validation:** `cargo check --all-targets --locked` sans avertissement ; `cargo test` 499 verts lib (3 nouveaux) ; clippy (réglages CI) vert, aucun avertissement sur les lignes modifiées ; install atomique OK. À valider dans Studio One : **rien ne doit avoir changé** (refactor sans effet voulu), vérification de non-régression seulement.
+
+Première étape de la dette [269] : le patron « si voix == N » qui avait produit [247] (graphe Oh6smp) et [248] (repli du générateur) disparaît de l'interface.
+
+- **Trois caractéristiques déclarées dans chaque entrée du registre** (`InstrumentDef`, 27 entrées) : `is_sampler` (multisample embarqué), `freq_as_notes` (ligne Frequency en Hz / Notes : Kick, 808 Kick, Bd6Ac) et `analog_fixed` (« Analog fixé » de `docs/analog-mode.md` : HiHat, OpenHiHat, Clap, Ride, Snare606, Perc1). `is_sampler()` lit le champ au lieu de la liste `13 | 14 | 15 | 24`. Le compilateur refuse désormais une entrée qui oublie l'un des trois.
+- **Sound Editor** (`ui/sound_editor.rs`) : les 7 tests par numéro de voix sont remplacés — les deux listes (Hz/Notes, dump dev de l'Analog) lisent le registre ; la sous-ligne Gate de Buzz et le grisé du Feedback flanger de Sdrex suivent les **noms** des paramètres (`GATE_ROW_PREFIX`, `FILTER_MOD_SUFFIX`, `FLANGER_ONLY_SUFFIX` dans le registre), comme la règle Loop/Grain ; la table de migration Hz → demi-tons des samplers nomme les voix (`DrumVoice::Bd606`…) ; l'exception `voice_idx != 3` du sélecteur d'algorithme (déjà sans effet) est retirée.
+- **Tests** : `voice_traits_match_the_former_index_lists` (les voix couvertes avant et après sont identiques), `algo_selector_never_offers_more_than_the_engine_honours` (remplace l'exception OpenHiHat), `name_keyed_sound_editor_rules_find_their_params` (un renommage de paramètre ne désactive plus une règle en silence).
+- **Doc** : `ADDING_AN_INSTRUMENT.md` (§3, §6, §7, §8) et la skill `nouvel-instrument` décrivent les trois champs au lieu des listes.
+- **Constaté au passage, non corrigé** : le registre déclare `algo_count: 2` pour Snare606 et 808 Kick alors que ces voix n'ont qu'un algorithme et ignorent la valeur (aucun effet audible ni visible).
+
 ## 2026-09-26 - Décalage de grille : avertissement avant de casser une fusion au bord (build 20260926-191728)
 
 **Branche:** `main` - **Build:** `20260926-191728`

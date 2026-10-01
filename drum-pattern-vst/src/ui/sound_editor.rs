@@ -1988,12 +1988,11 @@ pub fn draw_sound_panel(
     // The voice also understands the legacy marker, so audio is correct even
     // before the Sound tab is opened; opening it commits the semitone value.
     if crate::instrument_registry::is_sampler(voice_idx) && inst.special_value(10) < 0.5 {
-        let legacy_root = if voice_idx == 13 {
-            60.0
-        } else if voice_idx == 14 {
-            200.0
-        } else {
-            8000.0
+        // Frozen legacy table: the roots those builds stored Hz against.
+        let legacy_root = match DrumVoice::from_index(voice_idx) {
+            Some(DrumVoice::Bd606) => 60.0,
+            Some(DrumVoice::Sd606) => 200.0,
+            _ => 8000.0, // the hats (Ch606, Oh606)
         };
         freq = if freq > 0.0 {
             (12.0 * (freq / legacy_root).log2()).clamp(-24.0, 24.0)
@@ -2048,11 +2047,9 @@ pub fn draw_sound_panel(
                     }
                     let algo = params.algos()[state.selected_instrument].value() as u8;
                     // Skip Analog for instruments that don't use it
-                    let standards = if matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12)
-                        || crate::instrument_registry::is_sampler(voice_idx)
-                    {
-                        // HiHat, OpenHiHat, Ride, Cymbal, Perc1, Zap + the samplers:
-                        // no analog drift, so 0.0 is a placeholder
+                    let standards = if instrument.analog_fixed || instrument.is_sampler {
+                        // "Analog fixé" voices + the samplers: no analog
+                        // drift, so 0.0 is a placeholder
                         [
                             freq,
                             decay,
@@ -2395,7 +2392,7 @@ pub fn draw_sound_panel(
                                     def.label.to_string()
                                 };
 
-                                let is_bass_drum = voice_idx == 0 || voice_idx == 11 || voice_idx == 18;
+                                let is_bass_drum = instrument.freq_as_notes;
                                 let freq_in_notes = is_bass_drum
                                     && def.field == crate::instrument_registry::StandardField::Freq
                                     && src.get(ParamId::FreqMode) >= 0.5;
@@ -2648,7 +2645,7 @@ pub fn draw_sound_panel(
                         }
                         // Buzz gate controls render in their own sub-row, with
                         // the gate shape graph beside them (see below).
-                        if voice_idx == 16 && def.name.starts_with("buzz_gate") {
+                        if def.name.starts_with(crate::instrument_registry::GATE_ROW_PREFIX) {
                             continue;
                         }
                         // Multisample voices (*606): the Sample list only makes
@@ -2657,11 +2654,19 @@ pub fn draw_sound_panel(
                         // (random multisample) is on.
                         let sample_disabled =
                             def.name.ends_with("_sample") && src.get(ParamId::Special(0)) > 0.5;
-                        let filter_mod_active = voice_idx == 17 && src.get(ParamId::Special(17)) > 0.5;
+                        // [269] Keyed on the names (Sdrex today): a
+                        // `*_filter_mod` switch turned on greys the flanger row.
+                        let filter_mod_active = instrument
+                            .special_params
+                            .iter()
+                            .find(|d| d.name.ends_with(crate::instrument_registry::FILTER_MOD_SUFFIX))
+                            .map(|d| src.get(ParamId::Special(d.special_index)) > 0.5)
+                            .unwrap_or(false);
                         // [181] Only Feedback is flanger-specific now: the
-                        // Fade-in (index 1) applies to both modulation modes.
+                        // Fade-in applies to both modulation modes.
                         let modulation_disabled =
-                            filter_mod_active && def.special_index == 3;
+                            filter_mod_active
+                                && def.name.ends_with(crate::instrument_registry::FLANGER_ONLY_SUFFIX);
                         // [221] Grain only bites while Loop is on: with Loop
                         // off the slice is played once and its length is the
                         // envelope's business. Greyed, not hidden. Keyed on the
@@ -3029,7 +3034,11 @@ pub fn draw_sound_panel(
                     if family == crate::instrument_registry::ParamFamily::Osc {
                         if let Some(voice) = DrumVoice::from_index(voice_idx) {
                             let algos = synthesis::algos_for(voice);
-                            if algos.len() > 1 && voice_idx != 3 {
+                            // [269] No voice-index exception: a shared list
+                            // (OpenHiHat uses HiHat's) longer than what a voice
+                            // honours fails the registry test
+                            // `algo_selector_never_offers_more_than_the_engine_honours`.
+                            if algos.len() > 1 {
                                 let algo_param = params.algos()[state.selected_instrument];
                                 ui.horizontal(|ui| {
                                     editor_label(ui, "Algorithm");
@@ -3316,15 +3325,20 @@ pub fn draw_sound_panel(
             // Buzz, Env family: the gate controls get their own row with the
             // gate shape graph BESIDE the sliders (not stacked under the amp
             // graph — stacking grew the section and shifted the layout).
-            if family == crate::instrument_registry::ParamFamily::Env && voice_idx == 16 {
+            // [269] Keyed on the gate params' names, not on Buzz's index.
+            let is_gate_row = |d: &&crate::instrument_registry::SpecialParamDef| {
+                d.family == family
+                    && d.name.starts_with(crate::instrument_registry::GATE_ROW_PREFIX)
+            };
+            if family == crate::instrument_registry::ParamFamily::Env
+                && special_defs.iter().any(|d| is_gate_row(&d))
+            {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.set_max_width(params_w);
                         ui.set_width(params_w);
                         ui.spacing_mut().item_spacing.y = 9.0;
-                        for def in special_defs
-                            .iter()
-                            .filter(|d| d.family == family && d.name.starts_with("buzz_gate"))
+                        for def in special_defs.iter().filter(is_gate_row)
                         {
                             let gate_id = ParamId::Special(def.special_index);
                             let mut value = src.get(gate_id);

@@ -7,7 +7,12 @@
 > **Phases 0 à 5 terminées** (archivées dans DONE.md). Reste la phase 6 (dette, sans urgence).
 
 ### Phase 6 — Traçabilité & dette
-- [ ] [269] **REPRENDRE ICI (session dédiée — refactors invasifs)** — **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
+- [~] [269] **REPRENDRE ICI (session dédiée — refactors invasifs)** — **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
+  - [x] Chantier 1 — listes par index de voix dans l'UI → champs du registre : `is_sampler` / `freq_as_notes` / `analog_fixed` dans chaque `InstrumentDef`, règles Gate (Buzz) et Feedback flanger (Sdrex) par noms de paramètres, 3 tests (build 20261001-093056, à valider dans S1 : non-régression).
+  - [ ] Chantier 2 — auditer les 62 `#[allow(dead_code)]` (14 fichiers) : supprimer le mort, réserver le reste aux tests.
+  - [ ] Chantier 3 — dispatch `DrumVoiceKind` par macro (9 méthodes × 27 voix).
+  - [ ] Chantier 4 — découper `process()` (~880 lignes) et `ui/sound_editor.rs` (déplacement strict, sans changement de comportement).
+  - Note : `algo_count: 2` périmé pour Snare606 et 808 Kick (une seule voix d'algorithme, valeur ignorée par la voix) — à arbitrer.
 
 ### Idées notées (2026-09-26, demandes utilisateur)
 - [ ] [275] **Swing par lane qui override le swing global** (onglet Track, mêmes paramètres : switch + amount + type) — **reporté par prudence (2026-09-26) : session dédiée**, l'évaluation des triggers est au cœur du séquenceur. Notes de design déjà récoltées : point d'injection unique `groove::beat_to_step`/`step_start_beat` par lane (sequencer/mod.rs:438, 292, 538, 639+), `Sequencer::set_lane_swings` par buffer sur le modèle `set_microtimings`, persistance nouveau champ `lane-swings-v1` (pack enabled+type+amount par slot, modèle `LaneLengthLocks`), UI onglet Track (sound_editor), export MIDI à répliquer (midi_export.rs), tests stress existants comme filet. Prérequis : relire toutes les utilisations de `swing`/`groove_type` dans le séquenceur.

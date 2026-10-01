@@ -342,16 +342,24 @@ pub fn source_section_title(voice_idx: usize) -> &'static str {
     }
 }
 
-/// Is this voice one of the embedded multisample samplers?
-///
-/// They share a parameter shape the synthesised voices do not have: pitch in
-/// relative semitones, a sample index, One Shot, Start/End offsets, and a
-/// waveform graph instead of an envelope one. The list used to be spelled
-/// `13 | 14 | 15` in eleven places; adding OH6smp ([208]) made that a
-/// twelve-site edit, so it lives here once.
+/// Is this voice one of the embedded multisample samplers? Declared by each
+/// voice's `InstrumentDef::is_sampler` ([269]; the list used to be spelled out
+/// by index).
 pub fn is_sampler(voice_idx: usize) -> bool {
-    matches!(voice_idx, 13 | 14 | 15 | 24)
+    INSTRUMENTS.get(voice_idx).is_some_and(|def| def.is_sampler)
 }
+
+// [269] Sound Editor rules keyed on parameter names rather than on a voice
+// index (same idea as the `*_loop` / `*_grain*` rule), so they follow the
+// params a voice declares.
+/// Gate controls (Buzz today) get their own sub-row of the Env section,
+/// beside the gate shape graph.
+pub const GATE_ROW_PREFIX: &str = "buzz_gate";
+/// A modulation switch which, turned on (filter mode), greys the row named
+/// by [`FLANGER_ONLY_SUFFIX`] (Sdrex today).
+pub const FILTER_MOD_SUFFIX: &str = "_filter_mod";
+/// The flanger-only row ([181]: the Fade-in applies to both modes).
+pub const FLANGER_ONLY_SUFFIX: &str = "_flanger_feedback";
 
 /// The factory default of one parameter on one voice ([184]).
 ///
@@ -433,6 +441,19 @@ pub struct InstrumentDef {
     /// Ratio applied to the frequency value before displaying as note.
     /// e.g. 0.3 for Kick because the sustain freq is 0.3x the setting.
     pub freq_display_ratio: f32,
+    /// One of the embedded multisample samplers (the *606 sample voices).
+    /// They share a parameter shape the synthesised voices do not have: pitch
+    /// in relative semitones, a sample index, One Shot, Start/End offsets, and
+    /// a waveform graph instead of an envelope one. Read through
+    /// [`is_sampler`].
+    pub is_sampler: bool,
+    /// The Frequency row offers the Hz / Notes display switch (kick-like
+    /// voices; the per-lane `freq_mode`).
+    pub freq_as_notes: bool,
+    /// "Analog fixé" (`docs/analog-mode.md`): the Analog slider only governs
+    /// phase continuity, the voice has no random drift. The dev preset dump
+    /// writes 0.0 in place of its analog value.
+    pub analog_fixed: bool,
 }
 
 const fn s(
@@ -2035,6 +2056,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 0.3,
         filter_type_label: "LP",
+        is_sampler: false,
+        freq_as_notes: true,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 1,
@@ -2099,6 +2123,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 2,
@@ -2189,6 +2216,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: true,
     },
     InstrumentDef {
         index: 3,
@@ -2279,6 +2309,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: true,
     },
     InstrumentDef {
         index: 4,
@@ -2351,6 +2384,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 5,
@@ -2423,6 +2459,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 6,
@@ -2495,6 +2534,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 7,
@@ -2559,6 +2601,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: true,
     },
     InstrumentDef {
         index: 8,
@@ -2622,6 +2667,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: true,
     },
     InstrumentDef {
         index: 9,
@@ -2713,6 +2761,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "HP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 10,
@@ -2787,6 +2838,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: true,
     },
     InstrumentDef {
         index: 11,
@@ -2887,6 +2941,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: false,
+        freq_as_notes: true,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 12,
@@ -2970,6 +3027,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: true,
     },
     InstrumentDef {
         index: 13,
@@ -3074,6 +3134,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: true,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 14,
@@ -3178,6 +3241,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: true,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 15,
@@ -3281,6 +3347,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: true,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 16,
@@ -3448,6 +3517,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 17,
@@ -3633,6 +3705,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     // ── AC606 voices (ported analogcode engines, MIT (c) 2026 Matthew Fecher)
     InstrumentDef {
@@ -3703,6 +3778,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 0.3,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: true,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 19,
@@ -3777,6 +3855,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 20,
@@ -3852,6 +3933,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 21,
@@ -3927,6 +4011,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 22,
@@ -3992,6 +4079,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     InstrumentDef {
         index: 23,
@@ -4059,6 +4149,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     // [208] OH6smp: the CH6smp definition on the open-hat bank. Only the
     // decay default differs - the point of an open hat is that it rings.
@@ -4164,6 +4257,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "LP",
+        is_sampler: true,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     // [221] Rift - a slice lifted out of a long texture. Offset is the whole
     // point: declared `sp`, so it is p-lockable per step and morphable across
@@ -4469,6 +4565,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         // Vide, comme Buzz : le type est un menu, l'ecrire dans le libelle de
         // la coupure donnerait "Filter (Multi)", qui ne veut rien dire.
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
     // [243] One-Shot - the lane's own sample file, played start to finish. No
     // embedded content: the `_texture` special is an infra marker that keeps
@@ -4697,6 +4796,9 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         ],
         freq_display_ratio: 1.0,
         filter_type_label: "",
+        is_sampler: false,
+        freq_as_notes: false,
+        analog_fixed: false,
     },
 ];
 
@@ -4826,6 +4928,84 @@ mod tests {
         def.standard_params
             .iter()
             .any(|p| p.field == StandardField::Stereo)
+    }
+
+    /// [269] These traits used to be index lists in the Sound Editor; they now
+    /// live on each `InstrumentDef`. Pin the voices each list covered so the
+    /// move changed nothing. Only the 27 voices of the time are pinned: a voice
+    /// added later declares its traits freely.
+    #[test]
+    fn voice_traits_match_the_former_index_lists() {
+        use crate::synthesis::DrumVoice as V;
+        const PINNED: usize = 27;
+        let with = |t: fn(&InstrumentDef) -> bool| -> Vec<usize> {
+            (0..PINNED).filter(|&i| t(&INSTRUMENTS[i])).collect()
+        };
+        let idx = |vs: &[V]| -> Vec<usize> {
+            let mut v: Vec<usize> = vs.iter().map(|&v| v as usize).collect();
+            v.sort_unstable();
+            v
+        };
+        assert_eq!(
+            with(|d| d.is_sampler),
+            idx(&[V::Bd606, V::Sd606, V::Ch606, V::Oh606])
+        );
+        assert_eq!(
+            with(|d| d.freq_as_notes),
+            idx(&[V::Kick, V::BassDrum808, V::Bd6Ac])
+        );
+        assert_eq!(
+            with(|d| d.analog_fixed),
+            idx(&[V::HiHat, V::OpenHiHat, V::Clap, V::Ride, V::Snare606, V::Perc1])
+        );
+        for (i, def) in INSTRUMENTS.iter().enumerate() {
+            assert_eq!(is_sampler(i), def.is_sampler, "{}", def.full_name);
+        }
+        assert!(!is_sampler(INSTRUMENTS.len()), "out of range must be false");
+    }
+
+    /// [269] The Sound Editor shows the Algorithm selector when `algos_for`
+    /// names more than one algorithm; the engine clamps the choice to
+    /// `algo_count`. The selector must never offer an entry the engine would
+    /// clamp away. This is what replaced the UI's `voice_idx != 3` exception:
+    /// OpenHiHat shares HiHat's list but honours a single algorithm.
+    #[test]
+    fn algo_selector_never_offers_more_than_the_engine_honours() {
+        for (i, def) in INSTRUMENTS.iter().enumerate() {
+            let voice = crate::synthesis::DrumVoice::from_index(i).expect("voice index");
+            let named = crate::synthesis::algos_for(voice).len();
+            assert!(
+                named <= def.algo_count,
+                "{}: the selector would offer {named} algorithms, the engine honours {}",
+                def.full_name,
+                def.algo_count
+            );
+        }
+    }
+
+    /// [269] Two Sound Editor rules are keyed on parameter names instead of a
+    /// voice index: a rename would switch them off without a word.
+    #[test]
+    fn name_keyed_sound_editor_rules_find_their_params() {
+        use crate::synthesis::DrumVoice as V;
+        let specials = |v: V| INSTRUMENTS[v as usize].special_params.iter();
+        assert!(
+            specials(V::Buzz)
+                .any(|d| d.family == ParamFamily::Env && d.name.starts_with(GATE_ROW_PREFIX)),
+            "Buzz lost its gate sub-row params"
+        );
+        assert!(specials(V::Sdrex).any(|d| d.name.ends_with(FILTER_MOD_SUFFIX)));
+        assert!(specials(V::Sdrex).any(|d| d.name.ends_with(FLANGER_ONLY_SUFFIX)));
+        // Nobody else picks the rules up by accident.
+        for (i, def) in INSTRUMENTS.iter().enumerate() {
+            let has = |f: &dyn Fn(&str) -> bool| def.special_params.iter().any(|d| f(d.name));
+            if i != V::Buzz as usize {
+                assert!(!has(&|n| n.starts_with(GATE_ROW_PREFIX)), "{}", def.full_name);
+            }
+            if i != V::Sdrex as usize {
+                assert!(!has(&|n| n.ends_with(FILTER_MOD_SUFFIX)), "{}", def.full_name);
+            }
+        }
     }
 
     /// "Reset to factory" must mean the INSTRUMENT's factory value, on every

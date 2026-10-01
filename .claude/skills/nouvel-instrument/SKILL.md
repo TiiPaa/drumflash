@@ -167,7 +167,10 @@ data-driven, donc bien remplir cette entree suffit a les cabler.
    ```
 
 3. Ajoute l'index a la liste **mono** ou **stereo** des tests en bas du fichier.
-4. Si c'est un sampler : ajoute l'index a `is_sampler()`.
+4. Renseigne les trois caracteristiques de l'entree ([269]) : `is_sampler`
+   (multisample embarque), `freq_as_notes` (ligne Frequency en Hz / Notes, voix
+   type kick), `analog_fixed` (« Analog fixe » de `docs/analog-mode.md`, pas de
+   derive aleatoire). Le compilateur refuse une entree qui les oublie.
 
 ### 3.6 Algorithmes - `src/synthesis/special_params.rs`
 
@@ -181,18 +184,15 @@ match `base_voice`. **Sans role, GENERATE n'ecrit rien sur la lane** et
 l'instrument parait casse. Emprunte le role de son cousin acoustique (les voix
 606 et AC606 font exactement ca).
 
-### 3.8 Listes encore codees en dur - `src/ui/sound_editor.rs`
+### 3.8 Interface - `src/ui/sound_editor.rs`
 
 Les selecteurs d'instrument sont data-driven (`InstrumentCategory::ALL` +
-`kinds_in(cat)` dans `ui/menus.rs`) : **rien a y faire**. Il reste deux listes a
-verifier :
-
-- `matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12) || is_sampler(voice_idx)` - les
-  voix **sans derive analogique** (le champ `analog` y est un remplissage a 0,0).
-  Les samplers sont deja couverts par `is_sampler`, donc il n'y a rien a ajouter
-  pour eux.
-- `is_bass_drum` (`voice_idx == 0 || 11 || 18`) - ajoute l'index si l'affichage
-  **Hz / Notes** a du sens pour cet instrument.
+`kinds_in(cat)` dans `ui/menus.rs`) : **rien a y faire**. Il n'y a plus de liste
+par numero de voix ([269]) : le Sound Editor lit les caracteristiques de l'entree
+(3.5, point 4). Deux regles suivent les **noms** de parametres : la sous-ligne
+Gate de l'enveloppe (`GATE_ROW_PREFIX`, Buzz) et le Feedback du flanger grise en
+mode filtre (`FILTER_MOD_SUFFIX` / `FLANGER_ONLY_SUFFIX`, Sdrex). Si ton
+instrument a ce genre de controles, reprends ces noms ; sinon rien a faire.
 
 ---
 
@@ -227,7 +227,8 @@ Modele complet : `sample_bank.rs` + `bd606.rs`.
 - Fichier illisible -> hits vides (voix inerte), **jamais de panic**.
 - RNG de selection de layer (xorshift) seede a la construction, **jamais reseede
   au trigger**.
-- Ajoute l'index a `instrument_registry::is_sampler()`.
+- Mets `is_sampler: true` dans son entree du registre et ajoute son banc a
+  `sample_bank::sampler_bank()`.
 
 ---
 

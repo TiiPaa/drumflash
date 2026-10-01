@@ -70,7 +70,7 @@ le kind `Tom` couvre à lui seul les trois rôles `Tom1/2/3` du générateur.
 | `src/sound_settings.rs` | `SoundSettingsState` — atomiques par slot (13 standards + `special[32]` + `freq_mode`), persistance `sound-settings-v2`. |
 | `src/lib.rs` | Plugin : `DrumFlashParams`, boucle `process()`, changement de kind à chaud, `apply_choke_groups()`. |
 | `src/ui/menus.rs` | Sélecteurs d'instrument — **data-driven** (`InstrumentCategory::ALL` + `kinds_in`). |
-| `src/ui/sound_editor.rs` | Onglet Track + Sound Panel (data-driven, sauf deux listes, cf. §7). |
+| `src/ui/sound_editor.rs` | Onglet Track + Sound Panel (data-driven depuis le registre, cf. §7). |
 | `src/generator/mod.rs` | `remap_roles_to_slots()` — mappe les kinds vers les rôles du générateur. |
 
 ---
@@ -180,7 +180,11 @@ deviennent le filet.
    ```
 
    Puis : l'index ajouté à la liste **mono** ou **stéréo** des tests en bas du
-   fichier, et à `is_sampler()` si c'en est un.
+   fichier. Trois caractéristiques se déclarent dans l'entrée elle-même
+   ([269]) : `is_sampler` (multisample embarqué, cf. §8), `freq_as_notes` (la
+   ligne Frequency propose Hz / Notes, voix type kick) et `analog_fixed`
+   (« Analog fixé » de `docs/analog-mode.md` : pas de dérive aléatoire). Le
+   compilateur refuse une entrée qui les oublie.
 6. **Algorithmes** — `special_params.rs` : si `algo_count > 1`, la const
    `*_ALGOS` et l'arm dans `algos_for`. Sinon une entrée « Standard ».
 7. **Générateur** — `generator/mod.rs`, match `base_voice` de
@@ -205,12 +209,18 @@ Type) sont data-driven depuis [203]/[204] : ils bouclent sur
 bon endroit — **il n'y a plus de liste `kinds` à éditer**. Le Sound Panel, le
 menu de p-lock et le morphing sont eux aussi pilotés par le registre.
 
-Il reste **deux listes codées en dur**, toutes deux dans `ui/sound_editor.rs` :
+Il n'y a **plus de liste par numéro de voix** dans l'interface ([269]) : le
+Sound Editor lit `is_sampler`, `freq_as_notes` et `analog_fixed` dans l'entrée
+du registre (§6). Deux règles restent attachées aux **noms** de paramètres,
+comme la règle `*_loop` / `*_grain*` :
 
-- `matches!(voice_idx, 2 | 3 | 7 | 8 | 10 | 12) || is_sampler(voice_idx)` — les
-  voix **sans dérive analogique**, où le champ `analog` n'est qu'un remplissage
-  à 0,0.
-- `is_bass_drum` (`voice_idx == 0 || 11 || 18`) — l'affichage **Hz / Notes**.
+- la sous-ligne **Gate** de l'enveloppe, à côté du graphe du gate (préfixe
+  `GATE_ROW_PREFIX`, Buzz) ;
+- le **Feedback** du flanger grisé quand la Modulation passe en mode filtre
+  (`FILTER_MOD_SUFFIX` / `FLANGER_ONLY_SUFFIX`, Sdrex).
+
+Les constantes sont dans `instrument_registry.rs` ; renommer ces paramètres fait
+échouer `name_keyed_sound_editor_rules_find_their_params`.
 
 ---
 
@@ -229,7 +239,9 @@ bancs » : `ch606.rs` avec `Ch606Voice::with_bank` ([208]).
 - Fichier illisible → hits vides (voix inerte), **jamais de panic**.
 - RNG de sélection de layer (xorshift) seedé à la construction, **jamais reseedé
   au trigger**.
-- L'index va dans `instrument_registry::is_sampler()`.
+- `is_sampler: true` dans son entrée du registre, et son banc dans
+  `sample_bank::sampler_bank()` (le test
+  `sampler_bank_matches_dsp_for_every_sampler_voice` vérifie qu'ils s'accordent).
 
 ---
 
