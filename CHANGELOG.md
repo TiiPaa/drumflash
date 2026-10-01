@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-01 - [269] chantier 3 : le moteur de voix aiguillé par une seule liste (build 20261001-120557)
+
+**Branche:** `main` - **Build:** `20261001-120557`
+**Validation:** `cargo check --all-targets --locked` sans avertissement ; `cargo test` 499 verts lib ; clippy (réglages CI) vert ; `cargo run --bin test_standalone` joue ses 5 s (amplitudes identiques) ; install atomique OK. À valider dans Studio One : **rien ne doit changer**, vérification de non-régression seulement.
+
+- **`drum_voice_kinds!`** (`synthesis/mod.rs`) : la liste des 25 types de voix, une ligne par type, génère l'énumération `DrumVoiceKind` **et** tous les aiguillages du trait `Voice` (12 méthodes). 326 lignes écrites à la main → 95. Ajouter une voix = **une ligne** au lieu d'un arm par méthode.
+- **Aiguillage uniforme** : `set_hit_index`, `set_texture_pool` et `release_held_texture` n'étaient transmis qu'à Rift (et One-Shot) ; ils le sont maintenant à toutes les voix. Comportement identique — seules ces voix les redéfinissent, les autres gardent la méthode par défaut du trait, qui ne fait rien — mais une future voix qui les redéfinit ne sera plus ignorée en silence.
+- **Doc** : `ADDING_AN_INSTRUMENT.md` (§6, étape 3) et la skill `nouvel-instrument` (étape 4) décrivent la ligne à ajouter au lieu des neuf arms.
+
 ## 2026-10-01 - [269] chantier 2 : ménage du code mort, 62 `#[allow(dead_code)]` → 14 (build 20261001-112204)
 
 **Branche:** `main` - **Build:** `20261001-112204`

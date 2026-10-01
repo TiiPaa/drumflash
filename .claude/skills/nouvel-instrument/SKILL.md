@@ -134,9 +134,10 @@ Implemente le trait `Voice`. Modeles : `perc1.rs` (synthese), `bd606.rs`
 2. `DrumVoice::X = 25`, incremente `COUNT`, ajoute l'arm dans `from_index()`.
 3. `VoiceSettings::x()` - defauts **identiques** au `sound_settings_default` du
    registre, puis les defauts des speciaux dans l'ordre `special[i]`.
-4. `DrumVoiceKind::X(XVoice)` + l'arm dans les **9 methodes** du trait :
-   `trigger`, `trigger_hard`, `process_sample`, `process_sample_stereo`,
-   `is_active`, `reset`, `set_settings`, `set_algo`, `set_special_param`.
+4. **Une ligne** `X(XVoice),` dans la liste `drum_voice_kinds!` ([269]) : la
+   macro en tire la variante de `DrumVoiceKind` et son arm dans toutes les
+   methodes du trait `Voice` (les methodes par defaut du trait, comme
+   `set_hit_index`, restent sans effet si la voix ne les redefinit pas).
 5. L'arm dans `create_voice_for_kind()`.
 6. Si donnees lourdes : pre-chauffage dans `initialize_with_layout()`.
 

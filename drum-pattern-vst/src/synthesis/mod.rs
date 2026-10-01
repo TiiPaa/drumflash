@@ -989,9 +989,72 @@ pub trait Voice: Send + Sync {
     fn set_special_param(&mut self, index: usize, value: f32);
 }
 
-/// Concrete enum wrapping all drum voice types.
-/// Eliminates dynamic dispatch from the audio path.
-pub enum DrumVoiceKind {
+/// [269] The single list of voice kinds. Each line below generates a variant
+/// of `DrumVoiceKind` AND its arm in every method of the `Voice` dispatch, so
+/// adding a voice is one line here instead of one arm per method. Every call
+/// is forwarded to every variant: the trait's default methods are no-ops for
+/// the voices that do not override them (e.g. `set_hit_index`, Rift only).
+macro_rules! drum_voice_kinds {
+    ($($(#[$attr:meta])* $variant:ident($voice:ty),)*) => {
+        /// Concrete enum wrapping all drum voice types.
+        /// Eliminates dynamic dispatch from the audio path.
+        pub enum DrumVoiceKind {
+            $($(#[$attr])* $variant($voice),)*
+        }
+
+        impl Voice for DrumVoiceKind {
+            fn trigger(&mut self) {
+                match self { $(Self::$variant(v) => v.trigger(),)* }
+            }
+
+            fn trigger_hard(&mut self) {
+                match self { $(Self::$variant(v) => v.trigger_hard(),)* }
+            }
+
+            fn set_hit_index(&mut self, index: u32) {
+                match self { $(Self::$variant(v) => v.set_hit_index(index),)* }
+            }
+
+            fn set_texture_pool(&mut self, pool: std::sync::Arc<sample_bank::TexturePool>, lane: usize) {
+                match self { $(Self::$variant(v) => v.set_texture_pool(pool, lane),)* }
+            }
+
+            fn release_held_texture(&mut self) {
+                match self { $(Self::$variant(v) => v.release_held_texture(),)* }
+            }
+
+            fn process_sample(&mut self) -> f32 {
+                match self { $(Self::$variant(v) => v.process_sample(),)* }
+            }
+
+            fn process_sample_stereo(&mut self) -> (f32, f32) {
+                match self { $(Self::$variant(v) => v.process_sample_stereo(),)* }
+            }
+
+            fn is_active(&self) -> bool {
+                match self { $(Self::$variant(v) => v.is_active(),)* }
+            }
+
+            fn reset(&mut self) {
+                match self { $(Self::$variant(v) => v.reset(),)* }
+            }
+
+            fn set_settings(&mut self, settings: VoiceSettings) {
+                match self { $(Self::$variant(v) => v.set_settings(settings),)* }
+            }
+
+            fn set_algo(&mut self, algo: u8) {
+                match self { $(Self::$variant(v) => v.set_algo(algo),)* }
+            }
+
+            fn set_special_param(&mut self, index: usize, value: f32) {
+                match self { $(Self::$variant(v) => v.set_special_param(index, value),)* }
+            }
+        }
+    };
+}
+
+drum_voice_kinds! {
     Kick(KickVoice),
     Snare(SnareVoice),
     HiHat(HiHatVoice),
@@ -1018,301 +1081,6 @@ pub enum DrumVoiceKind {
     Oh6Ac(AcVoice),
     Cl6Ac(AcVoice),
     Tm6Ac(AcVoice),
-}
-
-impl Voice for DrumVoiceKind {
-    fn trigger(&mut self) {
-        match self {
-            DrumVoiceKind::Kick(v) => v.trigger(),
-            DrumVoiceKind::Snare(v) => v.trigger(),
-            DrumVoiceKind::HiHat(v) => v.trigger(),
-            DrumVoiceKind::OpenHiHat(v) => v.trigger(),
-            DrumVoiceKind::Tom(v) => v.trigger(),
-            DrumVoiceKind::Clap(v) => v.trigger(),
-            DrumVoiceKind::Ride(v) => v.trigger(),
-            DrumVoiceKind::Cymbal(v) => v.trigger(),
-            DrumVoiceKind::Snare606(v) => v.trigger(),
-            DrumVoiceKind::BassDrum808(v) => v.trigger(),
-            DrumVoiceKind::Perc1(v) => v.trigger(),
-            DrumVoiceKind::Bd606(v) => v.trigger(),
-            DrumVoiceKind::Sd606(v) => v.trigger(),
-            DrumVoiceKind::Ch606(v) => v.trigger(),
-            DrumVoiceKind::Oh606(v) => v.trigger(),
-            DrumVoiceKind::Rift(v) => v.trigger(),
-            DrumVoiceKind::OneShot(v) => v.trigger(),
-            DrumVoiceKind::Buzz(v) => v.trigger(),
-            DrumVoiceKind::Sdrex(v) => v.trigger(),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.trigger(),
-        }
-    }
-
-    fn trigger_hard(&mut self) {
-        match self {
-            DrumVoiceKind::Kick(v) => v.trigger_hard(),
-            DrumVoiceKind::Snare(v) => v.trigger_hard(),
-            DrumVoiceKind::HiHat(v) => v.trigger_hard(),
-            DrumVoiceKind::OpenHiHat(v) => v.trigger_hard(),
-            DrumVoiceKind::Tom(v) => v.trigger_hard(),
-            DrumVoiceKind::Clap(v) => v.trigger_hard(),
-            DrumVoiceKind::Ride(v) => v.trigger_hard(),
-            DrumVoiceKind::Cymbal(v) => v.trigger_hard(),
-            DrumVoiceKind::Snare606(v) => v.trigger_hard(),
-            DrumVoiceKind::BassDrum808(v) => v.trigger_hard(),
-            DrumVoiceKind::Perc1(v) => v.trigger_hard(),
-            DrumVoiceKind::Bd606(v) => v.trigger_hard(),
-            DrumVoiceKind::Sd606(v) => v.trigger_hard(),
-            DrumVoiceKind::Ch606(v) => v.trigger_hard(),
-            DrumVoiceKind::Oh606(v) => v.trigger_hard(),
-            DrumVoiceKind::Rift(v) => v.trigger_hard(),
-            DrumVoiceKind::OneShot(v) => v.trigger_hard(),
-            DrumVoiceKind::Buzz(v) => v.trigger_hard(),
-            DrumVoiceKind::Sdrex(v) => v.trigger_hard(),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.trigger_hard(),
-        }
-    }
-
-    fn process_sample(&mut self) -> f32 {
-        match self {
-            DrumVoiceKind::Kick(v) => v.process_sample(),
-            DrumVoiceKind::Snare(v) => v.process_sample(),
-            DrumVoiceKind::HiHat(v) => v.process_sample(),
-            DrumVoiceKind::OpenHiHat(v) => v.process_sample(),
-            DrumVoiceKind::Tom(v) => v.process_sample(),
-            DrumVoiceKind::Clap(v) => v.process_sample(),
-            DrumVoiceKind::Ride(v) => v.process_sample(),
-            DrumVoiceKind::Cymbal(v) => v.process_sample(),
-            DrumVoiceKind::Snare606(v) => v.process_sample(),
-            DrumVoiceKind::BassDrum808(v) => v.process_sample(),
-            DrumVoiceKind::Perc1(v) => v.process_sample(),
-            DrumVoiceKind::Bd606(v) => v.process_sample(),
-            DrumVoiceKind::Sd606(v) => v.process_sample(),
-            DrumVoiceKind::Ch606(v) => v.process_sample(),
-            DrumVoiceKind::Oh606(v) => v.process_sample(),
-            DrumVoiceKind::Rift(v) => v.process_sample(),
-            DrumVoiceKind::OneShot(v) => v.process_sample(),
-            DrumVoiceKind::Buzz(v) => v.process_sample(),
-            DrumVoiceKind::Sdrex(v) => v.process_sample(),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.process_sample(),
-        }
-    }
-
-    fn process_sample_stereo(&mut self) -> (f32, f32) {
-        match self {
-            DrumVoiceKind::Kick(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Snare(v) => v.process_sample_stereo(),
-            DrumVoiceKind::HiHat(v) => v.process_sample_stereo(),
-            DrumVoiceKind::OpenHiHat(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Tom(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Clap(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Ride(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Cymbal(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Snare606(v) => v.process_sample_stereo(),
-            DrumVoiceKind::BassDrum808(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Perc1(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Bd606(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Sd606(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Ch606(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Oh606(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Rift(v) => v.process_sample_stereo(),
-            DrumVoiceKind::OneShot(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Buzz(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Sdrex(v) => v.process_sample_stereo(),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.process_sample_stereo(),
-        }
-    }
-
-    fn is_active(&self) -> bool {
-        match self {
-            DrumVoiceKind::Kick(v) => v.is_active(),
-            DrumVoiceKind::Snare(v) => v.is_active(),
-            DrumVoiceKind::HiHat(v) => v.is_active(),
-            DrumVoiceKind::OpenHiHat(v) => v.is_active(),
-            DrumVoiceKind::Tom(v) => v.is_active(),
-            DrumVoiceKind::Clap(v) => v.is_active(),
-            DrumVoiceKind::Ride(v) => v.is_active(),
-            DrumVoiceKind::Cymbal(v) => v.is_active(),
-            DrumVoiceKind::Snare606(v) => v.is_active(),
-            DrumVoiceKind::BassDrum808(v) => v.is_active(),
-            DrumVoiceKind::Perc1(v) => v.is_active(),
-            DrumVoiceKind::Bd606(v) => v.is_active(),
-            DrumVoiceKind::Sd606(v) => v.is_active(),
-            DrumVoiceKind::Ch606(v) => v.is_active(),
-            DrumVoiceKind::Oh606(v) => v.is_active(),
-            DrumVoiceKind::Rift(v) => v.is_active(),
-            DrumVoiceKind::OneShot(v) => v.is_active(),
-            DrumVoiceKind::Buzz(v) => v.is_active(),
-            DrumVoiceKind::Sdrex(v) => v.is_active(),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.is_active(),
-        }
-    }
-
-    fn reset(&mut self) {
-        match self {
-            DrumVoiceKind::Kick(v) => v.reset(),
-            DrumVoiceKind::Snare(v) => v.reset(),
-            DrumVoiceKind::HiHat(v) => v.reset(),
-            DrumVoiceKind::OpenHiHat(v) => v.reset(),
-            DrumVoiceKind::Tom(v) => v.reset(),
-            DrumVoiceKind::Clap(v) => v.reset(),
-            DrumVoiceKind::Ride(v) => v.reset(),
-            DrumVoiceKind::Cymbal(v) => v.reset(),
-            DrumVoiceKind::Snare606(v) => v.reset(),
-            DrumVoiceKind::BassDrum808(v) => v.reset(),
-            DrumVoiceKind::Perc1(v) => v.reset(),
-            DrumVoiceKind::Bd606(v) => v.reset(),
-            DrumVoiceKind::Sd606(v) => v.reset(),
-            DrumVoiceKind::Ch606(v) => v.reset(),
-            DrumVoiceKind::Oh606(v) => v.reset(),
-            DrumVoiceKind::Rift(v) => v.reset(),
-            DrumVoiceKind::OneShot(v) => v.reset(),
-            DrumVoiceKind::Buzz(v) => v.reset(),
-            DrumVoiceKind::Sdrex(v) => v.reset(),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.reset(),
-        }
-    }
-
-    fn set_settings(&mut self, settings: VoiceSettings) {
-        match self {
-            DrumVoiceKind::Kick(v) => v.set_settings(settings),
-            DrumVoiceKind::Snare(v) => v.set_settings(settings),
-            DrumVoiceKind::HiHat(v) => v.set_settings(settings),
-            DrumVoiceKind::OpenHiHat(v) => v.set_settings(settings),
-            DrumVoiceKind::Tom(v) => v.set_settings(settings),
-            DrumVoiceKind::Clap(v) => v.set_settings(settings),
-            DrumVoiceKind::Ride(v) => v.set_settings(settings),
-            DrumVoiceKind::Cymbal(v) => v.set_settings(settings),
-            DrumVoiceKind::Snare606(v) => v.set_settings(settings),
-            DrumVoiceKind::BassDrum808(v) => v.set_settings(settings),
-            DrumVoiceKind::Perc1(v) => v.set_settings(settings),
-            DrumVoiceKind::Bd606(v) => v.set_settings(settings),
-            DrumVoiceKind::Sd606(v) => v.set_settings(settings),
-            DrumVoiceKind::Ch606(v) => v.set_settings(settings),
-            DrumVoiceKind::Oh606(v) => v.set_settings(settings),
-            DrumVoiceKind::Rift(v) => v.set_settings(settings),
-            DrumVoiceKind::OneShot(v) => v.set_settings(settings),
-            DrumVoiceKind::Buzz(v) => v.set_settings(settings),
-            DrumVoiceKind::Sdrex(v) => v.set_settings(settings),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.set_settings(settings),
-        }
-    }
-
-    fn set_hit_index(&mut self, index: u32) {
-        if let DrumVoiceKind::Rift(v) = self {
-            v.set_hit_index(index);
-        }
-    }
-
-    fn set_texture_pool(&mut self, pool: std::sync::Arc<sample_bank::TexturePool>, lane: usize) {
-        match self {
-            // [228] [243] The voices that read the lane's own file.
-            DrumVoiceKind::Rift(v) => v.set_texture_pool(pool, lane),
-            DrumVoiceKind::OneShot(v) => v.set_texture_pool(pool, lane),
-            _ => {}
-        }
-    }
-
-    fn release_held_texture(&mut self) {
-        match self {
-            DrumVoiceKind::Rift(v) => v.release_held_texture(),
-            DrumVoiceKind::OneShot(v) => v.release_held_texture(),
-            _ => {}
-        }
-    }
-
-    fn set_algo(&mut self, algo: u8) {
-        match self {
-            DrumVoiceKind::Kick(v) => v.set_algo(algo),
-            DrumVoiceKind::Snare(v) => v.set_algo(algo),
-            DrumVoiceKind::HiHat(v) => v.set_algo(algo),
-            DrumVoiceKind::OpenHiHat(v) => v.set_algo(algo),
-            DrumVoiceKind::Tom(v) => v.set_algo(algo),
-            DrumVoiceKind::Clap(v) => v.set_algo(algo),
-            DrumVoiceKind::Ride(v) => v.set_algo(algo),
-            DrumVoiceKind::Cymbal(v) => v.set_algo(algo),
-            DrumVoiceKind::Snare606(v) => v.set_algo(algo),
-            DrumVoiceKind::BassDrum808(v) => v.set_algo(algo),
-            DrumVoiceKind::Perc1(v) => v.set_algo(algo),
-            DrumVoiceKind::Bd606(v) => v.set_algo(algo),
-            DrumVoiceKind::Sd606(v) => v.set_algo(algo),
-            DrumVoiceKind::Ch606(v) => v.set_algo(algo),
-            DrumVoiceKind::Oh606(v) => v.set_algo(algo),
-            DrumVoiceKind::Rift(v) => v.set_algo(algo),
-            DrumVoiceKind::OneShot(v) => v.set_algo(algo),
-            DrumVoiceKind::Buzz(v) => v.set_algo(algo),
-            DrumVoiceKind::Sdrex(v) => v.set_algo(algo),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.set_algo(algo),
-        }
-    }
-
-    fn set_special_param(&mut self, index: usize, value: f32) {
-        match self {
-            DrumVoiceKind::Kick(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Snare(v) => v.set_special_param(index, value),
-            DrumVoiceKind::HiHat(v) => v.set_special_param(index, value),
-            DrumVoiceKind::OpenHiHat(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Tom(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Clap(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Ride(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Cymbal(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Snare606(v) => v.set_special_param(index, value),
-            DrumVoiceKind::BassDrum808(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Perc1(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Bd606(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Sd606(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Ch606(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Oh606(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Rift(v) => v.set_special_param(index, value),
-            DrumVoiceKind::OneShot(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Buzz(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Sdrex(v) => v.set_special_param(index, value),
-            DrumVoiceKind::Bd6Ac(v)
-            | DrumVoiceKind::Sd6Ac(v)
-            | DrumVoiceKind::Hh6Ac(v)
-            | DrumVoiceKind::Oh6Ac(v)
-            | DrumVoiceKind::Cl6Ac(v)
-            | DrumVoiceKind::Tm6Ac(v) => v.set_special_param(index, value),
-        }
-    }
 }
 
 fn create_voice_for_kind(

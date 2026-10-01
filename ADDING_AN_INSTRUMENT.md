@@ -158,11 +158,10 @@ deviennent le filet.
 2. **Voix DSP** — `src/synthesis/<voix>.rs`, trait `Voice`, §5 respecté à la
    lettre.
 3. **`synthesis/mod.rs`** — `DrumVoice::X` (à la fin) + `COUNT` + `from_index` ;
-   `VoiceSettings::x()` ; `DrumVoiceKind::X(XVoice)` avec son arm dans les **neuf
-   méthodes** du trait (`trigger`, `trigger_hard`, `process_sample`,
-   `process_sample_stereo`, `is_active`, `reset`, `set_settings`, `set_algo`,
-   `set_special_param`) ; l'arm dans `create_voice_for_kind()` ; le préchauffage
-   si données lourdes.
+   `VoiceSettings::x()` ; **une ligne** `X(XVoice),` dans la liste
+   `drum_voice_kinds!` ([269] : la macro en tire la variante de `DrumVoiceKind`
+   et son arm dans toutes les méthodes du trait `Voice`) ; l'arm dans
+   `create_voice_for_kind()` ; le préchauffage si données lourdes.
 4. **`track.rs`** — variante **à la fin** de `TrackInstrumentKind`, puis `COUNT`,
    `from_index`, **`category()`**, `default_label` (2 caractères ASCII),
    `default_name`, `default_midi_note`, `drum_voice_index`,
