@@ -4924,7 +4924,14 @@ mod tests {
         );
         assert_eq!(
             with(|d| d.analog_fixed),
-            idx(&[V::HiHat, V::OpenHiHat, V::Clap, V::Ride, V::Snare606, V::Perc1])
+            idx(&[
+                V::HiHat,
+                V::OpenHiHat,
+                V::Clap,
+                V::Ride,
+                V::Snare606,
+                V::Perc1
+            ])
         );
         for (i, def) in INSTRUMENTS.iter().enumerate() {
             assert_eq!(is_sampler(i), def.is_sampler, "{}", def.full_name);
@@ -4967,10 +4974,18 @@ mod tests {
         for (i, def) in INSTRUMENTS.iter().enumerate() {
             let has = |f: &dyn Fn(&str) -> bool| def.special_params.iter().any(|d| f(d.name));
             if i != V::Buzz as usize {
-                assert!(!has(&|n| n.starts_with(GATE_ROW_PREFIX)), "{}", def.full_name);
+                assert!(
+                    !has(&|n| n.starts_with(GATE_ROW_PREFIX)),
+                    "{}",
+                    def.full_name
+                );
             }
             if i != V::Sdrex as usize {
-                assert!(!has(&|n| n.ends_with(FILTER_MOD_SUFFIX)), "{}", def.full_name);
+                assert!(
+                    !has(&|n| n.ends_with(FILTER_MOD_SUFFIX)),
+                    "{}",
+                    def.full_name
+                );
             }
         }
     }

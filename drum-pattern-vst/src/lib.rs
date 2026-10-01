@@ -129,6 +129,104 @@ fn add_stereo_aux_sample(
     true
 }
 
+/// [269] Does a step's condition (its sequencer p-lock) let it fire on this
+/// loop? No sequencer p-lock = always.
+fn step_condition_passes(
+    seq_params: Option<crate::plock::SequencerStepParams>,
+    loop_count: usize,
+) -> bool {
+    if let Some(sp) = seq_params {
+        use crate::plock::StepCondition::*;
+        // [218] "Not" inverts the condition. `Always` is
+        // immune: inverted it would mean "never", which is
+        // what turning the step off already does.
+        // [219] Both terms must hold when a second one is
+        // set: "1/2 and 1/3" fires every sixth loop.
+        let evaluate = |cond: crate::plock::StepCondition| match cond {
+            Always => true,
+            First => loop_count == 0,
+            NotFirst => loop_count > 0,
+            Half1 => loop_count % 2 == 0,
+            Half2 => loop_count % 2 == 1,
+            Third1 => loop_count % 3 == 0,
+            Third2 => loop_count % 3 == 1,
+            Third3 => loop_count % 3 == 2,
+            Fourth1 => loop_count % 4 == 0,
+            Fourth2 => loop_count % 4 == 1,
+            Fourth3 => loop_count % 4 == 2,
+            Fourth4 => loop_count % 4 == 3,
+        };
+        let passes = evaluate(sp.condition) && sp.condition_and.map(evaluate).unwrap_or(true);
+        // `Not` inverts the whole expression, second term
+        // included. Immune on a bare `Always`, where it
+        // would mean "never".
+        if sp.condition_negate && !(sp.condition == Always && sp.condition_and.is_none()) {
+            !passes
+        } else {
+            passes
+        }
+    } else {
+        true // No condition = always pass
+    }
+}
+
+/// [269] Main mix of one sample: the slots' stereo outputs weighted by their
+/// mix gains, times the master volume.
+fn main_mix(
+    voice_outputs: &[[f32; 2]; crate::track::MAX_TRACKS],
+    mix_gains: &[f32; crate::track::MAX_TRACKS],
+    master_vol: f32,
+) -> (f32, f32) {
+    let mixed_left = voice_outputs
+        .iter()
+        .enumerate()
+        .map(|(i, o)| o[0] * mix_gains[i])
+        .sum::<f32>()
+        * master_vol;
+    let mixed_right = voice_outputs
+        .iter()
+        .enumerate()
+        .map(|(i, o)| o[1] * mix_gains[i])
+        .sum::<f32>()
+        * master_vol;
+    (mixed_left, mixed_right)
+}
+
+/// [269] Silence every aux output before the block is rendered.
+fn clear_aux_outputs(aux: &mut AuxiliaryBuffers) {
+    for aux_buffer in aux.outputs.iter_mut() {
+        for channel in aux_buffer.as_slice().iter_mut() {
+            channel.fill(0.0);
+        }
+    }
+}
+
+/// [269] One sample of each slot routed to an aux out, added there.
+fn write_aux_outputs(
+    aux: &mut AuxiliaryBuffers,
+    sample_idx: usize,
+    track_routings: &[crate::track::TrackRouting; crate::track::MAX_TRACKS],
+    voice_outputs: &[[f32; 2]; crate::track::MAX_TRACKS],
+    master_vol: f32,
+) {
+    for (slot_idx, routing) in track_routings.iter().enumerate() {
+        let crate::track::TrackAudioOut::Out(out_number) = routing.out_select else {
+            continue;
+        };
+        let aux_idx = out_number.saturating_sub(1) as usize;
+        let Some(aux_buffer) = aux.outputs.get_mut(aux_idx) else {
+            continue;
+        };
+        let channels = aux_buffer.as_slice();
+        add_stereo_aux_sample(
+            channels,
+            sample_idx,
+            voice_outputs[slot_idx][0] * master_vol,
+            voice_outputs[slot_idx][1] * master_vol,
+        );
+    }
+}
+
 /// Computes per-slot effective mutes and Main Mix gain factors.
 ///
 /// - If at least one solo is active, every non-soloed slot is muted and the
@@ -2630,6 +2728,937 @@ impl DrumFlashVst {
     }
 }
 
+// [269] The stages of `process()`, in the order it runs them: each one is the
+// code that sat inline there, moved as is. The real-time rules hold in every
+// one of them (no allocation, no blocking lock, nothing that can panic on host
+// data).
+impl DrumFlashVst {
+    /// UI requests published since the last block: song snapshot, pattern
+    /// bank save/load (retried while the bank is locked), clear p-locks.
+    fn consume_ui_requests(&mut self) {
+        // Consume any UI-published song sequence snapshot without blocking.
+        if let Some(new_song) = self.params.song_controller.consume_latest() {
+            self.song_state = new_song;
+        }
+
+        // Process pattern save/load requests from UI without blocking the audio thread.
+        if self.deferred_save_slot.is_none() {
+            self.deferred_save_slot = self
+                .save_pattern_request
+                .swap(0, Ordering::Relaxed)
+                .checked_sub(1)
+                .map(|slot| slot as usize)
+                .filter(|&slot| slot < pattern_bank::SLOT_COUNT);
+        }
+        if let Some(slot) = self.deferred_save_slot.take() {
+            if self.save_pattern_to_slot(slot) == PatternBankActionResult::Busy {
+                self.deferred_save_slot = Some(slot);
+            }
+        }
+
+        if self.deferred_load_slot.is_none() {
+            self.deferred_load_slot = self
+                .load_pattern_request
+                .swap(0, Ordering::Relaxed)
+                .checked_sub(1)
+                .map(|slot| slot as usize)
+                .filter(|&slot| slot < pattern_bank::SLOT_COUNT);
+        }
+        if let Some(slot) = self.deferred_load_slot.take() {
+            if self.load_pattern_from_slot(slot) == PatternBankActionResult::Busy {
+                self.deferred_load_slot = Some(slot);
+            }
+        }
+        if self.clear_plocks_request.swap(false, Ordering::Relaxed) {
+            self.params.plock_state.state.clear_all();
+            self.params.seq_plock_state.state.clear_all();
+            #[cfg(debug_assertions)]
+            {
+                nih_log!("All plocks cleared");
+            }
+        }
+    }
+
+    /// Follow the host transport: start/stop with it, resync on a seek.
+    fn follow_host_transport(
+        &mut self,
+        playing: bool,
+        position_beats_opt: Option<f64>,
+        host_reports_timeline: bool,
+        bpm: f32,
+        sample_rate: f32,
+    ) {
+        if host_reports_timeline {
+            if playing != self.sequencer.is_playing() {
+                if playing {
+                    self.sequencer.play();
+                    // Sync on play start
+                    if let Some(position_beats) = position_beats_opt {
+                        self.sequencer
+                            .sync_to_host(position_beats, bpm, sample_rate);
+                        // If starting near beat 0, force step 0 trigger.
+                        // sync_to_host overwrites previous_step, which would swallow the first step.
+                        if position_beats.rem_euclid(4.0) < 0.1 {
+                            self.sequencer.force_step0_trigger();
+                        }
+                        self.last_host_pos = Some(position_beats);
+                    }
+                } else {
+                    self.sequencer.stop();
+                    self.last_host_pos = None;
+                }
+            } else if playing && !self.params.song_mode.value() {
+                // Detect significant host seeks and resync. Threshold raised
+                // from 0.2 to 1.0 beats: at 0.2, Reaper and Bitwig's
+                // sub-buffer position drift accumulated until a spurious
+                // resync fired, skipping steps and producing audible drops in
+                // the running mix. Studio One sends sample-accurate
+                // pos_beats so the bug never surfaced there.
+                if let Some(position_beats) = position_beats_opt {
+                    // [212] Compare on the loop's own circle, through the
+                    // sequencer's mapping: with a page loop the local position
+                    // is the host's folded into the page, and a page wrap must
+                    // not read as a seek (a partial last page has a span
+                    // shorter than a bar).
+                    let circle = if self.sequencer.page_loop().is_some() {
+                        self.sequencer.loop_span_beats()
+                    } else {
+                        4.0
+                    };
+                    let host_pos_mod = self
+                        .sequencer
+                        .host_to_local(position_beats)
+                        .rem_euclid(circle);
+                    let seq_pos_mod = self.sequencer.beat_position().rem_euclid(circle);
+                    let diff = (host_pos_mod - seq_pos_mod).abs();
+                    // Use shortest distance on the circle
+                    let diff = diff.min(circle - diff);
+                    if diff > (circle * 0.5).min(1.0) {
+                        self.sequencer
+                            .sync_to_host(position_beats, bpm, sample_rate);
+                    }
+                    self.last_host_pos = Some(position_beats);
+                }
+            }
+        } else if !self.sequencer.is_playing() {
+            self.sequencer.play();
+        }
+    }
+
+    /// Mute / solo / main-mix gating for this block (the sequencer gets the
+    /// effective mutes). Returns each slot's routing and main-mix gain.
+    fn update_mix_gating(
+        &mut self,
+    ) -> (
+        [crate::track::TrackRouting; crate::track::MAX_TRACKS],
+        [f32; crate::track::MAX_TRACKS],
+    ) {
+        let mute_states: [bool; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| self.params.mutes()[i].value());
+        let solo_states: [bool; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| self.params.solos()[i].value());
+        let track_routings: [crate::track::TrackRouting; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| self.params.track_layout.state.routing_for_slot(i));
+        let main_mix_enabled: [bool; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| track_routings[i].main_on);
+
+        let (effective_mutes, mix_gains) =
+            compute_mix_gating(&mute_states, &solo_states, &main_mix_enabled);
+
+        self.sequencer.set_mutes(effective_mutes);
+        (track_routings, mix_gains)
+    }
+
+    /// Per-track groove parameters and the page loop, once per block.
+    /// Returns the audio-side master length.
+    fn update_track_params(&mut self) -> usize {
+        // Update per-track groove parameters once per buffer.
+        // Lane lengths are clamped to the audio-side pattern length. Pattern loads
+        // update this immediately, then the UI param catches up asynchronously.
+        let param_master_length = self.params.pattern_length.value() as usize;
+        if param_master_length != self.last_param_master_length {
+            self.audio_master_length = param_master_length.clamp(1, 64);
+            self.last_param_master_length = self.audio_master_length;
+        }
+        let master_length = self.audio_master_length;
+        let raw_lengths: [usize; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| self.params.lengths()[i].value() as usize);
+        let effective_lengths = std::array::from_fn(|i| {
+            resolve_track_length(
+                raw_lengths[i],
+                master_length,
+                self.params.lane_length_locks.is_locked(i),
+            )
+        });
+        self.sequencer.set_track_params(
+            effective_lengths,
+            std::array::from_fn(|i| self.params.pushes()[i].value()),
+            std::array::from_fn(|i| self.params.humanizes()[i].value()),
+            master_length,
+        );
+        // [212] Page loop, after the master length so a page beyond the
+        // pattern reads as off. Ignored in Song mode: a chain of patterns and a
+        // page held in a loop contradict each other.
+        let page_loop = match self.params.page_loop.value() {
+            p if p >= 1 && !self.params.song_mode.value() => Some(p as usize - 1),
+            _ => None,
+        };
+        self.sequencer.set_page_loop(page_loop);
+        master_length
+    }
+
+    /// A pending Song-mode pattern restart, then the host resync when the
+    /// master length changed.
+    fn restart_or_resync_pattern(
+        &mut self,
+        master_length: usize,
+        playing: bool,
+        position_beats_opt: Option<f64>,
+        bpm: f32,
+        sample_rate: f32,
+    ) {
+        if self.pending_song_pattern_restart {
+            self.sequencer.restart_pattern_from_step0();
+            self.last_loop_count = self.sequencer.loop_count();
+            self.last_master_length = master_length;
+            self.pending_song_pattern_restart = false;
+        }
+
+        // If the pattern length changed, resync the sequencer to the host timeline
+        // so loop_count and beat_position stay consistent with the new master length.
+        if master_length != self.last_master_length {
+            self.last_master_length = master_length;
+            if playing && !self.params.song_mode.value() {
+                if let Some(position_beats) = position_beats_opt {
+                    self.sequencer
+                        .sync_to_host(position_beats, bpm, sample_rate);
+                }
+            }
+        }
+    }
+
+    /// Fusions, slot kinds, grid links and microtiming into the sequencer.
+    /// Returns each slot's voice index for the rest of the block.
+    fn sync_sequencer_layout(&mut self) -> [Option<usize>; crate::track::MAX_TRACKS] {
+        // Sync fusions from pattern to sequencer without allocating in the audio thread.
+        self.sequencer.sync_fusions_from_pattern();
+
+        // Snapshot the active track layout and propagate it to the sequencer.
+        let mut slot_voices = [None; crate::track::MAX_TRACKS];
+        for slot in 0..crate::track::MAX_TRACKS {
+            if let Some(kind) = self.params.track_layout.state.kind_for_slot(slot) {
+                slot_voices[slot] = Some(kind.drum_voice_index());
+            }
+        }
+        self.sequencer.set_slot_voices(slot_voices);
+
+        // Grid linking: resolve each slot's grid source (a linked lane plays the
+        // steps + fusions of the lane above it) once per buffer.
+        let grid_slots: [usize; crate::track::MAX_TRACKS] =
+            std::array::from_fn(|i| self.params.track_layout.state.grid_slot(i));
+        self.sequencer.set_grid_slots(grid_slots);
+
+        // Per-cell microtiming (nudge): copied from the seq-plock atomics once
+        // per buffer; the sequencer fires nudged cells early/late.
+        let seq_plock_state = &self.params.seq_plock_state.state;
+        self.sequencer.set_microtimings(std::array::from_fn(|slot| {
+            std::array::from_fn(|step| {
+                f32::from_bits(seq_plock_state.microtimings[slot][step].load(Ordering::Relaxed))
+            })
+        }));
+        slot_voices
+    }
+
+    /// Recreate the voices whose kind changed, push changed algorithms.
+    fn sync_synthesizer_slots(&mut self, slot_voices: &[Option<usize>; crate::track::MAX_TRACKS]) {
+        // Reinitialize synthesizer slots whose kind changed (added/removed/reassigned).
+        for slot in 0..crate::track::MAX_TRACKS {
+            let current_kind = self.params.track_layout.state.kind_for_slot(slot);
+            if current_kind != self.last_slot_kinds[slot] {
+                if let Some(kind) = current_kind {
+                    self.synthesizer.reinitialize_slot(slot, kind);
+                } else {
+                    self.synthesizer.set_slot_active(slot, false);
+                }
+                self.last_slot_kinds[slot] = current_kind;
+                // A recreated voice has its own default algo: push ours again.
+                self.last_algos[slot] = u8::MAX;
+            }
+        }
+
+        // Propagate synthesis algorithms (synthesizer is indexed by slot).
+        //
+        // [184] ONLY on change. This used to run unconditionally every buffer,
+        // which overwrote the algo that `fire_voice_trigger` had just applied
+        // from a step's p-lock: the plocked algo lasted a few milliseconds and
+        // the rest of the tail reverted to the lane's algo. Every other global
+        // setting is already re-pushed only when its version changes; the algo
+        // was the outlier.
+        for slot_idx in 0..crate::track::MAX_TRACKS {
+            if let Some(voice_idx) = slot_voices[slot_idx] {
+                let algo_count = crate::instrument_registry::INSTRUMENTS[voice_idx]
+                    .algo_count
+                    .max(1) as u8;
+                let algo = (self.params.algos()[slot_idx].value().max(0) as u8).min(algo_count - 1);
+                if self.last_algos[slot_idx] != algo {
+                    self.synthesizer.set_algo(slot_idx, algo);
+                    self.last_algos[slot_idx] = algo;
+                }
+            }
+        }
+    }
+
+    /// One-shot migration of the legacy per-voice special params.
+    fn seed_legacy_specials(&mut self, slot_voices: &[Option<usize>; crate::track::MAX_TRACKS]) {
+        // One-shot migration: sessions saved before per-slot specials carried
+        // them as per-voice nih-plug params — seed the per-slot storage from
+        // those params (atomic stores only, RT-safe).
+        if self
+            .sound_settings_state
+            .needs_param_seed
+            .swap(false, Ordering::AcqRel)
+        {
+            for slot_idx in 0..crate::track::MAX_TRACKS {
+                let Some(voice_idx) = slot_voices[slot_idx] else {
+                    continue;
+                };
+                let inst = &self.sound_settings_state.instruments[slot_idx];
+                for sp_def in crate::instrument_registry::INSTRUMENTS[voice_idx].special_params {
+                    if let Some(param) = self.params.special_param(voice_idx, sp_def.special_index)
+                    {
+                        inst.set_special(sp_def.special_index, param.value());
+                    }
+                }
+                let in_notes = match voice_idx {
+                    0 => self.params.freq_mode_kick.value(),
+                    11 => self.params.freq_mode_bassdrum808.value(),
+                    _ => false,
+                };
+                inst.set_freq_mode(in_notes);
+            }
+            self.sound_settings_state.bump_version();
+        }
+    }
+
+    fn apply_macro_knobs(&mut self, slot_voices: &[Option<usize>; crate::track::MAX_TRACKS]) {
+        // [242] Macro knobs (host-driven) -> lane sound atomics, BEFORE the
+        // settings poll so a macro move is heard in this very buffer. Only a
+        // moved knob re-applies; the writes bump the settings version, which
+        // the poll below turns into voice settings (p-locks still win per step).
+        let macro_values: [f32; macros::MACRO_COUNT] =
+            std::array::from_fn(|i| self.params.macro_params()[i].value());
+        if macro_values != self.last_macro_values {
+            self.last_macro_values = macro_values;
+            macros::apply_macros(
+                macro_values,
+                &self.params.macro_map_state.state,
+                &self.sound_settings_state,
+                slot_voices,
+            );
+        }
+    }
+
+    fn push_sound_settings(&mut self, slot_voices: &[Option<usize>; crate::track::MAX_TRACKS]) {
+        // Update global sound settings once per buffer, BEFORE triggers.
+        // Previously this was inside iter_samples, which caused a click:
+        // a trigger with plock settings would be overwritten by global settings
+        // in the same buffer, creating a one-sample discontinuity.
+        let current_version = self.sound_settings_state.version.load(Ordering::Acquire);
+        if current_version != self.last_sound_settings_version {
+            self.last_sound_settings_version = current_version;
+            for (slot_idx, inst) in self.sound_settings_state.instruments.iter().enumerate() {
+                let Some(voice_idx) = slot_voices[slot_idx] else {
+                    continue;
+                };
+                let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+                    continue;
+                };
+                let (
+                    freq,
+                    decay,
+                    vol,
+                    filt,
+                    attack,
+                    release,
+                    decay_curve,
+                    release_curve,
+                    hold,
+                    filter_env_amount,
+                    filter_env_decay,
+                    analog,
+                    stereo,
+                ) = inst.load();
+                self.synthesizer.set_voice_settings(
+                    slot_idx,
+                    self.voice_settings_for(
+                        slot_idx,
+                        voice_idx,
+                        freq,
+                        decay,
+                        vol,
+                        filt,
+                        attack,
+                        release,
+                        decay_curve,
+                        release_curve,
+                        hold,
+                        filter_env_amount,
+                        filter_env_decay,
+                        analog,
+                        stereo,
+                    ),
+                );
+            }
+        }
+    }
+
+    fn step_solo_window(&self) -> u64 {
+        // Step-solo window for this block: union of every soloed seq-plock
+        // cell's span (a normal cell covers its own step; a fused cell covers
+        // its whole span). While the sequencer plays a step inside this window,
+        // only soloed lanes trigger there — every other lane is muted for those
+        // steps only. Independent of the lane-level `S` tag. RT-safe: bit ops +
+        // stack-buffered fusion reads, no allocation, computed once per block.
+        let solo_window: u64 = {
+            let seq = &self.params.seq_plock_state.state;
+            let pattern = &self.pattern;
+            let mut fusion_buf = [crate::sequencer::pattern::FusedGroup::default();
+                crate::sequencer::pattern::MAX_FUSIONS];
+            seq.solo_window(|inst, start| {
+                let n = pattern.load_fusions_into(inst, &mut fusion_buf);
+                fusion_buf[..n]
+                    .iter()
+                    .find(|g| g.start_cell as usize == start)
+                    .map(|g| (g.end_cell - g.start_cell + 1) as usize)
+                    .unwrap_or(1)
+            })
+        };
+        solo_window
+    }
+
+    /// Per sample: fire the delayed triggers that are due.
+    fn fire_pending_triggers(
+        &mut self,
+        sample_idx: usize,
+        slot_voices: &[Option<usize>; crate::track::MAX_TRACKS],
+        context: &mut impl ProcessContext<Self>,
+    ) {
+        // Process pending delayed triggers (stutter or fusion pulses).
+        let mut i = 0;
+        while i < self.pending_trigger_count {
+            if self.pending_triggers[i].0 == 0 {
+                let (_, slot_idx, velocity, step, hard, settings) = self.pending_triggers[i];
+                let Some(voice_idx) = slot_voices[slot_idx] else {
+                    self.pending_triggers[i] =
+                        self.pending_triggers[self.pending_trigger_count - 1];
+                    self.pending_trigger_count -= 1;
+                    continue;
+                };
+                self.fire_voice_trigger(
+                    slot_idx, voice_idx, velocity, step, sample_idx, context, hard, settings,
+                );
+                self.pending_triggers[i] = self.pending_triggers[self.pending_trigger_count - 1];
+                self.pending_trigger_count -= 1;
+            } else {
+                self.pending_triggers[i].0 -= 1;
+                i += 1;
+            }
+        }
+    }
+
+    /// Per sample (internal sequencer): queue a MIDI pattern-switch note.
+    fn collect_pattern_switch_notes(
+        &mut self,
+        mut next_event: Option<PluginNoteEvent<Self>>,
+        sample_idx: usize,
+        context: &mut impl ProcessContext<Self>,
+    ) -> Option<PluginNoteEvent<Self>> {
+        // Process incoming MIDI pattern-switch notes in real-time.
+        // Notes from C3 (60) upward select pattern bank slots P1..P16
+        // (60-75). Only active when not in Song mode, so the two
+        // pattern-change mechanisms do not fight each other.
+        while let Some(event) = next_event {
+            if event.timing() != sample_idx as u32 {
+                break;
+            }
+            if let NoteEvent::NoteOn { note, .. } = event {
+                const PATTERN_SWITCH_BASE: u8 = 60;
+                if self.params.midi_pattern_switch.value()
+                    && !self.params.song_mode.value()
+                    && note >= PATTERN_SWITCH_BASE
+                    && note < PATTERN_SWITCH_BASE + pattern_bank::SLOT_COUNT as u8
+                {
+                    self.pending_midi_pattern_slot = Some((note - PATTERN_SWITCH_BASE) as usize);
+                }
+            }
+            next_event = context.next_event();
+        }
+        next_event
+    }
+
+    /// Per sample (internal sequencer): advance the sequencer and fire what
+    /// it triggers (step solo, probability, conditions, fusions, stutter).
+    #[allow(clippy::too_many_arguments)]
+    fn run_sequencer_sample(
+        &mut self,
+        sample_idx: usize,
+        bpm: f32,
+        sample_rate: f32,
+        step_duration_samples: f32,
+        solo_window: u64,
+        slot_voices: &[Option<usize>; crate::track::MAX_TRACKS],
+        context: &mut impl ProcessContext<Self>,
+    ) {
+        let swing = self.params.swing.value();
+        let groove_type = self.params.groove_type.value();
+        let triggers = self
+            .sequencer
+            .process_sample(bpm, sample_rate, swing, groove_type);
+        self.reset_advance_counts_on_wrap();
+
+        for (slot_idx, trigger) in triggers.iter().enumerate() {
+            let Some(voice_idx) = slot_voices[slot_idx] else {
+                continue;
+            };
+            if trigger.should_trigger {
+                let step = trigger.step;
+
+                // Step-solo gating: if any soloed cell covers this step,
+                // only soloed lanes may trigger here (this lane is muted
+                // for this step unless it is itself soloed).
+                if solo_window & (1u64 << step) != 0
+                    && !self.params.seq_plock_state.state.is_solo(slot_idx, step)
+                {
+                    continue;
+                }
+
+                let seq_params = self.params.seq_plock_state.state.get(slot_idx, step);
+
+                // Apply sequencer probability
+                let prob = seq_params.map(|sp| sp.probability).unwrap_or(1.0);
+                if prob < 1.0 && self.next_rand() > prob {
+                    continue; // Skip this trigger based on probability
+                }
+
+                // Apply step conditions. A trigger that fired early
+                // across the pattern wrap (negative microtiming on the
+                // first step) belongs to the NEXT loop.
+                let loop_count = self.sequencer.loop_count() + usize::from(trigger.early_next_loop);
+                let condition_passes = step_condition_passes(seq_params, loop_count);
+                if !condition_passes {
+                    continue;
+                }
+
+                let stutter = if trigger.is_fusion() {
+                    1
+                } else {
+                    seq_params
+                        .as_ref()
+                        .map(|sp| sp.stutter_count.max(1))
+                        .unwrap_or(1)
+                };
+                let step_for_trigger = step as u32;
+
+                let base_settings = self.voice_settings_at_step(slot_idx, voice_idx, step);
+
+                // Fusion pulses are not stutter plocks: they are evenly
+                // distributed over the whole fused-cell duration and use
+                // the start cell's sound plock for every pulse.
+                if trigger.is_fusion() {
+                    self.schedule_fusion_pulses(
+                        slot_idx,
+                        voice_idx,
+                        trigger,
+                        step_for_trigger,
+                        base_settings,
+                        step_duration_samples,
+                        sample_idx,
+                        context,
+                    );
+                    continue;
+                }
+
+                // Non-fusion: fire the first trigger immediately.
+                self.fire_voice_trigger(
+                    slot_idx,
+                    voice_idx,
+                    trigger.velocity,
+                    step_for_trigger,
+                    sample_idx,
+                    context,
+                    false,
+                    base_settings,
+                );
+
+                // Schedule additional stutter triggers with temporal spacing.
+                // Spacing is derived from the current step duration (which itself
+                // depends on the DAW BPM) so the roll always fits musically inside
+                // the step.  stutter=N => N evenly-spaced hits across one step.
+                if stutter > 1 {
+                    self.schedule_stutter(
+                        slot_idx,
+                        trigger.velocity,
+                        step_for_trigger,
+                        base_settings,
+                        stutter,
+                        step_duration_samples,
+                    );
+                }
+            }
+        }
+    }
+
+    /// [269] A fused cell's pulses, spread evenly over its whole span: the
+    /// first fires now, the others are queued; with morph targets each pulse
+    /// interpolates them.
+    #[allow(clippy::too_many_arguments)]
+    fn schedule_fusion_pulses(
+        &mut self,
+        slot_idx: usize,
+        voice_idx: usize,
+        trigger: &crate::sequencer::TriggerResult,
+        step_for_trigger: u32,
+        base_settings: synthesis::VoiceSettings,
+        step_duration_samples: f32,
+        sample_idx: usize,
+        context: &mut impl ProcessContext<Self>,
+    ) {
+        let pulse_count = trigger.fusion_pulse_count.max(1);
+        let spacing = if pulse_count > 1 {
+            (step_duration_samples * trigger.fusion_span_cells.max(1) as f32 / pulse_count as f32)
+                .max(1.0) as u32
+        } else {
+            0
+        };
+        let morph_active = trigger.morph_count > 0;
+        for k in 0..pulse_count {
+            let mut settings = base_settings;
+            if morph_active && pulse_count > 1 {
+                let t = k as f32 / (pulse_count - 1) as f32;
+                for m in 0..trigger.morph_count as usize {
+                    let target = trigger.morph_targets[m];
+                    let lane_value =
+                        self.read_morph_value(&settings, target.field as usize, voice_idx);
+                    let (start_value, end_value) = match target.direction {
+                        crate::sequencer::pattern::MorphDirection::Target => {
+                            (lane_value, target.end_value)
+                        }
+                        crate::sequencer::pattern::MorphDirection::Source => {
+                            (target.end_value, lane_value)
+                        }
+                    };
+                    let morphed = start_value + (end_value - start_value) * t;
+                    self.apply_morph_value(
+                        &mut settings,
+                        target.field as usize,
+                        voice_idx,
+                        morphed,
+                    );
+                }
+            }
+            if k == 0 {
+                self.fire_voice_trigger(
+                    slot_idx,
+                    voice_idx,
+                    trigger.velocity,
+                    step_for_trigger,
+                    sample_idx,
+                    context,
+                    false,
+                    settings,
+                );
+            } else if self.pending_trigger_count < self.pending_triggers.len() {
+                self.pending_triggers[self.pending_trigger_count] = (
+                    spacing * k as u32,
+                    slot_idx,
+                    trigger.velocity,
+                    step_for_trigger,
+                    false,
+                    settings,
+                );
+                self.pending_trigger_count += 1;
+            }
+        }
+    }
+
+    /// [269] Stutter = N evenly spaced hits across one step: the first one
+    /// already fired, the N - 1 others are queued as hard retriggers.
+    fn schedule_stutter(
+        &mut self,
+        slot_idx: usize,
+        velocity: f32,
+        step_for_trigger: u32,
+        base_settings: synthesis::VoiceSettings,
+        stutter: u8,
+        step_duration_samples: f32,
+    ) {
+        let spacing = (step_duration_samples / stutter as f32).max(1.0) as u32;
+        for k in 1..stutter {
+            if self.pending_trigger_count < self.pending_triggers.len() {
+                self.pending_triggers[self.pending_trigger_count] = (
+                    spacing * k as u32,
+                    slot_idx,
+                    velocity,
+                    step_for_trigger,
+                    true,
+                    base_settings,
+                );
+                self.pending_trigger_count += 1;
+            }
+        }
+    }
+
+    /// Per sample (external MIDI mode): trigger the lanes listening to each
+    /// incoming note, and forward it on the global MIDI channel.
+    fn trigger_from_midi_notes(
+        &mut self,
+        mut next_event: Option<PluginNoteEvent<Self>>,
+        sample_idx: usize,
+        slot_voices: &[Option<usize>; crate::track::MAX_TRACKS],
+        context: &mut impl ProcessContext<Self>,
+    ) -> Option<PluginNoteEvent<Self>> {
+        // MIDI mode: process incoming NoteOn events
+        while let Some(event) = next_event {
+            if event.timing() != sample_idx as u32 {
+                break;
+            }
+            if let NoteEvent::NoteOn { note, velocity, .. } = event {
+                // [221] Match the LANE's own MIDI note, the one the
+                // plugin also sends on — not the registry's factory
+                // note. Several lanes may share a note on purpose, and
+                // they all trigger.
+                let listening = self.params.track_layout.state.slots_listening_to(note);
+                if listening != 0 {
+                    for slot_idx in 0..crate::track::MAX_TRACKS {
+                        if listening & (1 << slot_idx) == 0 {
+                            continue;
+                        }
+                        let Some(voice_idx) = slot_voices[slot_idx] else {
+                            continue;
+                        };
+                        self.external_midi_triggers[slot_idx].store(true, Ordering::Release);
+                        let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
+                        let hit = self.advance_hit_index(slot_idx, 0);
+                        self.synthesizer.set_hit_index(slot_idx, hit);
+                        self.synthesizer.set_voice_settings(slot_idx, settings);
+                        self.synthesizer.trigger(slot_idx, velocity);
+                        apply_choke_groups(
+                            &mut self.synthesizer,
+                            &self.params.track_layout.state,
+                            slot_idx,
+                        );
+                    }
+                    // Forward the MIDI event to the output on the global
+                    // MIDI channel. The note itself is preserved from the
+                    // incoming event.
+                    let output_channel = self
+                        .params
+                        .track_layout
+                        .state
+                        .global_midi_channel()
+                        .saturating_sub(1)
+                        .min(15);
+                    context.send_event(NoteEvent::NoteOn {
+                        timing: sample_idx as u32,
+                        voice_id: None,
+                        channel: output_channel,
+                        note,
+                        velocity,
+                    });
+                    context.send_event(NoteEvent::NoteOff {
+                        timing: sample_idx as u32,
+                        voice_id: None,
+                        channel: output_channel,
+                        note,
+                        velocity: 0.0,
+                    });
+                }
+            }
+            next_event = context.next_event();
+        }
+        next_event
+    }
+
+    /// Per sample: the Sound panel's test triggers.
+    fn fire_voice_test_triggers(
+        &mut self,
+        slot_voices: &[Option<usize>; crate::track::MAX_TRACKS],
+    ) {
+        for (slot_idx, trigger) in self.voice_test_triggers.iter().enumerate() {
+            if trigger.swap(false, Ordering::Acquire) {
+                let Some(voice_idx) = slot_voices[slot_idx] else {
+                    continue;
+                };
+                let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
+                    continue;
+                };
+                let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
+                self.synthesizer.set_voice_settings(slot_idx, settings);
+                self.synthesizer.trigger(slot_idx, 0.8);
+            }
+        }
+    }
+
+    fn apply_midi_pattern_switch(&mut self) {
+        // Apply a MIDI pattern-switch request received during the audio block.
+        // Only active when not in Song mode, so the two live-switch mechanisms
+        // do not compete. Pattern loads are retried if the bank is temporarily
+        // locked by the UI thread.
+        //
+        // [171] NO restart here: the new pattern picks up at the current
+        // position ("à la volée"). If its length differs, the length-change
+        // handler above resyncs to the host timeline modulo the new length —
+        // so a playhead on a page that no longer exists lands back inside the
+        // pattern (page 1 for a 1-page pattern).
+        if self.params.midi_pattern_switch.value() && !self.params.song_mode.value() {
+            if let Some(slot) = self.pending_midi_pattern_slot.take() {
+                match self.load_pattern_from_slot(slot) {
+                    PatternBankActionResult::Loaded(_) | PatternBankActionResult::Applied => {
+                        self.audio_last_loaded_slot
+                            .store(slot as u32, Ordering::Relaxed);
+                    }
+                    PatternBankActionResult::Busy => {
+                        self.pending_midi_pattern_slot = Some(slot);
+                    }
+                    PatternBankActionResult::Skipped => {}
+                }
+            }
+        }
+    }
+
+    fn advance_song_mode(&mut self) {
+        // Song mode: advance to next pattern when current pattern wraps, respecting per-step repeats.
+        if self.params.song_mode.value() && self.sequencer.is_playing() {
+            // Detect song mode being enabled while the sequencer is already running:
+            // we must restart from the top of the song sequence.
+            if !self.song_mode_was_active {
+                self.song_needs_init = true;
+            }
+            self.song_mode_was_active = true;
+
+            let current_loop_count = self.sequencer.loop_count();
+
+            // If the song just started (transport started with song mode on, or song mode was
+            // enabled while playing), load the first song block immediately.
+            if self.song_needs_init {
+                self.song_needs_init = false;
+                self.song_repeat_counter = 0;
+                self.song_position.store(0, Ordering::Relaxed);
+                self.last_song_position = 0;
+                self.last_loop_count = current_loop_count;
+                let first_slot = self.song_state.slot_at(0);
+                match first_slot {
+                    Some(slot) => {
+                        match self.load_pattern_from_slot(slot) {
+                            PatternBankActionResult::Loaded(_)
+                            | PatternBankActionResult::Applied => {
+                                self.pending_song_pattern_restart = true;
+                            }
+                            PatternBankActionResult::Busy => {
+                                // Bank was locked; try again next block.
+                                self.song_needs_init = true;
+                            }
+                            PatternBankActionResult::Skipped => {}
+                        }
+                    }
+                    None => {
+                        // First song block is empty: the current pattern keeps playing
+                        // until the next loop advances or the user fills the block.
+                    }
+                }
+            }
+
+            if current_loop_count != self.last_loop_count {
+                let song = &self.song_state;
+                let song_length = (song.length as usize).min(SONG_BLOCKS).max(1);
+                let current_pos = self.song_position.load(Ordering::Relaxed) as usize;
+                // Detect a UI reset or out-of-bounds song position and restart the repeat counter.
+                if current_pos != self.last_song_position || current_pos >= song_length {
+                    self.last_song_position = current_pos.min(song_length - 1);
+                    self.song_repeat_counter = 0;
+                }
+                let current_pos = self.last_song_position;
+                let repeats = song.repeat_at(current_pos) as u32;
+
+                let song_advance = if self.song_repeat_counter + 1 < repeats {
+                    // Stay on the current song step for another pattern loop.
+                    self.song_repeat_counter += 1;
+                    self.last_loop_count = current_loop_count;
+                    None
+                } else {
+                    // Advance to the next song step.
+                    let next_pos = current_pos + 1;
+                    if next_pos < song_length {
+                        let slot = song.slot_at(next_pos);
+                        if slot.is_some() {
+                            Some((slot, Some(next_pos)))
+                        } else {
+                            // Empty block: loop back to the start.
+                            let slot = song.slot_at(0);
+                            Some((slot, Some(0)))
+                        }
+                    } else {
+                        // End of the song: always loop back to the start.
+                        let slot = song.slot_at(0);
+                        Some((slot, Some(0)))
+                    }
+                };
+
+                if let Some((next_slot, next_pos)) = song_advance {
+                    let mut advance_song = true;
+                    if let Some(slot) = next_slot {
+                        match self.load_pattern_from_slot(slot) {
+                            PatternBankActionResult::Loaded(_)
+                            | PatternBankActionResult::Applied => {
+                                self.pending_song_pattern_restart = true;
+                            }
+                            PatternBankActionResult::Busy => advance_song = false,
+                            PatternBankActionResult::Skipped => {}
+                        }
+                    }
+
+                    if advance_song {
+                        self.last_loop_count = current_loop_count;
+                        if let Some(pos) = next_pos {
+                            self.last_song_position = pos;
+                            self.song_position.store(pos as u32, Ordering::Relaxed);
+                            self.song_repeat_counter = 0;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Reset song position when not in song mode or when transport is stopped
+            // so the song always starts from the top when re-enabled.
+            self.song_mode_was_active = false;
+            if self.params.song_mode.value() {
+                self.song_needs_init = true;
+            }
+            self.last_loop_count = self.sequencer.loop_count();
+            self.song_position.store(0, Ordering::Relaxed);
+            self.song_repeat_counter = 0;
+        }
+    }
+
+    /// The playheads the UI draws.
+    fn publish_playheads(&self, use_internal_sequencer: bool) {
+        if use_internal_sequencer {
+            self.current_step
+                .store(self.sequencer.current_step() as u32, Ordering::Relaxed);
+            for (i, step) in self.sequencer.current_steps().iter().enumerate() {
+                self.current_steps[i].store(*step as u32, Ordering::Relaxed);
+            }
+        } else {
+            // In external MIDI mode the internal playhead is not meaningful;
+            // hide it from the UI by storing an out-of-range sentinel.
+            self.current_step.store(u32::MAX, Ordering::Relaxed);
+            for s in self.current_steps.iter() {
+                s.store(u32::MAX, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
 impl Plugin for DrumFlashVst {
     const NAME: &'static str = "Flash Drum";
     const VENDOR: &'static str = "DrumFlash";
@@ -2744,47 +3773,9 @@ impl Plugin for DrumFlashVst {
         aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // Consume any UI-published song sequence snapshot without blocking.
-        if let Some(new_song) = self.params.song_controller.consume_latest() {
-            self.song_state = new_song;
-        }
-
-        // Process pattern save/load requests from UI without blocking the audio thread.
-        if self.deferred_save_slot.is_none() {
-            self.deferred_save_slot = self
-                .save_pattern_request
-                .swap(0, Ordering::Relaxed)
-                .checked_sub(1)
-                .map(|slot| slot as usize)
-                .filter(|&slot| slot < pattern_bank::SLOT_COUNT);
-        }
-        if let Some(slot) = self.deferred_save_slot.take() {
-            if self.save_pattern_to_slot(slot) == PatternBankActionResult::Busy {
-                self.deferred_save_slot = Some(slot);
-            }
-        }
-
-        if self.deferred_load_slot.is_none() {
-            self.deferred_load_slot = self
-                .load_pattern_request
-                .swap(0, Ordering::Relaxed)
-                .checked_sub(1)
-                .map(|slot| slot as usize)
-                .filter(|&slot| slot < pattern_bank::SLOT_COUNT);
-        }
-        if let Some(slot) = self.deferred_load_slot.take() {
-            if self.load_pattern_from_slot(slot) == PatternBankActionResult::Busy {
-                self.deferred_load_slot = Some(slot);
-            }
-        }
-        if self.clear_plocks_request.swap(false, Ordering::Relaxed) {
-            self.params.plock_state.state.clear_all();
-            self.params.seq_plock_state.state.clear_all();
-            #[cfg(debug_assertions)]
-            {
-                nih_log!("All plocks cleared");
-            }
-        }
+        // [269] The order of the stages matters (each one's comments say why);
+        // they are the methods of the `impl DrumFlashVst` block above.
+        self.consume_ui_requests();
 
         let transport = context.transport();
         let sample_rate = self.sample_rate;
@@ -2794,826 +3785,76 @@ impl Plugin for DrumFlashVst {
             .unwrap_or_else(|| self.params.bpm.smoothed.next());
         let position_beats_opt = transport.pos_beats();
         let host_reports_timeline = position_beats_opt.is_some() || transport.tempo.is_some();
-
-        if host_reports_timeline {
-            if transport.playing != self.sequencer.is_playing() {
-                if transport.playing {
-                    self.sequencer.play();
-                    // Sync on play start
-                    if let Some(position_beats) = position_beats_opt {
-                        self.sequencer
-                            .sync_to_host(position_beats, bpm, sample_rate);
-                        // If starting near beat 0, force step 0 trigger.
-                        // sync_to_host overwrites previous_step, which would swallow the first step.
-                        if position_beats.rem_euclid(4.0) < 0.1 {
-                            self.sequencer.force_step0_trigger();
-                        }
-                        self.last_host_pos = Some(position_beats);
-                    }
-                } else {
-                    self.sequencer.stop();
-                    self.last_host_pos = None;
-                }
-            } else if transport.playing && !self.params.song_mode.value() {
-                // Detect significant host seeks and resync. Threshold raised
-                // from 0.2 to 1.0 beats: at 0.2, Reaper and Bitwig's
-                // sub-buffer position drift accumulated until a spurious
-                // resync fired, skipping steps and producing audible drops in
-                // the running mix. Studio One sends sample-accurate
-                // pos_beats so the bug never surfaced there.
-                if let Some(position_beats) = position_beats_opt {
-                    // [212] Compare on the loop's own circle, through the
-                    // sequencer's mapping: with a page loop the local position
-                    // is the host's folded into the page, and a page wrap must
-                    // not read as a seek (a partial last page has a span
-                    // shorter than a bar).
-                    let circle = if self.sequencer.page_loop().is_some() {
-                        self.sequencer.loop_span_beats()
-                    } else {
-                        4.0
-                    };
-                    let host_pos_mod = self
-                        .sequencer
-                        .host_to_local(position_beats)
-                        .rem_euclid(circle);
-                    let seq_pos_mod = self.sequencer.beat_position().rem_euclid(circle);
-                    let diff = (host_pos_mod - seq_pos_mod).abs();
-                    // Use shortest distance on the circle
-                    let diff = diff.min(circle - diff);
-                    if diff > (circle * 0.5).min(1.0) {
-                        self.sequencer
-                            .sync_to_host(position_beats, bpm, sample_rate);
-                    }
-                    self.last_host_pos = Some(position_beats);
-                }
-            }
-        } else if !self.sequencer.is_playing() {
-            self.sequencer.play();
-        }
-
-        let mute_states: [bool; crate::track::MAX_TRACKS] =
-            std::array::from_fn(|i| self.params.mutes()[i].value());
-        let solo_states: [bool; crate::track::MAX_TRACKS] =
-            std::array::from_fn(|i| self.params.solos()[i].value());
-        let track_routings: [crate::track::TrackRouting; crate::track::MAX_TRACKS] =
-            std::array::from_fn(|i| self.params.track_layout.state.routing_for_slot(i));
-        let main_mix_enabled: [bool; crate::track::MAX_TRACKS] =
-            std::array::from_fn(|i| track_routings[i].main_on);
-
-        let (effective_mutes, mix_gains) =
-            compute_mix_gating(&mute_states, &solo_states, &main_mix_enabled);
-
-        self.sequencer.set_mutes(effective_mutes);
-
-        for aux_buffer in aux.outputs.iter_mut() {
-            for channel in aux_buffer.as_slice().iter_mut() {
-                channel.fill(0.0);
-            }
-        }
-
-        // Update per-track groove parameters once per buffer.
-        // Lane lengths are clamped to the audio-side pattern length. Pattern loads
-        // update this immediately, then the UI param catches up asynchronously.
-        let param_master_length = self.params.pattern_length.value() as usize;
-        if param_master_length != self.last_param_master_length {
-            self.audio_master_length = param_master_length.clamp(1, 64);
-            self.last_param_master_length = self.audio_master_length;
-        }
-        let master_length = self.audio_master_length;
-        let raw_lengths: [usize; crate::track::MAX_TRACKS] =
-            std::array::from_fn(|i| self.params.lengths()[i].value() as usize);
-        let effective_lengths = std::array::from_fn(|i| {
-            resolve_track_length(
-                raw_lengths[i],
-                master_length,
-                self.params.lane_length_locks.is_locked(i),
-            )
-        });
-        self.sequencer.set_track_params(
-            effective_lengths,
-            std::array::from_fn(|i| self.params.pushes()[i].value()),
-            std::array::from_fn(|i| self.params.humanizes()[i].value()),
-            master_length,
+        let playing = transport.playing;
+        self.follow_host_transport(
+            playing,
+            position_beats_opt,
+            host_reports_timeline,
+            bpm,
+            sample_rate,
         );
-        // [212] Page loop, after the master length so a page beyond the
-        // pattern reads as off. Ignored in Song mode: a chain of patterns and a
-        // page held in a loop contradict each other.
-        let page_loop = match self.params.page_loop.value() {
-            p if p >= 1 && !self.params.song_mode.value() => Some(p as usize - 1),
-            _ => None,
-        };
-        self.sequencer.set_page_loop(page_loop);
 
-        if self.pending_song_pattern_restart {
-            self.sequencer.restart_pattern_from_step0();
-            self.last_loop_count = self.sequencer.loop_count();
-            self.last_master_length = master_length;
-            self.pending_song_pattern_restart = false;
-        }
+        let (track_routings, mix_gains) = self.update_mix_gating();
+        clear_aux_outputs(aux);
 
-        // If the pattern length changed, resync the sequencer to the host timeline
-        // so loop_count and beat_position stay consistent with the new master length.
-        if master_length != self.last_master_length {
-            self.last_master_length = master_length;
-            if transport.playing && !self.params.song_mode.value() {
-                if let Some(position_beats) = position_beats_opt {
-                    self.sequencer
-                        .sync_to_host(position_beats, bpm, sample_rate);
-                }
-            }
-        }
-
-        // Sync fusions from pattern to sequencer without allocating in the audio thread.
-        self.sequencer.sync_fusions_from_pattern();
-
-        // Snapshot the active track layout and propagate it to the sequencer.
-        let mut slot_voices = [None; crate::track::MAX_TRACKS];
-        for slot in 0..crate::track::MAX_TRACKS {
-            if let Some(kind) = self.params.track_layout.state.kind_for_slot(slot) {
-                slot_voices[slot] = Some(kind.drum_voice_index());
-            }
-        }
-        self.sequencer.set_slot_voices(slot_voices);
-
-        // Grid linking: resolve each slot's grid source (a linked lane plays the
-        // steps + fusions of the lane above it) once per buffer.
-        let grid_slots: [usize; crate::track::MAX_TRACKS] =
-            std::array::from_fn(|i| self.params.track_layout.state.grid_slot(i));
-        self.sequencer.set_grid_slots(grid_slots);
-
-        // Per-cell microtiming (nudge): copied from the seq-plock atomics once
-        // per buffer; the sequencer fires nudged cells early/late.
-        let seq_plock_state = &self.params.seq_plock_state.state;
-        self.sequencer.set_microtimings(std::array::from_fn(|slot| {
-            std::array::from_fn(|step| {
-                f32::from_bits(seq_plock_state.microtimings[slot][step].load(Ordering::Relaxed))
-            })
-        }));
-
-        // Reinitialize synthesizer slots whose kind changed (added/removed/reassigned).
-        for slot in 0..crate::track::MAX_TRACKS {
-            let current_kind = self.params.track_layout.state.kind_for_slot(slot);
-            if current_kind != self.last_slot_kinds[slot] {
-                if let Some(kind) = current_kind {
-                    self.synthesizer.reinitialize_slot(slot, kind);
-                } else {
-                    self.synthesizer.set_slot_active(slot, false);
-                }
-                self.last_slot_kinds[slot] = current_kind;
-                // A recreated voice has its own default algo: push ours again.
-                self.last_algos[slot] = u8::MAX;
-            }
-        }
-
-        // Propagate synthesis algorithms (synthesizer is indexed by slot).
-        //
-        // [184] ONLY on change. This used to run unconditionally every buffer,
-        // which overwrote the algo that `fire_voice_trigger` had just applied
-        // from a step's p-lock: the plocked algo lasted a few milliseconds and
-        // the rest of the tail reverted to the lane's algo. Every other global
-        // setting is already re-pushed only when its version changes; the algo
-        // was the outlier.
-        for slot_idx in 0..crate::track::MAX_TRACKS {
-            if let Some(voice_idx) = slot_voices[slot_idx] {
-                let algo_count = crate::instrument_registry::INSTRUMENTS[voice_idx]
-                    .algo_count
-                    .max(1) as u8;
-                let algo = (self.params.algos()[slot_idx].value().max(0) as u8).min(algo_count - 1);
-                if self.last_algos[slot_idx] != algo {
-                    self.synthesizer.set_algo(slot_idx, algo);
-                    self.last_algos[slot_idx] = algo;
-                }
-            }
-        }
-
-        // One-shot migration: sessions saved before per-slot specials carried
-        // them as per-voice nih-plug params — seed the per-slot storage from
-        // those params (atomic stores only, RT-safe).
-        if self
-            .sound_settings_state
-            .needs_param_seed
-            .swap(false, Ordering::AcqRel)
-        {
-            for slot_idx in 0..crate::track::MAX_TRACKS {
-                let Some(voice_idx) = slot_voices[slot_idx] else {
-                    continue;
-                };
-                let inst = &self.sound_settings_state.instruments[slot_idx];
-                for sp_def in crate::instrument_registry::INSTRUMENTS[voice_idx].special_params {
-                    if let Some(param) = self.params.special_param(voice_idx, sp_def.special_index)
-                    {
-                        inst.set_special(sp_def.special_index, param.value());
-                    }
-                }
-                let in_notes = match voice_idx {
-                    0 => self.params.freq_mode_kick.value(),
-                    11 => self.params.freq_mode_bassdrum808.value(),
-                    _ => false,
-                };
-                inst.set_freq_mode(in_notes);
-            }
-            self.sound_settings_state.bump_version();
-        }
-
-        // [242] Macro knobs (host-driven) -> lane sound atomics, BEFORE the
-        // settings poll so a macro move is heard in this very buffer. Only a
-        // moved knob re-applies; the writes bump the settings version, which
-        // the poll below turns into voice settings (p-locks still win per step).
-        let macro_values: [f32; macros::MACRO_COUNT] =
-            std::array::from_fn(|i| self.params.macro_params()[i].value());
-        if macro_values != self.last_macro_values {
-            self.last_macro_values = macro_values;
-            macros::apply_macros(
-                macro_values,
-                &self.params.macro_map_state.state,
-                &self.sound_settings_state,
-                &slot_voices,
-            );
-        }
-
-        // Update global sound settings once per buffer, BEFORE triggers.
-        // Previously this was inside iter_samples, which caused a click:
-        // a trigger with plock settings would be overwritten by global settings
-        // in the same buffer, creating a one-sample discontinuity.
-        let current_version = self.sound_settings_state.version.load(Ordering::Acquire);
-        if current_version != self.last_sound_settings_version {
-            self.last_sound_settings_version = current_version;
-            for (slot_idx, inst) in self.sound_settings_state.instruments.iter().enumerate() {
-                let Some(voice_idx) = slot_voices[slot_idx] else {
-                    continue;
-                };
-                let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
-                    continue;
-                };
-                let (
-                    freq,
-                    decay,
-                    vol,
-                    filt,
-                    attack,
-                    release,
-                    decay_curve,
-                    release_curve,
-                    hold,
-                    filter_env_amount,
-                    filter_env_decay,
-                    analog,
-                    stereo,
-                ) = inst.load();
-                self.synthesizer.set_voice_settings(
-                    slot_idx,
-                    self.voice_settings_for(
-                        slot_idx,
-                        voice_idx,
-                        freq,
-                        decay,
-                        vol,
-                        filt,
-                        attack,
-                        release,
-                        decay_curve,
-                        release_curve,
-                        hold,
-                        filter_env_amount,
-                        filter_env_decay,
-                        analog,
-                        stereo,
-                    ),
-                );
-            }
-        }
+        let master_length = self.update_track_params();
+        self.restart_or_resync_pattern(
+            master_length,
+            playing,
+            position_beats_opt,
+            bpm,
+            sample_rate,
+        );
+        let slot_voices = self.sync_sequencer_layout();
+        self.sync_synthesizer_slots(&slot_voices);
+        self.seed_legacy_specials(&slot_voices);
+        self.apply_macro_knobs(&slot_voices);
+        self.push_sound_settings(&slot_voices);
 
         // Pre-calculate step duration in samples for stutter spacing.
         let step_duration_samples = (sample_rate * 60.0 / (bpm * 4.0)).max(1.0);
 
         let use_internal_sequencer = self.params.use_internal_sequencer.value();
         let mut next_event = context.next_event();
-
-        // Step-solo window for this block: union of every soloed seq-plock
-        // cell's span (a normal cell covers its own step; a fused cell covers
-        // its whole span). While the sequencer plays a step inside this window,
-        // only soloed lanes trigger there — every other lane is muted for those
-        // steps only. Independent of the lane-level `S` tag. RT-safe: bit ops +
-        // stack-buffered fusion reads, no allocation, computed once per block.
-        let solo_window: u64 = {
-            let seq = &self.params.seq_plock_state.state;
-            let pattern = &self.pattern;
-            let mut fusion_buf = [crate::sequencer::pattern::FusedGroup::default();
-                crate::sequencer::pattern::MAX_FUSIONS];
-            seq.solo_window(|inst, start| {
-                let n = pattern.load_fusions_into(inst, &mut fusion_buf);
-                fusion_buf[..n]
-                    .iter()
-                    .find(|g| g.start_cell as usize == start)
-                    .map(|g| (g.end_cell - g.start_cell + 1) as usize)
-                    .unwrap_or(1)
-            })
-        };
+        let solo_window = self.step_solo_window();
 
         for (sample_idx, mut channel_samples) in buffer.iter_samples().enumerate() {
-            // Process pending delayed triggers (stutter or fusion pulses).
-            let mut i = 0;
-            while i < self.pending_trigger_count {
-                if self.pending_triggers[i].0 == 0 {
-                    let (_, slot_idx, velocity, step, hard, settings) = self.pending_triggers[i];
-                    let Some(voice_idx) = slot_voices[slot_idx] else {
-                        self.pending_triggers[i] =
-                            self.pending_triggers[self.pending_trigger_count - 1];
-                        self.pending_trigger_count -= 1;
-                        continue;
-                    };
-                    self.fire_voice_trigger(
-                        slot_idx, voice_idx, velocity, step, sample_idx, context, hard, settings,
-                    );
-                    self.pending_triggers[i] =
-                        self.pending_triggers[self.pending_trigger_count - 1];
-                    self.pending_trigger_count -= 1;
-                } else {
-                    self.pending_triggers[i].0 -= 1;
-                    i += 1;
-                }
-            }
+            self.fire_pending_triggers(sample_idx, &slot_voices, context);
 
             if use_internal_sequencer {
-                // Process incoming MIDI pattern-switch notes in real-time.
-                // Notes from C3 (60) upward select pattern bank slots P1..P16
-                // (60-75). Only active when not in Song mode, so the two
-                // pattern-change mechanisms do not fight each other.
-                while let Some(event) = next_event {
-                    if event.timing() != sample_idx as u32 {
-                        break;
-                    }
-                    if let NoteEvent::NoteOn { note, .. } = event {
-                        const PATTERN_SWITCH_BASE: u8 = 60;
-                        if self.params.midi_pattern_switch.value()
-                            && !self.params.song_mode.value()
-                            && note >= PATTERN_SWITCH_BASE
-                            && note < PATTERN_SWITCH_BASE + pattern_bank::SLOT_COUNT as u8
-                        {
-                            self.pending_midi_pattern_slot =
-                                Some((note - PATTERN_SWITCH_BASE) as usize);
-                        }
-                    }
-                    next_event = context.next_event();
-                }
-
-                let swing = self.params.swing.value();
-                let groove_type = self.params.groove_type.value();
-                let triggers = self
-                    .sequencer
-                    .process_sample(bpm, sample_rate, swing, groove_type);
-                self.reset_advance_counts_on_wrap();
-
-                for (slot_idx, trigger) in triggers.iter().enumerate() {
-                    let Some(voice_idx) = slot_voices[slot_idx] else {
-                        continue;
-                    };
-                    if trigger.should_trigger {
-                        let step = trigger.step;
-
-                        // Step-solo gating: if any soloed cell covers this step,
-                        // only soloed lanes may trigger here (this lane is muted
-                        // for this step unless it is itself soloed).
-                        if solo_window & (1u64 << step) != 0
-                            && !self.params.seq_plock_state.state.is_solo(slot_idx, step)
-                        {
-                            continue;
-                        }
-
-                        let seq_params = self.params.seq_plock_state.state.get(slot_idx, step);
-
-                        // Apply sequencer probability
-                        let prob = seq_params.map(|sp| sp.probability).unwrap_or(1.0);
-                        if prob < 1.0 && self.next_rand() > prob {
-                            continue; // Skip this trigger based on probability
-                        }
-
-                        // Apply step conditions. A trigger that fired early
-                        // across the pattern wrap (negative microtiming on the
-                        // first step) belongs to the NEXT loop.
-                        let loop_count =
-                            self.sequencer.loop_count() + usize::from(trigger.early_next_loop);
-                        let condition_passes = if let Some(sp) = seq_params {
-                            use crate::plock::StepCondition::*;
-                            // [218] "Not" inverts the condition. `Always` is
-                            // immune: inverted it would mean "never", which is
-                            // what turning the step off already does.
-                            // [219] Both terms must hold when a second one is
-                            // set: "1/2 and 1/3" fires every sixth loop.
-                            let evaluate = |cond: crate::plock::StepCondition| match cond {
-                                Always => true,
-                                First => loop_count == 0,
-                                NotFirst => loop_count > 0,
-                                Half1 => loop_count % 2 == 0,
-                                Half2 => loop_count % 2 == 1,
-                                Third1 => loop_count % 3 == 0,
-                                Third2 => loop_count % 3 == 1,
-                                Third3 => loop_count % 3 == 2,
-                                Fourth1 => loop_count % 4 == 0,
-                                Fourth2 => loop_count % 4 == 1,
-                                Fourth3 => loop_count % 4 == 2,
-                                Fourth4 => loop_count % 4 == 3,
-                            };
-                            let passes = evaluate(sp.condition)
-                                && sp.condition_and.map(evaluate).unwrap_or(true);
-                            // `Not` inverts the whole expression, second term
-                            // included. Immune on a bare `Always`, where it
-                            // would mean "never".
-                            if sp.condition_negate
-                                && !(sp.condition == Always && sp.condition_and.is_none())
-                            {
-                                !passes
-                            } else {
-                                passes
-                            }
-                        } else {
-                            true // No condition = always pass
-                        };
-                        if !condition_passes {
-                            continue;
-                        }
-
-                        let stutter = if trigger.is_fusion() {
-                            1
-                        } else {
-                            seq_params
-                                .as_ref()
-                                .map(|sp| sp.stutter_count.max(1))
-                                .unwrap_or(1)
-                        };
-                        let step_for_trigger = step as u32;
-
-                        let base_settings = self.voice_settings_at_step(slot_idx, voice_idx, step);
-
-                        // Fusion pulses are not stutter plocks: they are evenly
-                        // distributed over the whole fused-cell duration and use
-                        // the start cell's sound plock for every pulse.
-                        if trigger.is_fusion() {
-                            let pulse_count = trigger.fusion_pulse_count.max(1);
-                            let spacing = if pulse_count > 1 {
-                                (step_duration_samples * trigger.fusion_span_cells.max(1) as f32
-                                    / pulse_count as f32)
-                                    .max(1.0) as u32
-                            } else {
-                                0
-                            };
-                            let morph_active = trigger.morph_count > 0;
-                            for k in 0..pulse_count {
-                                let mut settings = base_settings;
-                                if morph_active && pulse_count > 1 {
-                                    let t = k as f32 / (pulse_count - 1) as f32;
-                                    for m in 0..trigger.morph_count as usize {
-                                        let target = trigger.morph_targets[m];
-                                        let lane_value = self.read_morph_value(
-                                            &settings,
-                                            target.field as usize,
-                                            voice_idx,
-                                        );
-                                        let (start_value, end_value) = match target.direction {
-                                            crate::sequencer::pattern::MorphDirection::Target => {
-                                                (lane_value, target.end_value)
-                                            }
-                                            crate::sequencer::pattern::MorphDirection::Source => {
-                                                (target.end_value, lane_value)
-                                            }
-                                        };
-                                        let morphed = start_value + (end_value - start_value) * t;
-                                        self.apply_morph_value(
-                                            &mut settings,
-                                            target.field as usize,
-                                            voice_idx,
-                                            morphed,
-                                        );
-                                    }
-                                }
-                                if k == 0 {
-                                    self.fire_voice_trigger(
-                                        slot_idx,
-                                        voice_idx,
-                                        trigger.velocity,
-                                        step_for_trigger,
-                                        sample_idx,
-                                        context,
-                                        false,
-                                        settings,
-                                    );
-                                } else if self.pending_trigger_count < self.pending_triggers.len() {
-                                    self.pending_triggers[self.pending_trigger_count] = (
-                                        spacing * k as u32,
-                                        slot_idx,
-                                        trigger.velocity,
-                                        step_for_trigger,
-                                        false,
-                                        settings,
-                                    );
-                                    self.pending_trigger_count += 1;
-                                }
-                            }
-                            continue;
-                        }
-
-                        // Non-fusion: fire the first trigger immediately.
-                        self.fire_voice_trigger(
-                            slot_idx,
-                            voice_idx,
-                            trigger.velocity,
-                            step_for_trigger,
-                            sample_idx,
-                            context,
-                            false,
-                            base_settings,
-                        );
-
-                        // Schedule additional stutter triggers with temporal spacing.
-                        // Spacing is derived from the current step duration (which itself
-                        // depends on the DAW BPM) so the roll always fits musically inside
-                        // the step.  stutter=N => N evenly-spaced hits across one step.
-                        if stutter > 1 {
-                            let spacing = (step_duration_samples / stutter as f32).max(1.0) as u32;
-                            for k in 1..stutter {
-                                if self.pending_trigger_count < self.pending_triggers.len() {
-                                    self.pending_triggers[self.pending_trigger_count] = (
-                                        spacing * k as u32,
-                                        slot_idx,
-                                        trigger.velocity,
-                                        step_for_trigger,
-                                        true,
-                                        base_settings,
-                                    );
-                                    self.pending_trigger_count += 1;
-                                }
-                            }
-                        }
-                    }
-                }
+                next_event = self.collect_pattern_switch_notes(next_event, sample_idx, context);
+                self.run_sequencer_sample(
+                    sample_idx,
+                    bpm,
+                    sample_rate,
+                    step_duration_samples,
+                    solo_window,
+                    &slot_voices,
+                    context,
+                );
             } else {
-                // MIDI mode: process incoming NoteOn events
-                while let Some(event) = next_event {
-                    if event.timing() != sample_idx as u32 {
-                        break;
-                    }
-                    if let NoteEvent::NoteOn { note, velocity, .. } = event {
-                        // [221] Match the LANE's own MIDI note, the one the
-                        // plugin also sends on — not the registry's factory
-                        // note. Several lanes may share a note on purpose, and
-                        // they all trigger.
-                        let listening = self.params.track_layout.state.slots_listening_to(note);
-                        if listening != 0 {
-                            for slot_idx in 0..crate::track::MAX_TRACKS {
-                                if listening & (1 << slot_idx) == 0 {
-                                    continue;
-                                }
-                                let Some(voice_idx) = slot_voices[slot_idx] else {
-                                    continue;
-                                };
-                                self.external_midi_triggers[slot_idx]
-                                    .store(true, Ordering::Release);
-                                let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
-                                let hit = self.advance_hit_index(slot_idx, 0);
-                                self.synthesizer.set_hit_index(slot_idx, hit);
-                                self.synthesizer.set_voice_settings(slot_idx, settings);
-                                self.synthesizer.trigger(slot_idx, velocity);
-                                apply_choke_groups(
-                                    &mut self.synthesizer,
-                                    &self.params.track_layout.state,
-                                    slot_idx,
-                                );
-                            }
-                            // Forward the MIDI event to the output on the global
-                            // MIDI channel. The note itself is preserved from the
-                            // incoming event.
-                            let output_channel = self
-                                .params
-                                .track_layout
-                                .state
-                                .global_midi_channel()
-                                .saturating_sub(1)
-                                .min(15);
-                            context.send_event(NoteEvent::NoteOn {
-                                timing: sample_idx as u32,
-                                voice_id: None,
-                                channel: output_channel,
-                                note,
-                                velocity,
-                            });
-                            context.send_event(NoteEvent::NoteOff {
-                                timing: sample_idx as u32,
-                                voice_id: None,
-                                channel: output_channel,
-                                note,
-                                velocity: 0.0,
-                            });
-                        }
-                    }
-                    next_event = context.next_event();
-                }
+                next_event =
+                    self.trigger_from_midi_notes(next_event, sample_idx, &slot_voices, context);
             }
 
-            for (slot_idx, trigger) in self.voice_test_triggers.iter().enumerate() {
-                if trigger.swap(false, Ordering::Acquire) {
-                    let Some(voice_idx) = slot_voices[slot_idx] else {
-                        continue;
-                    };
-                    let Some(_voice) = synthesis::DrumVoice::from_index(voice_idx) else {
-                        continue;
-                    };
-                    let settings = self.voice_settings_at_step(slot_idx, voice_idx, 0);
-                    self.synthesizer.set_voice_settings(slot_idx, settings);
-                    self.synthesizer.trigger(slot_idx, 0.8);
-                }
-            }
+            self.fire_voice_test_triggers(&slot_voices);
 
             let master_vol = self.params.master_volume.smoothed.next();
             let mut voice_outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
             self.synthesizer
                 .process_voice_samples_stereo(&mut voice_outputs);
-
-            let mixed_left = voice_outputs
-                .iter()
-                .enumerate()
-                .map(|(i, o)| o[0] * mix_gains[i])
-                .sum::<f32>()
-                * master_vol;
-            let mixed_right = voice_outputs
-                .iter()
-                .enumerate()
-                .map(|(i, o)| o[1] * mix_gains[i])
-                .sum::<f32>()
-                * master_vol;
+            let (mixed_left, mixed_right) = main_mix(&voice_outputs, &mix_gains, master_vol);
 
             for (ch, sample) in channel_samples.iter_mut().enumerate() {
                 *sample = if ch == 0 { mixed_left } else { mixed_right };
             }
 
-            for (slot_idx, routing) in track_routings.iter().enumerate() {
-                let crate::track::TrackAudioOut::Out(out_number) = routing.out_select else {
-                    continue;
-                };
-                let aux_idx = out_number.saturating_sub(1) as usize;
-                let Some(aux_buffer) = aux.outputs.get_mut(aux_idx) else {
-                    continue;
-                };
-                let channels = aux_buffer.as_slice();
-                add_stereo_aux_sample(
-                    channels,
-                    sample_idx,
-                    voice_outputs[slot_idx][0] * master_vol,
-                    voice_outputs[slot_idx][1] * master_vol,
-                );
-            }
+            write_aux_outputs(aux, sample_idx, &track_routings, &voice_outputs, master_vol);
         }
 
-        // Apply a MIDI pattern-switch request received during the audio block.
-        // Only active when not in Song mode, so the two live-switch mechanisms
-        // do not compete. Pattern loads are retried if the bank is temporarily
-        // locked by the UI thread.
-        //
-        // [171] NO restart here: the new pattern picks up at the current
-        // position ("à la volée"). If its length differs, the length-change
-        // handler above resyncs to the host timeline modulo the new length —
-        // so a playhead on a page that no longer exists lands back inside the
-        // pattern (page 1 for a 1-page pattern).
-        if self.params.midi_pattern_switch.value() && !self.params.song_mode.value() {
-            if let Some(slot) = self.pending_midi_pattern_slot.take() {
-                match self.load_pattern_from_slot(slot) {
-                    PatternBankActionResult::Loaded(_) | PatternBankActionResult::Applied => {
-                        self.audio_last_loaded_slot
-                            .store(slot as u32, Ordering::Relaxed);
-                    }
-                    PatternBankActionResult::Busy => {
-                        self.pending_midi_pattern_slot = Some(slot);
-                    }
-                    PatternBankActionResult::Skipped => {}
-                }
-            }
-        }
-
-        // Song mode: advance to next pattern when current pattern wraps, respecting per-step repeats.
-        if self.params.song_mode.value() && self.sequencer.is_playing() {
-            // Detect song mode being enabled while the sequencer is already running:
-            // we must restart from the top of the song sequence.
-            if !self.song_mode_was_active {
-                self.song_needs_init = true;
-            }
-            self.song_mode_was_active = true;
-
-            let current_loop_count = self.sequencer.loop_count();
-
-            // If the song just started (transport started with song mode on, or song mode was
-            // enabled while playing), load the first song block immediately.
-            if self.song_needs_init {
-                self.song_needs_init = false;
-                self.song_repeat_counter = 0;
-                self.song_position.store(0, Ordering::Relaxed);
-                self.last_song_position = 0;
-                self.last_loop_count = current_loop_count;
-                let first_slot = self.song_state.slot_at(0);
-                match first_slot {
-                    Some(slot) => {
-                        match self.load_pattern_from_slot(slot) {
-                            PatternBankActionResult::Loaded(_)
-                            | PatternBankActionResult::Applied => {
-                                self.pending_song_pattern_restart = true;
-                            }
-                            PatternBankActionResult::Busy => {
-                                // Bank was locked; try again next block.
-                                self.song_needs_init = true;
-                            }
-                            PatternBankActionResult::Skipped => {}
-                        }
-                    }
-                    None => {
-                        // First song block is empty: the current pattern keeps playing
-                        // until the next loop advances or the user fills the block.
-                    }
-                }
-            }
-
-            if current_loop_count != self.last_loop_count {
-                let song = &self.song_state;
-                let song_length = (song.length as usize).min(SONG_BLOCKS).max(1);
-                let current_pos = self.song_position.load(Ordering::Relaxed) as usize;
-                // Detect a UI reset or out-of-bounds song position and restart the repeat counter.
-                if current_pos != self.last_song_position || current_pos >= song_length {
-                    self.last_song_position = current_pos.min(song_length - 1);
-                    self.song_repeat_counter = 0;
-                }
-                let current_pos = self.last_song_position;
-                let repeats = song.repeat_at(current_pos) as u32;
-
-                let song_advance = if self.song_repeat_counter + 1 < repeats {
-                    // Stay on the current song step for another pattern loop.
-                    self.song_repeat_counter += 1;
-                    self.last_loop_count = current_loop_count;
-                    None
-                } else {
-                    // Advance to the next song step.
-                    let next_pos = current_pos + 1;
-                    if next_pos < song_length {
-                        let slot = song.slot_at(next_pos);
-                        if slot.is_some() {
-                            Some((slot, Some(next_pos)))
-                        } else {
-                            // Empty block: loop back to the start.
-                            let slot = song.slot_at(0);
-                            Some((slot, Some(0)))
-                        }
-                    } else {
-                        // End of the song: always loop back to the start.
-                        let slot = song.slot_at(0);
-                        Some((slot, Some(0)))
-                    }
-                };
-
-                if let Some((next_slot, next_pos)) = song_advance {
-                    let mut advance_song = true;
-                    if let Some(slot) = next_slot {
-                        match self.load_pattern_from_slot(slot) {
-                            PatternBankActionResult::Loaded(_)
-                            | PatternBankActionResult::Applied => {
-                                self.pending_song_pattern_restart = true;
-                            }
-                            PatternBankActionResult::Busy => advance_song = false,
-                            PatternBankActionResult::Skipped => {}
-                        }
-                    }
-
-                    if advance_song {
-                        self.last_loop_count = current_loop_count;
-                        if let Some(pos) = next_pos {
-                            self.last_song_position = pos;
-                            self.song_position.store(pos as u32, Ordering::Relaxed);
-                            self.song_repeat_counter = 0;
-                        }
-                    }
-                }
-            }
-        } else {
-            // Reset song position when not in song mode or when transport is stopped
-            // so the song always starts from the top when re-enabled.
-            self.song_mode_was_active = false;
-            if self.params.song_mode.value() {
-                self.song_needs_init = true;
-            }
-            self.last_loop_count = self.sequencer.loop_count();
-            self.song_position.store(0, Ordering::Relaxed);
-            self.song_repeat_counter = 0;
-        }
-
-        if use_internal_sequencer {
-            self.current_step
-                .store(self.sequencer.current_step() as u32, Ordering::Relaxed);
-            for (i, step) in self.sequencer.current_steps().iter().enumerate() {
-                self.current_steps[i].store(*step as u32, Ordering::Relaxed);
-            }
-        } else {
-            // In external MIDI mode the internal playhead is not meaningful;
-            // hide it from the UI by storing an out-of-range sentinel.
-            self.current_step.store(u32::MAX, Ordering::Relaxed);
-            for s in self.current_steps.iter() {
-                s.store(u32::MAX, Ordering::Relaxed);
-            }
-        }
+        self.apply_midi_pattern_switch();
+        self.advance_song_mode();
+        self.publish_playheads(use_internal_sequencer);
 
         ProcessStatus::Normal
     }
@@ -4372,6 +4613,47 @@ mod tests {
         let mut short_right = [0.0f32; 1];
         let mut short_channels: [&mut [f32]; 2] = [&mut short_left, &mut short_right];
         assert!(!add_stereo_aux_sample(&mut short_channels, 1, 1.0, 1.0));
+    }
+
+    /// [269] The step-condition logic, now one pure function out of `process()`.
+    #[test]
+    fn step_condition_passes_follows_loop_count_negation_and_second_term() {
+        use crate::plock::{SequencerStepParams, StepCondition::*};
+        let cond = |condition, condition_and, condition_negate| {
+            Some(SequencerStepParams {
+                condition,
+                condition_and,
+                condition_negate,
+                ..SequencerStepParams::default()
+            })
+        };
+        assert!(step_condition_passes(None, 7), "no seq p-lock = always");
+        assert!(step_condition_passes(cond(Half1, None, false), 0));
+        assert!(!step_condition_passes(cond(Half1, None, false), 1));
+        assert!(step_condition_passes(cond(Half1, None, true), 1), "Not 1/2");
+        assert!(!step_condition_passes(cond(First, None, false), 1));
+        // [219] "1/2 and 1/3" fires every sixth loop.
+        let both = cond(Half1, Some(Third1), false);
+        let fired: Vec<usize> = (0..12)
+            .filter(|&l| step_condition_passes(both, l))
+            .collect();
+        assert_eq!(fired, vec![0, 6]);
+        // [218] `Not` on a bare `Always` stays "always".
+        assert!(step_condition_passes(cond(Always, None, true), 3));
+    }
+
+    /// [269] The main mix, now one pure function out of `process()`.
+    #[test]
+    fn main_mix_weights_each_slot_and_applies_master_volume() {
+        let mut outputs = [[0.0f32; 2]; crate::track::MAX_TRACKS];
+        outputs[0] = [1.0, -1.0];
+        outputs[3] = [0.5, 0.25];
+        let mut gains = [0.0f32; crate::track::MAX_TRACKS];
+        gains[0] = 1.0;
+        gains[3] = 0.5;
+        let (left, right) = main_mix(&outputs, &gains, 0.5);
+        assert!((left - (1.0 + 0.25) * 0.5).abs() < 1e-6);
+        assert!((right - (-1.0 + 0.125) * 0.5).abs() < 1e-6);
     }
 
     #[test]
