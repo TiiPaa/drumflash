@@ -12,7 +12,7 @@
   - [ ] Chantier 2 — auditer les 62 `#[allow(dead_code)]` (14 fichiers) : supprimer le mort, réserver le reste aux tests.
   - [ ] Chantier 3 — dispatch `DrumVoiceKind` par macro (9 méthodes × 27 voix).
   - [ ] Chantier 4 — découper `process()` (~880 lignes) et `ui/sound_editor.rs` (déplacement strict, sans changement de comportement).
-  - Note : `algo_count: 2` périmé pour Snare606 et 808 Kick (une seule voix d'algorithme, valeur ignorée par la voix) — à arbitrer.
+  - [x] `algo_count: 2` périmé pour Snare606 et 808 Kick → corrigé à 1, test d'égalité stricte sur les 27 voix (build 20261001-100120).
 
 ### Idées notées (2026-09-26, demandes utilisateur)
 - [ ] [275] **Swing par lane qui override le swing global** (onglet Track, mêmes paramètres : switch + amount + type) — **reporté par prudence (2026-09-26) : session dédiée**, l'évaluation des triggers est au cœur du séquenceur. Notes de design déjà récoltées : point d'injection unique `groove::beat_to_step`/`step_start_beat` par lane (sequencer/mod.rs:438, 292, 538, 639+), `Sequencer::set_lane_swings` par buffer sur le modèle `set_microtimings`, persistance nouveau champ `lane-swings-v1` (pack enabled+type+amount par slot, modèle `LaneLengthLocks`), UI onglet Track (sound_editor), export MIDI à répliquer (midi_export.rs), tests stress existants comme filet. Prérequis : relire toutes les utilisations de `swing`/`groove_type` dans le séquenceur.

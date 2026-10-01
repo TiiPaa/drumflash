@@ -3035,9 +3035,9 @@ pub fn draw_sound_panel(
                         if let Some(voice) = DrumVoice::from_index(voice_idx) {
                             let algos = synthesis::algos_for(voice);
                             // [269] No voice-index exception: a shared list
-                            // (OpenHiHat uses HiHat's) longer than what a voice
-                            // honours fails the registry test
-                            // `algo_selector_never_offers_more_than_the_engine_honours`.
+                            // (OpenHiHat uses HiHat's) that disagrees with a
+                            // voice's algo_count fails the registry test
+                            // `algo_count_matches_the_named_algorithms`.
                             if algos.len() > 1 {
                                 let algo_param = params.algos()[state.selected_instrument];
                                 ui.horizontal(|ui| {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-01 - [269] Snare606 et 808 Kick : un seul algorithme déclaré, comme leur moteur (build 20261001-100120)
+
+**Branche:** `main` - **Build:** `20261001-100120`
+**Validation:** `cargo check --all-targets --locked` sans avertissement ; `cargo test` 499 verts lib ; install atomique OK. À valider dans Studio One : **rien d'audible ne doit changer** sur ces deux voix.
+
+Suite du constat du build 093056 : le registre déclarait `algo_count: 2` pour Snare606 et 808 Kick alors que leur liste d'algorithmes n'en nomme qu'un et que les deux voix ne lisent jamais la valeur (elles la transportent seulement).
+
+- **Registre** : `algo_count: 1` pour Snare606 et 808 Kick. Le moteur borne désormais leur algorithme à 0 au lieu de 1 — sans effet, puisque ces voix l'ignorent. La plage du paramètre `algos` des lanes ne bouge pas (fixée par Kick et Snare à 3 algorithmes) : les sessions existantes se relisent à l'identique.
+- **Test durci** : `algo_count_matches_the_named_algorithms` exige maintenant l'égalité exacte entre `algo_count` et la liste `algos_for` sur les 27 voix (il remplace `algo_selector_never_offers_more_than_the_engine_honours`, qui ne vérifiait qu'un sens).
+
 ## 2026-10-01 - [269] chantier 1 : plus de liste par numéro de voix dans le Sound Editor (build 20261001-093056)
 
 **Branche:** `main` - **Build:** `20261001-093056`

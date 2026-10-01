@@ -2771,7 +2771,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         label: "S6",
         full_name: "Snare 606",
         midi_note: 40,
-        algo_count: 2,
+        algo_count: 1,
         standard_params: SNARE606_STD,
         special_params: &[
             sp(
@@ -2848,7 +2848,7 @@ pub const INSTRUMENTS: [InstrumentDef; DrumVoice::COUNT] = [
         label: "B8",
         full_name: "808 Kick",
         midi_note: 35,
-        algo_count: 2,
+        algo_count: 1,
         standard_params: MINIMAL_STD,
         special_params: &[
             sp(
@@ -4964,21 +4964,20 @@ mod tests {
         assert!(!is_sampler(INSTRUMENTS.len()), "out of range must be false");
     }
 
-    /// [269] The Sound Editor shows the Algorithm selector when `algos_for`
-    /// names more than one algorithm; the engine clamps the choice to
-    /// `algo_count`. The selector must never offer an entry the engine would
-    /// clamp away. This is what replaced the UI's `voice_idx != 3` exception:
-    /// OpenHiHat shares HiHat's list but honours a single algorithm.
+    /// [269] The Sound Editor names the Algorithm selector's entries from
+    /// `algos_for` and the engine clamps the choice to `algo_count`: they must
+    /// agree on every voice. This replaced the UI's `voice_idx != 3` exception
+    /// (OpenHiHat shares HiHat's list), and caught Snare606 / 808 Kick
+    /// declaring 2 algorithms for a single one.
     #[test]
-    fn algo_selector_never_offers_more_than_the_engine_honours() {
+    fn algo_count_matches_the_named_algorithms() {
         for (i, def) in INSTRUMENTS.iter().enumerate() {
             let voice = crate::synthesis::DrumVoice::from_index(i).expect("voice index");
-            let named = crate::synthesis::algos_for(voice).len();
-            assert!(
-                named <= def.algo_count,
-                "{}: the selector would offer {named} algorithms, the engine honours {}",
-                def.full_name,
-                def.algo_count
+            assert_eq!(
+                def.algo_count,
+                crate::synthesis::algos_for(voice).len(),
+                "{}: algo_count disagrees with the algorithms algos_for names",
+                def.full_name
             );
         }
     }
