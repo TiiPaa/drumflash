@@ -8,6 +8,8 @@
 
 ## Nouvelles tâches — session 2026-10-01 (demandes directes)
 
+- [x] [278] **Version produit 0.9.2, release publique** — version 0.9.1 → 0.9.2 (`Cargo.toml`, `Cargo.lock`, `installer/flash-drum.iss`), licences tierces régénérées, installeur `dist\FlashDrum-Setup-0.9.2.exe`, tag `v0.9.2`, Release GitHub (pré-version « beta ») avec l'installeur ; dépôt GitHub renommé `drumflash` → `flashdrum` (build 20261001-201853).
+
 - [x] [276] **Version produit 0.9.1** — `Cargo.toml` (+ `Cargo.lock`) + `#define AppVersion` dans `installer/flash-drum.iss` passés de 0.9.0 à **0.9.1** ; installeur régénéré (`dist\FlashDrum-Setup-0.9.1.exe`) (build 20261001-123647).
 
 ## Nouvelles tâches — session 2026-09-26 (demandes directes)

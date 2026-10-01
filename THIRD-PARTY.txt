@@ -65,4 +65,4 @@ MIDI DRAG HELPER
 SOURCE CODE
 -----------
 
-  https://github.com/TiiPaa/drumflash
+  https://github.com/TiiPaa/flashdrum

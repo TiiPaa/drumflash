@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-01 - [278] Version 0.9.2 — release publique (build 20261001-201853)
+
+**Branche:** `main` - **Build:** `20261001-201853` - **Tag:** `v0.9.2`
+**Validation:** `cargo test` 503 verts lib (avant install) ; install atomique OK ; version 0.9.2 embarquée ; installeur **`dist\FlashDrum-Setup-0.9.2.exe`** publié en Release GitHub (pré-version, « beta »). À valider dans Studio One : non-régression (même code que le build 200848, seul le numéro de version change).
+
+Demande utilisateur du 2026-10-01 : release 0.9.2 complète (commit, push, tag, Release GitHub publique) et dépôt GitHub renommé.
+
+- **Dépôt renommé** : `TiiPaa/drumflash` → **`TiiPaa/flashdrum`** (GitHub redirige l'ancienne adresse) ; `origin` local mis à jour ; l'adresse du code source dans `THIRD-PARTY.txt` aussi.
+- **Version** 0.9.1 → 0.9.2 : `Cargo.toml` (+ `Cargo.lock`) et `#define AppVersion` de l'installeur ; `THIRD-PARTY-LICENSES.txt` régénéré (inchangé : aucune dépendance n'a bougé).
+- **Contenu depuis la 0.9.1** : en-tête de la grille réaligné sur ses colonnes ; ligne Frequency des kicks : Hz ↔ Notes ne décale plus les lignes du dessous ; installeur [277] (désinstalleur hors du plugin, GPL pour information, notice lisible, textes complets des licences) ; [269] chantier 4 (`process()` et l'onglet Sound découpés en fonctions nommées, sans changement de comportement).
+- **Non fait** : le test manuel de l'installeur prévu par [277] (pages, désinstalleur dans `C:\Program Files\Flash Drum`) reste ouvert dans le TODO — l'utilisateur a choisi de publier sans l'attendre.
+
 ## 2026-10-01 - En-tête de la grille : les intitulés retrouvent leurs colonnes (build 20261001-200848)
 
 **Branche:** `main` - **Build:** `20261001-200848`
