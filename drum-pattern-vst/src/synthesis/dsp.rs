@@ -60,7 +60,6 @@ impl PinkNoise {
         // Normalise approximativement vers [-1, 1]
         sum * 0.25
     }
-
 }
 
 // ── Brown Noise (1/f², integration of white) ────────────────────────────────
@@ -87,7 +86,6 @@ impl BrownNoise {
         self.integrator *= 0.995;
         self.integrator
     }
-
 }
 
 // ── Blue Noise (+3 dB/octave, differentiation of white) ─────────────────────
@@ -113,7 +111,6 @@ impl BlueNoise {
         self.prev = current;
         diff * 0.8
     }
-
 }
 
 // ── Switchable Noise Source ─────────────────────────────────────────────────

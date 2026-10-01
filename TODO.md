@@ -11,7 +11,9 @@
   - [x] Chantier 1 — listes par index de voix dans l'UI → champs du registre : `is_sampler` / `freq_as_notes` / `analog_fixed` dans chaque `InstrumentDef`, règles Gate (Buzz) et Feedback flanger (Sdrex) par noms de paramètres, 3 tests (build 20261001-093056, à valider dans S1 : non-régression).
   - [x] Chantier 2 — auditer les 62 `#[allow(dead_code)]` (14 fichiers) : supprimer le mort, réserver le reste aux tests. Fait : 62 → 14 (≈ 180 lignes supprimées, 5 réservés aux tests, 8 gardés avec raison écrite) (build 20261001-112204, à valider dans S1 : non-régression).
   - [x] Chantier 3 — dispatch `DrumVoiceKind` par macro (9 méthodes × 27 voix). Fait : liste unique `drum_voice_kinds!` (25 types) qui génère l'enum et les 12 méthodes du trait, 326 → 95 lignes ; aiguillage uniforme (build 20261001-120557, à valider dans S1 : non-régression).
-  - [ ] Chantier 4 — découper `process()` (~880 lignes) et `ui/sound_editor.rs` (déplacement strict, sans changement de comportement).
+  - [~] Chantier 4 — découper `process()` (~880 lignes) et `ui/sound_editor.rs` (déplacement strict, sans changement de comportement).
+    - [x] Étape 1 — `process()` : 879 → 85 lignes, étapes nommées + boucle séquenceur découpée, 2 tests (build 20261001-125719, validé dans S1 le 2026-10-01).
+    - [ ] Étape 2 — `draw_sound_panel()` (2 050 lignes) dans `ui/sound_editor.rs`.
   - [x] `algo_count: 2` périmé pour Snare606 et 808 Kick → corrigé à 1, test d'égalité stricte sur les 27 voix (build 20261001-100120).
 
 ### Idées notées (2026-09-26, demandes utilisateur)

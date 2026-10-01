@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-01 - [269] chantier 4, étape 1 : `process()` découpé en étapes nommées (build 20261001-125719)
+
+**Branche:** `main` - **Build:** `20261001-125719`
+**Validation:** `cargo check --all-targets --locked` sans avertissement ; `cargo test` 501 verts lib (2 nouveaux) ; clippy (réglages CI) vert ; `cargo run --bin test_standalone` joue ses 5 s (amplitudes identiques) ; install atomique OK. **Validé dans Studio One** le 2026-10-01 (non-régression du cœur audio).
+
+`process()` passe de **879 à 85 lignes** : elle appelle dans le même ordre les étapes qu'elle contenait, devenues des méthodes d'un bloc `impl DrumFlashVst` placé juste au-dessus de `impl Plugin` — requêtes de l'interface, suivi du transport de l'hôte, mute/solo/mix, paramètres de piste et boucle de page, relance de pattern, synchronisation du séquenceur, voix et algorithmes, migration des spéciaux, macros, réglages, fenêtre de solo de pas ; par échantillon : déclenchements différés, notes de changement de pattern, séquenceur, mode MIDI externe, boutons de test, mixage ; puis changement de pattern MIDI, mode song, playheads.
+
+- **Code déplacé tel quel** : une comparaison ligne à ligne (indentation ignorée) de l'ancien et du nouveau `lib.rs` ne montre que 5 lignes de code remplacées, toutes à l'identique (`transport.playing` → `playing` passé en argument, et le bloc de condition de pas devenu un appel) ; le reste n'est que signatures et appels.
+- **La boucle du séquenceur** (`run_sequencer_sample`) est découpée à son tour : `step_condition_passes` (fonction pure : conditions 1/2, 1/3…, `Not`, second terme), `schedule_fusion_pulses` (impulsions et morph d'une cellule fusionnée), `schedule_stutter`.
+- **Mixage** : `main_mix`, `clear_aux_outputs`, `write_aux_outputs` (fonctions libres ; l'ordre d'écriture sortie principale puis aux est conservé).
+- **Tests** : `step_condition_passes_follows_loop_count_negation_and_second_term`, `main_mix_weights_each_slot_and_applies_master_volume`.
+- Mise au format (rustfmt) des lignes écrites depuis le matin ; `ui/grid.rs` laissé tel quel (ses écarts de format datent du 26/09).
+
 ## 2026-10-01 - [276] Version 0.9.1 (build 20261001-123647)
 
 **Branche:** `main` - **Build:** `20261001-123647`
