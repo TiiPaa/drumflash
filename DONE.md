@@ -25,9 +25,17 @@
 
 ## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
 
-### Phase 6 — Traçabilité & dette ([269] restant, session dédiée)
+### Phase 6 — Traçabilité & dette (terminée le 2026-10-01)
 - [x] [267] **Fork nih-plug traçable** : `vendor/nih-plug/FLASH-DRUM-PATCHES.md` sur le modèle egui-baseview (liste exhaustive des 9 patchs, révision amont inconnue documentée honnêtement) ; `STUDIO_ONE_MULTI_OUT.md` complété (remap aux clairsemés, IEditController, fenêtre clavier, journal d'état) ; vst3-sys épinglé par **rev** `b3ff4d77` (était par branche mouvante) ; `windows-sys` sous `[target.'cfg(windows)'.dependencies]`. *(Reste long terme, noté dans le doc : fork contrôlé de vst3-sys si l'amont disparaît.)* (CI verte 2026-09-25, pas de build)
 - [x] [268] **Hygiène dépôt** : `#![allow(clippy::excessive_precision)]` sur la table FIR ac606 (le `-A` de la CI retiré) ; `cargo fmt` en commit dédié (63 fichiers) ; CHANGELOG archivé par trimestre (656 → 273 Ko, H1 et avant dans `docs/historique/changelog/`) ; `atlas-pads.png` 11 Mo hors suivi (reste local, historique non réécrit — option notée) ; `.gitignore` resserré (`*backup*`/`fixed*`/`temp_*` scropés) ; `bundle.toml` supprimé ; `git gc` (pack 28 Mio). (CI verte 2026-09-25, pas de build)
+- [x] [269] **REPRENDRE ICI (session dédiée — refactors invasifs)** — **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
+  - [x] Chantier 1 — listes par index de voix dans l'UI → champs du registre : `is_sampler` / `freq_as_notes` / `analog_fixed` dans chaque `InstrumentDef`, règles Gate (Buzz) et Feedback flanger (Sdrex) par noms de paramètres, 3 tests (build 20261001-093056, à valider dans S1 : non-régression).
+  - [x] Chantier 2 — auditer les 62 `#[allow(dead_code)]` (14 fichiers) : supprimer le mort, réserver le reste aux tests. Fait : 62 → 14 (≈ 180 lignes supprimées, 5 réservés aux tests, 8 gardés avec raison écrite) (build 20261001-112204, à valider dans S1 : non-régression).
+  - [x] Chantier 3 — dispatch `DrumVoiceKind` par macro (9 méthodes × 27 voix). Fait : liste unique `drum_voice_kinds!` (25 types) qui génère l'enum et les 12 méthodes du trait, 326 → 95 lignes ; aiguillage uniforme (build 20261001-120557, à valider dans S1 : non-régression).
+  - [x] Chantier 4 — découper `process()` (~880 lignes) et `ui/sound_editor.rs` (déplacement strict, sans changement de comportement).
+    - [x] Étape 1 — `process()` : 879 → 85 lignes, étapes nommées + boucle séquenceur découpée, 2 tests (build 20261001-125719, validé dans S1 le 2026-10-01).
+    - [x] Étape 2 — `draw_sound_panel()` (2 050 lignes) dans `ui/sound_editor.rs`. Fait : 2 050 → 355 lignes, 12 sections nommées (`PanelCtx` + `RowValues` pour garder les corps intacts), plus aucune fonction > 355 lignes (build 20261001-143124, validé dans S1 le 2026-10-01 ; le décalage Hz ↔ Notes signalé au passage, antérieur, corrigé au build 20261001-165007).
+  - [x] `algo_count: 2` périmé pour Snare606 et 808 Kick → corrigé à 1, test d'égalité stricte sur les 27 voix (build 20261001-100120).
 
 ### Phase 5 — Légal & dépôt public (terminée)
 - [x] [265] **PDF protégé purgé du dépôt public** : historique réécrit via `git filter-repo` (sauvegarde `drumflash-backup-2026-09-25.bundle` avant), `resources/Drum.Machine.-.260.Patterns.pdf` supprimé des 205 commits, référence bibliographique dans `.gitignore`, force-push assumé, CI verte (windows + macOS) après réécriture.

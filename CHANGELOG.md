@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-10-01 - En-tête de la grille : les intitulés retrouvent leurs colonnes (build 20261001-200848)
+
+**Branche:** `main` - **Build:** `20261001-200848`
+**Validation:** `cargo test` 503 verts lib (1 nouveau) ; clippy (réglages CI) vert ; install atomique OK (le bundle installé porte désormais `LICENSE.txt`, `THIRD-PARTY.txt`, `THIRD-PARTY-LICENSES.txt` de [277]). **Validé dans Studio One** le 2026-10-01. `dist\FlashDrum-Setup-0.9.1.exe` a été régénéré dans la foulée **sans demande de l'utilisateur** — à ne plus faire : l'installeur est une release, généré seulement sur demande.
+
+Retour utilisateur : l'en-tête de la grille était décalé d'environ une colonne vers la gauche (« 1 » au-dessus du bouton S, « Vol », « M », « S », « Hum », « Push », « Len » décalés). Régression du build 20260926-183316 (flèches ‹ › de décalage de la grille, commit `ebd74e2`).
+
+- **Cause** (`draw_seq_header_v2`) : la colonne des noms était réservée par `allocate_ui(name_w)`, qui ne garde que ce que son contenu occupe — les deux flèches de 14 px, ~30 px au lieu de 62 ; tout ce qui suit glissait de ~32 px.
+- **Correction** : la colonne est réservée à sa largeur exacte (`allocate_exact_size`), les flèches sont posées dedans dans un `Ui` enfant.
+- **Test** : `grid_header_keeps_every_column_at_its_width` dessine l'en-tête sans écran et vérifie que sa largeur égale la somme des colonnes des lanes (883 px) ; vérifié qu'il échoue avec l'ancien rétrécissement (851 px).
+
+## 2026-10-01 - [277] Installeur : désinstalleur hors du plugin, licences complètes, notice lisible (build 20261001-182745, installeur seulement)
+
+**Branche:** `main` - **Build:** `20261001-182745` (compilé, **non installé** : Studio One ouvert ; aucun changement de code du plugin)
+**Validation:** installeur régénéré : **`dist\FlashDrum-Setup-0.9.1.exe`** ; il contient `LICENSE.txt`, `THIRD-PARTY.txt`, `THIRD-PARTY-LICENSES.txt`, le plugin et le helper MIDI. À valider à la main (liste dans le rapport).
+
+Demande utilisateur du 2026-10-01 : appliquer les propositions sur l'installeur, sans version française.
+
+- **Désinstalleur hors du dossier du plugin** : `UninstallFilesDir={autopf}\Flash Drum` (`C:\Program Files\Flash Drum`). Avant, `unins000.exe` était rangé DANS le bundle `.vst3`, que `build.ps1 -Install` remplace en entier : l'entrée « Flash Drum » de Windows ne pouvait plus désinstaller. Une mise à jour par-dessus un installeur antérieur laisse l'ancienne paire `unins000.*` dans le bundle (sans effet).
+- **GPL affichée pour information** : `InfoBeforeFile` au lieu de `LicenseFile` — bouton Suivant, plus de case « J'accepte » (la GPL n'exige aucune acceptation pour utiliser le logiciel).
+- **Notice lisible** : `THIRD-PARTY.txt` (texte brut) remplace `THIRD-PARTY.md`, dont la page de l'installeur montrait les `#`, `**` et `|`. Corrigée au passage : la mention « texte OFL dans `assets/fonts/IBMPlexSans.zip` » était fausse (ce fichier, local et non suivi, est une page HTML) ; les polices de secours d'egui (Ubuntu, Hack, Noto Emoji, emoji-icon-font) manquaient ; `option-ext` (MPL 2.0, via `dirs`) est signalé avec l'adresse de son code source.
+- **Textes complets des licences** : `THIRD-PARTY-LICENSES.txt`, généré depuis `Cargo.lock` par `tools/gen_third_party_licenses.py` (déterministe) : les 117 bibliothèques compilées pour Windows, 84 textes distincts regroupés, les polices (texte officiel IBM Plex OFL 1.1 ajouté : `assets/fonts/LICENSE-IBM-Plex.txt`) et le code AC606. Les paquets sans fichier de licence (egui & co, en double MIT / Apache-2.0) sont déclarés utilisés sous Apache-2.0, dont le texte est inclus ; `clipboard-win` est en BSL-1.0 (aucune mention requise en binaire).
+- **`build.ps1`** copie `THIRD-PARTY.txt` et `THIRD-PARTY-LICENSES.txt` dans le bundle et retire l'ancien `THIRD-PARTY.md` de son dossier de build ; **`CLAUDE.md`** décrit l'installeur et la régénération des licences avant chaque release.
+
 ## 2026-10-01 - Ligne Frequency du Kick : passer Hz ↔ Notes ne décale plus les lignes du dessous (build 20261001-165007)
 
 **Branche:** `main` - **Build:** `20261001-165007`

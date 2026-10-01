@@ -1,20 +1,19 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
+## Nouvelles tâches — session 2026-10-01 (demandes directes)
+
+- [~] [277] **Installeur : corrections de distribution** (demande utilisateur du 2026-10-01, version française de l'installeur écartée) :
+  - [x] Désinstalleur rangé hors du dossier du plugin (`UninstallFilesDir={autopf}\Flash Drum`) — `build.ps1 -Install`, qui remplace tout le dossier, ne doit plus l'effacer.
+  - [x] Page des composants tiers lisible : `THIRD-PARTY.txt` en texte brut remplace `THIRD-PARTY.md` (et corrige la mention fausse sur les polices, ajoute les polices de secours d'egui et la MPL d'`option-ext`).
+  - [x] Textes complets des licences tierces livrés avec le plugin : `THIRD-PARTY-LICENSES.txt` (117 bibliothèques, 84 textes, polices, AC606), généré par `tools/gen_third_party_licenses.py`.
+  - [x] Licence GPL affichée pour information, sans case « J'accepte » (`InfoBeforeFile`).
+  - [ ] Validation : installeur testé à la main (pages, désinstalleur hors du dossier, `build.ps1 -Install` ensuite sans casser la désinstallation).
+
 ## Nouvelles tâches — session 2026-09-24 (plan de remédiation audit)
 
 > Source : `audit_cr/claude-code.json` (audit complet, constats vérifiés dans le code le 2026-09-24). Chaque finding de l'audit est couvert par un ticket ci-dessous. Règle : chaque phase se termine par build + install + CHANGELOG + checklist « À tester dans Studio One ».
-> **Phases 0 à 5 terminées** (archivées dans DONE.md). Reste la phase 6 (dette, sans urgence).
-
-### Phase 6 — Traçabilité & dette
-- [~] [269] **REPRENDRE ICI (session dédiée — refactors invasifs)** — **Dette maintenabilité** : auditer les 61 `#[allow(dead_code)]` ; dispatch `DrumVoiceKind` par macro ; listes par index de voix dans l'UI → champs du registre (`has_analog_drift`, …) — c'est le patron qui a produit [247] et [248] ; découper `process()` et `sound_editor.rs`.
-  - [x] Chantier 1 — listes par index de voix dans l'UI → champs du registre : `is_sampler` / `freq_as_notes` / `analog_fixed` dans chaque `InstrumentDef`, règles Gate (Buzz) et Feedback flanger (Sdrex) par noms de paramètres, 3 tests (build 20261001-093056, à valider dans S1 : non-régression).
-  - [x] Chantier 2 — auditer les 62 `#[allow(dead_code)]` (14 fichiers) : supprimer le mort, réserver le reste aux tests. Fait : 62 → 14 (≈ 180 lignes supprimées, 5 réservés aux tests, 8 gardés avec raison écrite) (build 20261001-112204, à valider dans S1 : non-régression).
-  - [x] Chantier 3 — dispatch `DrumVoiceKind` par macro (9 méthodes × 27 voix). Fait : liste unique `drum_voice_kinds!` (25 types) qui génère l'enum et les 12 méthodes du trait, 326 → 95 lignes ; aiguillage uniforme (build 20261001-120557, à valider dans S1 : non-régression).
-  - [~] Chantier 4 — découper `process()` (~880 lignes) et `ui/sound_editor.rs` (déplacement strict, sans changement de comportement).
-    - [x] Étape 1 — `process()` : 879 → 85 lignes, étapes nommées + boucle séquenceur découpée, 2 tests (build 20261001-125719, validé dans S1 le 2026-10-01).
-    - [x] Étape 2 — `draw_sound_panel()` (2 050 lignes) dans `ui/sound_editor.rs`. Fait : 2 050 → 355 lignes, 12 sections nommées (`PanelCtx` + `RowValues` pour garder les corps intacts), plus aucune fonction > 355 lignes (build 20261001-143124, validé dans S1 le 2026-10-01 ; le décalage Hz ↔ Notes signalé au passage, antérieur, corrigé au build 20261001-165007).
-  - [x] `algo_count: 2` périmé pour Snare606 et 808 Kick → corrigé à 1, test d'égalité stricte sur les 27 voix (build 20261001-100120).
+> **Phases 0 à 6 terminées** (archivées dans DONE.md) ; [269] clos le 2026-10-01.
 
 ### Idées notées (2026-09-26, demandes utilisateur)
 - [ ] [275] **Swing par lane qui override le swing global** (onglet Track, mêmes paramètres : switch + amount + type) — **reporté par prudence (2026-09-26) : session dédiée**, l'évaluation des triggers est au cœur du séquenceur. Notes de design déjà récoltées : point d'injection unique `groove::beat_to_step`/`step_start_beat` par lane (sequencer/mod.rs:438, 292, 538, 639+), `Sequencer::set_lane_swings` par buffer sur le modèle `set_microtimings`, persistance nouveau champ `lane-swings-v1` (pack enabled+type+amount par slot, modèle `LaneLengthLocks`), UI onglet Track (sound_editor), export MIDI à répliquer (midi_export.rs), tests stress existants comme filet. Prérequis : relire toutes les utilisations de `swing`/`groove_type` dans le séquenceur.
