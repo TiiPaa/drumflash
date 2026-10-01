@@ -1828,37 +1828,43 @@ fn draw_seq_header_v2(
 
         // ‹ › above the lane names: shift the whole grid by one cell
         // (steps, fusions and p-locks wrap inside the pattern length).
-        ui.allocate_ui(Vec2::new(name_w, 16.0), |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = GAP_TIGHT;
-                for (glyph, delta, hover) in [
-                    ("‹", -1isize, "Shift the whole grid one step left (steps, fusions and p-locks wrap inside the pattern length)"),
-                    ("›", 1isize, "Shift the whole grid one step right (steps, fusions and p-locks wrap inside the pattern length)"),
-                ] {
-                    let (rect, resp) =
-                        ui.allocate_exact_size(Vec2::new(14.0, 16.0), egui::Sense::click());
-                    let color = if resp.hovered() { INK() } else { FAINT() };
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        glyph,
-                        f_mono(12.0),
-                        color,
-                    );
-                    let resp = resp.on_hover_text(hover);
-                    if resp.clicked() {
-                        let len = master_length.clamp(1, 64);
-                        if straddling_fusions(pattern, len, delta).is_empty() {
-                            shift_grid(params, pattern, plock, state, master_length, delta);
-                        } else {
-                            // A fusion sits at the edge we push toward: ask
-                            // before breaking it (reduced to its first cell).
-                            state.shift_grid_confirm = Some(delta);
-                        }
-                    }
+        // The column is reserved at its FULL width first: `allocate_ui` kept
+        // only what the two 14 px arrows use, which pulled every heading after
+        // it (Vol, M / S, the step numbers, Hum / Push / Len) ~32 px left of
+        // its column.
+        let (name_rect, _) = ui.allocate_exact_size(Vec2::new(name_w, 16.0), egui::Sense::hover());
+        let mut arrows = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(name_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        arrows.spacing_mut().item_spacing.x = GAP_TIGHT;
+        for (glyph, delta, hover) in [
+            ("‹", -1isize, "Shift the whole grid one step left (steps, fusions and p-locks wrap inside the pattern length)"),
+            ("›", 1isize, "Shift the whole grid one step right (steps, fusions and p-locks wrap inside the pattern length)"),
+        ] {
+            let (rect, resp) =
+                arrows.allocate_exact_size(Vec2::new(14.0, 16.0), egui::Sense::click());
+            let color = if resp.hovered() { INK() } else { FAINT() };
+            arrows.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                glyph,
+                f_mono(12.0),
+                color,
+            );
+            let resp = resp.on_hover_text(hover);
+            if resp.clicked() {
+                let len = master_length.clamp(1, 64);
+                if straddling_fusions(pattern, len, delta).is_empty() {
+                    shift_grid(params, pattern, plock, state, master_length, delta);
+                } else {
+                    // A fusion sits at the edge we push toward: ask
+                    // before breaking it (reduced to its first cell).
+                    state.shift_grid_confirm = Some(delta);
                 }
-            });
-        });
+            }
+        }
         ui.add_sized(
             Vec2::new(vol_w, 16.0),
             egui::Label::new(RichText::new("Vol").font(f_sans_sb(9.5)).color(INK3())),
@@ -3431,6 +3437,58 @@ fn mixer_rows(params: &DrumFlashParams) -> [MixerRow<'_>; crate::track::MAX_TRAC
 mod tests {
     use crate::sequencer::FusedGroup;
     use crate::track::{TrackInstrumentKind, TrackLayoutState, TrackSlot, MAX_TRACKS};
+
+    /// The column headings must sit over their columns: the header row takes
+    /// exactly the widths the lane rows use (grip, name, Vol, M / S, 16 cells,
+    /// Hum / Push / Len). The ‹ › arrows once shrank the name column to their
+    /// own width and pulled every heading after it ~32 px left.
+    #[test]
+    fn grid_header_keeps_every_column_at_its_width() {
+        use super::*;
+        let params = crate::DrumFlashParams::default();
+        let pattern = params.pattern_state.shared();
+        let plock = &params.plock_state.state;
+        let mut state = crate::ui::editor_state::EditorUIState::default();
+        let ctx = egui::Context::default();
+        crate::ui::install_egui_fonts(&ctx);
+        let (grip_w, name_w, vol_w, extra_w, gap, cell_w) = (14.0, 62.0, 56.0, 44.0, 7.0, 30.0);
+        let mst_w = STEP_H * 2.0 + GAP_TIGHT;
+        let mut width = 0.0;
+        // A few passes: egui settles fonts and sizes over the first frames.
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(1400.0, 400.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    // A horizontal hugs its content: its rect IS the header's.
+                    let header = ui.horizontal(|ui| {
+                        draw_seq_header_v2(
+                            ui, &params, &pattern, plock, &mut state, 0, usize::MAX, 16,
+                            grip_w, name_w, vol_w, mst_w, extra_w, gap, cell_w,
+                        );
+                    });
+                    width = header.response.rect.width();
+                });
+            });
+        }
+        let expected = grip_w
+            + name_w
+            + vol_w
+            + mst_w
+            + 16.0 * cell_w
+            + 15.0 * GAP_TIGHT
+            + 3.0 * extra_w
+            + 7.0 * gap;
+        assert!(
+            (width - expected).abs() < 0.5,
+            "header {width} px wide, its columns {expected} px"
+        );
+    }
 
     #[test]
     fn shift_grid_rotates_steps_plocks_and_fusions_with_wrap() {

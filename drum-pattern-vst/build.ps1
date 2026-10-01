@@ -105,7 +105,13 @@ Copy-Item -Path $sourceDll -Destination $destFile -Force
 Copy-Item -Path $sourceDragHelper -Destination $destDragHelper -Force
 # [266] GPL: the license text ships inside every distributed bundle.
 Copy-Item -Path (Join-Path $PSScriptRoot "..\LICENSE") -Destination (Join-Path $bundleDir "LICENSE.txt") -Force
-Copy-Item -Path (Join-Path $PSScriptRoot "..\THIRD-PARTY.md") -Destination (Join-Path $bundleDir "THIRD-PARTY.md") -Force
+# [277] Third-party notice (plain text, shown by the installer) + the full
+# license texts it refers to (tools/gen_third_party_licenses.py).
+Copy-Item -Path (Join-Path $PSScriptRoot "..\THIRD-PARTY.txt") -Destination (Join-Path $bundleDir "THIRD-PARTY.txt") -Force
+Copy-Item -Path (Join-Path $PSScriptRoot "..\THIRD-PARTY-LICENSES.txt") -Destination (Join-Path $bundleDir "THIRD-PARTY-LICENSES.txt") -Force
+# The bundle folder is reused between builds: drop the Markdown notice the
+# builds before [277] copied there, so the installer does not ship it.
+Remove-Item -Path (Join-Path $bundleDir "THIRD-PARTY.md") -Force -ErrorAction SilentlyContinue
 
 $dllInfo = Get-Item $sourceDll
 $bundleInfo = Get-Item $destFile
