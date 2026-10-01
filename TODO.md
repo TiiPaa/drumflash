@@ -13,7 +13,7 @@
   - [x] Chantier 3 — dispatch `DrumVoiceKind` par macro (9 méthodes × 27 voix). Fait : liste unique `drum_voice_kinds!` (25 types) qui génère l'enum et les 12 méthodes du trait, 326 → 95 lignes ; aiguillage uniforme (build 20261001-120557, à valider dans S1 : non-régression).
   - [~] Chantier 4 — découper `process()` (~880 lignes) et `ui/sound_editor.rs` (déplacement strict, sans changement de comportement).
     - [x] Étape 1 — `process()` : 879 → 85 lignes, étapes nommées + boucle séquenceur découpée, 2 tests (build 20261001-125719, validé dans S1 le 2026-10-01).
-    - [ ] Étape 2 — `draw_sound_panel()` (2 050 lignes) dans `ui/sound_editor.rs`.
+    - [x] Étape 2 — `draw_sound_panel()` (2 050 lignes) dans `ui/sound_editor.rs`. Fait : 2 050 → 355 lignes, 12 sections nommées (`PanelCtx` + `RowValues` pour garder les corps intacts), plus aucune fonction > 355 lignes (build 20261001-143124, validé dans S1 le 2026-10-01 ; le décalage Hz ↔ Notes signalé au passage, antérieur, corrigé au build 20261001-165007).
   - [x] `algo_count: 2` périmé pour Snare606 et 808 Kick → corrigé à 1, test d'égalité stricte sur les 27 voix (build 20261001-100120).
 
 ### Idées notées (2026-09-26, demandes utilisateur)

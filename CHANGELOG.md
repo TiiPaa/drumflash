@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-10-01 - Ligne Frequency du Kick : passer Hz ↔ Notes ne décale plus les lignes du dessous (build 20261001-165007)
+
+**Branche:** `main` - **Build:** `20261001-165007`
+**Validation:** `cargo test` 502 verts lib (1 nouveau) ; clippy (réglages CI) vert ; install atomique OK. **Validé dans Studio One** le 2026-10-01.
+
+Retour utilisateur sur le build 143124 : sur un Kick, basculer la ligne Frequency entre Hz et Notes décalait de quelques pixels les trois lignes du dessous (Click Level, Click Type, Algorithm). Défaut antérieur au découpage [269] (la ligne n'avait pas changé depuis le 2026-07-29).
+
+- **Cause, mesurée** : dans une colonne de réglages serrée, le groupe ◂ note ▸ du mode Notes faisait 122 px contre 120 pour le curseur + valeur du mode Hz ; egui élargissait la colonne de 2 px (404 → 406), et tout ce qui est aligné à droite en dessous glissait d'autant.
+- **Correction** (`draw_editor_frequency_row`) : les deux modes prennent la même largeur, calculée une fois (`group_w`) ; en Notes, la case de la note occupe ce que laissent les deux boutons (56 px au lieu de 58).
+- **Test** : `frequency_row_keeps_its_footprint_between_hz_and_notes` dessine la ligne sans écran (polices du plugin, même imbrication que le panneau) dans les deux modes et compare hauteur et largeur de colonne ; vérifié qu'il échoue avec l'ancienne largeur (404 contre 406 px).
+
+## 2026-10-01 - [269] chantier 4, étape 2 : l'onglet Sound découpé en sections nommées (build 20261001-143124)
+
+**Branche:** `main` - **Build:** `20261001-143124`
+**Validation:** `cargo check --all-targets --locked` sans avertissement ; `cargo test` 501 verts lib ; clippy (réglages CI) vert ; install atomique OK. **Validé dans Studio One** le 2026-10-01 (non-régression visuelle ; un décalage Hz ↔ Notes antérieur a été signalé au passage, corrigé au build 20261001-165007).
+
+`draw_sound_panel()` passe de **2 050 à 355 lignes** ; ses blocs deviennent des fonctions nommées, appelées dans le même ordre : `draw_panel_header`, `draw_panel_tabs`, `draw_action_strip` (Step/Start/End, Default, Restore, Store), `draw_dev_preset_dumps` (debug), puis par section `draw_filter_type_row`, `draw_standard_rows`, `draw_special_rows` (dont `special_row_widget`, le choix du widget d'un réglage spécial), `draw_algorithm_row`, `draw_section_graphs`, `draw_gate_row`, et enfin `draw_scope_notice`. Plus aucune fonction du fichier ne dépasse 355 lignes.
+
+- **Code déplacé tel quel** : deux structures servent de transport sans changer les corps — `PanelCtx` (ce que les sections lisent : paramètres, stores, lane, voix, portée d'édition…) et `RowValues` (les 13 valeurs standard éditées dans l'image) ; chaque section les déballe en variables aux noms d'origine. Vérifié : aucune ligne de code disparue lors du découpage (comparaison ligne à ligne, indentation ignorée), et pour `special_row_widget` une comparaison caractère par caractère (espaces ignorés) ne montre que deux virgules finales retirées par rustfmt.
+- **Oubli du chantier 1 corrigé** : le chargement des dumps de dev testait encore `matches!(dump_voice, 2 | 3 | 7 | 8 | 10 | 12)` ; il lit maintenant `analog_fixed` / `is_sampler` du registre (même résultat).
+
 ## 2026-10-01 - [269] chantier 4, étape 1 : `process()` découpé en étapes nommées (build 20261001-125719)
 
 **Branche:** `main` - **Build:** `20261001-125719`
