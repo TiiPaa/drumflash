@@ -6,6 +6,10 @@
 > Ce fichier ne contient que ce qui reste **a faire ou en cours**.
 > Tout ce qui est termine vit dans [DONE.md](DONE.md).
 
+## Nouvelles tâches — session 2026-10-01 (demandes directes)
+
+- [x] [276] **Version produit 0.9.1** — `Cargo.toml` (+ `Cargo.lock`) + `#define AppVersion` dans `installer/flash-drum.iss` passés de 0.9.0 à **0.9.1** ; installeur régénéré (`dist\FlashDrum-Setup-0.9.1.exe`) (build 20261001-123647).
+
 ## Nouvelles tâches — session 2026-09-26 (demandes directes)
 
 - [x] **Density Randomize Lane à 80 % par défaut** (était 30 %) — `default_randomize_density` (build 20260926-183316).

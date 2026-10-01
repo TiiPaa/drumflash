@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-01 - [276] Version 0.9.1 (build 20261001-123647)
+
+**Branche:** `main` - **Build:** `20261001-123647`
+**Validation:** `cargo test` 499 verts lib (avant install) ; install atomique OK ; version 0.9.1 embarquée dans le plugin ; installeur régénéré : **`dist\FlashDrum-Setup-0.9.1.exe`**. À valider dans Studio One : non-régression (aucun changement de code depuis le build 120557, seulement le numéro de version).
+
+Version produit **0.9.0 → 0.9.1** : `Cargo.toml` (+ `Cargo.lock`) et `#define AppVersion` dans `installer/flash-drum.iss`, comme pour [274]. Contenu depuis la 0.9.0 (installeur du build 20260926-151533) :
+
+- **Grille** : flèches **‹ ›** de décalage de la grille d'une cellule (pas, fusions, p-locks son et séquenceur tournent ensemble) et avertissement avant de casser une fusion au bord (Break & Shift / Cancel) ; Density de Randomize Lane à 80 % par défaut.
+- **Réglages MIDI** : légende de l'Auto-assign à gauche du bouton, comme la ligne Macros.
+- **Snare606 et 808 Kick** : un seul algorithme déclaré, comme leur moteur (aucun effet audible).
+- **Dette [269], chantiers 1 à 3** (aucun changement voulu à l'écoute ni à l'écran) : caractéristiques des voix déclarées dans le registre au lieu de listes par numéro, ménage du code mort (62 `#[allow(dead_code)]` → 14), moteur de voix aiguillé par une seule liste.
+
 ## 2026-10-01 - [269] chantier 3 : le moteur de voix aiguillé par une seule liste (build 20261001-120557)
 
 **Branche:** `main` - **Build:** `20261001-120557`
