@@ -4,25 +4,44 @@
 
 **[Download the latest version](https://github.com/TiiPaa/flashdrum/releases)** · Beta — feedback and bug reports welcome in [Issues](https://github.com/TiiPaa/flashdrum/issues).
 
-## Sound engines
+## Highlights
 
-- **Synthesized** — kicks, snares, hats, toms, claps, cymbals, an 808-style kick, percussion, and SDrex, a metallic snare.
-- **Sampled** — a real TR-606, multisampled: every hit picks a different layer, like the hardware.
-- **Modelled** — six 606 voices ported from analogcode's open-source models.
-- **Hybrid** — Rift slices long textures; One-Shot plays your own samples: drop a WAV file on the grid.
+### Sound engines
 
-## Sequencer
+- **25 instruments on 14 modular lanes** — every lane can host a different instrument and hold its own sound settings.
+- **Synthesized voices** — Kick, Snare, Hi-Hat, Tom, Clap, Ride, Cymbal, an 808-style kick and percussion.
+- **TR-606 multisamples** — every hit picks a different layer, like the hardware.
+- **Six modelled 606 voices** — ported from analogcode's open-source models.
+- **SDrex** — a metallic snare with filter modulation, flanger feedback and dedicated modulation envelopes.
+- **Buzz** — a tonal-percussion voice with adjustable noise, a fast gate and a machine-gun retrigger.
+- **Rift** — slices a long embedded or custom texture with Offset, Wander, Advance, Grain, Loop and Reverse.
+- **One-Shot** — drop your own WAV file on the grid and play it from any start point, forward or reversed.
+- **Full sound editor** — oscillator/sample, amp envelope, pitch envelope, filter, modulation, distortion and output sections per instrument.
+- **Analog drift and five distortion flavours** — SoftClip, Valve, Transistor, HardClip and Tape, with pre-/post-filter routing.
 
-- 64 steps on 4 pages, a different length per lane for polyrhythms, swing and humanize.
-- Per-step sound locks, probability, conditions (1:2, 1:4, not first…), ratchets and microtiming.
-- Fused cells: one long note made of pulses, morphing from one sound to another.
-- Pattern generators (Euclidean, Markov, probabilistic, genre templates), a 16-pattern bank and a song mode.
+### Sequencer
 
-## In your DAW
+- **64 steps on 4 pages**, with a different length per lane for polyrhythms.
+- **Swing with four groove shapes** — Straight, Swing 16th, Shuffle and MPC Style.
+- **Per-lane Push/Pull timing and Humanize velocity**.
+- **Per-step sound locks** — lock one or several sound parameters on any cell, while untouched parameters keep following the lane.
+- **Sequencer locks per step** — probability, stutter up to ×16, ±100 ms nudge, loop conditions with inversion and optional second condition, and per-cell solo.
+- **Fused cells** — join adjacent steps into a longer note that can morph from one sound to another.
+- **Page tools** — follow the playhead, copy/paste/clear pages, shift the whole grid, or loop one page.
+- **Lane tools** — copy or paste a complete lane or only its grid, link a lane's steps to the one above, clear or randomize it.
+- **Pattern generators** — Probabilistic, Markov, Euclidean and Classic algorithms, with 16 musical styles, style mixing, density and variation.
+- **Quick presets** — Rock, Funk, Disco, House, Dub, Drum'n'Bass, Bossa, Afrobeat and Breakbeat kits and grooves.
+- **16-pattern bank with copy/paste** and a **16-block song mode** with repeats.
 
-- 14 stereo outputs plus the main mix, choke groups, 16 MIDI-learnable macros.
-- Drag your pattern into the DAW as a MIDI clip.
-- Presets for instruments, patterns, kits and songs.
+### DAW integration
+
+- **Main mix plus 14 stereo aux outputs** — route several lanes to the same aux, or keep one in both the main mix and an aux.
+- **Four choke groups** — for hats and any combination of lanes.
+- **External MIDI input** — choose the note of each lane, auto-assign notes, or switch patterns by MIDI.
+- **MIDI output** — Flash Drum emits NoteOn/NoteOff on its configured channel.
+- **MIDI export and drag** — export a MIDI file or drag the current pattern directly into your DAW, preserving fusions, stutters, swing and microtiming.
+- **16 MIDI-learnable macros** — assign DAW controls or automation to any sound parameter on any lane.
+- **Presets** — instruments, patterns, kits and songs; 4 instrument presets and 18 patterns are included.
 
 ## Install
 
