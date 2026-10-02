@@ -174,6 +174,9 @@ pub fn create_editor(
         },
         |egui_ctx, _state| {
             install_egui_fonts(egui_ctx);
+            // [280] First editor open: copy the starter presets into the
+            // user's preset folders (no-op once done).
+            crate::presets::seed_default_user_presets();
             // PNG loader for the skeuo pad textures (egui::include_image!).
             egui_extras::install_image_loaders(egui_ctx);
 

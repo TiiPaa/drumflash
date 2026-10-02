@@ -1,6 +1,6 @@
 [package]
 name = "drum-pattern-vst"
-version = "0.9.2"
+version = "0.9.3"
 edition = "2021"
 authors = ["Flash Drum"]
 description = "A 64-step drum sequencer VST3 plugin"
@@ -36,6 +36,9 @@ dirs = "6"
 rfd = { version = "0.15", default-features = false }
 # [271] "Open folder" in the MIDI export confirmation modal.
 open = "5"
+# [280] Inflates the starter presets embedded by build.rs (already in the
+# tree through png, no new crate).
+miniz_oxide = "0.8"
 
 # [267] Windows-only (MIDI drag helper, ui/midi.rs) — not fetched on macOS.
 [target.'cfg(windows)'.dependencies]
@@ -55,6 +58,10 @@ windows-sys = { version = "0.61.2", features = [
 crate-type = ["cdylib"]
 name = "drum_pattern_vst"
 path = "src/lib.rs"
+
+[build-dependencies]
+# [280] Deflates assets/presets/default-user/ into OUT_DIR.
+miniz_oxide = "0.8"
 
 [dev-dependencies]
 # [254] Allocation watchdog for the real-time safety tests. Same fork and

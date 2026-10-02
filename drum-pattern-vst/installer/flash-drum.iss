@@ -6,7 +6,7 @@
 ;
 ; Version must match drum-pattern-vst/Cargo.toml.
 
-#define AppVersion "0.9.2"
+#define AppVersion "0.9.3"
 
 [Setup]
 AppName=Flash Drum

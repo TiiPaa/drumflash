@@ -2,6 +2,12 @@
 
 Downloads: [releases page](https://github.com/TiiPaa/flashdrum/releases).
 
+## 0.9.3 — 2026-10-02 (beta)
+
+- **Included presets**: 4 instrument presets and 18 patterns are now bundled with the plugin. They were missing from the 0.9.2 download.
+- On the first editor open, these presets are added to `Documents/Flash Drum/presets/` and appear in the preset browser's **User** section. They can be renamed, edited or deleted like any other user preset.
+- Existing files with the same name are preserved. Presets deleted after this initial setup are not restored on subsequent editor opens.
+
 ## 0.9.2 — 2026-10-01 (beta)
 
 - **Grid header**: the column headings sit over their columns again (they were shifted one column to the left).
